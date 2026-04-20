@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
        WHERE status = 'TAMAMLANDI'
          AND EXTRACT(year FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
          AND EXTRACT(month FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $2
-       GROUP BY EXTRACT(day FROM payment_date)
+       GROUP BY EXTRACT(day FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')
        ORDER BY day`,
       [year, month]
     );
