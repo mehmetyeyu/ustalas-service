@@ -13,12 +13,12 @@ export async function GET(request: NextRequest) {
   try {
     const dailyRevenueResult = await pool.query(
       `SELECT
-         EXTRACT(day FROM payment_date AT TIME ZONE 'Europe/Istanbul')::int AS day,
+         EXTRACT(day FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::int AS day,
          SUM(total_amount)::float AS revenue
        FROM orders
        WHERE status = 'TAMAMLANDI'
-         AND EXTRACT(year FROM payment_date AT TIME ZONE 'Europe/Istanbul') = $1
-         AND EXTRACT(month FROM payment_date AT TIME ZONE 'Europe/Istanbul') = $2
+         AND EXTRACT(year FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
+         AND EXTRACT(month FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $2
        GROUP BY EXTRACT(day FROM payment_date)
        ORDER BY day`,
       [year, month]
@@ -32,8 +32,8 @@ export async function GET(request: NextRequest) {
        JOIN services s ON os.service_id = s.id
        JOIN orders o ON os.order_id = o.id
        WHERE o.status = 'TAMAMLANDI'
-         AND EXTRACT(year FROM o.payment_date AT TIME ZONE 'Europe/Istanbul') = $1
-         AND EXTRACT(month FROM o.payment_date AT TIME ZONE 'Europe/Istanbul') = $2
+         AND EXTRACT(year FROM o.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
+         AND EXTRACT(month FROM o.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $2
        GROUP BY s.name
        ORDER BY count DESC`,
       [year, month]
@@ -49,8 +49,8 @@ export async function GET(request: NextRequest) {
          COUNT(CASE WHEN status = 'TAMAMLANDI' THEN 1 END)::int AS completed,
          COUNT(CASE WHEN status = 'BEKLEMEDE' THEN 1 END)::int AS pending
        FROM orders
-       WHERE EXTRACT(year FROM created_at AT TIME ZONE 'Europe/Istanbul') = $1
-         AND EXTRACT(month FROM created_at AT TIME ZONE 'Europe/Istanbul') = $2`,
+       WHERE EXTRACT(year FROM created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
+         AND EXTRACT(month FROM created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $2`,
       [year, month]
     );
 

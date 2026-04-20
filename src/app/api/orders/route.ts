@@ -36,12 +36,12 @@ export async function GET(request: NextRequest) {
   }
   if (dateFrom) {
     paramCount++;
-    query += ` AND (o.created_at AT TIME ZONE 'Europe/Istanbul')::date >= $${paramCount}`;
+    query += ` AND (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date >= $${paramCount}`;
     values.push(dateFrom);
   }
   if (dateTo) {
     paramCount++;
-    query += ` AND (o.created_at AT TIME ZONE 'Europe/Istanbul')::date <= $${paramCount}`;
+    query += ` AND (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date <= $${paramCount}`;
     values.push(dateTo);
   }
 
