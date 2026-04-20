@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { RowDataPacket } from "mysql2";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -12,22 +11,20 @@ export async function GET(request: NextRequest) {
   const month = parseInt(searchParams.get("month") || String(new Date().getMonth() + 1));
 
   try {
-    // Günlük gelir
-    const [dailyRevenue] = await pool.query<RowDataPacket[]>(
+    const dailyRevenueResult = await pool.query(
       `SELECT
-         DAY(payment_date) AS day,
+         EXTRACT(day FROM payment_date) AS day,
          SUM(total_amount) AS revenue
        FROM orders
        WHERE status = 'TAMAMLANDI'
-         AND YEAR(payment_date) = ?
-         AND MONTH(payment_date) = ?
-       GROUP BY DAY(payment_date)
+         AND EXTRACT(year FROM payment_date) = $1
+         AND EXTRACT(month FROM payment_date) = $2
+       GROUP BY EXTRACT(day FROM payment_date)
        ORDER BY day`,
       [year, month]
     );
 
-    // Hizmet dağılımı
-    const [serviceStats] = await pool.query<RowDataPacket[]>(
+    const serviceStatsResult = await pool.query(
       `SELECT
          s.name,
          COUNT(os.service_id) AS count
@@ -35,15 +32,14 @@ export async function GET(request: NextRequest) {
        JOIN services s ON os.service_id = s.id
        JOIN orders o ON os.order_id = o.id
        WHERE o.status = 'TAMAMLANDI'
-         AND YEAR(o.payment_date) = ?
-         AND MONTH(o.payment_date) = ?
+         AND EXTRACT(year FROM o.payment_date) = $1
+         AND EXTRACT(month FROM o.payment_date) = $2
        GROUP BY s.name
        ORDER BY count DESC`,
       [year, month]
     );
 
-    // Özet
-    const [summary] = await pool.query<RowDataPacket[]>(
+    const summaryResult = await pool.query(
       `SELECT
          COUNT(*) AS total_orders,
          SUM(CASE WHEN status = 'TAMAMLANDI' THEN total_amount ELSE 0 END) AS total_revenue,
@@ -53,15 +49,15 @@ export async function GET(request: NextRequest) {
          SUM(CASE WHEN status = 'TAMAMLANDI' THEN 1 ELSE 0 END) AS completed,
          SUM(CASE WHEN status = 'BEKLEMEDE' THEN 1 ELSE 0 END) AS pending
        FROM orders
-       WHERE YEAR(created_at) = ?
-         AND MONTH(created_at) = ?`,
+       WHERE EXTRACT(year FROM created_at) = $1
+         AND EXTRACT(month FROM created_at) = $2`,
       [year, month]
     );
 
     return NextResponse.json({
-      dailyRevenue,
-      serviceStats,
-      summary: summary[0],
+      dailyRevenue: dailyRevenueResult.rows,
+      serviceStats: serviceStatsResult.rows,
+      summary: summaryResult.rows[0],
     });
   } catch (error) {
     console.error(error);

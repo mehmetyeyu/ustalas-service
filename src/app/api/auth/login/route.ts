@@ -2,14 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import pool from "@/lib/db";
 import { signToken } from "@/lib/auth";
-import { RowDataPacket } from "mysql2";
-
-interface UserRow extends RowDataPacket {
-  id: number;
-  username: string;
-  password_hash: string;
-  role: string;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,12 +14,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [rows] = await pool.query<UserRow[]>(
-      "SELECT * FROM users WHERE username = ? LIMIT 1",
+    const result = await pool.query(
+      "SELECT * FROM users WHERE username = $1 LIMIT 1",
       [username]
     );
 
-    const user = rows[0];
+    const user = result.rows[0];
     if (!user) {
       return NextResponse.json(
         { error: "Kullanıcı adı veya şifre hatalı." },
@@ -54,7 +46,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30, // 30 gün
+      maxAge: 60 * 60 * 24 * 30,
       path: "/",
     });
 

@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
-
-interface ServiceRow extends RowDataPacket {
-  id: number;
-  name: string;
-  price: number;
-  is_active: number;
-  created_at: string;
-}
 
 export async function GET() {
   try {
-    const [rows] = await pool.query<ServiceRow[]>(
+    const result = await pool.query(
       "SELECT * FROM services WHERE is_active = 1 ORDER BY name"
     );
-    return NextResponse.json(rows);
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
@@ -33,11 +24,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ad ve fiyat zorunludur." }, { status: 400 });
     }
 
-    const [result] = await pool.query<ResultSetHeader>(
-      "INSERT INTO services (name, price) VALUES (?, ?)",
+    const result = await pool.query(
+      "INSERT INTO services (name, price) VALUES ($1, $2) RETURNING id",
       [name, price]
     );
-    return NextResponse.json({ id: result.insertId, name, price, is_active: 1 }, { status: 201 });
+    return NextResponse.json({ id: result.rows[0].id, name, price, is_active: 1 }, { status: 201 });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

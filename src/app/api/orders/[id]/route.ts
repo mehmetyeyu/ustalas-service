@@ -1,26 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { RowDataPacket } from "mysql2";
-
-interface OrderRow extends RowDataPacket {
-  id: number;
-  plate: string;
-  customer_name: string | null;
-  customer_phone: string | null;
-  notes: string | null;
-  total_amount: number;
-  status: string;
-  payment_type: string | null;
-  payment_date: string | null;
-  created_at: string;
-}
-
-interface ServiceRow extends RowDataPacket {
-  id: number;
-  name: string;
-  unit_price: number;
-}
 
 export async function GET(
   _request: NextRequest,
@@ -31,23 +11,23 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const [orders] = await pool.query<OrderRow[]>(
-      "SELECT * FROM orders WHERE id = ?",
+    const orderResult = await pool.query(
+      "SELECT * FROM orders WHERE id = $1",
       [id]
     );
-    if (!orders[0]) {
+    if (!orderResult.rows[0]) {
       return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
     }
 
-    const [services] = await pool.query<ServiceRow[]>(
+    const servicesResult = await pool.query(
       `SELECT s.id, s.name, os.unit_price
        FROM order_services os
        JOIN services s ON os.service_id = s.id
-       WHERE os.order_id = ?`,
+       WHERE os.order_id = $1`,
       [id]
     );
 
-    return NextResponse.json({ ...orders[0], services });
+    return NextResponse.json({ ...orderResult.rows[0], services: servicesResult.rows });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
@@ -71,8 +51,8 @@ export async function PATCH(
 
     await pool.query(
       `UPDATE orders
-       SET status = 'TAMAMLANDI', payment_type = ?, payment_date = NOW()
-       WHERE id = ?`,
+       SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW()
+       WHERE id = $2`,
       [payment_type, id]
     );
 

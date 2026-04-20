@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
-
-interface OrderRow extends RowDataPacket {
-  id: number;
-  plate: string;
-  customer_name: string | null;
-  customer_phone: string | null;
-  notes: string | null;
-  total_amount: number;
-  status: string;
-  payment_type: string | null;
-  payment_date: string | null;
-  created_at: string;
-  services: string;
-}
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -30,36 +15,41 @@ export async function GET(request: NextRequest) {
   let query = `
     SELECT
       o.*,
-      GROUP_CONCAT(s.name SEPARATOR ', ') AS services
+      STRING_AGG(s.name, ', ') AS services
     FROM orders o
     LEFT JOIN order_services os ON o.id = os.order_id
     LEFT JOIN services s ON os.service_id = s.id
     WHERE 1=1
   `;
+  let paramCount = 0;
   const values: (string | number)[] = [];
 
   if (status) {
-    query += " AND o.status = ?";
+    paramCount++;
+    query += ` AND o.status = $${paramCount}`;
     values.push(status);
   }
   if (plate) {
-    query += " AND o.plate LIKE ?";
+    paramCount++;
+    query += ` AND o.plate LIKE $${paramCount}`;
     values.push(`%${plate}%`);
   }
   if (dateFrom) {
-    query += " AND DATE(o.created_at) >= ?";
+    paramCount++;
+    query += ` AND DATE(o.created_at) >= $${paramCount}`;
     values.push(dateFrom);
   }
   if (dateTo) {
-    query += " AND DATE(o.created_at) <= ?";
+    paramCount++;
+    query += ` AND DATE(o.created_at) <= $${paramCount}`;
     values.push(dateTo);
   }
 
   query += " GROUP BY o.id ORDER BY o.created_at DESC";
 
   try {
-    const [rows] = await pool.query<OrderRow[]>(query, values);
-    return NextResponse.json(rows);
+    const result = await pool.query(query, values);
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
@@ -78,44 +68,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Hizmet fiyatlarını al
-    const placeholders = service_ids.map(() => "?").join(",");
-    const [serviceRows] = await pool.query<RowDataPacket[]>(
+    const placeholders = service_ids.map((_: number, i: number) => `$${i + 1}`).join(",");
+    const serviceResult = await pool.query(
       `SELECT id, price FROM services WHERE id IN (${placeholders})`,
       service_ids
     );
+    const serviceRows = serviceResult.rows;
 
     const totalAmount = serviceRows.reduce(
-      (sum: number, s: RowDataPacket) => sum + Number(s.price),
+      (sum: number, s: { price: number }) => sum + Number(s.price),
       0
     );
 
-    const conn = await pool.getConnection();
+    const client = await pool.connect();
     try {
-      await conn.beginTransaction();
+      await client.query("BEGIN");
 
-      const [orderResult] = await conn.query<ResultSetHeader>(
+      const orderResult = await client.query(
         `INSERT INTO orders (plate, customer_name, customer_phone, notes, total_amount, status)
-         VALUES (?, ?, ?, ?, ?, 'BEKLEMEDE')`,
+         VALUES ($1, $2, $3, $4, $5, 'BEKLEMEDE') RETURNING id`,
         [plate, customer_name || null, customer_phone || null, notes || null, totalAmount]
       );
 
-      const orderId = orderResult.insertId;
+      const orderId = orderResult.rows[0].id;
 
       for (const svc of serviceRows) {
-        await conn.query(
-          "INSERT INTO order_services (order_id, service_id, unit_price) VALUES (?, ?, ?)",
+        await client.query(
+          "INSERT INTO order_services (order_id, service_id, unit_price) VALUES ($1, $2, $3)",
           [orderId, svc.id, svc.price]
         );
       }
 
-      await conn.commit();
+      await client.query("COMMIT");
       return NextResponse.json({ id: orderId, total_amount: totalAmount }, { status: 201 });
     } catch (err) {
-      await conn.rollback();
+      await client.query("ROLLBACK");
       throw err;
     } finally {
-      conn.release();
+      client.release();
     }
   } catch (error) {
     console.error(error);
