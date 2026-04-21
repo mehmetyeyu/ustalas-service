@@ -25,15 +25,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Image src="/logo.jpg" alt="Logo" width={150} height={51} className="object-contain" />
+          <Image src="/logo.jpg" alt="Logo" width={150} height={51} className="object-contain hidden sm:block" />
           <div className="flex gap-1">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${pathname.startsWith(item.href)
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-300 hover:bg-gray-700"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-300 hover:bg-gray-700"
                   }`}
               >
                 {item.label}
