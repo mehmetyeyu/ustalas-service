@@ -48,6 +48,18 @@ export default function OrdersPage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [plateSearch, setPlateSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  async function deleteOrder(id: number) {
+    if (!confirm(`#${id} numaralı siparişi silmek istediğinize emin misiniz?`)) return;
+    setDeletingId(id);
+    try {
+      await fetch(`/api/orders/${id}`, { method: "DELETE" });
+      setOrders((prev) => prev.filter((o) => o.id !== id));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function fetchOrders() {
     setLoading(true);
@@ -195,12 +207,21 @@ export default function OrdersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/orders/${order.id}`}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-xs"
-                      >
-                        Detay →
-                      </Link>
+                      <div className="flex items-center gap-3">
+                        <Link
+                          href={`/admin/orders/${order.id}`}
+                          className="text-blue-600 hover:text-blue-800 font-medium text-xs"
+                        >
+                          Detay →
+                        </Link>
+                        <button
+                          onClick={() => deleteOrder(order.id)}
+                          disabled={deletingId === order.id}
+                          className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40"
+                        >
+                          {deletingId === order.id ? "Siliniyor..." : "Sil"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

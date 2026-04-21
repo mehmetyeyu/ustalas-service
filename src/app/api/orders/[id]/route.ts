@@ -34,6 +34,26 @@ export async function GET(
   }
 }
 
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+
+  try {
+    const { id } = await params;
+    const result = await pool.query("DELETE FROM orders WHERE id = $1 RETURNING id", [id]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
