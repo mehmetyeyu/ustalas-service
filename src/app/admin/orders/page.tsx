@@ -10,6 +10,7 @@ interface Order {
   customer_name: string | null;
   services: string;
   total_amount: number;
+  paid_amount: number | null;
   status: "BEKLEMEDE" | "TAMAMLANDI";
   payment_type: string | null;
   created_at: string;
@@ -192,8 +193,21 @@ export default function OrdersPage() {
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                       {formatDate(order.created_at)}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-800">
-                      {formatCurrency(order.total_amount)}
+                    <td className="px-4 py-3 text-right">
+                      {order.paid_amount != null && order.paid_amount !== order.total_amount ? (
+                        <>
+                          <div className="line-through text-gray-400 text-xs">
+                            {formatCurrency(order.total_amount)}
+                          </div>
+                          <div className="font-semibold text-orange-600">
+                            {formatCurrency(order.paid_amount)}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="font-semibold text-gray-800">
+                          {formatCurrency(order.paid_amount ?? order.total_amount)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span

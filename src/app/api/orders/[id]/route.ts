@@ -63,17 +63,23 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { payment_type } = await request.json();
+    const { payment_type, paid_amount } = await request.json();
 
     if (!["NAKIT", "KREDI_KARTI", "HAVALE"].includes(payment_type)) {
       return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
     }
 
+    const amount = paid_amount != null ? Number(paid_amount) : null;
+    if (amount !== null && (isNaN(amount) || amount < 0)) {
+      return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
+    }
+
     await pool.query(
       `UPDATE orders
-       SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW()
+       SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(),
+           paid_amount = COALESCE($3, total_amount)
        WHERE id = $2`,
-      [payment_type, id]
+      [payment_type, id, amount]
     );
 
     return NextResponse.json({ success: true });

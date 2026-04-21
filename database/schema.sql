@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_phone VARCHAR(20),
   notes          TEXT,
   total_amount   DECIMAL(10,2),
+  paid_amount    DECIMAL(10,2),
   status         VARCHAR(20) DEFAULT 'BEKLEMEDE' CHECK (status IN ('BEKLEMEDE', 'TAMAMLANDI')),
   payment_type   VARCHAR(20) CHECK (payment_type IN ('NAKIT', 'KREDI_KARTI', 'HAVALE')),
   payment_date   TIMESTAMP NULL,

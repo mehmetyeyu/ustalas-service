@@ -11,6 +11,7 @@ interface OrderDetail {
   customer_phone: string | null;
   notes: string | null;
   total_amount: number;
+  paid_amount: number | null;
   status: "BEKLEMEDE" | "TAMAMLANDI";
   payment_type: string | null;
   payment_date: string | null;
@@ -30,6 +31,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentType, setPaymentType] = useState("NAKIT");
+  const [paidAmount, setPaidAmount] = useState("");
   const [closing, setClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState("");
@@ -54,7 +56,7 @@ export default function OrderDetailPage() {
       const res = await fetch(`/api/orders/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_type: paymentType }),
+        body: JSON.stringify({ payment_type: paymentType, paid_amount: paidAmount ? Number(paidAmount) : null }),
       });
       if (!res.ok) throw new Error("İşlem başarısız.");
       setShowModal(false);
@@ -128,6 +130,18 @@ export default function OrderDetailPage() {
               <span>Toplam</span>
               <span className="text-green-600">{formatCurrency(order.total_amount)}</span>
             </div>
+            {order.paid_amount != null && order.paid_amount !== order.total_amount && (
+              <div className="flex justify-between text-sm mt-1">
+                <span className="text-orange-600 font-medium">Alınan (indirimli)</span>
+                <span className="text-orange-600 font-semibold">{formatCurrency(order.paid_amount)}</span>
+              </div>
+            )}
+            {order.paid_amount != null && order.paid_amount === order.total_amount && (
+              <div className="flex justify-between text-sm mt-1 text-gray-400">
+                <span>Alınan</span>
+                <span>{formatCurrency(order.paid_amount)}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -153,7 +167,7 @@ export default function OrderDetailPage() {
         {/* Ödeme Al butonu */}
         {order.status === "BEKLEMEDE" && (
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => { setPaidAmount(String(order.total_amount)); setShowModal(true); }}
             className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors"
           >
             Ödeme Al & Kapat
@@ -173,12 +187,31 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            <p className="text-gray-600 mb-4">
-              Toplam tutar:{" "}
-              <span className="font-bold text-green-600 text-lg">
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-500">
+              Sistem fiyatı:{" "}
+              <span className="font-semibold text-gray-700">
                 {formatCurrency(order.total_amount)}
               </span>
-            </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Alınan Tutar (₺)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              {paidAmount && Number(paidAmount) < order.total_amount && (
+                <p className="text-xs text-orange-500 mt-1">
+                  İndirim: {formatCurrency(order.total_amount - Number(paidAmount))}
+                </p>
+              )}
+            </div>
 
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-2">
