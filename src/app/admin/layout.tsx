@@ -24,30 +24,62 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Image src="/logo.jpg" alt="Logo" width={150} height={51} className="object-contain hidden sm:block" />
-          <div className="flex gap-1">
+      <nav className="bg-gray-900 text-white px-4 py-3">
+        {/* Mobile: iki satır */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          <div className="flex items-center justify-between">
+            <Image src="/logo.jpg" alt="Logo" width={120} height={41} className="object-contain" />
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Çıkış Yap
+            </button>
+          </div>
+          <div className="flex gap-1 flex-wrap">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${pathname.startsWith(item.href)
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-300 hover:bg-gray-700"
-                  }`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  pathname.startsWith(item.href)
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-300 hover:bg-gray-700"
+                }`}
               >
                 {item.label}
               </Link>
             ))}
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          Çıkış Yap
-        </button>
+
+        {/* Desktop: tek satır */}
+        <div className="hidden sm:flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <Image src="/logo.jpg" alt="Logo" width={150} height={51} className="object-contain" />
+            <div className="flex gap-1">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    pathname.startsWith(item.href)
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            Çıkış Yap
+          </button>
+        </div>
       </nav>
       <main className="p-6">{children}</main>
     </div>
