@@ -15,6 +15,8 @@ interface StorageItem {
   mevsim: string | null;
   aciklama: string | null;
   islem_tarihi: string | null;
+  teslim_edildi: boolean;
+  teslim_tarihi: string | null;
 }
 
 const MEVSIM_OPTIONS = ["Kışlık", "Yazlık", "Dört Mevsim"];
@@ -123,8 +125,8 @@ function MevsimCheckboxes({
     <div className="flex gap-3 flex-wrap">
       {MEVSIM_OPTIONS.map((opt) => (
         <label key={opt} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-sm font-medium transition-colors ${selected.includes(opt)
-            ? "border-blue-500 bg-blue-50 text-blue-700"
-            : "border-gray-300 text-gray-600 hover:bg-gray-50"
+          ? "border-blue-500 bg-blue-50 text-blue-700"
+          : "border-gray-300 text-gray-600 hover:bg-gray-50"
           }`}>
           <input
             type="checkbox"
@@ -150,6 +152,7 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "adet", label: "Adet", defaultVisible: true },
   { key: "mevsim", label: "Mevsim", defaultVisible: true },
   { key: "aciklama", label: "Açıklama", defaultVisible: false },
+  { key: "islem_tarihi", label: "Tarih", defaultVisible: true },
 ];
 
 const EMPTY_FORM = {
@@ -165,6 +168,14 @@ const EMPTY_FORM = {
   aciklama: "",
   islem_tarihi: new Date().toISOString().split("T")[0],
 };
+
+function isOverdue(islem_tarihi: string | null): boolean {
+  if (!islem_tarihi) return false;
+  const stored = new Date(islem_tarihi);
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  return stored < sixMonthsAgo;
+}
 
 function printLabel(item: StorageItem) {
   const date = item.islem_tarihi
@@ -254,14 +265,24 @@ export default function StoragePage() {
   });
   const [showColPicker, setShowColPicker] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [overdueTotal, setOverdueTotal] = useState(0);
+  const [showDelivered, setShowDelivered] = useState(false);
+  const [teslimId, setTeslimId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function fetchItems(targetPage = page) {
+  async function fetchOverdueCount() {
+    const res = await fetch("/api/storage?overdue=true&limit=1");
+    const data = await res.json();
+    setOverdueTotal(data.total ?? 0);
+  }
+
+  async function fetchItems(targetPage = page, delivered = showDelivered) {
     setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     params.set("page", String(targetPage));
     params.set("limit", String(LIMIT));
+    if (delivered) params.set("delivered", "true");
     const res = await fetch(`/api/storage?${params}`);
     const data = await res.json();
     setItems(data.items ?? []);
@@ -270,10 +291,15 @@ export default function StoragePage() {
   }
 
   useEffect(() => {
-    setPage(1);
-    fetchItems(1);
+    fetchOverdueCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, []);
+
+  useEffect(() => {
+    setPage(1);
+    fetchItems(1, showDelivered);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, showDelivered]);
 
   useEffect(() => {
     fetchItems(page);
@@ -360,6 +386,29 @@ export default function StoragePage() {
     }
   }
 
+  async function handleTeslim(item: StorageItem) {
+    if (!confirm(`Depo No ${item.depo_no} — ${item.plate} lastiği teslim edildi olarak işaretlensin mi?\nBu depo numarası serbest kalacak.`)) return;
+    setTeslimId(item.id);
+    try {
+      await fetch(`/api/storage/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          depo_no: item.depo_no, plate: item.plate, customer_name: item.customer_name,
+          phone: item.phone, ebat: item.ebat, marka: item.marka,
+          dis_derinligi: item.dis_derinligi, adet: item.adet, mevsim: item.mevsim,
+          aciklama: item.aciklama, islem_tarihi: item.islem_tarihi,
+          teslim_edildi: true,
+          teslim_tarihi: new Date().toISOString().split("T")[0],
+        }),
+      });
+      await fetchItems(page);
+      await fetchOverdueCount();
+    } finally {
+      setTeslimId(null);
+    }
+  }
+
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -389,7 +438,18 @@ export default function StoragePage() {
   return (
     <div onClick={() => { setShowColPicker(false); setOpenMenuId(null); }}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Depolama</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold text-gray-800">Depolama</h1>
+          <button
+            onClick={() => setShowDelivered((v) => !v)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${showDelivered
+              ? "bg-gray-700 text-white border-gray-700"
+              : "border-gray-300 text-gray-500 hover:bg-gray-50"
+              }`}
+          >
+            {showDelivered ? "Teslim Edilenler" : "Aktif Depolar"}
+          </button>
+        </div>
         <div className="flex gap-2">
           <input
             type="file"
@@ -423,6 +483,15 @@ export default function StoragePage() {
       {importMsg && (
         <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
           {importMsg}
+        </div>
+      )}
+
+      {overdueTotal > 0 && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2 text-amber-800 text-sm font-medium">
+          <svg className="w-5 h-5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          Depoda <span className="font-bold mx-1">{overdueTotal}</span> lastik 6 aydan uzun süredir bekliyor.
         </div>
       )}
 
@@ -488,14 +557,28 @@ export default function StoragePage() {
                   {visibleCols.adet && <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Adet</th>}
                   {visibleCols.mevsim && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
                   {visibleCols.aciklama && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
+                  {visibleCols.islem_tarihi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>}
                   <th className="sticky right-0 bg-gray-50 px-4 py-3 border-l border-gray-200"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {items.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isOverdue(item.islem_tarihi) ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
                     {visibleCols.depo_no && <td className="px-4 py-3 text-gray-400">{item.depo_no ?? "—"}</td>}
-                    {visibleCols.plate && <td className="px-4 py-3 font-mono font-semibold text-gray-800">{item.plate ?? "—"}</td>}
+                    {visibleCols.plate && (
+                      <td className="px-4 py-3 font-mono font-semibold text-gray-800">
+                        <div className="flex items-center gap-1.5">
+                          {item.plate ?? "—"}
+                          {isOverdue(item.islem_tarihi) && (
+                            <span title="6 aydan uzun süredir depoda">
+                              <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                              </svg>
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    )}
                     {visibleCols.customer_name && <td className="px-4 py-3 text-gray-700">{item.customer_name ?? "—"}</td>}
                     {visibleCols.phone && <td className="px-4 py-3 text-gray-500">{item.phone ?? "—"}</td>}
                     {visibleCols.ebat && <td className="px-4 py-3 text-gray-700 font-mono text-xs">{item.ebat ?? "—"}</td>}
@@ -505,19 +588,30 @@ export default function StoragePage() {
                     {visibleCols.mevsim && (
                       <td className="px-4 py-3">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${item.mevsim === "Kışlık" ? "bg-blue-100 text-blue-700"
-                            : item.mevsim === "Yazlık" ? "bg-yellow-100 text-yellow-700"
-                              : "bg-green-100 text-green-700"
+                          : item.mevsim === "Yazlık" ? "bg-yellow-100 text-yellow-700"
+                            : "bg-green-100 text-green-700"
                           }`}>
                           {item.mevsim ?? "—"}
                         </span>
                       </td>
                     )}
                     {visibleCols.aciklama && <td className="px-4 py-3 text-gray-400 text-xs max-w-xs truncate">{item.aciklama ?? ""}</td>}
+                    {visibleCols.islem_tarihi && (
+                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        {item.islem_tarihi ? new Date(item.islem_tarihi).toLocaleDateString("tr-TR") : "—"}
+                      </td>
+                    )}
                     <td className={`sticky right-0 bg-white border-l border-gray-100 px-3 py-3 ${openMenuId === item.id ? "z-50" : "z-10"}`}>
                       {/* Desktop */}
                       <div className="hidden sm:flex items-center gap-3 whitespace-nowrap">
                         <button onClick={() => printLabel(item)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Etiket</button>
                         <button onClick={() => openEdit(item)} className="text-gray-600 hover:text-gray-900 text-xs font-medium">Düzenle</button>
+                        {!item.teslim_edildi && (
+                          <button onClick={() => handleTeslim(item)} disabled={teslimId === item.id}
+                            className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-40">
+                            {teslimId === item.id ? "..." : "Teslim Et"}
+                          </button>
+                        )}
                         <button onClick={() => handleDelete(item.id)} disabled={deletingId === item.id}
                           className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40">
                           {deletingId === item.id ? "..." : "Sil"}
@@ -558,6 +652,18 @@ export default function StoragePage() {
                               </svg>
                               Düzenle
                             </button>
+                            {!item.teslim_edildi && (
+                              <button
+                                onClick={() => { setOpenMenuId(null); handleTeslim(item); }}
+                                disabled={teslimId === item.id}
+                                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-green-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Teslim Et
+                              </button>
+                            )}
                             <div className="border-t border-gray-100 my-1" />
                             <button
                               onClick={() => { setOpenMenuId(null); handleDelete(item.id); }}

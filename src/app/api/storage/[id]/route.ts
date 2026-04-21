@@ -11,16 +11,18 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi } = await request.json();
+    const body = await request.json();
+    const { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, teslim_edildi, teslim_tarihi } = body;
 
     const result = await pool.query(
       `UPDATE storage SET
         depo_no=$1, plate=$2, customer_name=$3, phone=$4, ebat=$5,
-        marka=$6, dis_derinligi=$7, adet=$8, mevsim=$9, aciklama=$10, islem_tarihi=$11
-       WHERE id=$12 RETURNING *`,
+        marka=$6, dis_derinligi=$7, adet=$8, mevsim=$9, aciklama=$10, islem_tarihi=$11,
+        teslim_edildi=$12, teslim_tarihi=$13
+       WHERE id=$14 RETURNING *`,
       [depo_no || null, plate || null, customer_name || null, phone || null, ebat || null,
        marka || null, dis_derinligi || null, adet || 4, mevsim || null, aciklama || null,
-       islem_tarihi || null, id]
+       islem_tarihi || null, teslim_edildi ?? false, teslim_tarihi || null, id]
     );
 
     if (result.rowCount === 0) {
