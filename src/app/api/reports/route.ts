@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const dailyRevenueResult = await pool.query(
       `SELECT
          EXTRACT(day FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::int AS day,
-         SUM(total_amount)::float AS revenue
+         SUM(COALESCE(paid_amount, total_amount))::float AS revenue
        FROM orders
        WHERE status = 'TAMAMLANDI'
          AND EXTRACT(year FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
@@ -42,15 +42,15 @@ export async function GET(request: NextRequest) {
     const summaryResult = await pool.query(
       `SELECT
          COUNT(*)::int AS total_orders,
-         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' THEN total_amount ELSE 0 END), 0)::float AS total_revenue,
-         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' AND payment_type = 'NAKIT' THEN total_amount ELSE 0 END), 0)::float AS nakit,
-         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' AND payment_type = 'KREDI_KARTI' THEN total_amount ELSE 0 END), 0)::float AS kredi_karti,
-         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' AND payment_type = 'HAVALE' THEN total_amount ELSE 0 END), 0)::float AS havale,
+         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' THEN COALESCE(paid_amount, total_amount) ELSE 0 END), 0)::float AS total_revenue,
+         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' AND payment_type = 'NAKIT' THEN COALESCE(paid_amount, total_amount) ELSE 0 END), 0)::float AS nakit,
+         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' AND payment_type = 'KREDI_KARTI' THEN COALESCE(paid_amount, total_amount) ELSE 0 END), 0)::float AS kredi_karti,
+         COALESCE(SUM(CASE WHEN status = 'TAMAMLANDI' AND payment_type = 'HAVALE' THEN COALESCE(paid_amount, total_amount) ELSE 0 END), 0)::float AS havale,
          COUNT(CASE WHEN status = 'TAMAMLANDI' THEN 1 END)::int AS completed,
          COUNT(CASE WHEN status = 'BEKLEMEDE' THEN 1 END)::int AS pending
        FROM orders
-       WHERE EXTRACT(year FROM created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
-         AND EXTRACT(month FROM created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $2`,
+       WHERE EXTRACT(year FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $1
+         AND EXTRACT(month FROM payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul') = $2`,
       [year, month]
     );
 
