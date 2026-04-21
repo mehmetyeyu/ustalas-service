@@ -18,12 +18,18 @@ export default function OrderPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch("/api/services")
       .then((r) => r.json())
       .then(setServices)
       .catch(() => setError("Hizmetler yüklenemedi."));
+
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((user) => { if (user?.role === "admin") setIsAdmin(true); })
+      .catch(() => {});
   }, []);
 
   const total = services
@@ -97,12 +103,23 @@ export default function OrderPage() {
               <h1 className="text-2xl font-bold text-gray-800">Lastik Servis</h1>
               <p className="text-gray-500 text-sm mt-1">Yeni Sipariş Oluştur</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
-            >
-              Çıkış
-            </button>
+            {isAdmin && (
+              <div className="flex items-center gap-3">
+                <a
+                  href="/admin/orders"
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                >
+                  Yönetici Paneli
+                </a>
+                <span className="text-gray-300">|</span>
+                <button
+                  onClick={handleLogout}
+                  className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
+                >
+                  Çıkış
+                </button>
+              </div>
+            )}
           </div>
 
           {success && (
