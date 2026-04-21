@@ -7,7 +7,9 @@ export async function GET() {
     const result = await pool.query(
       "SELECT * FROM services WHERE is_active = 1 ORDER BY name"
     );
-    return NextResponse.json(result.rows);
+    return NextResponse.json(result.rows, {
+      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
