@@ -16,36 +16,105 @@ import {
 } from "recharts";
 import { formatCurrency } from "@/lib/format";
 
-interface DayRevenue {
-  day: number;
-  revenue: number;
+interface DailyDatum {
+  date: string;
+  ciro: number;
+  maliyet: number;
 }
 interface ServiceStat {
   name: string;
   count: number;
+  ciro: number;
+  maliyet: number;
 }
 interface Summary {
   total_orders: number;
   total_revenue: number;
-  nakit: number;
-  kredi_karti: number;
-  havale: number;
   completed: number;
   pending: number;
+}
+interface PaymentBreakdown {
+  payment_type: string;
+  total: number;
 }
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
 
 const now = new Date();
 
+type PeriodView = "day" | "week" | "month";
+
+function formatDayLabel(dateStr: string): string {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+function formatMonthLabel(year: number, month: number): string {
+  return new Date(year, month - 1, 1).toLocaleDateString("tr-TR", { month: "long", year: "numeric" });
+}
+
+// Pazartesi başlangıçlı hafta aralığı (YYYY-MM-DD, yerel/takvim tabanlı — saat
+// dilimi kayması riski olmasın diye tarih string'i T00:00:00 ile ayrıştırılır).
+function weekRange(dateStr: string): { start: string; end: string } {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const toStr = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  return { start: toStr(monday), end: toStr(sunday) };
+}
+
+// "Dönemsel Ciro / Maliyet / Kâr" widget'ı, üstteki Ay/Yıl seçiciyle gelen veriye
+// (data.dailyData, zaten o aya sabitli) göre çalışır — seçili ayda veri olan EN
+// GÜNCEL günü referans alır. Günlük sadece o referans günü gösterir (dünkü bir
+// sipariş Günlük'te görünmez); Haftalık o günü içeren haftanın (seçili ay içindeki
+// kısmının) toplamını, Aylık ise seçili ayın tamamının toplamını gösterir.
+function computePeriodRow(
+  dailyData: DailyDatum[], view: PeriodView, year: number, month: number
+): { label: string; ciro: number; maliyet: number } {
+  if (dailyData.length === 0) {
+    const lastDay = new Date(year, month, 0).getDate();
+    const refDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    if (view === "day") return { label: formatDayLabel(refDate), ciro: 0, maliyet: 0 };
+    if (view === "week") {
+      const { start, end } = weekRange(refDate);
+      return { label: `${formatDayLabel(start)} – ${formatDayLabel(end)}`, ciro: 0, maliyet: 0 };
+    }
+    return { label: formatMonthLabel(year, month), ciro: 0, maliyet: 0 };
+  }
+
+  const refDate = [...dailyData].sort((a, b) => b.date.localeCompare(a.date))[0].date;
+
+  if (view === "day") {
+    const d = dailyData.find((x) => x.date === refDate)!;
+    return { label: formatDayLabel(refDate), ciro: Number(d.ciro), maliyet: Number(d.maliyet) };
+  }
+  if (view === "week") {
+    const { start, end } = weekRange(refDate);
+    const inWeek = dailyData.filter((x) => x.date >= start && x.date <= end);
+    return {
+      label: `${formatDayLabel(start)} – ${formatDayLabel(end)}`,
+      ciro: inWeek.reduce((s, x) => s + Number(x.ciro), 0),
+      maliyet: inWeek.reduce((s, x) => s + Number(x.maliyet), 0),
+    };
+  }
+  return {
+    label: formatMonthLabel(year, month),
+    ciro: dailyData.reduce((s, x) => s + Number(x.ciro), 0),
+    maliyet: dailyData.reduce((s, x) => s + Number(x.maliyet), 0),
+  };
+}
+
 export default function ReportsPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [periodView, setPeriodView] = useState<PeriodView>("day");
+  const [mailOrderOpen, setMailOrderOpen] = useState(false);
   const [data, setData] = useState<{
-    dailyRevenue: DayRevenue[];
+    dailyData: DailyDatum[];
     serviceStats: ServiceStat[];
     summary: Summary | null;
-  }>({ dailyRevenue: [], serviceStats: [], summary: null });
+    paymentBreakdown: PaymentBreakdown[];
+  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -71,9 +140,20 @@ export default function ReportsPage() {
   const daysInMonth = new Date(year, month, 0).getDate();
   const dailyChartData = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
-    const found = data.dailyRevenue.find((d) => d.day === day);
-    return { day, revenue: found ? Number(found.revenue) : 0 };
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const found = data.dailyData.find((d) => d.date === dateStr);
+    const ciro = found ? Number(found.ciro) : 0;
+    const maliyet = found ? Number(found.maliyet) : 0;
+    return { day, ciro, maliyet, kar: ciro - maliyet };
   });
+
+  const activePeriodRow = computePeriodRow(data.dailyData, periodView, year, month);
+
+  // "<Tedarikçi> Mail Order" etiketleri tek bir "Mail Order" kutusunda toplanır;
+  // tıklanınca tedarikçi bazlı dökümü açılır.
+  const mailOrderItems = data.paymentBreakdown.filter((p) => p.payment_type.endsWith(" Mail Order"));
+  const otherPayments = data.paymentBreakdown.filter((p) => !p.payment_type.endsWith(" Mail Order"));
+  const mailOrderTotal = mailOrderItems.reduce((sum, p) => sum + Number(p.total || 0), 0);
 
   return (
     <div>
@@ -107,7 +187,7 @@ export default function ReportsPage() {
         <>
           {/* Özet Kartlar */}
           {s && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-white rounded-xl shadow-sm p-4">
                 <p className="text-xs text-gray-500 mb-1">Toplam Sipariş</p>
                 <p className="text-2xl font-bold text-gray-800">{s.total_orders}</p>
@@ -121,39 +201,123 @@ export default function ReportsPage() {
                   {formatCurrency(Number(s.total_revenue || 0))}
                 </p>
               </div>
-              <div className="bg-white rounded-xl shadow-sm p-4">
-                <p className="text-xs text-gray-500 mb-1">Nakit</p>
-                <p className="text-xl font-bold text-gray-800">{formatCurrency(Number(s.nakit || 0))}</p>
+            </div>
+          )}
+
+          {/* Ödeme Tipi Kırılımı */}
+          {data.paymentBreakdown.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
+              <h2 className="font-semibold text-gray-700 mb-4">Ödeme Tipine Göre Gelir</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {otherPayments.map((p) => (
+                  <div key={p.payment_type} className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs text-gray-500 mb-1 truncate">{p.payment_type}</p>
+                    <p className="text-sm font-bold text-gray-800">{formatCurrency(Number(p.total || 0))}</p>
+                  </div>
+                ))}
+                {mailOrderItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMailOrderOpen((v) => !v)}
+                    className="bg-gray-50 hover:bg-gray-100 transition-colors rounded-lg p-3 text-left"
+                  >
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1 truncate">
+                      Mail Order
+                      <svg
+                        className={`w-3 h-3 shrink-0 transition-transform ${mailOrderOpen ? "rotate-180" : ""}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </p>
+                    <p className="text-sm font-bold text-gray-800">{formatCurrency(mailOrderTotal)}</p>
+                  </button>
+                )}
               </div>
-              <div className="bg-white rounded-xl shadow-sm p-4">
-                <p className="text-xs text-gray-500 mb-1">K.Kartı / Havale</p>
-                <p className="text-xl font-bold text-gray-800">
-                  {formatCurrency(Number(s.kredi_karti || 0) + Number(s.havale || 0))}
-                </p>
-              </div>
+              {mailOrderOpen && mailOrderItems.length > 0 && (
+                <div className="mt-3 border border-gray-200 rounded-lg divide-y divide-gray-100">
+                  {mailOrderItems.map((p) => (
+                    <div key={p.payment_type} className="flex justify-between px-3 py-2 text-sm">
+                      <span className="text-gray-600">{p.payment_type.replace(" Mail Order", "")}</span>
+                      <span className="font-medium text-gray-800">{formatCurrency(Number(p.total || 0))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {/* Günlük Gelir Grafiği */}
           <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-            <h2 className="font-semibold text-gray-700 mb-4">Günlük Gelir (₺)</h2>
-            {dailyChartData.every((d) => d.revenue === 0) ? (
+            <h2 className="font-semibold text-gray-700 mb-4">Günlük Ciro / Maliyet / Kâr (₺)</h2>
+            {dailyChartData.every((d) => d.ciro === 0 && d.maliyet === 0) ? (
               <div className="h-40 flex items-center justify-center text-gray-400">
                 Bu ay için veri yok.
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={dailyChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="day" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(value: number) => [formatCurrency(value), "Gelir"]}
-                  />
-                  <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Tooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />
+                  <Legend />
+                  <Bar dataKey="ciro" name="Ciro" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="maliyet" name="Maliyet" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="kar" name="Kâr" fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
+          </div>
+
+          {/* Dönemsel Ciro / Maliyet / Kâr Tablosu */}
+          <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className="font-semibold text-gray-700">Dönemsel Ciro / Maliyet / Kâr</h2>
+              <div className="flex gap-1">
+                {([
+                  { v: "day", label: "Günlük" },
+                  { v: "week", label: "Haftalık" },
+                  { v: "month", label: "Aylık" },
+                ] as { v: PeriodView; label: string }[]).map(({ v, label }) => (
+                  <button
+                    key={v}
+                    onClick={() => setPeriodView(v)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      periodView === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">Dönem</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Ciro</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Maliyet</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Kâr</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <tr>
+                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{activePeriodRow.label}</td>
+                    <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
+                      {formatCurrency(activePeriodRow.ciro)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
+                      {formatCurrency(activePeriodRow.maliyet)}
+                    </td>
+                    <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${activePeriodRow.ciro - activePeriodRow.maliyet >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      {formatCurrency(activePeriodRow.ciro - activePeriodRow.maliyet)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Hizmet Dağılımı */}
@@ -185,19 +349,39 @@ export default function ReportsPage() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex flex-col space-y-2 self-center">
-                  {data.serviceStats.map((s, i) => (
-                    <div key={s.name} className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="w-3 h-3 rounded-full shrink-0"
-                          style={{ background: COLORS[i % COLORS.length] }}
-                        />
-                        <span className="text-sm text-gray-700 truncate">{s.name}</span>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-800 shrink-0">{s.count} kez</span>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Hizmet</th>
+                        <th className="text-right px-3 py-2 font-medium text-gray-600">Adet</th>
+                        <th className="text-right px-3 py-2 font-medium text-gray-600">Ciro</th>
+                        <th className="text-right px-3 py-2 font-medium text-gray-600">Maliyet</th>
+                        <th className="text-right px-3 py-2 font-medium text-gray-600">Kâr</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {data.serviceStats.map((s, i) => {
+                        const kar = s.ciro - s.maliyet;
+                        return (
+                          <tr key={s.name}>
+                            <td className="px-3 py-2 text-gray-700">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                                <span className="truncate">{s.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{s.count}</td>
+                            <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">{formatCurrency(s.ciro)}</td>
+                            <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">{formatCurrency(s.maliyet)}</td>
+                            <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${kar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                              {formatCurrency(kar)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

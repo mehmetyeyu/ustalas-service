@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 
+// Sipariş oluşturma ekranındaki Tedarikçi alanı için dizin listesi.
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    const result = await pool.query(
-      "SELECT * FROM services WHERE is_active = 1 ORDER BY name"
-    );
+    const result = await pool.query("SELECT id, name FROM suppliers ORDER BY name");
     return NextResponse.json(result.rows, {
-      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },
     });
   } catch (error) {
     console.error(error);
@@ -24,20 +23,18 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    const { name, price } = await request.json();
+    const { name } = await request.json();
     if (!name || !String(name).trim()) {
-      return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
+      return NextResponse.json({ error: "Tedarikçi adı zorunludur." }, { status: 400 });
     }
-    const priceValue = price === "" || price == null ? null : Number(price);
 
     const result = await pool.query(
-      "INSERT INTO services (name, price) VALUES ($1, $2) RETURNING id",
-      [String(name).trim(), priceValue]
+      `INSERT INTO suppliers (name) VALUES ($1)
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id, name`,
+      [String(name).trim()]
     );
-    return NextResponse.json(
-      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1 },
-      { status: 201 }
-    );
+    return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

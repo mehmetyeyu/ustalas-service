@@ -66,10 +66,13 @@ function SearchableCombobox({
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Odaklanınca sıfırlanır: alan zaten bir değerle dolu gelse bile (ör. düzenlemede
+  // mevcut değer) açılışta tüm liste gösterilir, daraltma sadece yazarken olur.
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
-  const filtered = value
-    ? options.filter((o) => o.toLowerCase().includes(value.toLowerCase()))
+  const filtered = query
+    ? options.filter((o) => o.toLowerCase().includes(query.toLowerCase()))
     : options;
 
   useEffect(() => {
@@ -85,8 +88,8 @@ function SearchableCombobox({
       <input
         type="text"
         value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
+        onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
+        onFocus={(e) => { setQuery(""); setOpen(true); e.target.select(); }}
         placeholder={placeholder}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
@@ -256,15 +259,21 @@ export default function StoragePage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
-  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem("storage_visible_cols");
-      if (saved) return JSON.parse(saved);
-    } catch { }
-    return Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]));
-  });
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
+  );
   const [showColPicker, setShowColPicker] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+
+  // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
+  // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
+  // mount sonrası (hydration bitince) uygulanır.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("storage_visible_cols");
+      if (saved) setVisibleCols(JSON.parse(saved));
+    } catch { }
+  }, []);
   const [overdueTotal, setOverdueTotal] = useState(0);
   const [showDelivered, setShowDelivered] = useState(false);
   const [teslimId, setTeslimId] = useState<number | null>(null);

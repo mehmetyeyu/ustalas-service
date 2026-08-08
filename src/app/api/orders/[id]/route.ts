@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { resolveServiceIds } from "@/lib/serviceCatalog";
+import { upsertDirectoryNames } from "@/lib/directories";
+import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
+
+interface EditLineInput {
+  id?: number;
+  service_name: string;
+  supplier?: string | null;
+  stock_code?: string | null;
+  size_desc?: string | null;
+  quantity?: number | null;
+  unit_price: number;
+  cost_price?: number | null;
+  payment_type?: string | null;
+  product_id?: number | null;
+}
 
 export async function GET(
   _request: NextRequest,
@@ -20,10 +36,12 @@ export async function GET(
     }
 
     const servicesResult = await pool.query(
-      `SELECT s.id, s.name, os.unit_price
+      `SELECT s.id, os.id AS line_id, s.name, os.unit_price, os.quantity, os.cost_price,
+              os.supplier, os.stock_code, os.size_desc, os.payment_type, os.product_id
        FROM order_services os
        JOIN services s ON os.service_id = s.id
-       WHERE os.order_id = $1`,
+       WHERE os.order_id = $1
+       ORDER BY os.id`,
       [id]
     );
 
@@ -43,11 +61,34 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const result = await pool.query("DELETE FROM orders WHERE id = $1 RETURNING id", [id]);
-    if (result.rowCount === 0) {
-      return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Sipariş tamamen silinmeden önce, stoktan düşülmüş partili satırlar
+      // varsa stok geri eklenir.
+      const linked = await client.query<{ product_id: number; quantity: number }>(
+        "SELECT product_id, quantity FROM order_services WHERE order_id = $1 AND product_id IS NOT NULL",
+        [id]
+      );
+      for (const row of linked.rows) {
+        await restoreStock(client, row.product_id, row.quantity);
+      }
+
+      const result = await client.query("DELETE FROM orders WHERE id = $1 RETURNING id", [id]);
+      if (result.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
+      }
+
+      await client.query("COMMIT");
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
@@ -61,12 +102,26 @@ export async function PATCH(
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
+  // "Mail Order" tek başına geçersizdir — bir tedarikçiyle birleşip
+  // "<Tedarikçi> Mail Order" olmalıdır (bkz. admin/orders/[id]/page.tsx).
+  const PAYMENT_FLAT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap"];
+  const MAIL_ORDER_SUFFIX = " Mail Order";
+  function isValidPaymentType(v: string): boolean {
+    if (PAYMENT_FLAT_OPTIONS.includes(v)) return true;
+    return v.endsWith(MAIL_ORDER_SUFFIX) && v.length > MAIL_ORDER_SUFFIX.length;
+  }
+
   try {
     const { id } = await params;
-    const { payment_type, paid_amount } = await request.json();
+    const { lines, paid_amount } = await request.json();
 
-    if (!["NAKIT", "KREDI_KARTI", "HAVALE"].includes(payment_type)) {
-      return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return NextResponse.json({ error: "Her işlem için ödeme tipi seçilmelidir." }, { status: 400 });
+    }
+    for (const l of lines as { id: number; payment_type: string }[]) {
+      if (!l.id || !isValidPaymentType(l.payment_type)) {
+        return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
+      }
     }
 
     const amount = paid_amount != null ? Number(paid_amount) : null;
@@ -74,13 +129,185 @@ export async function PATCH(
       return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
     }
 
-    await pool.query(
-      `UPDATE orders
-       SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(),
-           paid_amount = COALESCE($3, total_amount)
-       WHERE id = $2`,
-      [payment_type, id, amount]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      for (const l of lines as { id: number; payment_type: string }[]) {
+        await client.query(
+          "UPDATE order_services SET payment_type = $1 WHERE id = $2 AND order_id = $3",
+          [l.payment_type, l.id, id]
+        );
+      }
+
+      // Sipariş seviyesindeki payment_type özet değeridir: tüm satırlar aynıysa
+      // o değer, karışıksa 'Karışık'.
+      const distinctTypes = Array.from(new Set((lines as { payment_type: string }[]).map((l) => l.payment_type)));
+      const summaryType = distinctTypes.length === 1 ? distinctTypes[0] : "Karışık";
+
+  await client.query(
+        `UPDATE orders
+         SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(),
+             paid_amount = COALESCE($3, total_amount)
+         WHERE id = $2`,
+        [summaryType, id, amount]
+      );
+
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
+  }
+}
+
+// Sipariş bilgilerini ve işlem satırlarını düzenler — ödeme kapatma (PATCH) ile
+// karıştırılmasın diye ayrı bir uç. Mevcut satırlar id ile eşleştirilip güncellenir
+// (payment_type'ları korunur), gönderilmeyen id'ler silinir, id'siz satırlar eklenir.
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+
+  try {
+    const { id } = await params;
+    const { plate, customer_name, customer_phone, notes, lines } = await request.json();
+
+    if (!plate || !Array.isArray(lines) || lines.length === 0) {
+      return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
+    }
+    for (const l of lines as EditLineInput[]) {
+      if (!l.service_name || !String(l.service_name).trim()) {
+        return NextResponse.json({ error: "Her satır için işlem adı zorunludur." }, { status: 400 });
+      }
+    }
+
+    const totalAmount = (lines as EditLineInput[]).reduce((sum, l) => sum + Number(l.unit_price || 0), 0);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const serviceIdByName = await resolveServiceIds(client, lines as EditLineInput[]);
+      await upsertDirectoryNames(client, "suppliers", (lines as EditLineInput[]).map((l) => l.supplier));
+      if (customer_name && String(customer_name).trim()) {
+        await client.query(
+          `INSERT INTO customers (name, phone) VALUES ($1, $2)
+           ON CONFLICT (name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
+          [String(customer_name).trim(), customer_phone || null]
+        );
+      }
+
+      // paid_amount, kapatma sırasında total_amount'tan ayrı sabitlenir (indirim
+      // olabilir diye). Satırlar düzenlenip toplam değiştiğinde, gerçek bir indirim
+      // yoksa (paid_amount eski total_amount'a eşitse) paid_amount da yeni toplamla
+      // senkron tutulur — aksi hâlde raporlar silinen/değişen satırlardan önceki
+      // eski tutarı göstermeye devam ederdi. Gerçek bir indirim varsa dokunulmaz.
+      const oldResult = await client.query<{ total_amount: string | null; paid_amount: string | null }>(
+        "SELECT total_amount, paid_amount FROM orders WHERE id = $1",
+        [id]
+      );
+      const oldTotal = oldResult.rows[0]?.total_amount != null ? Number(oldResult.rows[0].total_amount) : null;
+      const oldPaid = oldResult.rows[0]?.paid_amount != null ? Number(oldResult.rows[0].paid_amount) : null;
+      // Sipariş hiç kapatılmadıysa (paid_amount hâlâ NULL) elle dokunulmaz —
+      // ödeme "Ödeme Al & Kapat" akışında set edilir, düzenlemeyle erken atanmaz.
+      const newPaidAmount = oldPaid == null ? null : (oldPaid === oldTotal ? totalAmount : oldPaid);
+
+      await client.query(
+        `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
+                            total_amount = $5, paid_amount = $6
+         WHERE id = $7`,
+        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id]
+      );
+
+      const existingResult = await client.query<{ id: number; product_id: number | null; quantity: number }>(
+        "SELECT id, product_id, quantity FROM order_services WHERE order_id = $1",
+        [id]
+      );
+      const existingIds = new Set(existingResult.rows.map((r) => r.id));
+      const existingById = new Map(existingResult.rows.map((r) => [r.id, r]));
+      const keptIds = new Set((lines as EditLineInput[]).filter((l) => l.id != null).map((l) => l.id));
+      const toDelete = Array.from(existingIds).filter((eid) => !keptIds.has(eid));
+
+      // Kaldırılan satırlar bir partiye bağlıysa, düştükleri stok geri eklenir.
+      for (const eid of toDelete) {
+        const old = existingById.get(eid);
+        if (old?.product_id) await restoreStock(client, old.product_id, old.quantity);
+      }
+      if (toDelete.length > 0) {
+        await client.query("DELETE FROM order_services WHERE id = ANY($1)", [toDelete]);
+      }
+
+      for (const l of lines as EditLineInput[]) {
+        const serviceId = serviceIdByName.get(String(l.service_name).trim());
+        if (!serviceId) continue;
+        const quantity = Math.max(1, Math.round(Number(l.quantity) || 1));
+        const unitPrice = Number(l.unit_price) || 0;
+        const costPrice = l.cost_price != null ? Number(l.cost_price) : null;
+        const productId = l.product_id || null;
+
+        if (l.id != null && existingIds.has(l.id)) {
+          // Stok mutabakatı: eski ve yeni parti farklıysa eski parti geri
+          // eklenir, yeni partiden düşülür; aynı partiyse sadece miktar farkı
+          // (delta) uygulanır — böylece aynı parti gereksiz yere geri/ileri oynatılmaz.
+          const old = existingById.get(l.id);
+          const oldProductId = old?.product_id ?? null;
+          const oldQuantity = old?.quantity ?? 0;
+          if (oldProductId !== productId) {
+            if (oldProductId) await restoreStock(client, oldProductId, oldQuantity);
+            if (productId) await deductStock(client, productId, quantity);
+          } else if (productId) {
+            const delta = quantity - oldQuantity;
+            if (delta > 0) await deductStock(client, productId, delta);
+            else if (delta < 0) await restoreStock(client, productId, -delta);
+          }
+
+          await client.query(
+            `UPDATE order_services
+             SET service_id = $1, unit_price = $2, quantity = $3, cost_price = $4,
+                 supplier = $5, stock_code = $6, size_desc = $7, payment_type = $8, product_id = $9
+             WHERE id = $10 AND order_id = $11`,
+            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.id, id]
+          );
+        } else {
+          if (productId) await deductStock(client, productId, quantity);
+          await client.query(
+            `INSERT INTO order_services
+               (order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId]
+          );
+        }
+      }
+
+      // Sipariş seviyesindeki payment_type özet değeridir (bkz. PATCH) — satır
+      // ödeme tipleri düzenlemede değişmiş olabileceğinden burada da güncellenir.
+      const finalTypes = (lines as EditLineInput[]).map((l) => l.payment_type).filter((p): p is string => !!p);
+      if (finalTypes.length > 0) {
+        const distinct = Array.from(new Set(finalTypes));
+        const summaryType = distinct.length === 1 ? distinct[0] : "Karışık";
+        await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
+      }
+
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      if (err instanceof InsufficientStockError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

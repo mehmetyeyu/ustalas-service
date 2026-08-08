@@ -7,8 +7,11 @@ import { usePathname, useRouter } from "next/navigation";
 const navItems = [
   { href: "/admin/orders", label: "Siparişler" },
   { href: "/admin/storage", label: "Depolama" },
+  { href: "/admin/products", label: "Ürünler" },
   { href: "/admin/reports", label: "Raporlar" },
   { href: "/admin/services", label: "Hizmetler" },
+  { href: "/admin/customers", label: "Müşteriler" },
+  { href: "/admin/suppliers", label: "Tedarikçiler" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

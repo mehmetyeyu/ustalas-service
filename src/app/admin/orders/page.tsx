@@ -1,19 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
+import { parseOrderRows, chunk, type ParsedOrder } from "@/lib/ordersExcel";
 
-interface Order {
+const IMPORT_BATCH_SIZE = 20;
+
+const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
+  { key: "order_no", label: "Sipariş No", defaultVisible: true },
+  { key: "date", label: "Tarih", defaultVisible: true },
+  { key: "customer_name", label: "Müşteri", defaultVisible: true },
+  { key: "plate", label: "Plaka", defaultVisible: true },
+  { key: "service_name", label: "Yapılan İşlem", defaultVisible: true },
+  { key: "supplier", label: "Tedarikçi", defaultVisible: true },
+  { key: "stock_code", label: "Stok Kodu", defaultVisible: false },
+  { key: "size_desc", label: "Ebat/Ürün", defaultVisible: false },
+  { key: "quantity", label: "Adet", defaultVisible: true },
+  { key: "unit_price", label: "Tutar", defaultVisible: true },
+  { key: "cost_price", label: "Maliyet", defaultVisible: false },
+  { key: "kar", label: "Kar", defaultVisible: false },
+  { key: "payment_type", label: "Ödeme Şekli", defaultVisible: true },
+  { key: "notes", label: "Açıklama", defaultVisible: true },
+];
+
+interface OrderRow {
   id: number;
   plate: string;
   customer_name: string | null;
-  services: string;
-  total_amount: number;
-  paid_amount: number | null;
-  status: "BEKLEMEDE" | "TAMAMLANDI";
+  notes: string | null;
   payment_type: string | null;
+  status: "BEKLEMEDE" | "TAMAMLANDI";
   created_at: string;
+  line_id: number | null;
+  service_name: string | null;
+  supplier: string | null;
+  stock_code: string | null;
+  size_desc: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+  cost_price: number | null;
 }
 
 function toLocalDate(d: Date): string {
@@ -42,21 +68,40 @@ function getDateRange(filter: string): { dateFrom: string; dateTo: string } {
 }
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [rows, setRows] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("bugun");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [plateSearch, setPlateSearch] = useState("");
+  const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const [importStage, setImportStage] = useState<"reading" | "uploading" | "">("");
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
+  );
+  const [showColPicker, setShowColPicker] = useState(false);
+
+  // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
+  // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
+  // mount sonrası (hydration bitince) uygulanır.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("orders_visible_cols");
+      if (saved) setVisibleCols(JSON.parse(saved));
+    } catch { }
+  }, []);
 
   async function deleteOrder(id: number) {
     if (!confirm(`#${id} numaralı siparişi silmek istediğinize emin misiniz?`)) return;
     setDeletingId(id);
     try {
       await fetch(`/api/orders/${id}`, { method: "DELETE" });
-      setOrders((prev) => prev.filter((o) => o.id !== id));
+      setRows((prev) => prev.filter((r) => r.id !== id));
     } finally {
       setDeletingId(null);
     }
@@ -66,7 +111,7 @@ export default function OrdersPage() {
     setLoading(true);
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    if (plateSearch) params.set("plate", plateSearch);
+    if (search) params.set("search", search);
 
     if (dateFilter === "ozel") {
       if (customFrom) params.set("dateFrom", customFrom);
@@ -79,20 +124,116 @@ export default function OrdersPage() {
 
     const res = await fetch(`/api/orders?${params}`);
     const data = await res.json();
-    setOrders(Array.isArray(data) ? data : []);
+    setRows(Array.isArray(data) ? data : []);
     setLoading(false);
   }
 
   useEffect(() => {
     fetchOrders();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, dateFilter, customFrom, customTo, plateSearch]);
+  }, [statusFilter, dateFilter, customFrom, customTo, search]);
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg("");
+    setImportStage("reading");
+    setImportProgress({ current: 0, total: 0 });
+    try {
+      const XLSX = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+      const sheetName = workbook.SheetNames.find((n) => n.toLocaleLowerCase("tr-TR").includes("satış")) ?? workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
+
+      let parsed: { orders: ParsedOrder[]; skipped: number };
+      try {
+        parsed = parseOrderRows(rawRows);
+      } catch (err) {
+        setImportMsg(err instanceof Error ? err.message : "Dosya okunamadı.");
+        return;
+      }
+
+      if (parsed.orders.length === 0) {
+        setImportMsg("Aktarılacak sipariş bulunamadı.");
+        return;
+      }
+
+      setImportStage("uploading");
+      const batches = chunk(parsed.orders, IMPORT_BATCH_SIZE);
+      setImportProgress({ current: 0, total: parsed.orders.length });
+
+      let imported = 0;
+      let duplicates = 0;
+      for (const batch of batches) {
+        const res = await fetch("/api/orders/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orders: batch }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setImportMsg(
+            `${imported} sipariş aktarıldıktan sonra hata oluştu: ${data.error ?? "Bilinmeyen hata."}`
+          );
+          await fetchOrders();
+          return;
+        }
+        imported += data.imported ?? 0;
+        duplicates += data.duplicates ?? 0;
+        setImportProgress((prev) => ({ ...prev, current: Math.min(prev.total, prev.current + batch.length) }));
+      }
+
+      setImportMsg(
+        `${imported} sipariş içe aktarıldı.` +
+        (duplicates ? ` ${duplicates} sipariş daha önce aktarıldığı için atlandı.` : "") +
+        (parsed.skipped ? ` ${parsed.skipped} satır tarih/işlem bilgisi olmadığı için atlandı.` : "")
+      );
+      await fetchOrders();
+    } catch {
+      setImportMsg("Dosya işlenirken hata oluştu.");
+    } finally {
+      setImporting(false);
+      setImportStage("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   return (
-    <div>
+    <div onClick={() => setShowColPicker(false)}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Sipariş Listesi</h1>
+        <div className="flex gap-2">
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            ref={fileInputRef}
+            onChange={handleImport}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {importing ? "İçe Aktarılıyor..." : "Excel'den İçe Aktar"}
+          </button>
+          <Link
+            href="/"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+          >
+            + Sipariş Ekle
+          </Link>
+        </div>
       </div>
+
+      {importMsg && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+          {importMsg}
+        </div>
+      )}
 
       {/* Filtreler */}
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
@@ -148,14 +289,45 @@ export default function OrdersPage() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Plaka Ara</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Ara</label>
           <input
             type="text"
-            value={plateSearch}
-            onChange={(e) => setPlateSearch(e.target.value.toUpperCase())}
-            placeholder="34 ABC..."
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Plaka, Stok Kodu, Ebat, Müşteri veya Tedarikçi..."
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
           />
+        </div>
+
+        <div className="relative ml-auto">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+            </svg>
+            Sütunlar
+          </button>
+          {showColPicker && (
+            <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-48" onClick={(e) => e.stopPropagation()}>
+              {COLUMNS.map((col) => (
+                <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={visibleCols[col.key]}
+                    onChange={(e) => setVisibleCols((prev) => {
+                      const next = { ...prev, [col.key]: e.target.checked };
+                      try { localStorage.setItem("orders_visible_cols", JSON.stringify(next)); } catch { }
+                      return next;
+                    })}
+                    className="w-4 h-4 accent-blue-500"
+                  />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -163,87 +335,151 @@ export default function OrdersPage() {
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">Yükleniyor...</div>
-        ) : orders.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="p-12 text-center text-gray-400">Sipariş bulunamadı.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">#</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Plaka</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Hizmetler</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Tarih</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">Tutar</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">Statü</th>
+                  {visibleCols.order_no && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Sipariş No</th>}
+                  {visibleCols.date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>}
+                  {visibleCols.customer_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri</th>}
+                  {visibleCols.plate && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Plaka</th>}
+                  {visibleCols.service_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yapılan İşlem</th>}
+                  {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
+                  {visibleCols.stock_code && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Stok Kodu</th>}
+                  {visibleCols.size_desc && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat/Ürün</th>}
+                  {visibleCols.quantity && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Adet</th>}
+                  {visibleCols.unit_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tutar</th>}
+                  {visibleCols.cost_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Maliyet</th>}
+                  {visibleCols.kar && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kar</th>}
+                  {visibleCols.payment_type && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ödeme Şekli</th>}
+                  {visibleCols.notes && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Statü</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-400">{order.id}</td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono font-semibold text-gray-800">{order.plate}</span>
-                      {order.customer_name && (
-                        <div className="text-xs text-gray-400">{order.customer_name}</div>
+                {rows.map((r) => {
+                  const unitPrice = Number(r.unit_price || 0);
+                  const costPrice = Number(r.cost_price || 0);
+                  const kar = unitPrice - costPrice;
+                  return (
+                    <tr key={`${r.id}-${r.line_id ?? "none"}`} className="hover:bg-gray-50 transition-colors">
+                      {visibleCols.order_no && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
+                            #{r.id}
+                          </Link>
+                        </td>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{order.services}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                      {formatDate(order.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {order.paid_amount != null && order.paid_amount !== order.total_amount ? (
-                        <>
-                          <div className="line-through text-gray-400 text-xs">
-                            {formatCurrency(order.total_amount)}
-                          </div>
-                          <div className="font-semibold text-orange-600">
-                            {formatCurrency(order.paid_amount)}
-                          </div>
-                        </>
-                      ) : (
-                        <span className="font-semibold text-gray-800">
-                          {formatCurrency(order.paid_amount ?? order.total_amount)}
+                      {visibleCols.date && (
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                          {formatDate(r.created_at)}
+                        </td>
+                      )}
+                      {visibleCols.customer_name && <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.customer_name || "-"}</td>}
+                      {visibleCols.plate && <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">{r.plate}</td>}
+                      {visibleCols.service_name && <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.service_name || "-"}</td>}
+                      {visibleCols.supplier && <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.supplier || "-"}</td>}
+                      {visibleCols.stock_code && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.stock_code || "-"}</td>}
+                      {visibleCols.size_desc && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.size_desc || "-"}</td>}
+                      {visibleCols.quantity && <td className="px-4 py-3 text-right text-gray-600">{r.quantity ?? "-"}</td>}
+                      {visibleCols.unit_price && (
+                        <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
+                          {formatCurrency(unitPrice)}
+                        </td>
+                      )}
+                      {visibleCols.cost_price && (
+                        <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">
+                          {formatCurrency(costPrice)}
+                        </td>
+                      )}
+                      {visibleCols.kar && (
+                        <td className={`px-4 py-3 text-right font-medium whitespace-nowrap ${kar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                          {formatCurrency(kar)}
+                        </td>
+                      )}
+                      {visibleCols.payment_type && <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.payment_type || "-"}</td>}
+                      {visibleCols.notes && (
+                        <td className="px-4 py-3 text-gray-500 max-w-xs truncate" title={r.notes || undefined}>
+                          {r.notes || "-"}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                            r.status === "TAMAMLANDI"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-yellow-100 text-yellow-700"
+                          }`}
+                        >
+                          {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
                         </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          order.status === "TAMAMLANDI"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-yellow-100 text-yellow-700"
-                        }`}
-                      >
-                        {order.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Link
-                          href={`/admin/orders/${order.id}`}
-                          className="text-blue-600 hover:text-blue-800 font-medium text-xs"
-                        >
-                          Detay →
-                        </Link>
-                        <button
-                          onClick={() => deleteOrder(order.id)}
-                          disabled={deletingId === order.id}
-                          className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40"
-                        >
-                          {deletingId === order.id ? "Siliniyor..." : "Sil"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Link
+                            href={`/admin/orders/${r.id}`}
+                            className="text-blue-600 hover:text-blue-800 font-medium text-xs whitespace-nowrap"
+                          >
+                            Detay →
+                          </Link>
+                          <Link
+                            href={`/admin/orders/${r.id}?edit=1`}
+                            className="text-gray-500 hover:text-gray-700 font-medium text-xs whitespace-nowrap"
+                          >
+                            Düzelt
+                          </Link>
+                          <button
+                            onClick={() => deleteOrder(r.id)}
+                            disabled={deletingId === r.id}
+                            className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40 whitespace-nowrap"
+                          >
+                            {deletingId === r.id ? "Siliniyor..." : "Sil"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Import Loading Overlay */}
+      {importing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm text-center">
+            <svg className="w-8 h-8 mx-auto mb-4 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <p className="text-sm font-medium text-gray-700 mb-1">
+              {importStage === "reading" ? "Excel dosyası okunuyor..." : "Siparişler içe aktarılıyor..."}
+            </p>
+            {importStage === "uploading" && importProgress.total > 0 && (
+              <>
+                <p className="text-xs text-gray-400 mb-3">
+                  {importProgress.current} / {importProgress.total} sipariş
+                </p>
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  %{Math.round((importProgress.current / importProgress.total) * 100)}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

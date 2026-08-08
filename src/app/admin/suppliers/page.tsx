@@ -1,48 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatCurrency } from "@/lib/format";
 
-interface Service {
+interface Supplier {
   id: number;
   name: string;
-  price: number | null;
-  is_active: number;
 }
 
-export default function ServicesPage() {
-  const [services, setServices] = useState<Service[]>([]);
+export default function SuppliersPage() {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editSvc, setEditSvc] = useState<Service | null>(null);
+  const [editItem, setEditItem] = useState<Supplier | null>(null);
   const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
-  async function fetchServices() {
-    const res = await fetch("/api/services");
+  async function fetchSuppliers() {
+    const res = await fetch("/api/suppliers");
     const data = await res.json();
-    setServices(Array.isArray(data) ? data : []);
+    setSuppliers(Array.isArray(data) ? data : []);
     setLoading(false);
   }
 
   useEffect(() => {
-    fetchServices();
+    fetchSuppliers();
   }, []);
 
   function openNew() {
-    setEditSvc(null);
+    setEditItem(null);
     setName("");
-    setPrice("");
     setError("");
     setShowForm(true);
   }
 
-  function openEdit(svc: Service) {
-    setEditSvc(svc);
-    setName(svc.name);
-    setPrice(svc.price != null ? String(svc.price) : "");
+  function openEdit(s: Supplier) {
+    setEditItem(s);
+    setName(s.name);
     setError("");
     setShowForm(true);
   }
@@ -50,29 +45,19 @@ export default function ServicesPage() {
   async function handleSave() {
     setError("");
     if (!name.trim()) {
-      setError("Hizmet adı zorunludur.");
+      setError("Tedarikçi adı zorunludur.");
       return;
     }
-    const priceValue = price.trim() ? parseFloat(price) : null;
     setSaving(true);
     try {
-      if (editSvc) {
-        const res = await fetch(`/api/services/${editSvc.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active }),
-        });
-        if (!res.ok) throw new Error("Güncelleme başarısız.");
-      } else {
-        const res = await fetch("/api/services", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue }),
-        });
-        if (!res.ok) throw new Error("Ekleme başarısız.");
-      }
+      const res = await fetch(editItem ? `/api/suppliers/${editItem.id}` : "/api/suppliers", {
+        method: editItem ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setShowForm(false);
-      await fetchServices();
+      await fetchSuppliers();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
@@ -81,52 +66,64 @@ export default function ServicesPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu hizmeti devre dışı bırakmak istediğinize emin misiniz?")) return;
-    await fetch(`/api/services/${id}`, { method: "DELETE" });
-    await fetchServices();
+    if (!confirm("Bu tedarikçiyi silmek istediğinize emin misiniz?")) return;
+    await fetch(`/api/suppliers/${id}`, { method: "DELETE" });
+    await fetchSuppliers();
   }
+
+  const filtered = search
+    ? suppliers.filter((s) => s.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
+    : suppliers;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Hizmet Yönetimi</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Tedarikçiler</h1>
         <button
           onClick={openNew}
           className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
         >
-          + Yeni Hizmet
+          + Yeni Tedarikçi
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tedarikçi adı ara..."
+          className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
       </div>
 
       {loading ? (
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Tedarikçi bulunamadı.</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Hizmet Adı</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Fiyat</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Tedarikçi Adı</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {services.map((svc) => (
-                <tr key={svc.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-800">{svc.name}</td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {svc.price != null ? formatCurrency(svc.price) : <span className="text-gray-400">Fiyat girilmemiş</span>}
-                  </td>
+              {filtered.map((s) => (
+                <tr key={s.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-gray-800">{s.name}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => openEdit(svc)}
+                        onClick={() => openEdit(s)}
                         className="text-blue-600 hover:text-blue-800 text-xs font-medium"
                       >
                         Düzenle
                       </button>
                       <button
-                        onClick={() => handleDelete(svc.id)}
+                        onClick={() => handleDelete(s.id)}
                         className="text-red-500 hover:text-red-700 text-xs font-medium"
                       >
                         Sil
@@ -140,12 +137,11 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
-              {editSvc ? "Hizmet Düzenle" : "Yeni Hizmet Ekle"}
+              {editItem ? "Tedarikçi Düzenle" : "Yeni Tedarikçi Ekle"}
             </h2>
 
             {error && (
@@ -156,24 +152,12 @@ export default function ServicesPage() {
 
             <div className="space-y-4 mb-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hizmet Adı</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tedarikçi Adı</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Rot Ayarı"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Fiyat (₺) <span className="text-gray-400 font-normal">(opsiyonel)</span></label>
-                <input
-                  type="number"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="Boş bırakılırsa siparişte elle girilir"
-                  min="0"
-                  step="0.01"
+                  placeholder="Tedarikçi adı"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
