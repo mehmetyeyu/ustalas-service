@@ -307,7 +307,10 @@ export default function OrderPage() {
       if (patch.service_name !== undefined && patch.service_name !== l.service_name) {
         const trimmed = patch.service_name.trim();
         const match = priceByName.get(trimmed.toLocaleLowerCase("tr-TR"));
-        if (match != null) next.unit_price = String(match);
+        // Yalnızca satırda henüz bir tutar yoksa katalog fiyatı otomatik
+        // doldurulur — elle girilmiş bir tutar, İşlem alanında arama yapıp
+        // aynı işlemi tekrar seçmekle bile silinmez.
+        if (match != null && !l.unit_price.trim()) next.unit_price = String(match);
         // İşlem değişince önceki parti bağlantısı artık geçerli olmayabilir.
         next.product_id = null;
         next.max_stock = null;
@@ -535,7 +538,14 @@ export default function OrderPage() {
                               value={line.supplier}
                               onChange={(val) => {
                                 if (isTireSale) {
-                                  updateLine(i, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
+                                  // Stok Kodu/Ebat yalnızca gerçek bir stok partisine bağlıysa
+                                  // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
+                                  // ait, artık geçersiz olur.
+                                  if (line.product_id != null) {
+                                    updateLine(i, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
+                                  } else {
+                                    updateLine(i, { supplier: val });
+                                  }
                                   ensureStockCodes(val);
                                 } else {
                                   updateLine(i, { supplier: val });
