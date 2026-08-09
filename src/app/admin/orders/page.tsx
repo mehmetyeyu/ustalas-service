@@ -278,12 +278,12 @@ export default function OrdersPage() {
 
   const ALIGN_CLASS = { left: "text-left", right: "text-right", center: "text-center" } as const;
 
-  function SortTh({ sortK, label, align = "left" }: { sortK: SortKey; label: string; align?: "left" | "right" | "center" }) {
+  function SortTh({ sortK, label, align = "left", stickyClassName }: { sortK: SortKey; label: string; align?: "left" | "right" | "center"; stickyClassName?: string }) {
     const active = sortKey === sortK;
     return (
       <th
         onClick={() => toggleSort(sortK)}
-        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]}`}
+        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]} ${stickyClassName ?? ""}`}
       >
         <span className="inline-flex items-center gap-1">
           {label}
@@ -720,8 +720,8 @@ export default function OrdersPage() {
                   {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
                   {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
                   {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
-                  <SortTh sortK="status" label="Statü" align="center" />
-                  <th className="px-4 py-3"></th>
+                  <SortTh sortK="status" label="Statü" align="center" stickyClassName="sticky right-[240px] z-20 bg-gray-50 shadow-[-1px_0_0_0_#e5e7eb]" />
+                  <th className="px-4 py-3 sticky right-0 z-20 bg-gray-50 w-[240px] min-w-[240px] max-w-[240px]"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -730,7 +730,7 @@ export default function OrdersPage() {
                   const costPrice = Number(r.cost_price || 0);
                   const kar = unitPrice - costPrice;
                   return (
-                    <tr key={`${r.id}-${r.line_id ?? "none"}`} className="hover:bg-gray-50 transition-colors">
+                    <tr key={`${r.id}-${r.line_id ?? "none"}`} className="group hover:bg-gray-50 transition-colors">
                       {visibleCols.order_no && (
                         <td className="px-4 py-3 whitespace-nowrap">
                           <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
@@ -771,7 +771,7 @@ export default function OrdersPage() {
                           {r.notes || "-"}
                         </td>
                       )}
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center sticky right-[240px] z-10 bg-white group-hover:bg-gray-50 shadow-[-1px_0_0_0_#f3f4f6]">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
                             r.status === "TAMAMLANDI"
@@ -782,7 +782,7 @@ export default function OrdersPage() {
                           {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 w-[240px] min-w-[240px] max-w-[240px]">
                         <div className="flex items-center gap-3">
                           <Link
                             href={`/admin/orders/${r.id}`}
