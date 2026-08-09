@@ -216,6 +216,39 @@ export default function ProductsPage() {
   );
   const [showColPicker, setShowColPicker] = useState(false);
 
+  // Sıralama sunucuda yapılır (bkz. /api/products) çünkü liste sayfalanmıştır —
+  // yalnızca gruplama sorgusunda doğrudan hesaplanan sütunlar sıralanabilir
+  // (Alış/Satış Fiyatı Ort. ayrı bir sorgudan geldiği için tıklanabilir değil).
+  const [sortBy, setSortBy] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function toggleSort(key: string) {
+    if (sortBy === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  }
+
+  function SortTh({ sortK, label, align = "left" }: { sortK: string; label: string; align?: "left" | "right" | "center" }) {
+    const active = sortBy === sortK;
+    const ALIGN_CLASS = { left: "text-left", right: "text-right", center: "text-center" } as const;
+    return (
+      <th
+        onClick={() => toggleSort(sortK)}
+        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <span className={`text-[10px] ${active ? "text-blue-600" : "text-gray-300"}`}>
+            {active ? (sortDir === "asc" ? "▲" : "▼") : "▲"}
+          </span>
+        </span>
+      </th>
+    );
+  }
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem("products_visible_cols_v2");
@@ -247,6 +280,7 @@ export default function ProductsPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (seasonFilter) params.set("season", seasonFilter);
+    if (sortBy) { params.set("sortBy", sortBy); params.set("sortDir", sortDir); }
     params.set("page", String(targetPage));
     params.set("limit", String(LIMIT));
     const res = await fetch(`/api/products?${params}`);
@@ -260,7 +294,7 @@ export default function ProductsPage() {
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, seasonFilter]);
+  }, [search, seasonFilter, sortBy, sortDir]);
 
   useEffect(() => {
     fetchItems(page);
@@ -713,10 +747,10 @@ export default function ProductsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ürün Kodu</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marka</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Stok</th>
+                  <SortTh sortK="code" label="Ürün Kodu" />
+                  <SortTh sortK="brand" label="Marka" />
+                  <SortTh sortK="size_desc" label="Ebat" />
+                  <SortTh sortK="total_stock" label="Stok" align="center" />
                   {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
                   {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
                   {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}

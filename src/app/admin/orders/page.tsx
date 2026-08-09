@@ -48,6 +48,43 @@ function toLocalDate(d: Date): string {
 
 const TODAY = toLocalDate(new Date());
 
+type SortKey = "order_no" | "date" | "customer_name" | "plate" | "service_name" | "supplier"
+  | "stock_code" | "size_desc" | "quantity" | "unit_price" | "cost_price" | "kar" | "payment_type" | "notes" | "status";
+type SortDir = "asc" | "desc";
+
+// Tüm satırlar zaten tek seferde çekildiği için (bkz. fetchOrders) sıralama
+// istemcide yapılır — sunucuya ekstra istek gerekmez.
+function sortValue(r: OrderRow, key: SortKey): string | number {
+  switch (key) {
+    case "order_no": return r.id;
+    case "date": return r.created_at;
+    case "customer_name": return r.customer_name ?? "";
+    case "plate": return r.plate ?? "";
+    case "service_name": return r.service_name ?? "";
+    case "supplier": return r.supplier ?? "";
+    case "stock_code": return r.stock_code ?? "";
+    case "size_desc": return r.size_desc ?? "";
+    case "quantity": return r.quantity ?? 0;
+    case "unit_price": return r.unit_price ?? 0;
+    case "cost_price": return r.cost_price ?? 0;
+    case "kar": return Number(r.unit_price ?? 0) - Number(r.cost_price ?? 0);
+    case "payment_type": return r.payment_type ?? "";
+    case "notes": return r.notes ?? "";
+    case "status": return r.status;
+  }
+}
+
+function sortRows(rows: OrderRow[], key: SortKey | null, dir: SortDir): OrderRow[] {
+  if (!key) return rows;
+  const sorted = [...rows].sort((a, b) => {
+    const va = sortValue(a, key);
+    const vb = sortValue(b, key);
+    if (typeof va === "number" && typeof vb === "number") return va - vb;
+    return String(va).localeCompare(String(vb), "tr-TR");
+  });
+  return dir === "asc" ? sorted : sorted.reverse();
+}
+
 function getDateRange(filter: string): { dateFrom: string; dateTo: string } {
   const now = new Date();
   if (filter === "bugun") return { dateFrom: TODAY, dateTo: TODAY };
@@ -71,7 +108,7 @@ export default function OrdersPage() {
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
-  const [dateFilter, setDateFilter] = useState("bugun");
+  const [dateFilter, setDateFilter] = useState("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
@@ -85,6 +122,36 @@ export default function OrdersPage() {
     () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
   );
   const [showColPicker, setShowColPicker] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  const ALIGN_CLASS = { left: "text-left", right: "text-right", center: "text-center" } as const;
+
+  function SortTh({ sortK, label, align = "left" }: { sortK: SortKey; label: string; align?: "left" | "right" | "center" }) {
+    const active = sortKey === sortK;
+    return (
+      <th
+        onClick={() => toggleSort(sortK)}
+        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <span className={`text-[10px] ${active ? "text-blue-600" : "text-gray-300"}`}>
+            {active ? (sortDir === "asc" ? "▲" : "▼") : "▲"}
+          </span>
+        </span>
+      </th>
+    );
+  }
 
   // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
   // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
@@ -203,6 +270,8 @@ export default function OrdersPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
+
+  const displayRows = sortRows(rows, sortKey, sortDir);
 
   return (
     <div onClick={() => setShowColPicker(false)}>
@@ -345,26 +414,26 @@ export default function OrdersPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {visibleCols.order_no && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Sipariş No</th>}
-                  {visibleCols.date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>}
-                  {visibleCols.customer_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri</th>}
-                  {visibleCols.plate && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Plaka</th>}
-                  {visibleCols.service_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yapılan İşlem</th>}
-                  {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
-                  {visibleCols.stock_code && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Stok Kodu</th>}
-                  {visibleCols.size_desc && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat/Ürün</th>}
-                  {visibleCols.quantity && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Adet</th>}
-                  {visibleCols.unit_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tutar</th>}
-                  {visibleCols.cost_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Maliyet</th>}
-                  {visibleCols.kar && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kar</th>}
-                  {visibleCols.payment_type && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ödeme Şekli</th>}
-                  {visibleCols.notes && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
-                  <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Statü</th>
+                  {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" />}
+                  {visibleCols.date && <SortTh sortK="date" label="Tarih" />}
+                  {visibleCols.customer_name && <SortTh sortK="customer_name" label="Müşteri" />}
+                  {visibleCols.plate && <SortTh sortK="plate" label="Plaka" />}
+                  {visibleCols.service_name && <SortTh sortK="service_name" label="Yapılan İşlem" />}
+                  {visibleCols.supplier && <SortTh sortK="supplier" label="Tedarikçi" />}
+                  {visibleCols.stock_code && <SortTh sortK="stock_code" label="Stok Kodu" />}
+                  {visibleCols.size_desc && <SortTh sortK="size_desc" label="Ebat/Ürün" />}
+                  {visibleCols.quantity && <SortTh sortK="quantity" label="Adet" align="right" />}
+                  {visibleCols.unit_price && <SortTh sortK="unit_price" label="Tutar" align="right" />}
+                  {visibleCols.cost_price && <SortTh sortK="cost_price" label="Maliyet" align="right" />}
+                  {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
+                  {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
+                  {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
+                  <SortTh sortK="status" label="Statü" align="center" />
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rows.map((r) => {
+                {displayRows.map((r) => {
                   const unitPrice = Number(r.unit_price || 0);
                   const costPrice = Number(r.cost_price || 0);
                   const kar = unitPrice - costPrice;

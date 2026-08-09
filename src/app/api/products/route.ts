@@ -22,6 +22,20 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
+  // Sıralama: yalnızca gruplama sorgusunda doğrudan hesaplanan sütunlar
+  // sıralanabilir (Alış/Satış Fiyatı Ort. ayrı bir sorgudan geldiği için
+  // sayfalamadan önce mevcut değil, o yüzden burada yok). Bilinmeyen bir
+  // sortBy gelirse (veya hiç gelmezse) varsayılan davranışa (son güncellenen
+  // en üstte) dönülür.
+  const SORTABLE_COLUMNS: Record<string, string> = {
+    code: "code", brand: "brand", size_desc: "size_desc", total_stock: "total_stock",
+  };
+  const sortBy = searchParams.get("sortBy");
+  const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
+  const orderBy = sortBy && SORTABLE_COLUMNS[sortBy]
+    ? `${SORTABLE_COLUMNS[sortBy]} ${sortDir} NULLS LAST, code ASC`
+    : "last_updated DESC";
+
   const conditions: string[] = [];
   const values: (string | number)[] = [];
 
@@ -47,7 +61,7 @@ export async function GET(request: NextRequest) {
               SUM(stock_qty)::int AS total_stock, MAX(updated_at) AS last_updated
        FROM products${where}
        GROUP BY code
-       ORDER BY last_updated DESC
+       ORDER BY ${orderBy}
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset]
     );
