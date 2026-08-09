@@ -800,12 +800,20 @@ export default function ProductsPage() {
                           </td>
                         )}
                         <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => openAdd(group.code, group.brand, group.size_desc)}
-                            className="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap"
-                          >
-                            Stok Girişi
-                          </button>
+                          <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                            <button
+                              onClick={() => openAdd(group.code, group.brand, group.size_desc)}
+                              className="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap"
+                            >
+                              Stok Girişi
+                            </button>
+                            <button
+                              onClick={() => group.batches.length === 1 ? openEdit(group.batches[0]) : toggleExpand(group.code)}
+                              className="text-gray-600 hover:text-gray-900 text-xs font-medium whitespace-nowrap"
+                            >
+                              Düzenle
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {expanded && group.batches.map((batch) => (
