@@ -1,11 +1,133 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { parseOrderRows, chunk, type ParsedOrder } from "@/lib/ordersExcel";
 
 const IMPORT_BATCH_SIZE = 20;
+
+// Filtrele modalındaki Yapılan İşlem/Tedarikçi/Ödeme Şekli alanları için:
+// bilinen bir listeden checkbox'larla birden fazla değer seçilebilen dropdown.
+// Modal kendi içinde kaydırıldığından (overflow-y-auto), liste modalın DOM
+// hiyerarşisi içinde absolute konumlanırsa modal sınırında kırpılır — bunun
+// yerine document.body'e portal ile taşınır, konumu (yukarı/aşağı dahil)
+// butonun ekran koordinatlarına göre hesaplanır (bkz. src/app/page.tsx'teki
+// aynı desenle çözülmüş SearchableCombobox).
+const DROPDOWN_MAX_HEIGHT = 224;
+
+function MultiSelectDropdown({
+  options, selected, onChange, placeholder,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (vals: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<{ left: number; width: number; top: number | null; bottom: number | null }>({ left: 0, width: 0, top: null, bottom: null });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (
+        containerRef.current && !containerRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest("[data-multiselect-list]")
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function updateRect() {
+      if (!buttonRef.current) return;
+      const r = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const spaceAbove = r.top;
+      const openUp = spaceBelow < DROPDOWN_MAX_HEIGHT && spaceAbove > spaceBelow;
+      setRect({
+        left: r.left,
+        width: r.width,
+        top: openUp ? null : r.bottom + 4,
+        bottom: openUp ? window.innerHeight - r.top + 4 : null,
+      });
+    }
+    updateRect();
+    window.addEventListener("scroll", updateRect, true);
+    window.addEventListener("resize", updateRect);
+    return () => {
+      window.removeEventListener("scroll", updateRect, true);
+      window.removeEventListener("resize", updateRect);
+    };
+  }, [open]);
+
+  function toggle(opt: string) {
+    onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
+  }
+
+  const summary = selected.length === 0
+    ? (placeholder ?? "Tümü")
+    : selected.length === 1
+      ? selected[0]
+      : `${selected.length} seçili`;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <span className={`truncate ${selected.length === 0 ? "text-gray-400" : "text-gray-800"}`}>{summary}</span>
+        <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          data-multiselect-list
+          style={{
+            position: "fixed", left: rect.left, width: rect.width,
+            top: rect.top ?? undefined, bottom: rect.bottom ?? undefined,
+            maxHeight: DROPDOWN_MAX_HEIGHT,
+          }}
+          className="z-50 bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto p-1"
+        >
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="w-full text-left px-2 py-1.5 text-xs text-gray-400 hover:text-gray-700"
+            >
+              Seçimi temizle
+            </button>
+          )}
+          {options.length === 0 ? (
+            <div className="px-2 py-1.5 text-sm text-gray-400">Kayıt yok</div>
+          ) : options.map((opt) => (
+            <label key={opt} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={selected.includes(opt)}
+                onChange={() => toggle(opt)}
+                className="w-4 h-4 accent-blue-500"
+              />
+              {opt}
+            </label>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "order_no", label: "Sipariş No", defaultVisible: true },
@@ -52,39 +174,6 @@ type SortKey = "order_no" | "date" | "customer_name" | "plate" | "service_name" 
   | "stock_code" | "size_desc" | "quantity" | "unit_price" | "cost_price" | "kar" | "payment_type" | "notes" | "status";
 type SortDir = "asc" | "desc";
 
-// Tüm satırlar zaten tek seferde çekildiği için (bkz. fetchOrders) sıralama
-// istemcide yapılır — sunucuya ekstra istek gerekmez.
-function sortValue(r: OrderRow, key: SortKey): string | number {
-  switch (key) {
-    case "order_no": return r.id;
-    case "date": return r.created_at;
-    case "customer_name": return r.customer_name ?? "";
-    case "plate": return r.plate ?? "";
-    case "service_name": return r.service_name ?? "";
-    case "supplier": return r.supplier ?? "";
-    case "stock_code": return r.stock_code ?? "";
-    case "size_desc": return r.size_desc ?? "";
-    case "quantity": return r.quantity ?? 0;
-    case "unit_price": return r.unit_price ?? 0;
-    case "cost_price": return r.cost_price ?? 0;
-    case "kar": return Number(r.unit_price ?? 0) - Number(r.cost_price ?? 0);
-    case "payment_type": return r.payment_type ?? "";
-    case "notes": return r.notes ?? "";
-    case "status": return r.status;
-  }
-}
-
-function sortRows(rows: OrderRow[], key: SortKey | null, dir: SortDir): OrderRow[] {
-  if (!key) return rows;
-  const sorted = [...rows].sort((a, b) => {
-    const va = sortValue(a, key);
-    const vb = sortValue(b, key);
-    if (typeof va === "number" && typeof vb === "number") return va - vb;
-    return String(va).localeCompare(String(vb), "tr-TR");
-  });
-  return dir === "asc" ? sorted : sorted.reverse();
-}
-
 function getDateRange(filter: string): { dateFrom: string; dateTo: string } {
   const now = new Date();
   if (filter === "bugun") return { dateFrom: TODAY, dateTo: TODAY };
@@ -104,14 +193,38 @@ function getDateRange(filter: string): { dateFrom: string; dateTo: string } {
   return { dateFrom: "", dateTo: "" };
 }
 
+// Sayfalama nedeniyle tüm filtreler (Statü/Tarih dahil) sunucuda uygulanır
+// (bkz. /api/orders, fetchOrders) — bu alanlar birbiriyle VE mantığıyla
+// birleşir; ayrı "Ara" kutusu (search) ise kendi içinde VEYA arar.
+// Yapılan İşlem/Tedarikçi, bilinen (katalogdaki) değerlerden çoklu seçim
+// olduğu için dizi — sunucuda birbirleriyle VEYA, diğer filtrelerle VE ile
+// birleşir (bkz. /api/orders: `s.name = ANY(...)`).
+interface FieldFilters {
+  customer_name: string;
+  plate: string;
+  service_name: string[];
+  supplier: string[];
+  stock_code: string;
+  size_desc: string;
+  payment_type: string[];
+}
+const EMPTY_FIELD_FILTERS: FieldFilters = {
+  customer_name: "", plate: "", service_name: [], supplier: [], stock_code: "", size_desc: "", payment_type: [],
+};
+
 export default function OrdersPage() {
   const [rows, setRows] = useState<OrderRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
+  const [fieldFilters, setFieldFilters] = useState<FieldFilters>(EMPTY_FIELD_FILTERS);
+  const [showFilterModal, setShowFilterModal] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
@@ -124,6 +237,35 @@ export default function OrdersPage() {
   const [showColPicker, setShowColPicker] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
+  const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
+  const [paymentTypeOptions, setPaymentTypeOptions] = useState<string[]>([]);
+
+  // Filtrele modalındaki Yapılan İşlem/Tedarikçi/Ödeme Şekli çoklu seçim
+  // listeleri — Yapılan İşlem/Tedarikçi katalogdan (Hizmetler/Tedarikçiler),
+  // Ödeme Şekli ise gerçekten kullanılmış değerlerden ("Mail Order" tipleri
+  // "<Tedarikçi> Mail Order" olarak dinamik oluştuğundan sabit liste yetmez)
+  // doldurulur.
+  useEffect(() => {
+    fetch("/api/services")
+      .then((r) => r.json())
+      .then((data: { name: string }[]) => {
+        if (Array.isArray(data)) setServiceOptions(data.map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")));
+      })
+      .catch(() => { });
+    fetch("/api/suppliers")
+      .then((r) => r.json())
+      .then((data: { name: string }[]) => {
+        if (Array.isArray(data)) setSupplierOptions(data.map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")));
+      })
+      .catch(() => { });
+    fetch("/api/orders/payment-types")
+      .then((r) => r.json())
+      .then((data: string[]) => {
+        if (Array.isArray(data)) setPaymentTypeOptions(data.sort((a, b) => a.localeCompare(b, "tr-TR")));
+      })
+      .catch(() => { });
+  }, []);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -168,17 +310,16 @@ export default function OrdersPage() {
     setDeletingId(id);
     try {
       await fetch(`/api/orders/${id}`, { method: "DELETE" });
-      setRows((prev) => prev.filter((r) => r.id !== id));
+      await fetchOrders(page);
     } finally {
       setDeletingId(null);
     }
   }
 
-  async function fetchOrders() {
+  async function fetchOrders(targetPage = page) {
     setLoading(true);
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    if (search) params.set("search", search);
 
     if (dateFilter === "ozel") {
       if (customFrom) params.set("dateFrom", customFrom);
@@ -188,17 +329,35 @@ export default function OrdersPage() {
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
     }
+    if (search) params.set("search", search);
+    if (fieldFilters.customer_name) params.set("customer_name", fieldFilters.customer_name);
+    if (fieldFilters.plate) params.set("plate", fieldFilters.plate);
+    fieldFilters.service_name.forEach((v) => params.append("service_name", v));
+    fieldFilters.supplier.forEach((v) => params.append("supplier", v));
+    if (fieldFilters.stock_code) params.set("stock_code", fieldFilters.stock_code);
+    if (fieldFilters.size_desc) params.set("size_desc", fieldFilters.size_desc);
+    fieldFilters.payment_type.forEach((v) => params.append("payment_type", v));
+    if (sortKey) { params.set("sortBy", sortKey); params.set("sortDir", sortDir); }
+    params.set("page", String(targetPage));
+    params.set("limit", String(limit));
 
     const res = await fetch(`/api/orders?${params}`);
     const data = await res.json();
-    setRows(Array.isArray(data) ? data : []);
+    setRows(Array.isArray(data.items) ? data.items : []);
+    setTotal(data.total ?? 0);
     setLoading(false);
   }
 
   useEffect(() => {
-    fetchOrders();
+    setPage(1);
+    fetchOrders(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, dateFilter, customFrom, customTo, search]);
+  }, [statusFilter, dateFilter, customFrom, customTo, search, fieldFilters, sortKey, sortDir, limit]);
+
+  useEffect(() => {
+    fetchOrders(page);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -246,7 +405,8 @@ export default function OrdersPage() {
           setImportMsg(
             `${imported} sipariş aktarıldıktan sonra hata oluştu: ${data.error ?? "Bilinmeyen hata."}`
           );
-          await fetchOrders();
+          setPage(1);
+          await fetchOrders(1);
           return;
         }
         imported += data.imported ?? 0;
@@ -261,7 +421,8 @@ export default function OrdersPage() {
         (parsed.skipped ? ` ${parsed.skipped} satır tarih/işlem bilgisi olmadığı için atlandı.` : "") +
         (productsAdded ? ` Ürün kataloğuna eksik olan ${productsAdded} ürün kodu eklendi.` : "")
       );
-      await fetchOrders();
+      setPage(1);
+      await fetchOrders(1);
     } catch {
       setImportMsg("Dosya işlenirken hata oluştu.");
     } finally {
@@ -271,7 +432,9 @@ export default function OrdersPage() {
     }
   }
 
-  const displayRows = sortRows(rows, sortKey, sortDir);
+  const activeFilterCount =
+    (statusFilter ? 1 : 0) + (dateFilter ? 1 : 0) +
+    Object.values(fieldFilters).filter((v) => Array.isArray(v) ? v.length > 0 : v.trim()).length;
 
   return (
     <div onClick={() => setShowColPicker(false)}>
@@ -308,68 +471,38 @@ export default function OrdersPage() {
       )}
 
       {/* Filtreler */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Tarih</label>
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Tümü</option>
-            <option value="bugun">Bugün</option>
-            <option value="bu_hafta">Bu Hafta</option>
-            <option value="bu_ay">Bu Ay</option>
-            <option value="ozel">Özel Aralık</option>
-          </select>
-        </div>
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-center">
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowFilterModal(true); }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h18M6 8h12M9 12h6M11 16h2" />
+          </svg>
+          Filtrele
+          {activeFilterCount > 0 && (
+            <span className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[1.25rem] h-5 px-1 flex items-center justify-center">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
 
-        {dateFilter === "ozel" && (
-          <>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </>
+        {activeFilterCount > 0 && (
+          <button
+            onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
+            className="text-sm text-gray-400 hover:text-gray-700"
+          >
+            Filtreleri Temizle
+          </button>
         )}
 
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Statü</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Tümü</option>
-            <option value="BEKLEMEDE">Beklemede</option>
-            <option value="TAMAMLANDI">Tamamlandı</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Ara</label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Plaka, Stok Kodu, Ebat, Müşteri veya Tedarikçi..."
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-          />
-        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Hızlı ara: Plaka, Müşteri, Tedarikçi, Stok Kodu, Ebat..."
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-96"
+        />
 
         <div className="relative ml-auto">
           <button
@@ -403,12 +536,171 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {/* Filtreleme Modalı */}
+      {showFilterModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowFilterModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold text-gray-800">Siparişleri Filtrele</h2>
+              <button onClick={() => setShowFilterModal(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Tarih</label>
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tümü</option>
+                  <option value="bugun">Bugün</option>
+                  <option value="bu_hafta">Bu Hafta</option>
+                  <option value="bu_ay">Bu Ay</option>
+                  <option value="ozel">Özel Aralık</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Statü</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tümü</option>
+                  <option value="BEKLEMEDE">Beklemede</option>
+                  <option value="TAMAMLANDI">Tamamlandı</option>
+                </select>
+              </div>
+
+              {dateFilter === "ozel" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
+                    <input
+                      type="date"
+                      value={customFrom}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
+                    <input
+                      type="date"
+                      value={customTo}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Müşteri</label>
+                <input
+                  type="text"
+                  value={fieldFilters.customer_name}
+                  onChange={(e) => setFieldFilters((f) => ({ ...f, customer_name: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Plaka</label>
+                <input
+                  type="text"
+                  value={fieldFilters.plate}
+                  onChange={(e) => setFieldFilters((f) => ({ ...f, plate: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Yapılan İşlem</label>
+                <MultiSelectDropdown
+                  options={serviceOptions}
+                  selected={fieldFilters.service_name}
+                  onChange={(vals) => setFieldFilters((f) => ({ ...f, service_name: vals }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Tedarikçi</label>
+                <MultiSelectDropdown
+                  options={supplierOptions}
+                  selected={fieldFilters.supplier}
+                  onChange={(vals) => setFieldFilters((f) => ({ ...f, supplier: vals }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
+                <input
+                  type="text"
+                  value={fieldFilters.stock_code}
+                  onChange={(e) => setFieldFilters((f) => ({ ...f, stock_code: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
+                <input
+                  type="text"
+                  value={fieldFilters.size_desc}
+                  onChange={(e) => setFieldFilters((f) => ({ ...f, size_desc: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Ödeme Şekli</label>
+                <MultiSelectDropdown
+                  options={paymentTypeOptions}
+                  selected={fieldFilters.payment_type}
+                  onChange={(vals) => setFieldFilters((f) => ({ ...f, payment_type: vals }))}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+              >
+                Filtreleri Temizle
+              </button>
+              <button
+                onClick={() => setShowFilterModal(false)}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                Uygula
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">Yükleniyor...</div>
         ) : rows.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">Sipariş bulunamadı.</div>
+          <div className="p-12 text-center text-gray-400">
+            {activeFilterCount > 0 || search.trim() ? "Filtrelere uyan sipariş bulunamadı." : "Sipariş bulunamadı."}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -433,7 +725,7 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {displayRows.map((r) => {
+                {rows.map((r) => {
                   const unitPrice = Number(r.unit_price || 0);
                   const costPrice = Number(r.cost_price || 0);
                   const kar = unitPrice - costPrice;
@@ -518,6 +810,80 @@ export default function OrdersPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+        <div className="flex items-center gap-3">
+          <span>
+            {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} satır
+          </span>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">
+            Sayfa başına
+            <select
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        {total > limit && (
+          <div className="flex gap-1">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setPage((p) => p - 1)}
+              disabled={page === 1}
+              className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ‹
+            </button>
+            {Array.from({ length: Math.ceil(total / limit) }, (_, i) => i + 1)
+              .filter((p) => p === 1 || p === Math.ceil(total / limit) || Math.abs(p - page) <= 2)
+              .reduce<(number | "…")[]>((acc, p, i, arr) => {
+                if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`ellipsis-${i}`} className="px-2 py-1 text-gray-400">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p as number)}
+                    className={`px-3 py-1 rounded border ${page === p
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "border-gray-300 hover:bg-gray-100"
+                      }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page * limit >= total}
+              className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ›
+            </button>
+            <button
+              onClick={() => setPage(Math.ceil(total / limit))}
+              disabled={page * limit >= total}
+              className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              »
+            </button>
           </div>
         )}
       </div>

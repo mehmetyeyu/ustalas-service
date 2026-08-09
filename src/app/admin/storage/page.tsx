@@ -247,7 +247,7 @@ export default function StoragePage() {
   const [items, setItems] = useState<StorageItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const LIMIT = 20;
+  const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -290,7 +290,7 @@ export default function StoragePage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     params.set("page", String(targetPage));
-    params.set("limit", String(LIMIT));
+    params.set("limit", String(limit));
     if (delivered) params.set("delivered", "true");
     const res = await fetch(`/api/storage?${params}`);
     const data = await res.json();
@@ -308,7 +308,7 @@ export default function StoragePage() {
     setPage(1);
     fetchItems(1, showDelivered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, showDelivered]);
+  }, [search, showDelivered, limit]);
 
   useEffect(() => {
     fetchItems(page);
@@ -697,11 +697,23 @@ export default function StoragePage() {
       </div>
 
       {/* Pagination */}
-      {total > LIMIT && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+        <div className="flex items-center gap-3">
           <span>
-            {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, total)} / {total} kayıt
+            {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} kayıt
           </span>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">
+            Sayfa başına
+            <select
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        {total > limit && (
           <div className="flex gap-1">
             <button
               onClick={() => setPage(1)}
@@ -717,8 +729,8 @@ export default function StoragePage() {
             >
               ‹
             </button>
-            {Array.from({ length: Math.ceil(total / LIMIT) }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === Math.ceil(total / LIMIT) || Math.abs(p - page) <= 2)
+            {Array.from({ length: Math.ceil(total / limit) }, (_, i) => i + 1)
+              .filter((p) => p === 1 || p === Math.ceil(total / limit) || Math.abs(p - page) <= 2)
               .reduce<(number | "…")[]>((acc, p, i, arr) => {
                 if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
                 acc.push(p);
@@ -742,21 +754,21 @@ export default function StoragePage() {
               )}
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={page * LIMIT >= total}
+              disabled={page * limit >= total}
               className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ›
             </button>
             <button
-              onClick={() => setPage(Math.ceil(total / LIMIT))}
-              disabled={page * LIMIT >= total}
+              onClick={() => setPage(Math.ceil(total / limit))}
+              disabled={page * limit >= total}
               className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               »
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Yeni Kayıt Modal */}
       {showAddModal && (

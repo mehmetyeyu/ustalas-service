@@ -5,10 +5,6 @@ import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
-
 interface OrderLineInput {
   service_name: string;
   supplier?: string | null;
@@ -20,66 +16,139 @@ interface OrderLineInput {
   product_id?: number | null;
 }
 
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+// Sıralama, sonucun geneline (WHERE ile filtrelenmiş TÜM satırlara) uygulanmalı
+// — bu yüzden sunucu tarafında, sayfalamayla birlikte yapılır (Ürünler
+// sayfasındaki whitelist deseniyle aynı: sortBy doğrudan sorguya değil, bu
+// haritadan geçerek eklenir).
+const SORTABLE_COLUMNS: Record<string, string> = {
+  order_no: "o.id",
+  date: "o.created_at",
+  customer_name: "o.customer_name",
+  plate: "o.plate",
+  service_name: "s.name",
+  supplier: "os.supplier",
+  stock_code: "os.stock_code",
+  size_desc: "os.size_desc",
+  quantity: "os.quantity",
+  unit_price: "os.unit_price",
+  cost_price: "os.cost_price",
+  kar: "(COALESCE(os.unit_price, 0) - COALESCE(os.cost_price, 0))",
+  payment_type: "os.payment_type",
+  notes: "o.notes",
+  status: "o.status",
+};
+
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
-  const search = searchParams.get("search");
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
+  const search = searchParams.get("search");
+  const customerName = searchParams.get("customer_name");
+  const plate = searchParams.get("plate");
+  const serviceNames = searchParams.getAll("service_name");
+  const suppliers = searchParams.getAll("supplier");
+  const stockCode = searchParams.get("stock_code");
+  const sizeDesc = searchParams.get("size_desc");
+  const paymentTypes = searchParams.getAll("payment_type");
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
+  const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
+  const offset = (page - 1) * limit;
+  const sortBy = searchParams.get("sortBy");
+  const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
 
-  let query = `
-    SELECT
-      o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
-      os.id AS line_id, s.name AS service_name,
-      os.supplier, os.stock_code, os.size_desc, os.quantity, os.unit_price, os.cost_price,
-      os.payment_type
+  const conditions: string[] = [];
+  const values: (string | number | string[])[] = [];
+
+  if (status) {
+    values.push(status);
+    conditions.push(`o.status = $${values.length}`);
+  }
+  if (dateFrom) {
+    values.push(dateFrom);
+    conditions.push(`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date >= $${values.length}`);
+  }
+  if (dateTo) {
+    values.push(dateTo);
+    conditions.push(`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date <= $${values.length}`);
+  }
+  if (customerName) {
+    values.push(`%${escapeLike(customerName)}%`);
+    conditions.push(`o.customer_name ILIKE $${values.length}`);
+  }
+  if (plate) {
+    values.push(`%${escapeLike(plate)}%`);
+    conditions.push(`o.plate ILIKE $${values.length}`);
+  }
+  if (serviceNames.length > 0) {
+    // Çoklu seçim: bilinen (katalogdaki) değerlerden birebir eşleşme, kendi
+    // içinde VEYA — ILIKE değil, checkbox listesi zaten tam adları sunuyor.
+    values.push(serviceNames);
+    conditions.push(`s.name = ANY($${values.length})`);
+  }
+  if (suppliers.length > 0) {
+    values.push(suppliers);
+    conditions.push(`os.supplier = ANY($${values.length})`);
+  }
+  if (stockCode) {
+    values.push(`%${escapeLike(stockCode)}%`);
+    conditions.push(`os.stock_code ILIKE $${values.length}`);
+  }
+  if (sizeDesc) {
+    // Ebat aramasında "/" zorunlu olmasın diye ("205/45R19" yerine "20545R19" de
+    // yazılabilsin) hem arama metninden hem size_desc'ten "/" çıkarılıp da ayrıca
+    // karşılaştırılır.
+    values.push(`%${escapeLike(sizeDesc)}%`, `%${escapeLike(sizeDesc.replace(/\//g, ""))}%`);
+    conditions.push(`(os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length})`);
+  }
+  if (paymentTypes.length > 0) {
+    values.push(paymentTypes);
+    conditions.push(`os.payment_type = ANY($${values.length})`);
+  }
+  if (search) {
+    // Filtrele modalındaki alan bazlı (VE) filtrelerden ayrı, hızlı bir arama:
+    // tek bir metni birden çok alanda (VEYA) arar.
+    values.push(`%${escapeLike(search)}%`, `%${escapeLike(search.replace(/\//g, ""))}%`);
+    conditions.push(
+      `(o.plate ILIKE $${values.length - 1} OR o.customer_name ILIKE $${values.length - 1} OR os.supplier ILIKE $${values.length - 1} OR os.stock_code ILIKE $${values.length - 1} OR os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length})`
+    );
+  }
+
+  const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
+  const orderBy = sortBy && SORTABLE_COLUMNS[sortBy]
+    ? `${SORTABLE_COLUMNS[sortBy]} ${sortDir} NULLS LAST, o.id ASC`
+    : "o.created_at DESC, os.id ASC";
+
+  const fromClause = `
     FROM orders o
     LEFT JOIN order_services os ON o.id = os.order_id
     LEFT JOIN services s ON os.service_id = s.id
-    WHERE 1=1
+    ${where}
   `;
-  let paramCount = 0;
-  const values: (string | number)[] = [];
-
-  if (status) {
-    paramCount++;
-    query += ` AND o.status = $${paramCount}`;
-    values.push(status);
-  }
-  if (search) {
-    // Ebat aramasında "/" zorunlu olmasın diye ("205/45R19" yerine "20545R19" de
-    // yazılabilsin) hem arama metninden hem size_desc'ten "/" çıkarılıp da ayrıca
-    // karşılaştırılır — diğer alanlar normal ILIKE ile eşleşir.
-    paramCount++;
-    const rawIdx = paramCount;
-    paramCount++;
-    const noSlashIdx = paramCount;
-    query += ` AND (o.plate ILIKE $${rawIdx} OR o.customer_name ILIKE $${rawIdx} OR os.supplier ILIKE $${rawIdx} OR os.stock_code ILIKE $${rawIdx} OR os.size_desc ILIKE $${rawIdx} OR REPLACE(os.size_desc, '/', '') ILIKE $${noSlashIdx})`;
-    values.push(`%${escapeLike(search)}%`, `%${escapeLike(search.replace(/\//g, ""))}%`);
-  }
-  if (dateFrom) {
-    paramCount++;
-    query += ` AND (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date >= $${paramCount}`;
-    values.push(dateFrom);
-  }
-  if (dateTo) {
-    paramCount++;
-    query += ` AND (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date <= $${paramCount}`;
-    values.push(dateTo);
-  }
-
-  // Bu uç sayfalanmıyor (liste ekranı tüm sonucu tek seferde çekiyor) — filtresiz
-  // "Tümü" görünümünde veri büyüdükçe sınırsız satır dönmesin diye güvenlik amaçlı
-  // üst sınır konur. Normal kullanımda (tarih/durum/plaka filtresiyle) bu sınıra
-  // ulaşılmaz.
-  query += " ORDER BY o.created_at DESC, os.id ASC LIMIT 5000";
 
   try {
-    const result = await pool.query(query, values);
-    return NextResponse.json(result.rows);
+    const result = await pool.query(
+      `SELECT
+         o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
+         os.id AS line_id, s.name AS service_name,
+         os.supplier, os.stock_code, os.size_desc, os.quantity, os.unit_price, os.cost_price,
+         os.payment_type
+       ${fromClause}
+       ORDER BY ${orderBy}
+       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, limit, offset]
+    );
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total ${fromClause}`, values);
+    const total: number = countResult.rows[0].total;
+
+    return NextResponse.json({ items: result.rows, total, page, limit });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

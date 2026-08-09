@@ -55,7 +55,7 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 - Notlar (serbest metin, sipariş geneli, opsiyonel)
 
 **"Lastik Satışı" ile stok bağlantısı:**
-1. Tedarikçi seçilir — seçenekler Ürün Kataloğu'nda **stoğu olan** (`stock_qty > 0`) gerçek tedarikçilerle sınırlıdır (`/api/products/stock-suppliers`).
+1. Tedarikçi seçilir — **tüm tedarikçiler** listelenir (Ürün Kataloğu'nda stoğu olsun olmasın); stoğu olmayan bir tedarikçi seçilirse Stok Kodu/parti önerisi boş gelir, elle girilebilir ama gerçek bir stok bağlantısı (ve dolayısıyla stok düşümü) kurulmaz.
 2. Stok Kodu yazılır/seçilir — o tedarikçide stoğu olan ürün kodları önerilir (`/api/products/stock-codes`).
 3. Kod seçilince altında **Üretim Haftası/Yılı** seçici belirir — o kod+tedarikçiye ait, stoğu olan partiler listelenir (`/api/products/stock-batches`, "10/26 — Stok: 9" biçiminde).
 4. Parti seçilince **Ebat** otomatik dolar; **Tutar/Maliyet** o partinin (miktar ağırlıklı ortalama) Satış/Alış fiyatı × Adet olarak otomatik hesaplanır — elle değiştirilebilir, Adet değişirse otomatik yeniden hesaplanır.
@@ -63,7 +63,7 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 6. Sipariş kaydedilince (`POST /api/orders`) seçilen partinin `products.stock_qty`'sinden Adet kadar düşülür (`order_services.product_id` ile bağlantı kurulur). Satır silinirse/miktarı azaltılırsa stok geri eklenir; sipariş tamamen silinirse tüm bağlı satırların stoğu geri eklenir (bkz. `src/lib/productStock.ts`).
 
 **Hizmet/fiyat eşleştirme:**
-- Yapılan İşlem adı mevcut `services` kaydıyla eşleşirse ve o hizmete fiyat tanımlıysa Tutar otomatik gelir.
+- Yapılan İşlem adı mevcut `services` kaydıyla eşleşirse ve o hizmete fiyat tanımlıysa Tutar otomatik gelir — ama yalnızca satırda **henüz bir tutar yokken**; İşlem alanında arama yapıp aynı hizmeti yeniden seçmek zaten girilmiş bir tutarı ezmez.
 - Eşleşmeyen bir isim girilirse, sipariş kaydedilirken o isimle otomatik yeni bir `services` kaydı (fiyatsız) açılır (`src/lib/serviceCatalog.ts`) — hem bu ekran hem Sipariş Listesi'ndeki Excel içe aktarma aynı mantığı kullanır.
 
 **Davranış:**
@@ -85,12 +85,21 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 
 **Görünüm:**
 - Satır bazlı tablo: her sipariş satırı (`order_services` kalemi) kendi tablo satırında gösterilir — birden fazla işlemi olan bir sipariş birden fazla tablo satırı kaplar, kaynak Excel'deki gibi.
-- En yeniden eskiye sıralı.
+- Varsayılan sıralama en yeniden eskiye; her sütun başlığına tıklanarak sıralama değiştirilebilir (Sipariş No, Tarih, Müşteri, Plaka, Yapılan İşlem, Tedarikçi, Stok Kodu, Ebat, Adet, Tutar, Maliyet, Kar, Ödeme Şekli, Açıklama, Statü) — sıralama sunucuda uygulanır.
+- Sütun görünürlüğü özelleştirilebilir (`localStorage`).
+- **Sayfalama:** sunucu tarafında, sayfa başına kayıt sayısı seçilebilir (20/50/100/200/500, varsayılan 20).
 
-**Filtreler:** Tarihe göre (Bugün / Bu Hafta / Bu Ay / Özel Aralık), Statüye göre (Beklemede / Tamamlandı), Plakaya göre arama.
+**Filtreleme:**
+- **Hızlı Ara** kutusu: tek bir metni Plaka/Müşteri/Tedarikçi/Stok Kodu/Ebat alanlarında aynı anda (VEYA) arar.
+- **"Filtrele" modalı** — daha isabetli, alan bazlı filtreler, hepsi birbiriyle VE mantığıyla birleşir:
+  - Tarih (Bugün / Bu Hafta / Bu Ay / Özel Aralık), Statü (Beklemede / Tamamlandı)
+  - Müşteri, Plaka, Stok Kodu, Ebat (serbest metin)
+  - **Yapılan İşlem** ve **Tedarikçi** — kataloglardan (`/api/services`, `/api/suppliers`) beslenen, checkbox'lı **çoklu seçim** dropdown'ları (kendi içlerinde VEYA)
+  - **Ödeme Şekli** — sabit bir liste değil, gerçekten kullanılmış değerlerden (`/api/orders/payment-types`) beslenen aynı çoklu seçim dropdown'u (ör. "FB Lastik Mail Order" gibi dinamik tedarikçi+"Mail Order" kombinasyonları da listelenir)
+  - Aktif filtre sayısı buton üzerinde rozet olarak görünür; "Filtreleri Temizle" ile tek tıkla sıfırlanır.
 
 **İşlemler:**
-- "Detay →" ile sipariş detayına gidilir; detaydan "Düzelt" ile satırlar (Yapılan İşlem, Tedarikçi, Stok Kodu, Ebat, Adet, Tutar, Maliyet, ödeme tipi, ve Lastik Satışı'nda parti bağlantısı dahil) düzenlenebilir — düzenleme, stok bağlantılı satırlarda stoğu farkına göre otomatik günceller (bkz. Bölüm 1).
+- "Detay →" ile sipariş detayına gidilir; detaydan "Düzelt" (tam ekran) ile satırlar (Yapılan İşlem, Tedarikçi, Stok Kodu, Ebat, Adet, Tutar, Maliyet, ödeme tipi, ve Lastik Satışı'nda parti bağlantısı dahil) düzenlenebilir — düzenleme, stok bağlantılı satırlarda stoğu farkına göre otomatik günceller (bkz. Bölüm 1).
 - "Sil" ile sipariş (tüm satırlarıyla, stok bağlantılı satırların stoğu geri eklenerek) kalıcı olarak silinir.
 
 **Excel İçe Aktar:** Muhasebe programından dışa aktarılan `.xlsx` okunur, gruplanır (aynı tarih+müşteri+plaka tek siparişte birleşir; Perakende/plakasız satırlar birleştirilmez), hizmet eşleştirmesi otomatik yapılır, `import_ref` ile tekrar aktarımda mükerrer kayıt oluşmaz.
@@ -100,6 +109,8 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 ### 4. Sipariş Detayı
 
 Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda miktar, ebat, tedarikçi, kendi ödeme tipi rozeti); toplam; indirim varsa ayrı satır; notlar; oluşturulma tarihi ve ödeme bilgisi; "Ödeme Al & Kapat" (BEKLEMEDE ise) ve "Düzelt" aksiyonları.
+
+**"Düzelt" ekranı:** tam ekran açılır (üstte "← Geri" ile normal görünüme dönülür, kaydetmeden çıkar); işlem satırları tablosunda arama/seçim dropdown'ları (Yapılan İşlem, Tedarikçi, Ürün Kodu) `document.body`'e portal ile taşınır — böylece tablonun yatay kaydırma alanı tarafından kırpılmaz.
 
 ---
 
@@ -134,7 +145,7 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 
 **Sayfa:** `/admin/storage` — mevsimlik lastik depolama takibi.
 
-- Sayfalı liste (20/sayfa), sütun görünürlüğü `localStorage`'da saklanır.
+- Sayfalı liste (sayfa başına 20/50/100/200/500 seçilebilir, varsayılan 20), sütun görünürlüğü `localStorage`'da saklanır.
 - Plaka/müşteri adına göre arama; 6 aydan eski kayıtlar için "gecikmiş" filtresi.
 - **Aktif Depolar** / **Teslim Edilenler** görünüm sekmesi.
 - Yeni kayıt / düzenleme modalı; Depo No boş bırakılırsa boşta kalan en küçük numara otomatik atanır.
@@ -157,7 +168,10 @@ Her satır bir **PARTİ**dir: aynı Ürün Kodu farklı **Üretim Haftası/Yıl�
 - **Mevsim** rozeti sadece kod (grup) satırında bir kez gösterilir, her partide tekrarlanmaz.
 - **Marka** alanı, mevcut ürünlerde kullanılan markalardan dinamik olarak önerilir (ayrı bir dizin tablosu yok, `products` üzerinden distinct).
 - Sütun görünürlüğü özelleştirilebilir (`localStorage`).
+- **Sıralama:** Ürün Kodu, Marka, Ebat, Stok sütun başlıklarına tıklanarak sıralanır (sunucuda) — Alış/Satış Fiyatı Ort. ayrı bir sorgudan geldiği için sıralanabilir değildir. Varsayılan: stoğu en fazla olan ürün ilk sırada.
+- **Sayfalama:** sayfa başına 20/50/100/200/500 seçilebilir (varsayılan 20).
 - **Stok Girişi:** "Yeni Ürün / Parti" formu — Kod+Hafta/Yılı+Tedarikçi mevcut bir partiyle birebir eşleşirse girilen miktar o partinin stoğuna **eklenir** (ezilmez) ve fiyat geçmişine yeni satır düşer; eşleşmezse yeni parti açılır. Alış Maliyeti + Kâr Yüzdesi (%) girilirse Satış Fiyatı otomatik hesaplanır.
+- **Düzenle:** grup satırında "Stok Girişi" yanında da bulunur — tek partisi olan ürünlerde doğrudan düzenleme penceresini açar, birden fazla partisi varsa satırı genişletip hangi partinin düzenleneceği seçilir.
 - **Partiyi Düzenle:** bir partiyi elle başka bir mevcut partiyle aynı kimliğe (kod+hafta/yılı+tedarikçi) getirirseniz iki satır **birleştirilir** (stok toplanır, fiyat geçmişi taşınır, kaynak satır silinir) — çakışma hatası vermez.
 - **Fiyat Geçmişi:** her partinin tüm stok girişlerini (tarih, miktar, alış/satış fiyatı) gösteren salt okunur liste.
 
@@ -168,6 +182,7 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 - **Çıkış** — bir partiye bağlı sipariş satışları (`order_services.product_id`); **müşteri adı + plaka** ile birlikte gösterilir, fiyatlar (Tutar/Maliyet toplamı Adet'e bölünerek) birim fiyata çevrilir ki Giriş satırlarıyla aynı birimde kıyaslanabilsin.
 - Her satırda o partinin **Güncel Stok** durumu da görünür (0 olsa bile).
 - Arama: ürün kodu, marka, tedarikçi, müşteri adı, plaka.
+- Sayfalama: sayfa başına 20/50/100/200/500 seçilebilir (varsayılan 20).
 
 #### Excel Import / Export
 
@@ -217,24 +232,24 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 
 | Method | Endpoint | Açıklama |
 |---|---|---|
-| GET | `/api/orders` | Satır bazlı sipariş listesi (filtreler: status, plate, dateFrom, dateTo; güvenlik amaçlı üst sınır 5000 satır) |
+| GET | `/api/orders` | Satır bazlı, sayfalı sipariş listesi — `{ items, total, page, limit }` döner; filtreler: status, dateFrom/dateTo, customer_name, plate, service_name (çoklu), supplier (çoklu), stock_code, size_desc, payment_type (çoklu), search (hızlı arama, birden çok alanda VEYA); sortBy/sortDir (whitelist tabanlı) |
 | POST | `/api/orders` | Yeni sipariş oluştur; `product_id` içeren satırlarda stok düşer |
 | GET | `/api/orders/:id` | Sipariş detayı |
 | PATCH | `/api/orders/:id` | Siparişi kapat (ödeme tipi + tutar) |
 | PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır) |
 | DELETE | `/api/orders/:id` | Siparişi sil (bağlı stok geri eklenir, order_services cascade) |
 | POST | `/api/orders/import` | Excel'den toplu içe aktar |
+| GET | `/api/orders/payment-types` | Filtrele modalı için gerçekten kullanılmış Ödeme Şekli değerleri (distinct) |
 | GET/POST | `/api/services`, `/api/services/:id` (PATCH/DELETE) | Hizmet yönetimi |
 | GET | `/api/reports` | Aylık rapor (`created_at` bazlı) |
 | POST | `/api/auth/login`, `/api/auth/logout` | Giriş/çıkış |
 | GET | `/api/auth/me` | Oturum bilgisi |
 | GET/POST | `/api/storage`, `/api/storage/:id` (PATCH/DELETE) | Depolama CRUD (teslim işaretleme dahil) |
 | POST/GET | `/api/storage/import`, `/api/storage/export` | Excel içe/dışa aktarma |
-| GET/POST | `/api/products`, `/api/products/:id` (PATCH/DELETE) | Ürün/parti CRUD (POST: eşleşen parti varsa stok ekler + fiyat geçmişine düşer) |
+| GET/POST | `/api/products`, `/api/products/:id` (PATCH/DELETE) | Ürün/parti CRUD (POST: eşleşen parti varsa stok ekler + fiyat geçmişine düşer); GET sayfalı, sortBy/sortDir destekler (whitelist: code/brand/size_desc/total_stock) |
 | GET | `/api/products/:id/history` | Bir partinin fiyat geçmişi |
 | GET | `/api/products/movements` | Malzeme Hareketleri (Giriş + Çıkış birleşik, sayfalı) |
 | GET | `/api/products/brands` | Mevcut markalar (distinct) |
-| GET | `/api/products/stock-suppliers` | Stoğu olan tedarikçiler (Lastik Satışı seçici) |
 | GET | `/api/products/stock-codes` | Bir tedarikçide stoğu olan ürün kodları |
 | GET | `/api/products/stock-batches` | Bir kod+tedarikçiye ait stoklu partiler (+ ortalama fiyatlar) |
 | POST/GET | `/api/products/import`, `/api/products/export` | Excel içe/dışa aktarma |

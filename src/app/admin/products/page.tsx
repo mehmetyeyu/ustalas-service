@@ -185,7 +185,7 @@ export default function ProductsPage() {
   const [items, setItems] = useState<ProductGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const LIMIT = 20;
+  const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [seasonFilter, setSeasonFilter] = useState("");
@@ -194,7 +194,7 @@ export default function ProductsPage() {
   const [movementsTotal, setMovementsTotal] = useState(0);
   const [movementsPage, setMovementsPage] = useState(1);
   const [movementsLoading, setMovementsLoading] = useState(false);
-  const MOVEMENTS_LIMIT = 30;
+  const [movementsLimit, setMovementsLimit] = useState(20);
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -282,7 +282,7 @@ export default function ProductsPage() {
     if (seasonFilter) params.set("season", seasonFilter);
     if (sortBy) { params.set("sortBy", sortBy); params.set("sortDir", sortDir); }
     params.set("page", String(targetPage));
-    params.set("limit", String(LIMIT));
+    params.set("limit", String(limit));
     const res = await fetch(`/api/products?${params}`);
     const data = await res.json();
     setItems(data.items ?? []);
@@ -294,7 +294,7 @@ export default function ProductsPage() {
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, seasonFilter, sortBy, sortDir]);
+  }, [search, seasonFilter, sortBy, sortDir, limit]);
 
   useEffect(() => {
     fetchItems(page);
@@ -306,7 +306,7 @@ export default function ProductsPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     params.set("page", String(targetPage));
-    params.set("limit", String(MOVEMENTS_LIMIT));
+    params.set("limit", String(movementsLimit));
     const res = await fetch(`/api/products/movements?${params}`);
     const data = await res.json();
     setMovements(data.items ?? []);
@@ -319,7 +319,7 @@ export default function ProductsPage() {
     setMovementsPage(1);
     fetchMovements(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, search]);
+  }, [viewMode, search, movementsLimit]);
 
   useEffect(() => {
     if (viewMode !== "movements") return;
@@ -709,11 +709,23 @@ export default function ProductsPage() {
             )}
           </div>
 
-          {movementsTotal > MOVEMENTS_LIMIT && (
-            <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+          <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center gap-3">
               <span>
-                {(movementsPage - 1) * MOVEMENTS_LIMIT + 1}–{Math.min(movementsPage * MOVEMENTS_LIMIT, movementsTotal)} / {movementsTotal} hareket
+                {movementsTotal === 0 ? 0 : (movementsPage - 1) * movementsLimit + 1}–{Math.min(movementsPage * movementsLimit, movementsTotal)} / {movementsTotal} hareket
               </span>
+              <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                Sayfa başına
+                <select
+                  value={movementsLimit}
+                  onChange={(e) => setMovementsLimit(Number(e.target.value))}
+                  className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </div>
+            {movementsTotal > movementsLimit && (
               <div className="flex gap-1">
                 <button
                   onClick={() => setMovementsPage((p) => Math.max(1, p - 1))}
@@ -722,17 +734,17 @@ export default function ProductsPage() {
                 >
                   ‹
                 </button>
-                <span className="px-3 py-1">{movementsPage} / {Math.ceil(movementsTotal / MOVEMENTS_LIMIT)}</span>
+                <span className="px-3 py-1">{movementsPage} / {Math.ceil(movementsTotal / movementsLimit)}</span>
                 <button
                   onClick={() => setMovementsPage((p) => p + 1)}
-                  disabled={movementsPage * MOVEMENTS_LIMIT >= movementsTotal}
+                  disabled={movementsPage * movementsLimit >= movementsTotal}
                   className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ›
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </>
       ) : (
       <>
@@ -857,11 +869,23 @@ export default function ProductsPage() {
       </div>
 
       {/* Pagination */}
-      {total > LIMIT && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+        <div className="flex items-center gap-3">
           <span>
-            {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, total)} / {total} ürün kodu
+            {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} ürün kodu
           </span>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">
+            Sayfa başına
+            <select
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        {total > limit && (
           <div className="flex gap-1">
             <button
               onClick={() => setPage(1)}
@@ -877,8 +901,8 @@ export default function ProductsPage() {
             >
               ‹
             </button>
-            {Array.from({ length: Math.ceil(total / LIMIT) }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === Math.ceil(total / LIMIT) || Math.abs(p - page) <= 2)
+            {Array.from({ length: Math.ceil(total / limit) }, (_, i) => i + 1)
+              .filter((p) => p === 1 || p === Math.ceil(total / limit) || Math.abs(p - page) <= 2)
               .reduce<(number | "…")[]>((acc, p, i, arr) => {
                 if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
                 acc.push(p);
@@ -902,21 +926,21 @@ export default function ProductsPage() {
               )}
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={page * LIMIT >= total}
+              disabled={page * limit >= total}
               className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ›
             </button>
             <button
-              onClick={() => setPage(Math.ceil(total / LIMIT))}
-              disabled={page * LIMIT >= total}
+              onClick={() => setPage(Math.ceil(total / limit))}
+              disabled={page * limit >= total}
               className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               »
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       </>
       )}
 
