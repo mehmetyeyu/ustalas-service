@@ -45,6 +45,10 @@ const SORTABLE_COLUMNS: Record<string, string> = {
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  // Sipariş listesi (müşteri/finansal veriler dahil) yalnızca yönetici panelinde
+  // gösterilir — Karşılama Görevlisi yalnızca sipariş oluşturabilir (aşağıdaki
+  // POST), listeyi görememeli.
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");

@@ -240,6 +240,7 @@ export default function OrdersPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [importHasWarning, setImportHasWarning] = useState(false);
   const [importStage, setImportStage] = useState<"reading" | "uploading" | "">("");
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
@@ -375,6 +376,7 @@ export default function OrdersPage() {
     if (!file) return;
     setImporting(true);
     setImportMsg("");
+    setImportHasWarning(false);
     setImportStage("reading");
     setImportProgress({ current: 0, total: 0 });
     try {
@@ -390,11 +392,13 @@ export default function OrdersPage() {
         parsed = parseOrderRows(rawRows);
       } catch (err) {
         setImportMsg(err instanceof Error ? err.message : "Dosya okunamadı.");
+        setImportHasWarning(true);
         return;
       }
 
       if (parsed.orders.length === 0) {
         setImportMsg("Aktarılacak sipariş bulunamadı.");
+        setImportHasWarning(true);
         return;
       }
 
@@ -404,6 +408,7 @@ export default function OrdersPage() {
 
       let imported = 0;
       let duplicates = 0;
+      let changedDuplicates = 0;
       let productsAdded = 0;
       for (const batch of batches) {
         const res = await fetch("/api/orders/import", {
@@ -416,12 +421,14 @@ export default function OrdersPage() {
           setImportMsg(
             `${imported} sipariş aktarıldıktan sonra hata oluştu: ${data.error ?? "Bilinmeyen hata."}`
           );
+          setImportHasWarning(true);
           setPage(1);
           await fetchOrders(1);
           return;
         }
         imported += data.imported ?? 0;
         duplicates += data.duplicates ?? 0;
+        changedDuplicates += data.changedDuplicates ?? 0;
         productsAdded += data.productsAdded ?? 0;
         setImportProgress((prev) => ({ ...prev, current: Math.min(prev.total, prev.current + batch.length) }));
       }
@@ -429,13 +436,18 @@ export default function OrdersPage() {
       setImportMsg(
         `${imported} sipariş içe aktarıldı.` +
         (duplicates ? ` ${duplicates} sipariş daha önce aktarıldığı için atlandı.` : "") +
+        (changedDuplicates
+          ? ` DİKKAT: bunlardan ${changedDuplicates} tanesinde şu anki dosyadaki satır sayısı kayıtlı siparişten farklı — dosyaya sonradan satır eklenmiş olabilir, bu satırlar aktarılmadı, elle kontrol edin.`
+          : "") +
         (parsed.skipped ? ` ${parsed.skipped} satır tarih/işlem bilgisi olmadığı için atlandı.` : "") +
         (productsAdded ? ` Ürün kataloğuna eksik olan ${productsAdded} ürün kodu eklendi.` : "")
       );
+      setImportHasWarning(changedDuplicates > 0);
       setPage(1);
       await fetchOrders(1);
     } catch {
       setImportMsg("Dosya işlenirken hata oluştu.");
+      setImportHasWarning(true);
     } finally {
       setImporting(false);
       setImportStage("");
@@ -479,7 +491,10 @@ export default function OrdersPage() {
       </div>
 
       {importMsg && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+        <div className={`mb-4 p-3 rounded-lg text-sm border ${importHasWarning
+          ? "bg-orange-50 border-orange-200 text-orange-700"
+          : "bg-green-50 border-green-200 text-green-700"
+          }`}>
           {importMsg}
         </div>
       )}

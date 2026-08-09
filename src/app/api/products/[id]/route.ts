@@ -4,6 +4,33 @@ import { getAuthUser } from "@/lib/auth";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { normalizeYear } from "@/lib/productsExcel";
 
+// Sipariş Düzelt ekranında, zaten bir partiye bağlı (product_id dolu) bir
+// satırın güncel stok durumunu öğrenmek için kullanılır — stok Girişi/Çıkışı
+// bağımsız, tek bir partinin gerçek anlık stock_qty'sini döner (0 dahil;
+// /api/products/stock-batches'in aksine sıfır stoklu partiyi de gösterir).
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+
+  try {
+    const { id } = await params;
+    const result = await pool.query(
+      "SELECT id, stock_qty FROM products WHERE id = $1",
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
+    }
+    return NextResponse.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -18,12 +18,24 @@ interface EditLineInput {
   product_id?: number | null;
 }
 
+// "Mail Order" tek başına geçersizdir — bir tedarikçiyle birleşip
+// "<Tedarikçi> Mail Order" olmalıdır (bkz. admin/orders/[id]/page.tsx).
+// Hem PATCH (ödeme kapatma) hem PUT (düzenleme) bu kontrolü kullanır —
+// PUT'ta boş/null bir değer de geçerlidir (henüz kapanmamış sipariş satırı).
+const PAYMENT_FLAT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap"];
+const MAIL_ORDER_SUFFIX = " Mail Order";
+function isValidPaymentType(v: string): boolean {
+  if (PAYMENT_FLAT_OPTIONS.includes(v)) return true;
+  return v.endsWith(MAIL_ORDER_SUFFIX) && v.length > MAIL_ORDER_SUFFIX.length;
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -58,6 +70,7 @@ export async function DELETE(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -101,15 +114,7 @@ export async function PATCH(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-
-  // "Mail Order" tek başına geçersizdir — bir tedarikçiyle birleşip
-  // "<Tedarikçi> Mail Order" olmalıdır (bkz. admin/orders/[id]/page.tsx).
-  const PAYMENT_FLAT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap"];
-  const MAIL_ORDER_SUFFIX = " Mail Order";
-  function isValidPaymentType(v: string): boolean {
-    if (PAYMENT_FLAT_OPTIONS.includes(v)) return true;
-    return v.endsWith(MAIL_ORDER_SUFFIX) && v.length > MAIL_ORDER_SUFFIX.length;
-  }
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -132,6 +137,23 @@ export async function PATCH(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+
+      // Sipariş satır bazlı FOR UPDATE ile kilitlenip mevcut statüsü kontrol
+      // edilir — zaten TAMAMLANDI bir sipariş tekrar kapatılamaz (aksi hâlde
+      // API'ye doğrudan istek atılarak mevcut ödeme kaydı sessizce ezilebilirdi;
+      // arayüzdeki "Ödeme Al & Kapat" butonu da zaten yalnızca BEKLEMEDE'de görünür).
+      const orderCheck = await client.query<{ status: string }>(
+        "SELECT status FROM orders WHERE id = $1 FOR UPDATE",
+        [id]
+      );
+      if (orderCheck.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
+      }
+      if (orderCheck.rows[0].status !== "BEKLEMEDE") {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "Bu sipariş zaten kapatılmış." }, { status: 409 });
+      }
 
       for (const l of lines as { id: number; payment_type: string }[]) {
         await client.query(
@@ -177,6 +199,7 @@ export async function PUT(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -188,6 +211,11 @@ export async function PUT(
     for (const l of lines as EditLineInput[]) {
       if (!l.service_name || !String(l.service_name).trim()) {
         return NextResponse.json({ error: "Her satır için işlem adı zorunludur." }, { status: 400 });
+      }
+      // Boş/null geçerlidir (henüz ödeme tipi girilmemiş satır) — ama doluysa
+      // PATCH ile aynı kurala uymalı (ör. tek başına "Mail Order" geçersiz).
+      if (l.payment_type && !isValidPaymentType(l.payment_type)) {
+        return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
     }
 

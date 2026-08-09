@@ -428,6 +428,23 @@ function OrderDetailPageInner() {
     order.services
       .filter((svc) => svc.name === TIRE_SALE_SERVICE && svc.supplier)
       .forEach((svc) => ensureStockCodes(svc.supplier as string));
+    // Zaten bir partiye bağlı satırların (product_id dolu) güncel stok
+    // durumunu çeker — bu satırın kendi miktarı zaten o partiden düşülmüş
+    // olduğundan, gerçek sınır (max_stock) güncel stok + bu satırın halihazırda
+    // tuttuğu miktardır; aksi hâlde Adet artırılınca kırmızı uyarı hiç görünmezdi.
+    order.services
+      .filter((svc) => svc.product_id != null)
+      .forEach((svc) => {
+        fetch(`/api/products/${svc.product_id}`)
+          .then((r) => r.json())
+          .then((data: { stock_qty?: number }) => {
+            if (typeof data.stock_qty !== "number") return;
+            setEditLines((prev) => prev.map((l) =>
+              l.id === svc.line_id ? { ...l, max_stock: data.stock_qty! + svc.quantity } : l
+            ));
+          })
+          .catch(() => { });
+      });
     setEditError("");
     setEditing(true);
   }

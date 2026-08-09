@@ -58,6 +58,10 @@ CREATE INDEX IF NOT EXISTS orders_created_at_idx ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
 CREATE INDEX IF NOT EXISTS order_services_order_id_idx ON order_services(order_id);
 CREATE INDEX IF NOT EXISTS order_services_service_id_idx ON order_services(service_id);
+-- Sipariş Listesi'ndeki Filtrele modalının Tedarikçi/Ödeme Şekli çoklu seçim
+-- filtreleri (= ANY(...), birebir eşleşme) için.
+CREATE INDEX IF NOT EXISTS order_services_supplier_idx ON order_services(supplier);
+CREATE INDEX IF NOT EXISTS order_services_payment_type_idx ON order_services(payment_type);
 
 -- Müşteri dizini (Sipariş Oluşturma ekranındaki Müşteri seçimi için) — orders.customer_name
 -- serbest metin olarak kalır (FK değil); burası sadece öneri/yönetim listesidir,

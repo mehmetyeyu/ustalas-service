@@ -10,6 +10,7 @@ const MAX_BATCH_SIZE = 20;
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect();
     let imported = 0;
     let duplicates = 0;
+    let changedDuplicates = 0;
     let productsAdded = 0;
     try {
       const allLines = orders.flatMap((o) => o.lines);
@@ -97,6 +99,21 @@ export async function POST(request: NextRequest) {
 
           if (orderResult.rows.length === 0) {
             duplicates++;
+            // import_ref bazlı tekilleştirme tüm-ya-da-hiç çalışır — satır
+            // bazlı otomatik birleştirme yapılmaz (kaynak Excel'de hangi
+            // satırın "aynı" sayılacağına dair güvenilir bir kimlik yok).
+            // Bu yüzden, kaynak dosya sonradan düzeltilip mevcut gruba yeni
+            // bir satır eklenmiş olabileceği ihtimaline karşı, şu anki
+            // satır sayısı veritabanındakiyle uyuşmuyorsa kullanıcı ayrıca
+            // uyarılır — sessizce atlanmaz.
+            const existingLines = await client.query<{ line_count: string }>(
+              `SELECT COUNT(*)::int AS line_count FROM order_services os
+               JOIN orders o ON o.id = os.order_id WHERE o.import_ref = $1`,
+              [order.import_ref]
+            );
+            if (Number(existingLines.rows[0]?.line_count ?? 0) !== order.lines.length) {
+              changedDuplicates++;
+            }
             await client.query("COMMIT");
             continue;
           }
@@ -124,7 +141,7 @@ export async function POST(request: NextRequest) {
       client.release();
     }
 
-    return NextResponse.json({ imported, duplicates, productsAdded });
+    return NextResponse.json({ imported, duplicates, changedDuplicates, productsAdded });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
