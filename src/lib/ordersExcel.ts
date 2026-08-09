@@ -19,6 +19,16 @@ export interface ParsedOrder {
   lines: ParsedOrderLine[];
 }
 
+// Muhasebe programındaki bazı satırlarda Ödeme Şekli hücresine doğrudan bir
+// tedarikçi adı yazılmış olabilir (ör. "FB Lastik") — bilinen sabit ödeme
+// tiplerinden biri değilse ve zaten " Mail Order" ile bitmiyorsa, "<Tedarikçi>
+// Mail Order" anlamına geldiği kabul edilip öyle normalize edilir.
+const PAYMENT_FLAT_TYPES = new Set(["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap"]);
+function normalizePaymentType(raw: string): string {
+  if (!raw || PAYMENT_FLAT_TYPES.has(raw) || raw.endsWith(" Mail Order")) return raw;
+  return `${raw} Mail Order`;
+}
+
 const HEADER_MAP: Record<string, string> = {
   "tarih": "date",
   "müşteri": "customer_name",
@@ -108,7 +118,7 @@ export function parseOrderRows(
       : `named:${date}|${customerName.toLocaleLowerCase("tr-TR")}|${plate.toLocaleLowerCase("tr-TR")}`;
 
     const note = colIndex.note !== undefined ? toText(r[colIndex.note]) : "";
-    const paymentType = colIndex.payment_type !== undefined ? toText(r[colIndex.payment_type]) : "";
+    const paymentType = normalizePaymentType(colIndex.payment_type !== undefined ? toText(r[colIndex.payment_type]) : "");
 
     let order = groups.get(groupKey);
     if (!order) {

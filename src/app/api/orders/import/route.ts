@@ -28,23 +28,71 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect();
     let imported = 0;
     let duplicates = 0;
+    let productsAdded = 0;
     try {
-      const serviceIdByName = await resolveServiceIds(client, orders.flatMap((o) => o.lines));
-      await upsertDirectoryNames(client, "customers", orders.map((o) => o.customer_name));
-      await upsertDirectoryNames(client, "suppliers", orders.flatMap((o) => o.lines).map((l) => l.supplier));
+      const allLines = orders.flatMap((o) => o.lines);
+      const serviceIdByName = await resolveServiceIds(client, allLines);
+      // "Perakende Müşteri" gerçek bir müşteri değil, anonim satışları temsil
+      // eden bir yer tutucudur — Müşteri dizinine eklenmez.
+      const customerNames = orders
+        .map((o) => o.customer_name)
+        .filter((n) => (n ?? "").trim().toLocaleLowerCase("tr-TR") !== "perakende müşteri");
+      await upsertDirectoryNames(client, "customers", customerNames);
+      await upsertDirectoryNames(client, "suppliers", allLines.map((l) => l.supplier));
+
+      // Excel'deki Stok Kodu (Ürün Kodu) Ürün Kataloğu'nda henüz yoksa, en azından
+      // kodu (ve o satırdaki Ebat/Tedarikçi bilgisi varsa onu) tarihsiz "temel" bir
+      // parti olarak ekler — stok 0, fiyatlar boş bırakılır (bu geçmiş bir satışın
+      // kaydıdır, gerçek stok girişi değil); kullanıcı sonradan Ürün sayfasından
+      // fiyat/stok girebilir.
+      const codeInfo = new Map<string, { size_desc: string | null; supplier: string | null }>();
+      for (const line of allLines) {
+        const code = line.stock_code?.trim();
+        if (!code || codeInfo.has(code)) continue;
+        codeInfo.set(code, { size_desc: line.size_desc, supplier: line.supplier });
+      }
+      if (codeInfo.size > 0) {
+        const codes = Array.from(codeInfo.keys());
+        const existing = await client.query<{ code: string }>(
+          "SELECT DISTINCT code FROM products WHERE code = ANY($1)",
+          [codes]
+        );
+        const existingCodes = new Set(existing.rows.map((r) => r.code));
+        const missingCodes = codes.filter((c) => !existingCodes.has(c));
+        for (const code of missingCodes) {
+          const info = codeInfo.get(code)!;
+          const result = await client.query(
+            `INSERT INTO products (code, size_desc, supplier, stock_qty)
+             VALUES ($1, $2, $3, 0)
+             ON CONFLICT (code) WHERE production_year IS NULL DO NOTHING
+             RETURNING id`,
+            [code, info.size_desc, info.supplier]
+          );
+          if (result.rowCount) productsAdded++;
+        }
+      }
 
       for (const order of orders) {
         await client.query("BEGIN");
         try {
           const totalAmount = order.lines.reduce((sum, l) => sum + l.unit_price, 0);
 
+          // Hiçbir satırında Ödeme Şekli girilmemiş bir sipariş (ör. tutarı/ödemesi
+          // henüz netleşmemiş, açık bir işlem) TAMAMLANDI değil BEKLEMEDE olarak
+          // içe aktarılır — paid_amount/payment_date de boş kalır, ödeme normal
+          // "Ödeme Al & Kapat" akışıyla sonradan girilir.
+          const isPending = order.payment_type === null;
+          const status = isPending ? "BEKLEMEDE" : "TAMAMLANDI";
+          const paidAmount = isPending ? null : totalAmount;
+          const paymentDate = isPending ? null : order.date;
+
           const orderResult = await client.query<{ id: number }>(
             `INSERT INTO orders
                (plate, customer_name, notes, total_amount, paid_amount, status, payment_type, payment_date, created_at, import_ref)
-             VALUES ($1, $2, $3, $4, $4, 'TAMAMLANDI', $5, $6, $6, $7)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (import_ref) DO NOTHING
              RETURNING id`,
-            [order.plate, order.customer_name, order.notes, totalAmount, order.payment_type, order.date, order.import_ref]
+            [order.plate, order.customer_name, order.notes, totalAmount, paidAmount, status, order.payment_type, paymentDate, order.date, order.import_ref]
           );
 
           if (orderResult.rows.length === 0) {
@@ -76,7 +124,7 @@ export async function POST(request: NextRequest) {
       client.release();
     }
 
-    return NextResponse.json({ imported, duplicates });
+    return NextResponse.json({ imported, duplicates, productsAdded });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

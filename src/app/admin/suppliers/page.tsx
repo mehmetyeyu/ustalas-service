@@ -18,7 +18,10 @@ export default function SuppliersPage() {
   const [search, setSearch] = useState("");
 
   async function fetchSuppliers() {
-    const res = await fetch("/api/suppliers");
+    // GET /api/suppliers tarayıcı önbelleğine izin verir (Cache-Control) — bu
+    // yönetim ekranı bir ekleme/düzenleme/silmeden hemen sonra her zaman güncel
+    // veriyi göstermeli, o yüzden önbellek burada devre dışı bırakılır.
+    const res = await fetch("/api/suppliers", { cache: "no-store" });
     const data = await res.json();
     setSuppliers(Array.isArray(data) ? data : []);
     setLoading(false);

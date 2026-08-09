@@ -8,8 +8,14 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
+    // order_count: Müşteriler ekranındaki "Siparişler" linkinin hiç siparişi
+    // olmayan müşterilerde gösterilmemesi için (bkz. admin/customers/page.tsx).
     const result = await pool.query(
-      "SELECT id, name, phone FROM customers ORDER BY name"
+      `SELECT c.id, c.name, c.phone, COUNT(o.id)::int AS order_count
+       FROM customers c
+       LEFT JOIN orders o ON o.customer_name = c.name
+       GROUP BY c.id, c.name, c.phone
+       ORDER BY c.name`
     );
     return NextResponse.json(result.rows, {
       headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },

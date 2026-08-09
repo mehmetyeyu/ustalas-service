@@ -8,6 +8,7 @@ interface Customer {
   id: number;
   name: string;
   phone: string | null;
+  order_count: number;
 }
 
 interface CustomerOrder {
@@ -35,7 +36,10 @@ export default function CustomersPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   async function fetchCustomers() {
-    const res = await fetch("/api/customers");
+    // GET /api/customers tarayıcı önbelleğine izin verir (Cache-Control) — bu
+    // yönetim ekranı bir ekleme/düzenleme/silmeden hemen sonra her zaman güncel
+    // veriyi göstermeli, o yüzden önbellek burada devre dışı bırakılır.
+    const res = await fetch("/api/customers", { cache: "no-store" });
     const data = await res.json();
     setCustomers(Array.isArray(data) ? data : []);
     setLoading(false);
@@ -155,12 +159,14 @@ export default function CustomersPage() {
                   <td className="px-4 py-3 text-gray-600">{c.phone || "-"}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openOrders(c)}
-                        className="text-gray-600 hover:text-gray-900 text-xs font-medium"
-                      >
-                        Siparişler
-                      </button>
+                      {c.order_count > 0 && (
+                        <button
+                          onClick={() => openOrders(c)}
+                          className="text-gray-600 hover:text-gray-900 text-xs font-medium"
+                        >
+                          Siparişler
+                        </button>
+                      )}
                       <button
                         onClick={() => openEdit(c)}
                         className="text-blue-600 hover:text-blue-800 text-xs font-medium"

@@ -167,6 +167,7 @@ export default function OrdersPage() {
 
       let imported = 0;
       let duplicates = 0;
+      let productsAdded = 0;
       for (const batch of batches) {
         const res = await fetch("/api/orders/import", {
           method: "POST",
@@ -183,13 +184,15 @@ export default function OrdersPage() {
         }
         imported += data.imported ?? 0;
         duplicates += data.duplicates ?? 0;
+        productsAdded += data.productsAdded ?? 0;
         setImportProgress((prev) => ({ ...prev, current: Math.min(prev.total, prev.current + batch.length) }));
       }
 
       setImportMsg(
         `${imported} sipariş içe aktarıldı.` +
         (duplicates ? ` ${duplicates} sipariş daha önce aktarıldığı için atlandı.` : "") +
-        (parsed.skipped ? ` ${parsed.skipped} satır tarih/işlem bilgisi olmadığı için atlandı.` : "")
+        (parsed.skipped ? ` ${parsed.skipped} satır tarih/işlem bilgisi olmadığı için atlandı.` : "") +
+        (productsAdded ? ` Ürün kataloğuna eksik olan ${productsAdded} ürün kodu eklendi.` : "")
       );
       await fetchOrders();
     } catch {
