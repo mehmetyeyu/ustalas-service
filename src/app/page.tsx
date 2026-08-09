@@ -250,7 +250,6 @@ export default function OrderPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
-  const [stockSupplierOptions, setStockSupplierOptions] = useState<string[]>([]);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
@@ -278,11 +277,6 @@ export default function OrderPage() {
         );
         setSupplierOptions(merged);
       })
-      .catch(() => { });
-
-    fetch("/api/products/stock-suppliers")
-      .then((r) => r.json())
-      .then((data: string[]) => { if (Array.isArray(data)) setStockSupplierOptions(data); })
       .catch(() => { });
   }, []);
 
@@ -547,7 +541,7 @@ export default function OrderPage() {
                                   updateLine(i, { supplier: val });
                                 }
                               }}
-                              options={isTireSale ? stockSupplierOptions : supplierOptions}
+                              options={supplierOptions}
                               placeholder="Tedarikçi seç veya yaz..."
                             />
                           </td>

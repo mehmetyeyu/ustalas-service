@@ -351,7 +351,6 @@ function OrderDetailPageInner() {
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
-  const [stockSupplierOptions, setStockSupplierOptions] = useState<string[]>([]);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
   async function fetchOrder() {
@@ -374,10 +373,6 @@ function OrderDetailPageInner() {
         const merged = Array.from(new Set([...TEDARIKCI_SEED, ...d.map((s) => s.name)])).sort((a, b) => a.localeCompare(b, "tr-TR"));
         setSupplierOptions(merged);
       })
-      .catch(() => { });
-    fetch("/api/products/stock-suppliers")
-      .then((r) => r.json())
-      .then((d: string[]) => { if (Array.isArray(d)) setStockSupplierOptions(d); })
       .catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -675,7 +670,7 @@ function OrderDetailPageInner() {
                                 updateEditLine(i, { supplier: val });
                               }
                             }}
-                            options={isTireSale ? stockSupplierOptions : supplierOptions}
+                            options={supplierOptions}
                             placeholder="Tedarikçi seç veya yaz..."
                           />
                         </td>
