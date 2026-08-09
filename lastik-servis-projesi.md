@@ -102,7 +102,7 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 - "Detay →" ile sipariş detayına gidilir; detaydan "Düzelt" (tam ekran) ile satırlar (Yapılan İşlem, Tedarikçi, Stok Kodu, Ebat, Adet, Tutar, Maliyet, ödeme tipi, ve Lastik Satışı'nda parti bağlantısı dahil) düzenlenebilir — düzenleme, stok bağlantılı satırlarda stoğu farkına göre otomatik günceller (bkz. Bölüm 1).
 - "Sil" ile sipariş (tüm satırlarıyla, stok bağlantılı satırların stoğu geri eklenerek) kalıcı olarak silinir.
 
-**Excel İçe Aktar:** Muhasebe programından dışa aktarılan `.xlsx` okunur, gruplanır (aynı tarih+müşteri+plaka tek siparişte birleşir; Perakende/plakasız satırlar birleştirilmez), hizmet eşleştirmesi otomatik yapılır, `import_ref` ile tekrar aktarımda mükerrer kayıt oluşmaz.
+**Excel İçe Aktar:** Muhasebe programından dışa aktarılan `.xlsx` okunur, gruplanır (aynı tarih+müşteri+plaka tek siparişte birleşir; Perakende/plakasız satırlar birleştirilmez), hizmet eşleştirmesi otomatik yapılır, `import_ref` ile tekrar aktarımda mükerrer kayıt oluşmaz. Tekilleştirme tüm-ya-da-hiç çalışır (satır bazlı otomatik birleştirme yapılmaz) — kaynak dosya sonradan düzeltilip (ör. unutulan bir satır eklenip) aynı gruba ait bir sipariş tekrar yüklenirse, o sipariş yine mükerrer sayılıp atlanır, **ama** şu anki dosyadaki satır sayısı veritabanındakinden farklıysa kullanıcı ayrıca (turuncu) bir uyarıyla bilgilendirilir — sessizce veri kaybı olmaz, elle kontrol/ekleme gerekir.
 
 ---
 
@@ -110,7 +110,7 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 
 Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda miktar, ebat, tedarikçi, kendi ödeme tipi rozeti); toplam; indirim varsa ayrı satır; notlar; oluşturulma tarihi ve ödeme bilgisi; "Ödeme Al & Kapat" (BEKLEMEDE ise) ve "Düzelt" aksiyonları.
 
-**"Düzelt" ekranı:** tam ekran açılır (üstte "← Geri" ile normal görünüme dönülür, kaydetmeden çıkar); işlem satırları tablosunda arama/seçim dropdown'ları (Yapılan İşlem, Tedarikçi, Ürün Kodu) `document.body`'e portal ile taşınır — böylece tablonun yatay kaydırma alanı tarafından kırpılmaz.
+**"Düzelt" ekranı:** tam ekran açılır (üstte "← Geri" ile normal görünüme dönülür, kaydetmeden çıkar); işlem satırları tablosunda arama/seçim dropdown'ları (Yapılan İşlem, Tedarikçi, Ürün Kodu) `document.body`'e portal ile taşınır — böylece tablonun yatay kaydırma alanı tarafından kırpılmaz. Zaten bir stok partisine bağlı (product_id dolu) satırların güncel stoğu, ekran açılır açılmaz çekilir (`GET /api/products/:id`) — Adet, o partinin gerçek kalan stoğunu (bu satırın zaten tuttuğu miktar dahil) aşarsa parti seçiciye hiç dokunulmadan da kırmızı uyarı görünür.
 
 ---
 
@@ -121,6 +121,8 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 **Ödeme tipi işlem (satır) bazındadır:** `payment_type`, `order_services` seviyesinde tutulur; `orders.payment_type` özet değeridir (tüm satırlar aynıysa o değer, karışıksa `"Karışık"`).
 
 **Akış:** Yönetici "Ödeme Al & Kapat"a basar → modal, her satır için ayrı ödeme tipi seçici (varsayılan mevcut değer, yoksa Nakit) ve sipariş geneli Alınan Tutar alanı gösterir → onaylanınca sipariş `TAMAMLANDI` olur, `payment_date`/`paid_amount` kaydedilir.
+
+**Not:** `PATCH` sunucu tarafında siparişin mevcut statüsünü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz (409 döner). Bu, arayüzün "Ödeme Al & Kapat" butonunu zaten sadece `BEKLEMEDE` iken göstermesiyle uyumlu, ama API'ye doğrudan istek atılsa bile mevcut ödeme kaydının üzerine sessizce yazılmasını engeller.
 
 ---
 
@@ -222,7 +224,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
 
-**İndeksler** (performans): `orders(created_at)`, `orders(status)`, `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `products` üzerindeki iki benzersizlik indeksi.
+**İndeksler** (performans): `orders(created_at)`, `orders(status)`, `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `products` üzerindeki iki benzersizlik indeksi.
 
 **Not — stok bütünlüğü:** `order_services.product_id` seçili bir sipariş satırı, o partinin `products.stock_qty`'siyle her zaman senkron tutulur (satır eklenir/silinir/miktarı değişir/parti değişir → sırasıyla düşülür/geri eklenir/farkı uygulanır/eski geri + yeni düşülür). İşlemler transaction içinde `SELECT ... FOR UPDATE` ile kilitlenir; yetersiz stokta `InsufficientStockError` fırlatılır ve tüm işlem geri alınır.
 
@@ -238,7 +240,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | PATCH | `/api/orders/:id` | Siparişi kapat (ödeme tipi + tutar) |
 | PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır) |
 | DELETE | `/api/orders/:id` | Siparişi sil (bağlı stok geri eklenir, order_services cascade) |
-| POST | `/api/orders/import` | Excel'den toplu içe aktar |
+| POST | `/api/orders/import` | Excel'den toplu içe aktar; yanıtta `changedDuplicates` — mükerrer sayılıp atlanan ama satır sayısı değişmiş gruplar |
 | GET | `/api/orders/payment-types` | Filtrele modalı için gerçekten kullanılmış Ödeme Şekli değerleri (distinct) |
 | GET/POST | `/api/services`, `/api/services/:id` (PATCH/DELETE) | Hizmet yönetimi |
 | GET | `/api/reports` | Aylık rapor (`created_at` bazlı) |
@@ -246,7 +248,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET | `/api/auth/me` | Oturum bilgisi |
 | GET/POST | `/api/storage`, `/api/storage/:id` (PATCH/DELETE) | Depolama CRUD (teslim işaretleme dahil) |
 | POST/GET | `/api/storage/import`, `/api/storage/export` | Excel içe/dışa aktarma |
-| GET/POST | `/api/products`, `/api/products/:id` (PATCH/DELETE) | Ürün/parti CRUD (POST: eşleşen parti varsa stok ekler + fiyat geçmişine düşer); GET sayfalı, sortBy/sortDir destekler (whitelist: code/brand/size_desc/total_stock) |
+| GET/POST | `/api/products`, `/api/products/:id` (PATCH/DELETE) | Ürün/parti CRUD (POST: eşleşen parti varsa stok ekler + fiyat geçmişine düşer); GET (liste) sayfalı, sortBy/sortDir destekler (whitelist: code/brand/size_desc/total_stock) |
+| GET | `/api/products/:id` | Tek bir partinin id + güncel stock_qty'si (Sipariş Düzelt'teki stok uyarısı için) |
 | GET | `/api/products/:id/history` | Bir partinin fiyat geçmişi |
 | GET | `/api/products/movements` | Malzeme Hareketleri (Giriş + Çıkış birleşik, sayfalı) |
 | GET | `/api/products/brands` | Mevcut markalar (distinct) |
@@ -277,8 +280,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 
 ## Güvenlik Notları
 
-- `middleware.ts`, `/` ve `/admin/*` sayfa isteklerini korur — ama **API rotalarını (`/api/*`) kapsamaz**; her API dosyası kendi `getAuthUser()` kontrolünü kendisi yapar. Tüm `route.ts` dosyaları bu deseni takip eder.
+- `middleware.ts`, `/` ve `/admin/*` sayfa isteklerini korur — ama **API rotalarını (`/api/*`) kapsamaz** (middleware `matcher`'ı `/api/*`'i içermez); her API dosyası kendi `getAuthUser()` kontrolünü kendisi yapar (token geçerliliği). Tüm `route.ts` dosyaları bu deseni takip eder.
+- **Rol kontrolü (`role === 'admin'`) şu an yalnızca `/api/orders*` uçlarında var** (`POST /api/orders` — sipariş oluşturma — hariç, o Karşılama Görevlisi'ne de açık kalmalı). Bir denetimde, sayfa seviyesinde admin'e kapalı olan bu uçların (liste, detay, düzenle, kapat, sil, içe aktar) **API'den doğrudan çağrıldığında** herhangi bir geçerli (admin olmayan) oturumla erişilebildiği tespit edilip düzeltildi (bkz. `e7f9022` commit'i). **Diğer modüllerin (`/api/products*`, `/api/storage*`, `/api/customers*`, `/api/suppliers*`, `/api/services*`, `/api/reports`) API uçlarında henüz aynı rol kontrolü yok** — sayfa seviyesinde admin'e kapalı olsalar da API'den herhangi bir oturumla erişilebilirler. Bu modüllerden birine dokunulduğunda aynı kontrolün eklenip eklenmeyeceği gözden geçirilmeli.
 - Yönetici şifreleri bcrypt ile hashlenmiştir.
 - JWT token süresi varsayılan 8 saat (vardiya süresi), `jose` ile imzalanır/doğrulanır.
-- Tüm SQL sorguları parametrik (`$1, $2, ...`) — hiçbir yerde kullanıcı girdisi doğrudan sorgu metnine eklenmez; arama girdileri ayrıca `LIKE` özel karakterlerine (`%`, `_`, `\`) karşı kaçışlanır.
-- Stok düşümü/geri ekleme işlemleri satır bazlı `FOR UPDATE` kilidi ile eşzamanlılığa karşı korunur (bkz. Veritabanı Şeması notu).
+- Tüm SQL sorguları parametrik (`$1, $2, ...`) — hiçbir yerde kullanıcı girdisi doğrudan sorgu metnine eklenmez; arama girdileri ayrıca `LIKE` özel karakterlerine (`%`, `_`, `\`) karşı kaçışlanır. Çoklu seçim filtreleri (ör. Sipariş Listesi'ndeki Yapılan İşlem/Tedarikçi/Ödeme Şekli) `= ANY($n)` ile parametrik diziler olarak gönderilir.
+- Stok düşümü/geri ekleme işlemleri satır bazlı `FOR UPDATE` kilidi ile eşzamanlılığa karşı korunur (bkz. Veritabanı Şeması notu). Sipariş kapatma (`PATCH /api/orders/:id`) da aynı şekilde siparişi `FOR UPDATE` ile kilitleyip mevcut statüyü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz.
