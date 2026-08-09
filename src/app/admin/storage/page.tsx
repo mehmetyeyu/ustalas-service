@@ -158,6 +158,15 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "islem_tarihi", label: "Tarih", defaultVisible: true },
 ];
 
+// Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
+// aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
+const SKELETON_COL_WIDTH: Record<string, string> = {
+  depo_no: "w-8", plate: "w-16", customer_name: "w-28", phone: "w-20",
+  ebat: "w-20", marka: "w-20", dis_derinligi: "w-10", adet: "w-6",
+  mevsim: "w-16", aciklama: "w-32", islem_tarihi: "w-16",
+};
+const SKELETON_ROWS = 8;
+
 const EMPTY_FORM = {
   depo_no: "",
   plate: "",
@@ -444,6 +453,9 @@ export default function StoragePage() {
     }
   }
 
+  // + 1: her zaman görünen işlemler sütunu.
+  const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
+
   return (
     <div onClick={() => { setShowColPicker(false); setOpenMenuId(null); }}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -547,31 +559,44 @@ export default function StoragePage() {
 
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center text-gray-400">Yükleniyor...</div>
-        ) : items.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">Kayıt bulunamadı.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                {visibleCols.depo_no && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">No</th>}
+                {visibleCols.plate && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Plaka</th>}
+                {visibleCols.customer_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri</th>}
+                {visibleCols.phone && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Telefon</th>}
+                {visibleCols.ebat && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat</th>}
+                {visibleCols.marka && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marka</th>}
+                {visibleCols.dis_derinligi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Diş</th>}
+                {visibleCols.adet && <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Adet</th>}
+                {visibleCols.mevsim && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
+                {visibleCols.aciklama && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
+                {visibleCols.islem_tarihi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>}
+                <th className="sticky right-0 bg-gray-50 px-4 py-3 border-l border-gray-200"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                  <tr key={`skeleton-${i}`}>
+                    {COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
+                      <td key={c.key} className="px-4 py-3">
+                        <div className={`h-4 ${SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
+                      </td>
+                    ))}
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-20 bg-gray-100 rounded animate-pulse" />
+                    </td>
+                  </tr>
+                ))
+              ) : items.length === 0 ? (
                 <tr>
-                  {visibleCols.depo_no && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">No</th>}
-                  {visibleCols.plate && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Plaka</th>}
-                  {visibleCols.customer_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri</th>}
-                  {visibleCols.phone && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Telefon</th>}
-                  {visibleCols.ebat && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat</th>}
-                  {visibleCols.marka && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marka</th>}
-                  {visibleCols.dis_derinligi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Diş</th>}
-                  {visibleCols.adet && <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Adet</th>}
-                  {visibleCols.mevsim && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
-                  {visibleCols.aciklama && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
-                  {visibleCols.islem_tarihi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>}
-                  <th className="sticky right-0 bg-gray-50 px-4 py-3 border-l border-gray-200"></th>
+                  <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">Kayıt bulunamadı.</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {items.map((item, index) => (
+              ) : (
+                items.map((item, index) => (
                   <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isOverdue(item.islem_tarihi) ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
                     {visibleCols.depo_no && <td className="px-4 py-3 text-gray-400">{item.depo_no ?? "—"}</td>}
                     {visibleCols.plate && (
@@ -689,11 +714,11 @@ export default function StoragePage() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}

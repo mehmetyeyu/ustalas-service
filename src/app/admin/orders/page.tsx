@@ -146,6 +146,17 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "notes", label: "Açıklama", defaultVisible: true },
 ];
 
+// Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
+// aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir — veri
+// gelince ani bir yerleşim sıçraması olmasın diye başlıklar hep aynı kalır.
+const SKELETON_COL_WIDTH: Record<string, string> = {
+  order_no: "w-10", date: "w-16", customer_name: "w-28", plate: "w-16",
+  service_name: "w-24", supplier: "w-20", stock_code: "w-16", size_desc: "w-28",
+  quantity: "w-6", unit_price: "w-14", cost_price: "w-14", kar: "w-14",
+  payment_type: "w-20", notes: "w-32",
+};
+const SKELETON_ROWS = 8;
+
 interface OrderRow {
   id: number;
   plate: string;
@@ -436,6 +447,9 @@ export default function OrdersPage() {
     (statusFilter ? 1 : 0) + (dateFilter ? 1 : 0) +
     Object.values(fieldFilters).filter((v) => Array.isArray(v) ? v.length > 0 : v.trim()).length;
 
+  // + 2: her zaman görünen Statü ve İşlemler sütunları.
+  const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 2;
+
   return (
     <div onClick={() => setShowColPicker(false)}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -695,37 +709,53 @@ export default function OrdersPage() {
 
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center text-gray-400">Yükleniyor...</div>
-        ) : rows.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">
-            {activeFilterCount > 0 || search.trim() ? "Filtrelere uyan sipariş bulunamadı." : "Sipariş bulunamadı."}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" />}
+                {visibleCols.date && <SortTh sortK="date" label="Tarih" />}
+                {visibleCols.customer_name && <SortTh sortK="customer_name" label="Müşteri" />}
+                {visibleCols.plate && <SortTh sortK="plate" label="Plaka" />}
+                {visibleCols.service_name && <SortTh sortK="service_name" label="Yapılan İşlem" />}
+                {visibleCols.supplier && <SortTh sortK="supplier" label="Tedarikçi" />}
+                {visibleCols.stock_code && <SortTh sortK="stock_code" label="Stok Kodu" />}
+                {visibleCols.size_desc && <SortTh sortK="size_desc" label="Ebat/Ürün" />}
+                {visibleCols.quantity && <SortTh sortK="quantity" label="Adet" align="right" />}
+                {visibleCols.unit_price && <SortTh sortK="unit_price" label="Tutar" align="right" />}
+                {visibleCols.cost_price && <SortTh sortK="cost_price" label="Maliyet" align="right" />}
+                {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
+                {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
+                {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
+                <SortTh sortK="status" label="Statü" align="center" stickyClassName="sticky right-[240px] z-20 bg-gray-50 shadow-[-1px_0_0_0_#e5e7eb]" />
+                <th className="px-4 py-3 sticky right-0 z-20 bg-gray-50 w-[240px] min-w-[240px] max-w-[240px]"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                  <tr key={`skeleton-${i}`}>
+                    {COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
+                      <td key={c.key} className="px-4 py-3">
+                        <div className={`h-4 ${SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-center">
+                      <div className="h-5 w-16 bg-gray-100 rounded-full animate-pulse mx-auto" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-20 bg-gray-100 rounded animate-pulse" />
+                    </td>
+                  </tr>
+                ))
+              ) : rows.length === 0 ? (
                 <tr>
-                  {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" />}
-                  {visibleCols.date && <SortTh sortK="date" label="Tarih" />}
-                  {visibleCols.customer_name && <SortTh sortK="customer_name" label="Müşteri" />}
-                  {visibleCols.plate && <SortTh sortK="plate" label="Plaka" />}
-                  {visibleCols.service_name && <SortTh sortK="service_name" label="Yapılan İşlem" />}
-                  {visibleCols.supplier && <SortTh sortK="supplier" label="Tedarikçi" />}
-                  {visibleCols.stock_code && <SortTh sortK="stock_code" label="Stok Kodu" />}
-                  {visibleCols.size_desc && <SortTh sortK="size_desc" label="Ebat/Ürün" />}
-                  {visibleCols.quantity && <SortTh sortK="quantity" label="Adet" align="right" />}
-                  {visibleCols.unit_price && <SortTh sortK="unit_price" label="Tutar" align="right" />}
-                  {visibleCols.cost_price && <SortTh sortK="cost_price" label="Maliyet" align="right" />}
-                  {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
-                  {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
-                  {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
-                  <SortTh sortK="status" label="Statü" align="center" stickyClassName="sticky right-[240px] z-20 bg-gray-50 shadow-[-1px_0_0_0_#e5e7eb]" />
-                  <th className="px-4 py-3 sticky right-0 z-20 bg-gray-50 w-[240px] min-w-[240px] max-w-[240px]"></th>
+                  <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">
+                    {activeFilterCount > 0 || search.trim() ? "Filtrelere uyan sipariş bulunamadı." : "Sipariş bulunamadı."}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((r) => {
+              ) : (
+                rows.map((r) => {
                   const unitPrice = Number(r.unit_price || 0);
                   const costPrice = Number(r.cost_price || 0);
                   const kar = unitPrice - costPrice;
@@ -807,11 +837,11 @@ export default function OrdersPage() {
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}

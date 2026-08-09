@@ -137,6 +137,13 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
   { key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true },
 ];
 
+// Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
+// aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
+const BATCH_SKELETON_COL_WIDTH: Record<string, string> = {
+  production_date: "w-12", season: "w-14", supplier: "w-16", purchase_price: "w-14", sale_price: "w-14",
+};
+const SKELETON_ROWS = 8;
+
 const EMPTY_FORM = {
   code: "",
   brand: "",
@@ -524,6 +531,9 @@ export default function ProductsPage() {
     }
   }
 
+  // 4 sabit sütun (Ürün Kodu/Marka/Ebat/Stok) + görünür parti sütunları + işlemler.
+  const visibleColCount = 4 + BATCH_COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
+
   return (
     <div onClick={() => setShowColPicker(false)}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -643,31 +653,48 @@ export default function ProductsPage() {
         <>
           {/* Malzeme Hareketleri Tablosu */}
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            {movementsLoading ? (
-              <div className="p-12 text-center text-gray-400">Yükleniyor...</div>
-            ) : movements.length === 0 ? (
-              <div className="p-12 text-center text-gray-400">Kayıt bulunamadı.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tür</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ürün Kodu</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marka</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Miktar</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Alış Fiyatı</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Satış Fiyatı</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Bu partinin şu anki stok durumu">Güncel Stok</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {movementsLoading ? (
+                    Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                      <tr key={`skeleton-${i}`}>
+                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-5 w-12 bg-gray-100 rounded-full animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-12 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3 text-center"><div className="h-4 w-8 bg-gray-100 rounded animate-pulse mx-auto" /></td>
+                        <td className="px-4 py-3 text-right"><div className="h-4 w-14 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                        <td className="px-4 py-3 text-right"><div className="h-4 w-14 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                        <td className="px-4 py-3 text-center"><div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" /></td>
+                      </tr>
+                    ))
+                  ) : movements.length === 0 ? (
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tür</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ürün Kodu</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marka</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri</th>
-                      <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Miktar</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Alış Fiyatı</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Satış Fiyatı</th>
-                      <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Bu partinin şu anki stok durumu">Güncel Stok</th>
+                      <td colSpan={12} className="p-12 text-center text-gray-400">Kayıt bulunamadı.</td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {movements.map((m) => (
+                  ) : (
+                    movements.map((m) => (
                       <tr key={`${m.type}-${m.entry_id}`} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{new Date(m.event_date).toLocaleDateString("tr-TR")}</td>
                         <td className="px-4 py-3">
@@ -702,11 +729,11 @@ export default function ProductsPage() {
                           </span>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
@@ -750,29 +777,46 @@ export default function ProductsPage() {
       <>
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center text-gray-400">Yükleniyor...</div>
-        ) : items.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">Ürün bulunamadı.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <SortTh sortK="code" label="Ürün Kodu" />
+                <SortTh sortK="brand" label="Marka" />
+                <SortTh sortK="size_desc" label="Ebat" />
+                <SortTh sortK="total_stock" label="Stok" align="center" />
+                {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
+                {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
+                {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
+                {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
+                {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                  <tr key={`skeleton-${i}`}>
+                    <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-100 rounded animate-pulse" /></td>
+                    <td className="px-4 py-3 text-center"><div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" /></td>
+                    {BATCH_COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
+                      <td key={c.key} className="px-4 py-3">
+                        <div className={`h-4 ${BATCH_SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
+                      </td>
+                    ))}
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-24 bg-gray-100 rounded animate-pulse ml-auto" />
+                    </td>
+                  </tr>
+                ))
+              ) : items.length === 0 ? (
                 <tr>
-                  <SortTh sortK="code" label="Ürün Kodu" />
-                  <SortTh sortK="brand" label="Marka" />
-                  <SortTh sortK="size_desc" label="Ebat" />
-                  <SortTh sortK="total_stock" label="Stok" align="center" />
-                  {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
-                  {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
-                  {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
-                  {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
-                  {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
-                  <th className="px-4 py-3"></th>
+                  <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">Ürün bulunamadı.</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {items.map((group) => {
+              ) : (
+                items.map((group) => {
                   const expanded = expandedCodes.has(group.code);
                   return (
                     <Fragment key={group.code}>
@@ -861,11 +905,11 @@ export default function ProductsPage() {
                       ))}
                     </Fragment>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}
@@ -1155,9 +1199,7 @@ export default function ProductsPage() {
               {historyModalProduct.supplier && <span className="text-gray-400"> — Tedarikçi: {historyModalProduct.supplier}</span>}
             </p>
 
-            {historyLoading ? (
-              <div className="py-8 text-center text-gray-400 text-sm">Yükleniyor...</div>
-            ) : historyEntries.length === 0 ? (
+            {historyEntries.length === 0 && !historyLoading ? (
               <div className="py-8 text-center text-gray-400 text-sm">Henüz stok girişi kaydı yok.</div>
             ) : (
               <div className="overflow-x-auto border border-gray-100 rounded-lg">
@@ -1171,14 +1213,25 @@ export default function ProductsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {historyEntries.map((e) => (
-                      <tr key={e.id}>
-                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{new Date(e.entry_date).toLocaleDateString("tr-TR")}</td>
-                        <td className="px-3 py-2 text-center text-gray-700">{e.quantity}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{e.purchase_price != null ? formatCurrency(num(e.purchase_price)) : "—"}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{e.sale_price != null ? formatCurrency(num(e.sale_price)) : "—"}</td>
-                      </tr>
-                    ))}
+                    {historyLoading ? (
+                      Array.from({ length: 4 }).map((_, i) => (
+                        <tr key={`skeleton-${i}`}>
+                          <td className="px-3 py-2"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                          <td className="px-3 py-2 text-center"><div className="h-4 w-6 bg-gray-100 rounded animate-pulse mx-auto" /></td>
+                          <td className="px-3 py-2 text-right"><div className="h-4 w-14 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                          <td className="px-3 py-2 text-right"><div className="h-4 w-14 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      historyEntries.map((e) => (
+                        <tr key={e.id}>
+                          <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{new Date(e.entry_date).toLocaleDateString("tr-TR")}</td>
+                          <td className="px-3 py-2 text-center text-gray-700">{e.quantity}</td>
+                          <td className="px-3 py-2 text-right text-gray-700">{e.purchase_price != null ? formatCurrency(num(e.purchase_price)) : "—"}</td>
+                          <td className="px-3 py-2 text-right text-gray-700">{e.sale_price != null ? formatCurrency(num(e.sale_price)) : "—"}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
