@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
 
@@ -140,7 +141,9 @@ function SearchableCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = query
     ? options.filter((o) => o.toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR")))
@@ -148,15 +151,40 @@ function SearchableCombobox({
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        containerRef.current && !containerRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest("[data-combobox-list]")
+      ) {
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  // Dropdown, İşlem Satırları tablosunun yatay kaydırma alanı (overflow-x-auto)
+  // tarafından kırpılmasın diye document.body'e portal ile taşınır; konumu
+  // input'un ekran koordinatlarına göre hesaplanır.
+  useEffect(() => {
+    if (!open) return;
+    function updateRect() {
+      if (!inputRef.current) return;
+      const r = inputRef.current.getBoundingClientRect();
+      setRect({ top: r.bottom, left: r.left, width: r.width });
+    }
+    updateRect();
+    window.addEventListener("scroll", updateRect, true);
+    window.addEventListener("resize", updateRect);
+    return () => {
+      window.removeEventListener("scroll", updateRect, true);
+      window.removeEventListener("resize", updateRect);
+    };
+  }, [open]);
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={containerRef} className="relative">
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
@@ -164,8 +192,12 @@ function SearchableCombobox({
         placeholder={placeholder}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      {open && filtered.length > 0 && (
-        <ul className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+      {open && filtered.length > 0 && rect && typeof document !== "undefined" && createPortal(
+        <ul
+          data-combobox-list
+          style={{ position: "fixed", top: rect.top + 4, left: rect.left, width: rect.width }}
+          className="z-50 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+        >
           {filtered.map((opt) => (
             <li
               key={opt}
@@ -175,7 +207,8 @@ function SearchableCombobox({
               {opt}
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );
@@ -535,18 +568,17 @@ function OrderDetailPageInner() {
     return <div className="p-12 text-center text-gray-400">Sipariş bulunamadı.</div>;
   }
 
-  return (
-    <div className={editing ? "max-w-4xl mx-auto" : "max-w-2xl mx-auto"}>
-      <button
-        onClick={() => router.back()}
-        className="mb-4 text-sm text-gray-500 hover:text-gray-800"
-      >
-        ← Geri
-      </button>
+  if (editing) {
+    return (
+      <div className="fixed inset-0 z-40 bg-white overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
+            <button
+              onClick={() => setEditing(false)}
+              className="mb-4 text-sm text-gray-500 hover:text-gray-800"
+            >
+              ← Geri
+            </button>
 
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        {editing ? (
-          <>
             <div className="flex items-center justify-between mb-6">
               <h1 className="text-xl font-bold text-gray-800">Sipariş #{order.id} — Düzelt</h1>
             </div>
@@ -603,17 +635,17 @@ function OrderDetailPageInner() {
                 {/* table-fixed: sütun genişlikleri sabit kalır, Ödeme sütunu
                     Mail Order için ikinci bir seçici gösterse bile diğer
                     sütunlar sıkışmaz — taşma yatay kaydırmayla karşılanır. */}
-                <table className="text-sm border-collapse table-fixed" style={{ width: "1130px" }}>
+                <table className="text-sm border-collapse table-fixed" style={{ width: "1232px" }}>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[160px]">Yapılan İşlem</th>
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[150px]">Tedarikçi</th>
                       {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Stok Kodu</th>}
-                      {hasTireSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[150px]">Ebat</th>}
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-16">Adet</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Tutar (₺)</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Maliyet (₺)</th>
-                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[260px]">Ödeme</th>
+                      {hasTireSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[220px]">Ebat</th>}
+                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[72px]">Adet</th>
+                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[112px]">Tutar (₺)</th>
+                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[112px]">Maliyet (₺)</th>
+                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[256px]">Ödeme</th>
                       <th className="px-2 py-2 w-10"></th>
                     </tr>
                   </thead>
@@ -715,7 +747,7 @@ function OrderDetailPageInner() {
                                 updateEditLine(i, { quantity });
                               }
                             }}
-                            className={`w-16 border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
+                            className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
                           />
                           {line.product_id != null && line.max_stock != null && (
                             <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
@@ -730,7 +762,7 @@ function OrderDetailPageInner() {
                             step="0.01"
                             value={line.unit_price}
                             onChange={(e) => updateEditLine(i, { unit_price: e.target.value })}
-                            className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
                         <td className="px-2 py-2 align-top">
@@ -740,7 +772,7 @@ function OrderDetailPageInner() {
                             step="0.01"
                             value={line.cost_price}
                             onChange={(e) => updateEditLine(i, { cost_price: e.target.value })}
-                            className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
                         <td className="px-2 py-2 align-top">
@@ -802,9 +834,21 @@ function OrderDetailPageInner() {
                 {savingEdit ? "Kaydediliyor..." : "Kaydet"}
               </button>
             </div>
-          </>
-        ) : (
-          <>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <button
+        onClick={() => router.back()}
+        className="mb-4 text-sm text-gray-500 hover:text-gray-800"
+      >
+        ← Geri
+      </button>
+
+      <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h1 className="text-3xl font-bold font-mono text-gray-800">{order.plate}</h1>
@@ -914,8 +958,6 @@ function OrderDetailPageInner() {
                 Ödeme Al & Kapat
               </button>
             )}
-          </>
-        )}
       </div>
 
       {/* Ödeme Modal */}

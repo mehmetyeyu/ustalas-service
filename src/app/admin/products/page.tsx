@@ -219,8 +219,8 @@ export default function ProductsPage() {
   // Sıralama sunucuda yapılır (bkz. /api/products) çünkü liste sayfalanmıştır —
   // yalnızca gruplama sorgusunda doğrudan hesaplanan sütunlar sıralanabilir
   // (Alış/Satış Fiyatı Ort. ayrı bir sorgudan geldiği için tıklanabilir değil).
-  const [sortBy, setSortBy] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortBy, setSortBy] = useState<string | null>("total_stock");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   function toggleSort(key: string) {
     if (sortBy === key) {
