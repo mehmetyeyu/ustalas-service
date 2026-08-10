@@ -29,6 +29,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { name, phone } = await request.json();
@@ -36,9 +37,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Müşteri adı zorunludur." }, { status: 400 });
     }
 
+    // Aynı isimle (ör. sipariş oluştururken) tekrar eklenirse, boş bırakılan
+    // telefon mevcut kaydı sessizce silmesin diye orders.ts'teki upsertle aynı
+    // COALESCE deseni kullanılır.
     const result = await pool.query(
       `INSERT INTO customers (name, phone) VALUES ($1, $2)
-       ON CONFLICT (name) DO UPDATE SET phone = EXCLUDED.phone
+       ON CONFLICT (name) DO UPDATE SET phone = COALESCE(EXCLUDED.phone, customers.phone)
        RETURNING id, name, phone`,
       [String(name).trim(), phone ? String(phone).trim() : null]
     );

@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const result = await pool.query("SELECT * FROM storage WHERE teslim_edildi = false ORDER BY created_at DESC");

@@ -22,6 +22,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { name, price } = await request.json();
@@ -29,6 +30,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
     }
     const priceValue = price === "" || price == null ? null : Number(price);
+    if (priceValue != null && (!Number.isFinite(priceValue) || priceValue < 0)) {
+      return NextResponse.json({ error: "Geçersiz fiyat." }, { status: 400 });
+    }
 
     const result = await pool.query(
       "INSERT INTO services (name, price) VALUES ($1, $2) RETURNING id",
@@ -38,7 +42,10 @@ export async function POST(request: NextRequest) {
       { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1 },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: unknown) {
+    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      return NextResponse.json({ error: "Bu isimde bir hizmet zaten mevcut." }, { status: 409 });
+    }
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
   }

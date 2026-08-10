@@ -14,6 +14,7 @@ export async function GET(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -37,6 +38,7 @@ export async function PATCH(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -81,6 +83,10 @@ export async function PATCH(
           [brand || null, size_desc || null, season || null, purchase_price ?? null, sale_price ?? null, qty, target.id]
         );
         await client.query(`UPDATE product_stock_entries SET product_id=$1 WHERE product_id=$2`, [target.id, id]);
+        // Bu partiye bağlı geçmiş satışlar da hedefe taşınır — aksi hâlde
+        // silinen partinin product_id'si (ON DELETE SET NULL) NULL'a düşer ve
+        // o satışlar Malzeme Hareketleri'nden (INNER JOIN products) kaybolur.
+        await client.query(`UPDATE order_services SET product_id=$1 WHERE product_id=$2`, [target.id, id]);
         await client.query(`DELETE FROM products WHERE id=$1`, [id]);
         await client.query("COMMIT");
         return NextResponse.json(merged.rows[0]);
@@ -122,6 +128,7 @@ export async function DELETE(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;

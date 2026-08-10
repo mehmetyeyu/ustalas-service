@@ -77,6 +77,9 @@ CREATE INDEX IF NOT EXISTS order_services_service_id_idx ON order_services(servi
 CREATE INDEX IF NOT EXISTS order_services_supplier_idx ON order_services(supplier);
 CREATE INDEX IF NOT EXISTS order_services_payment_type_idx ON order_services(payment_type);
 CREATE INDEX IF NOT EXISTS order_payments_order_id_idx ON order_payments(order_id);
+-- Müşteri Detayı ekranındaki "Siparişler" ve müşteri silme öncesi aktif
+-- sipariş kontrolü, customer_name üzerinden filtreler (bkz. /api/customers/*).
+CREATE INDEX IF NOT EXISTS orders_customer_name_idx ON orders(customer_name);
 
 -- Müşteri dizini (Sipariş Oluşturma ekranındaki Müşteri seçimi için) — orders.customer_name
 -- serbest metin olarak kalır (FK değil); burası sadece öneri/yönetim listesidir,
@@ -130,6 +133,15 @@ CREATE TABLE IF NOT EXISTS storage (
   teslim_tarihi  DATE
 );
 CREATE INDEX IF NOT EXISTS storage_teslim_edildi_idx ON storage(teslim_edildi);
+-- Aktif kayıtlarda depo no eşzamanlı iki POST'ta çakışabiliyordu (boşta kalan
+-- no ayrı bir SELECT ile bulunup kilitsiz INSERT ediliyordu) — bu kısıt
+-- ikincisini 23505 ile engeller (bkz. src/app/api/storage/route.ts POST).
+-- teslim_edildi=true olunca depo no'nun tekrar kullanılabilmesi için kısıt
+-- yalnızca aktif (teslim_edildi=false) kayıtları kapsar.
+CREATE UNIQUE INDEX IF NOT EXISTS storage_active_depo_no_unique ON storage(depo_no) WHERE teslim_edildi = false AND depo_no IS NOT NULL;
+-- Liste varsayılan sıralaması (created_at DESC) ve "Gecikmiş" filtresi (islem_tarihi).
+CREATE INDEX IF NOT EXISTS storage_created_at_idx ON storage(created_at DESC);
+CREATE INDEX IF NOT EXISTS storage_islem_tarihi_idx ON storage(islem_tarihi);
 
 -- Ürün Kataloğu (lastik/ürün fiyat ve stok listesi) — her satır bir PARTİdir.
 -- Aynı Ürün Kodu + Marka + Ebat'a sahip birden çok satır olabilir, farklı Üretim
@@ -167,6 +179,12 @@ DROP INDEX IF EXISTS products_code_nodate_unique;
 DROP INDEX IF EXISTS products_code_batch_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS products_code_batch_unique ON products(code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS products_code_nodate_unique ON products(code) WHERE production_year IS NULL;
+-- Yukarıdaki iki unique index kısmi (partial) olduğundan genel Kod eşleşmesini/
+-- GROUP BY code'u (liste ekranı, stok-kodu önerisi) güvenilir şekilde karşılamaz —
+-- düz bir index de eklenir. supplier/season, liste ve stok-kodu filtrelerinde kullanılır.
+CREATE INDEX IF NOT EXISTS products_code_idx ON products(code);
+CREATE INDEX IF NOT EXISTS products_supplier_idx ON products(supplier);
+CREATE INDEX IF NOT EXISTS products_season_idx ON products(season);
 
 -- NOT: Daha önce ayrı, serbest biçimli bir "Stok Girişi & Fiyat Geçmişi"
 -- (product_purchases) tablosu vardı; kaldırılmıştı. Aynı ihtiyaç (fiyatlar gün

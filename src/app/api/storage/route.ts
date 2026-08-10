@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search");
@@ -20,7 +25,7 @@ export async function GET(request: NextRequest) {
   conditions.push(showDelivered ? `teslim_edildi = true` : `teslim_edildi = false`);
 
   if (search) {
-    values.push(`%${search}%`);
+    values.push(`%${escapeLike(search)}%`);
     conditions.push(`(plate ILIKE $${values.length} OR customer_name ILIKE $${values.length})`);
   }
   if (overdue) {
@@ -51,6 +56,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -92,7 +98,13 @@ export async function POST(request: NextRequest) {
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });
-  } catch (error) {
+  } catch (error: unknown) {
+    // Eşzamanlı iki POST aynı boş depo nosunu hesaplayabilir — bu durumda
+    // storage_active_depo_no_unique kısıtı ikincisini engeller, kullanıcı
+    // sessizce üzerine yazma yerine tekrar denemeye yönlendirilir.
+    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      return NextResponse.json({ error: "Bu depo no az önce kullanıldı, tekrar deneyin." }, { status: 409 });
+    }
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
   }
