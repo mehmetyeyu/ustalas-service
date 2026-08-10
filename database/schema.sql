@@ -52,6 +52,20 @@ CREATE TABLE IF NOT EXISTS order_services (
   payment_type  VARCHAR(30)
 );
 
+-- "Ödeme Al & Kapat" sırasında tek bir tutar/tip yerine parçalı ödeme
+-- girilebilir (ör. 7.000 POS + 15.000 Garanti Hesap) — orders.paid_amount bu
+-- satırların toplamıdır, orders.payment_type özet değeridir (tek tipse o
+-- değer, karışıksa 'Karışık'). Excel'den içe aktarılan eski siparişlerde bu
+-- tablo boş kalır; ödeme kırılımı onlar için hâlâ order_services.payment_type
+-- (satır bazlı) üzerinden okunur — bkz. /api/reports.
+CREATE TABLE IF NOT EXISTS order_payments (
+  id            SERIAL PRIMARY KEY,
+  order_id      INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  payment_type  VARCHAR(30) NOT NULL,
+  amount        DECIMAL(10,2) NOT NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Performans: Sipariş Listesi'nin varsayılan sıralaması (created_at DESC) ve
 -- Durum/Tarih filtreleri, ayrıca order_services -> orders/services join'leri.
 CREATE INDEX IF NOT EXISTS orders_created_at_idx ON orders(created_at DESC);
@@ -62,6 +76,7 @@ CREATE INDEX IF NOT EXISTS order_services_service_id_idx ON order_services(servi
 -- filtreleri (= ANY(...), birebir eşleşme) için.
 CREATE INDEX IF NOT EXISTS order_services_supplier_idx ON order_services(supplier);
 CREATE INDEX IF NOT EXISTS order_services_payment_type_idx ON order_services(payment_type);
+CREATE INDEX IF NOT EXISTS order_payments_order_id_idx ON order_payments(order_id);
 
 -- Müşteri dizini (Sipariş Oluşturma ekranındaki Müşteri seçimi için) — orders.customer_name
 -- serbest metin olarak kalır (FK değil); burası sadece öneri/yönetim listesidir,

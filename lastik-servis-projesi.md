@@ -118,21 +118,23 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 
 **Ödeme Tipleri:** Nakit, POS, Cari, Fatura Edildi., Garanti Hesap, Nazım Hesap, Sait Hesap, **Mail Order** (seçilince ikinci bir tedarikçi seçici belirir; nihai değer `"<Tedarikçi> Mail Order"` olarak saklanır — Excel'deki tarihi verilerle aynı format).
 
-**Ödeme tipi işlem (satır) bazındadır:** `payment_type`, `order_services` seviyesinde tutulur; `orders.payment_type` özet değeridir (tüm satırlar aynıysa o değer, karışıksa `"Karışık"`).
+**Parçalı ödeme:** "Ödeme Al & Kapat" tek bir tutar/tip yerine **birden fazla (Ödeme Tipi, Tutar) girişi** kabul eder (ör. 7.000₺ POS + 15.000₺ Garanti Hesap) — "+ Ödeme Ekle" ile satır eklenir, her satırın kendi tip+tutarı olur. Bu girişler `order_payments` tablosuna kaydedilir; `orders.paid_amount` bunların toplamıdır, `orders.payment_type` özet değeridir (tek tipse o değer, karışıksa `"Karışık"`). Girilen toplam sistem tutarından azsa (indirim) sarı bir uyarı gösterilir.
 
-**Akış:** Yönetici "Ödeme Al & Kapat"a basar → modal, her satır için ayrı ödeme tipi seçici (varsayılan mevcut değer, yoksa Nakit) ve sipariş geneli Alınan Tutar alanı gösterir → onaylanınca sipariş `TAMAMLANDI` olur, `payment_date`/`paid_amount` kaydedilir.
+**Eski (satır bazlı) ödeme tipi:** `order_services.payment_type` hâlâ şemada var ve Excel içe aktarımında satır bazında doldurulur (aynı siparişteki farklı işlemler farklı ödenmiş olabilir) — ama "Ödeme Al & Kapat" akışı artık buna dokunmaz, sadece `order_payments`'a yazar. Sipariş Listesi'ndeki "Ödeme Şekli" sütunu ve Raporlar'daki "Ödeme Tipine Göre Gelir" kırılımı, bir siparişin `order_payments` kaydı varsa onu, yoksa (eski/içe aktarılmış sipariş) satır bazlı değeri kullanır — `COALESCE`/`NOT EXISTS` ile iki kaynak asla çift sayılmaz.
 
-**Not:** `PATCH` sunucu tarafında siparişin mevcut statüsünü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz (409 döner). Bu, arayüzün "Ödeme Al & Kapat" butonunu zaten sadece `BEKLEMEDE` iken göstermesiyle uyumlu, ama API'ye doğrudan istek atılsa bile mevcut ödeme kaydının üzerine sessizce yazılmasını engeller.
+**Akış:** Yönetici "Ödeme Al & Kapat"a basar → modal, sistem tutarını gösterir, varsayılan olarak tek bir satır (Nakit, tam tutar) sunar, gerekirse birden fazla ödeme girişine bölünür → onaylanınca sipariş `TAMAMLANDI` olur, `payment_date`/`paid_amount`/`order_payments` kaydedilir.
+
+**Not:** `PATCH` sunucu tarafında siparişin mevcut statüsünü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz (409 döner). Bu, arayüzün "Ödeme Al & Kapat" butonunu zaten sadece `BEKLEMEDE` iken göstermesiyle uyumlu, ama API'ye doğrudan istek atılsa bile mevcut ödeme kaydının üzerine sessizce yazılmasını engeller. Zaten kapanmış bir siparişin ödeme kaydını düzeltmek gerekiyorsa (ör. yanlış tutar girilmişse) doğrudan veritabanından (`order_payments` + `orders.paid_amount`) düzeltilir, arayüzde bir "düzeltme" akışı yoktur.
 
 ---
 
 ### 6. İstatistik & Raporlama Sayfası
 
-**Zaman Filtresi:** Ay/Yıl seçici. **Tüm hesaplamalar `orders.created_at`'e (hizmetin girildiği tarih) göredir** — ödeme tarihine göre değil; bir hizmet Temmuz'da girilip ödemesi Ağustos'ta alınsa bile Temmuz raporunda görünür. Gelir hesabında `paid_amount` (NULL ise `total_amount`) kullanılır.
+**Zaman Filtresi:** Ay/Yıl seçici. **Tüm hesaplamalar `orders.created_at`'e (hizmetin girildiği tarih) göredir** — ödeme tarihine göre değil; bir hizmet Temmuz'da girilip ödemesi Ağustos'ta alınsa bile Temmuz raporunda görünür. Gelir hesabında `paid_amount` (NULL ise `total_amount`) kullanılır. **Statüye bakılmaz** — Beklemede siparişler de rakamlara dahildir (stok zaten statüden bağımsız düştüğü için raporlar da tutarlı şekilde statüden bağımsızdır).
 
 - **Ciro/Maliyet/Kâr grafiği** — günlük kırılım.
 - **Günlük/Haftalık/Aylık periyot tablosu** — üstteki Ay/Yıl seçiciyle birlikte çalışır.
-- **Ödeme Tipine Göre Gelir** — tüm `"<Tedarikçi> Mail Order"` etiketleri tek bir "Mail Order" kutusunda toplanır, tıklanınca tedarikçi kırılımı açılır.
+- **Ödeme Tipine Göre Gelir** — tüm `"<Tedarikçi> Mail Order"` etiketleri tek bir "Mail Order" kutusunda toplanır, tıklanınca tedarikçi kırılımı açılır. Kaynak: `order_payments` (parçalı ödeme) varsa o, yoksa satır bazlı `order_services.payment_type` (bkz. Bölüm 5).
 - **En Çok Verilen Hizmetler** — hizmet başına adet ve yüzdelik dağılım.
 
 ---
@@ -217,14 +219,15 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 |---|---|
 | `services` | Yapılan İşlem listesi; `price` opsiyonel |
 | `orders` | Siparişler; `status`, `payment_type` (serbest metin), `paid_amount`, `import_ref` (Excel tekilleştirme) |
-| `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, işlem bazlı `payment_type`, ve `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`) |
+| `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, işlem bazlı `payment_type` (yalnızca Excel içe aktarımı doldurur), ve `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`) |
+| `order_payments` | "Ödeme Al & Kapat" ile kapatılan siparişlerin parçalı ödeme kayıtları — `order_id`, `payment_type`, `amount` (bkz. Bölüm 5) |
 | `customers`, `suppliers` | Öneri/yönetim dizinleri |
 | `users` | Yöneticiler (bcrypt hash) |
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
 
-**İndeksler** (performans): `orders(created_at)`, `orders(status)`, `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `products` üzerindeki iki benzersizlik indeksi.
+**İndeksler** (performans): `orders(created_at)`, `orders(status)`, `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `order_payments(order_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `products` üzerindeki iki benzersizlik indeksi.
 
 **Not — stok bütünlüğü:** `order_services.product_id` seçili bir sipariş satırı, o partinin `products.stock_qty`'siyle her zaman senkron tutulur (satır eklenir/silinir/miktarı değişir/parti değişir → sırasıyla düşülür/geri eklenir/farkı uygulanır/eski geri + yeni düşülür). İşlemler transaction içinde `SELECT ... FOR UPDATE` ile kilitlenir; yetersiz stokta `InsufficientStockError` fırlatılır ve tüm işlem geri alınır.
 
@@ -237,7 +240,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET | `/api/orders` | Satır bazlı, sayfalı sipariş listesi — `{ items, total, page, limit }` döner; filtreler: status, dateFrom/dateTo, customer_name, plate, service_name (çoklu), supplier (çoklu), stock_code, size_desc, payment_type (çoklu), search (hızlı arama, birden çok alanda VEYA); sortBy/sortDir (whitelist tabanlı) |
 | POST | `/api/orders` | Yeni sipariş oluştur; `product_id` içeren satırlarda stok düşer |
 | GET | `/api/orders/:id` | Sipariş detayı |
-| PATCH | `/api/orders/:id` | Siparişi kapat (ödeme tipi + tutar) |
+| PATCH | `/api/orders/:id` | Siparişi kapat — `{ payments: [{payment_type, amount}, ...] }` (parçalı ödeme, bkz. Bölüm 5) |
 | PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır) |
 | DELETE | `/api/orders/:id` | Siparişi sil (bağlı stok geri eklenir, order_services cascade) |
 | POST | `/api/orders/import` | Excel'den toplu içe aktar; yanıtta `changedDuplicates` — mükerrer sayılıp atlanan ama satır sayısı değişmiş gruplar |

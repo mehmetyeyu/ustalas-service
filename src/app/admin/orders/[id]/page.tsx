@@ -30,6 +30,11 @@ interface OrderDetail {
     payment_type: string | null;
     product_id: number | null;
   }[];
+  payments: {
+    id: number;
+    payment_type: string;
+    amount: number;
+  }[];
 }
 
 interface Service {
@@ -332,9 +337,10 @@ function OrderDetailPageInner() {
   const autoEditApplied = useRef(false);
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  // Her sipariş satırı (işlem) kendi ödeme tipini alabilir — line_id -> payment_type.
-  const [linePayments, setLinePayments] = useState<Record<number, string>>({});
-  const [paidAmount, setPaidAmount] = useState("");
+  // Parçalı ödeme: "Ödeme Al & Kapat" birden fazla (ödeme tipi, tutar) girişi
+  // kabul eder (ör. 7.000 POS + 15.000 Garanti Hesap) — tek bir "Alınan
+  // Tutar" yerine.
+  const [paymentEntries, setPaymentEntries] = useState<{ payment_type: string; amount: string }[]>([]);
   const [closing, setClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState("");
@@ -550,23 +556,41 @@ function OrderDetailPageInner() {
     }
   }
 
+  const paymentEntriesTotal = paymentEntries.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  function addPaymentEntry() {
+    setPaymentEntries((prev) => [...prev, { payment_type: "Nakit", amount: "" }]);
+  }
+
+  function removePaymentEntry(index: number) {
+    setPaymentEntries((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
+  }
+
+  function updatePaymentEntry(index: number, patch: Partial<{ payment_type: string; amount: string }>) {
+    setPaymentEntries((prev) => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
+  }
+
   async function handleClose() {
     if (!order) return;
-    setClosing(true);
     setError("");
+    const validEntries = paymentEntries.filter((p) => p.payment_type && Number(p.amount) > 0);
+    if (validEntries.length === 0) {
+      setError("En az bir ödeme girişi (tip + tutar) giriniz.");
+      return;
+    }
+    setClosing(true);
     try {
       const res = await fetch(`/api/orders/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lines: order.services.map((svc) => ({
-            id: svc.line_id,
-            payment_type: linePayments[svc.line_id] ?? "Nakit",
-          })),
-          paid_amount: paidAmount ? Number(paidAmount) : null,
+          payments: validEntries.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount) })),
         }),
       });
-      if (!res.ok) throw new Error("İşlem başarısız.");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "İşlem başarısız.");
+      }
       setShowModal(false);
       await fetchOrder();
     } catch (err: unknown) {
@@ -966,14 +990,23 @@ function OrderDetailPageInner() {
                   {order.payment_date ? formatDate(order.payment_date) : ""}
                 </p>
               )}
+              {order.payments.length > 0 && (
+                <div className="pt-1">
+                  {order.payments.map((p) => (
+                    <p key={p.id} className="flex justify-between max-w-xs">
+                      <span>{p.payment_type}</span>
+                      <span className="font-medium text-gray-600">{formatCurrency(p.amount)}</span>
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Ödeme Al butonu */}
             {order.status === "BEKLEMEDE" && (
               <button
                 onClick={() => {
-                  setPaidAmount(String(order.total_amount));
-                  setLinePayments(Object.fromEntries(order.services.map((svc) => [svc.line_id, svc.payment_type ?? "Nakit"])));
+                  setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount) }]);
                   setShowModal(true);
                 }}
                 className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors"
@@ -1002,48 +1035,59 @@ function OrderDetailPageInner() {
               </span>
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Alınan Tutar (₺)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paidAmount}
-                onChange={(e) => setPaidAmount(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-              {paidAmount && Number(paidAmount) < order.total_amount && (
-                <p className="text-xs text-orange-500 mt-1">
-                  İndirim: {formatCurrency(order.total_amount - Number(paidAmount))}
-                </p>
-              )}
-            </div>
-
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                İşlem Başına Ödeme Tipi
+                Ödeme Girişleri <span className="text-red-500">*</span>
               </label>
               <div className="space-y-2">
-                {order.services.map((svc) => (
-                  <div
-                    key={svc.line_id}
-                    className="flex items-center justify-between gap-3 p-2.5 rounded-lg border border-gray-200"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{svc.name}</p>
-                      <p className="text-xs text-gray-400">{formatCurrency(svc.unit_price)}</p>
-                    </div>
+                {paymentEntries.map((entry, i) => (
+                  <div key={i} className="flex items-center gap-2">
                     <PaymentTypeSelect
-                      value={linePayments[svc.line_id] ?? "Nakit"}
-                      onChange={(val) => setLinePayments((prev) => ({ ...prev, [svc.line_id]: val }))}
+                      value={entry.payment_type}
+                      onChange={(val) => updatePaymentEntry(i, { payment_type: val })}
                       supplierOptions={supplierOptions}
-                      selectClassName="border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500 shrink-0"
+                      selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Tutar"
+                      value={entry.amount}
+                      onChange={(e) => updatePaymentEntry(i, { amount: e.target.value })}
+                      className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                    {paymentEntries.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removePaymentEntry(i)}
+                        className="text-red-400 hover:text-red-600 text-xs font-medium shrink-0"
+                      >
+                        Sil
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
+              <button
+                type="button"
+                onClick={addPaymentEntry}
+                className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                + Ödeme Ekle
+              </button>
+
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm flex justify-between">
+                <span className="text-gray-500">Girilen Toplam</span>
+                <span className={`font-semibold ${paymentEntriesTotal > order.total_amount ? "text-orange-600" : "text-gray-800"}`}>
+                  {formatCurrency(paymentEntriesTotal)}
+                </span>
+              </div>
+              {paymentEntriesTotal > 0 && paymentEntriesTotal < order.total_amount && (
+                <p className="text-xs text-orange-500 mt-1">
+                  İndirim: {formatCurrency(order.total_amount - paymentEntriesTotal)}
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">

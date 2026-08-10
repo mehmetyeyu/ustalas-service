@@ -37,7 +37,10 @@ const SORTABLE_COLUMNS: Record<string, string> = {
   unit_price: "os.unit_price",
   cost_price: "os.cost_price",
   kar: "(COALESCE(os.unit_price, 0) - COALESCE(os.cost_price, 0))",
-  payment_type: "os.payment_type",
+  // Yeni "parçalı ödeme" akışıyla kapatılan siparişlerde satır bazlı
+  // payment_type artık set edilmez (bkz. PATCH /api/orders/:id) — bu yüzden
+  // sipariş özet değerine (o.payment_type) geri düşülür.
+  payment_type: "COALESCE(os.payment_type, o.payment_type)",
   notes: "o.notes",
   status: "o.status",
 };
@@ -114,7 +117,7 @@ export async function GET(request: NextRequest) {
   }
   if (paymentTypes.length > 0) {
     values.push(paymentTypes);
-    conditions.push(`os.payment_type = ANY($${values.length})`);
+    conditions.push(`COALESCE(os.payment_type, o.payment_type) = ANY($${values.length})`);
   }
   if (search) {
     // Filtrele modalındaki alan bazlı (VE) filtrelerden ayrı, hızlı bir arama:
@@ -143,7 +146,7 @@ export async function GET(request: NextRequest) {
          o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
          os.id AS line_id, s.name AS service_name,
          os.supplier, os.stock_code, os.size_desc, os.quantity, os.unit_price, os.cost_price,
-         os.payment_type
+         COALESCE(os.payment_type, o.payment_type) AS payment_type
        ${fromClause}
        ORDER BY ${orderBy}
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,

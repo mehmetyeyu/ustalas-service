@@ -57,7 +57,15 @@ export async function GET(
       [id]
     );
 
-    return NextResponse.json({ ...orderResult.rows[0], services: servicesResult.rows });
+    // Parçalı ödeme girişleri (bkz. PATCH) — Excel'den içe aktarılmış eski
+    // siparişlerde boş olabilir, o durumda ödeme kırılımı satır bazlı
+    // payment_type üzerinden (yukarıdaki services[].payment_type) okunur.
+    const paymentsResult = await pool.query(
+      "SELECT id, payment_type, amount FROM order_payments WHERE order_id = $1 ORDER BY id",
+      [id]
+    );
+
+    return NextResponse.json({ ...orderResult.rows[0], services: servicesResult.rows, payments: paymentsResult.rows });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
@@ -118,21 +126,28 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { lines, paid_amount } = await request.json();
+    const { payments } = await request.json();
 
-    if (!Array.isArray(lines) || lines.length === 0) {
-      return NextResponse.json({ error: "Her işlem için ödeme tipi seçilmelidir." }, { status: 400 });
+    // Parçalı ödeme: birden fazla (ödeme tipi, tutar) girişi kabul edilir
+    // (ör. 7.000 POS + 15.000 Garanti Hesap) — tek satırlık payment_type
+    // yerine order_payments tablosuna kaydedilir, orders.paid_amount bu
+    // girişlerin toplamıdır.
+    if (!Array.isArray(payments) || payments.length === 0) {
+      return NextResponse.json({ error: "En az bir ödeme girişi gereklidir." }, { status: 400 });
     }
-    for (const l of lines as { id: number; payment_type: string }[]) {
-      if (!l.id || !isValidPaymentType(l.payment_type)) {
+    for (const p of payments as { payment_type: string; amount: number }[]) {
+      if (!p.payment_type || !isValidPaymentType(p.payment_type)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
+      }
+      const amt = Number(p.amount);
+      if (!Number.isFinite(amt) || amt <= 0) {
+        return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
       }
     }
 
-    const amount = paid_amount != null ? Number(paid_amount) : null;
-    if (amount !== null && (isNaN(amount) || amount < 0)) {
-      return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
-    }
+    const totalPaid = (payments as { amount: number }[]).reduce((sum, p) => sum + Number(p.amount), 0);
+    const distinctTypes = Array.from(new Set((payments as { payment_type: string }[]).map((p) => p.payment_type)));
+    const summaryType = distinctTypes.length === 1 ? distinctTypes[0] : "Karışık";
 
     const client = await pool.connect();
     try {
@@ -155,24 +170,18 @@ export async function PATCH(
         return NextResponse.json({ error: "Bu sipariş zaten kapatılmış." }, { status: 409 });
       }
 
-      for (const l of lines as { id: number; payment_type: string }[]) {
+      for (const p of payments as { payment_type: string; amount: number }[]) {
         await client.query(
-          "UPDATE order_services SET payment_type = $1 WHERE id = $2 AND order_id = $3",
-          [l.payment_type, l.id, id]
+          "INSERT INTO order_payments (order_id, payment_type, amount) VALUES ($1, $2, $3)",
+          [id, p.payment_type, Number(p.amount)]
         );
       }
 
-      // Sipariş seviyesindeki payment_type özet değeridir: tüm satırlar aynıysa
-      // o değer, karışıksa 'Karışık'.
-      const distinctTypes = Array.from(new Set((lines as { payment_type: string }[]).map((l) => l.payment_type)));
-      const summaryType = distinctTypes.length === 1 ? distinctTypes[0] : "Karışık";
-
-  await client.query(
+      await client.query(
         `UPDATE orders
-         SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(),
-             paid_amount = COALESCE($3, total_amount)
+         SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(), paid_amount = $3
          WHERE id = $2`,
-        [summaryType, id, amount]
+        [summaryType, id, totalPaid]
       );
 
       await client.query("COMMIT");
