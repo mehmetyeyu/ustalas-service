@@ -352,6 +352,7 @@ function OrderDetailPageInner() {
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editLines, setEditLines] = useState<EditLine[]>([]);
+  const [editPayments, setEditPayments] = useState<{ payment_type: string; amount: string }[]>([]);
   const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
@@ -429,6 +430,7 @@ function OrderDetailPageInner() {
       unit_sale_price: null,
       unit_purchase_price: null,
     })));
+    setEditPayments(order.payments.map((p) => ({ payment_type: p.payment_type, amount: String(p.amount) })));
     // Mevcut "Lastik Satışı" satırlarının tedarikçileri için kod önerilerini
     // önden çeker, böylece parti seçici açılır açılmaz dolu gelir.
     order.services
@@ -495,6 +497,18 @@ function OrderDetailPageInner() {
     }));
   }
 
+  function addEditPayment() {
+    setEditPayments((prev) => [...prev, { payment_type: "Nakit", amount: "" }]);
+  }
+
+  function removeEditPayment(index: number) {
+    setEditPayments((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
+  }
+
+  function updateEditPayment(index: number, patch: Partial<{ payment_type: string; amount: string }>) {
+    setEditPayments((prev) => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
+  }
+
   function addEditLine() {
     setEditLines((prev) => [...prev, { ...EMPTY_EDIT_LINE }]);
   }
@@ -519,6 +533,21 @@ function OrderDetailPageInner() {
       setEditError(`Yetersiz stok: "${overStock.stock_code}" için sadece ${overStock.max_stock} adet mevcut.`);
       return;
     }
+    const editTotalAmount = validLines.reduce((sum, l) => sum + num(l.unit_price), 0);
+    // Ödemeler bölümü yalnızca sipariş daha önce kapatıldıysa gösterilir
+    // (bkz. openEdit) — o durumda en az bir geçerli giriş zorunludur.
+    const validEditPayments = editPayments.filter((p) => p.payment_type && Number(p.amount) > 0);
+    if (editPayments.length > 0) {
+      if (validEditPayments.length === 0) {
+        setEditError("En az bir ödeme girişi (tip + tutar) giriniz.");
+        return;
+      }
+      const validEditPaymentsTotal = validEditPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+      if (validEditPaymentsTotal > editTotalAmount + 0.01) {
+        setEditError("Girilen ödeme toplamı sipariş tutarını aşamaz.");
+        return;
+      }
+    }
     setSavingEdit(true);
     try {
       const res = await fetch(`/api/orders/${id}`, {
@@ -541,6 +570,9 @@ function OrderDetailPageInner() {
             payment_type: l.payment_type || null,
             product_id: l.product_id,
           })),
+          ...(editPayments.length > 0
+            ? { payments: validEditPayments.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount) })) }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -557,6 +589,8 @@ function OrderDetailPageInner() {
   }
 
   const paymentEntriesTotal = paymentEntries.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const editPaymentsTotal = editPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const editLinesTotalAmount = editLines.reduce((sum, l) => sum + num(l.unit_price), 0);
 
   function addPaymentEntry() {
     setPaymentEntries((prev) => [...prev, { payment_type: "Nakit", amount: "" }]);
@@ -576,6 +610,11 @@ function OrderDetailPageInner() {
     const validEntries = paymentEntries.filter((p) => p.payment_type && Number(p.amount) > 0);
     if (validEntries.length === 0) {
       setError("En az bir ödeme girişi (tip + tutar) giriniz.");
+      return;
+    }
+    const validEntriesTotal = validEntries.reduce((sum, p) => sum + Number(p.amount), 0);
+    if (validEntriesTotal > order.total_amount + 0.01) {
+      setError("Girilen ödeme toplamı sipariş tutarını aşamaz.");
       return;
     }
     setClosing(true);
@@ -856,6 +895,60 @@ function OrderDetailPageInner() {
               </button>
             </div>
 
+            {editPayments.length > 0 && (
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ödemeler</label>
+                <div className="space-y-2">
+                  {editPayments.map((entry, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <PaymentTypeSelect
+                        value={entry.payment_type}
+                        onChange={(val) => updateEditPayment(i, { payment_type: val })}
+                        supplierOptions={supplierOptions}
+                        selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Tutar"
+                        value={entry.amount}
+                        onChange={(e) => updateEditPayment(i, { amount: e.target.value })}
+                        className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      {editPayments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeEditPayment(i)}
+                          className="text-red-400 hover:text-red-600 text-xs font-medium shrink-0"
+                        >
+                          Sil
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addEditPayment}
+                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  + Ödeme Ekle
+                </button>
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm flex justify-between">
+                  <span className="text-gray-500">Girilen Toplam</span>
+                  <span className={`font-semibold ${editPaymentsTotal > editLinesTotalAmount ? "text-red-600" : "text-gray-800"}`}>
+                    {formatCurrency(editPaymentsTotal)}
+                  </span>
+                </div>
+                {editPaymentsTotal > editLinesTotalAmount && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Sipariş tutarını {formatCurrency(editPaymentsTotal - editLinesTotalAmount)} aşıyor.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-1">Notlar</label>
               <textarea
@@ -875,7 +968,7 @@ function OrderDetailPageInner() {
               </button>
               <button
                 onClick={handleSaveEdit}
-                disabled={savingEdit}
+                disabled={savingEdit || (editPayments.length > 0 && editPaymentsTotal > editLinesTotalAmount + 0.01)}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
               >
                 {savingEdit ? "Kaydediliyor..." : "Kaydet"}
@@ -1079,13 +1172,18 @@ function OrderDetailPageInner() {
 
               <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm flex justify-between">
                 <span className="text-gray-500">Girilen Toplam</span>
-                <span className={`font-semibold ${paymentEntriesTotal > order.total_amount ? "text-orange-600" : "text-gray-800"}`}>
+                <span className={`font-semibold ${paymentEntriesTotal > order.total_amount ? "text-red-600" : "text-gray-800"}`}>
                   {formatCurrency(paymentEntriesTotal)}
                 </span>
               </div>
               {paymentEntriesTotal > 0 && paymentEntriesTotal < order.total_amount && (
                 <p className="text-xs text-orange-500 mt-1">
                   İndirim: {formatCurrency(order.total_amount - paymentEntriesTotal)}
+                </p>
+              )}
+              {paymentEntriesTotal > order.total_amount && (
+                <p className="text-xs text-red-500 mt-1">
+                  Sipariş tutarını {formatCurrency(paymentEntriesTotal - order.total_amount)} aşıyor.
                 </p>
               )}
             </div>
@@ -1099,7 +1197,7 @@ function OrderDetailPageInner() {
               </button>
               <button
                 onClick={handleClose}
-                disabled={closing}
+                disabled={closing || paymentEntriesTotal > order.total_amount + 0.01}
                 className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
               >
                 {closing ? "İşleniyor..." : "Onayla"}

@@ -118,13 +118,15 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 
 **Ödeme Tipleri:** Nakit, POS, Cari, Fatura Edildi., Garanti Hesap, Nazım Hesap, Sait Hesap, **Mail Order** (seçilince ikinci bir tedarikçi seçici belirir; nihai değer `"<Tedarikçi> Mail Order"` olarak saklanır — Excel'deki tarihi verilerle aynı format).
 
-**Parçalı ödeme:** "Ödeme Al & Kapat" tek bir tutar/tip yerine **birden fazla (Ödeme Tipi, Tutar) girişi** kabul eder (ör. 7.000₺ POS + 15.000₺ Garanti Hesap) — "+ Ödeme Ekle" ile satır eklenir, her satırın kendi tip+tutarı olur. Bu girişler `order_payments` tablosuna kaydedilir; `orders.paid_amount` bunların toplamıdır, `orders.payment_type` özet değeridir (tek tipse o değer, karışıksa `"Karışık"`). Girilen toplam sistem tutarından azsa (indirim) sarı bir uyarı gösterilir.
+**Parçalı ödeme:** "Ödeme Al & Kapat" tek bir tutar/tip yerine **birden fazla (Ödeme Tipi, Tutar) girişi** kabul eder (ör. 7.000₺ POS + 15.000₺ Garanti Hesap) — "+ Ödeme Ekle" ile satır eklenir, her satırın kendi tip+tutarı olur. Bu girişler `order_payments` tablosuna kaydedilir; `orders.paid_amount` bunların toplamıdır, `orders.payment_type` özet değeridir (tek tipse o değer, karışıksa `"Karışık"`). Girilen toplam sistem tutarından azsa (indirim) turuncu bir uyarı gösterilir; **sistem tutarını aşarsa kırmızı uyarıyla birlikte "Onayla" devre dışı kalır** — hem istemci hem sunucu (`PATCH`/`PUT`) toplamın `total_amount`'ı aşmasını reddeder.
 
 **Eski (satır bazlı) ödeme tipi:** `order_services.payment_type` hâlâ şemada var ve Excel içe aktarımında satır bazında doldurulur (aynı siparişteki farklı işlemler farklı ödenmiş olabilir) — ama "Ödeme Al & Kapat" akışı artık buna dokunmaz, sadece `order_payments`'a yazar. Sipariş Listesi'ndeki "Ödeme Şekli" sütunu ve Raporlar'daki "Ödeme Tipine Göre Gelir" kırılımı, bir siparişin `order_payments` kaydı varsa onu, yoksa (eski/içe aktarılmış sipariş) satır bazlı değeri kullanır — `COALESCE`/`NOT EXISTS` ile iki kaynak asla çift sayılmaz.
 
 **Akış:** Yönetici "Ödeme Al & Kapat"a basar → modal, sistem tutarını gösterir, varsayılan olarak tek bir satır (Nakit, tam tutar) sunar, gerekirse birden fazla ödeme girişine bölünür → onaylanınca sipariş `TAMAMLANDI` olur, `payment_date`/`paid_amount`/`order_payments` kaydedilir.
 
-**Not:** `PATCH` sunucu tarafında siparişin mevcut statüsünü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz (409 döner). Bu, arayüzün "Ödeme Al & Kapat" butonunu zaten sadece `BEKLEMEDE` iken göstermesiyle uyumlu, ama API'ye doğrudan istek atılsa bile mevcut ödeme kaydının üzerine sessizce yazılmasını engeller. Zaten kapanmış bir siparişin ödeme kaydını düzeltmek gerekiyorsa (ör. yanlış tutar girilmişse) doğrudan veritabanından (`order_payments` + `orders.paid_amount`) düzeltilir, arayüzde bir "düzeltme" akışı yoktur.
+**Not:** `PATCH` sunucu tarafında siparişin mevcut statüsünü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz (409 döner). Bu, arayüzün "Ödeme Al & Kapat" butonunu zaten sadece `BEKLEMEDE` iken göstermesiyle uyumlu, ama API'ye doğrudan istek atılsa bile mevcut ödeme kaydının üzerine sessizce yazılmasını engeller.
+
+**Ödeme düzeltme:** Zaten kapanmış bir siparişin ödeme girişlerini (tip/tutar) düzeltmek "Düzelt" ekranından yapılır — sipariş daha önce "Ödeme Al & Kapat" ile kapatıldıysa, satırların altında bir "Ödemeler" bölümü belirir (aynı tip+tutar arayüzü); kaydedilince `PUT /api/orders/:id` mevcut `order_payments` kayıtlarını silip yeni listeyle değiştirir, `orders.paid_amount`/`payment_type`'ı da buna göre günceller. Toplam yeni (düzenlenmiş) sipariş tutarını aşarsa aynı şekilde reddedilir.
 
 ---
 
@@ -237,11 +239,11 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 
 | Method | Endpoint | Açıklama |
 |---|---|---|
-| GET | `/api/orders` | Satır bazlı, sayfalı sipariş listesi — `{ items, total, page, limit }` döner; filtreler: status, dateFrom/dateTo, customer_name, plate, service_name (çoklu), supplier (çoklu), stock_code, size_desc, payment_type (çoklu), search (hızlı arama, birden çok alanda VEYA); sortBy/sortDir (whitelist tabanlı) |
+| GET | `/api/orders` | Satır bazlı, sayfalı sipariş listesi — `{ items, total, totalAmount, page, limit }` döner (`totalAmount`: uygulanan filtrelere uyan TÜM satırların toplam tutarı, yalnızca görünen sayfanın değil — aynı COUNT sorgusunda `SUM(unit_price)` ile, ekstra tarama gerektirmeden); filtreler: status, dateFrom/dateTo, customer_name, plate, service_name (çoklu), supplier (çoklu), stock_code, size_desc, payment_type (çoklu), search (hızlı arama, birden çok alanda VEYA); sortBy/sortDir (whitelist tabanlı) |
 | POST | `/api/orders` | Yeni sipariş oluştur; `product_id` içeren satırlarda stok düşer |
 | GET | `/api/orders/:id` | Sipariş detayı |
 | PATCH | `/api/orders/:id` | Siparişi kapat — `{ payments: [{payment_type, amount}, ...] }` (parçalı ödeme, bkz. Bölüm 5) |
-| PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır) |
+| PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır); `payments` gönderilirse (sipariş daha önce kapatıldıysa) `order_payments` de baştan yazılır (bkz. Bölüm 5, Ödeme düzeltme) |
 | DELETE | `/api/orders/:id` | Siparişi sil (bağlı stok geri eklenir, order_services cascade) |
 | POST | `/api/orders/import` | Excel'den toplu içe aktar; yanıtta `changedDuplicates` — mükerrer sayılıp atlanan ama satır sayısı değişmiş gruplar |
 | GET | `/api/orders/payment-types` | Filtrele modalı için gerçekten kullanılmış Ödeme Şekli değerleri (distinct) |

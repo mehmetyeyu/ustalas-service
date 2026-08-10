@@ -157,8 +157,8 @@ export async function PATCH(
       // edilir — zaten TAMAMLANDI bir sipariş tekrar kapatılamaz (aksi hâlde
       // API'ye doğrudan istek atılarak mevcut ödeme kaydı sessizce ezilebilirdi;
       // arayüzdeki "Ödeme Al & Kapat" butonu da zaten yalnızca BEKLEMEDE'de görünür).
-      const orderCheck = await client.query<{ status: string }>(
-        "SELECT status FROM orders WHERE id = $1 FOR UPDATE",
+      const orderCheck = await client.query<{ status: string; total_amount: string }>(
+        "SELECT status, total_amount FROM orders WHERE id = $1 FOR UPDATE",
         [id]
       );
       if (orderCheck.rows.length === 0) {
@@ -168,6 +168,15 @@ export async function PATCH(
       if (orderCheck.rows[0].status !== "BEKLEMEDE") {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Bu sipariş zaten kapatılmış." }, { status: 409 });
+      }
+      // Girilen ödemelerin toplamı sipariş tutarını aşamaz (yanlışlıkla fazla
+      // girilen bir ödeme tutarı sessizce kabul edilip paid_amount'u şişirmesin).
+      if (totalPaid > Number(orderCheck.rows[0].total_amount) + 0.01) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Girilen ödeme toplamı sipariş tutarını aşamaz." },
+          { status: 400 }
+        );
       }
 
       for (const p of payments as { payment_type: string; amount: number }[]) {
@@ -202,6 +211,9 @@ export async function PATCH(
 // Sipariş bilgilerini ve işlem satırlarını düzenler — ödeme kapatma (PATCH) ile
 // karıştırılmasın diye ayrı bir uç. Mevcut satırlar id ile eşleştirilip güncellenir
 // (payment_type'ları korunur), gönderilmeyen id'ler silinir, id'siz satırlar eklenir.
+// `payments` gönderilirse (sipariş daha önce kapatılıp parçalı ödeme girilmişse),
+// order_payments da baştan yazılır — yanlış girilen ödeme tipi/tutarını düzeltmenin
+// tek yolu budur (PATCH yalnızca ilk kapatmada, BEKLEMEDE iken çalışır).
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -212,7 +224,7 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { plate, customer_name, customer_phone, notes, lines } = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, payments } = await request.json();
 
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
@@ -229,6 +241,36 @@ export async function PUT(
     }
 
     const totalAmount = (lines as EditLineInput[]).reduce((sum, l) => sum + Number(l.unit_price || 0), 0);
+
+    // Parçalı ödeme (order_payments) düzeltmesi: yalnızca sipariş daha önce
+    // "Ödeme Al & Kapat" ile kapatılmışsa (Düzelt ekranı bu bölümü o zaman
+    // gösterir) gönderilir — undefined ise hiç dokunulmaz (PATCH akışı korunur).
+    let editedPayments: { payment_type: string; amount: number }[] | null = null;
+    if (payments !== undefined) {
+      if (!Array.isArray(payments) || payments.length === 0) {
+        return NextResponse.json({ error: "En az bir ödeme girişi gereklidir." }, { status: 400 });
+      }
+      for (const p of payments as { payment_type: string; amount: number }[]) {
+        if (!p.payment_type || !isValidPaymentType(p.payment_type)) {
+          return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
+        }
+        const amt = Number(p.amount);
+        if (!Number.isFinite(amt) || amt <= 0) {
+          return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
+        }
+      }
+      editedPayments = (payments as { payment_type: string; amount: number }[]).map((p) => ({
+        payment_type: p.payment_type,
+        amount: Number(p.amount),
+      }));
+      const totalPaid = editedPayments.reduce((sum, p) => sum + p.amount, 0);
+      if (totalPaid > totalAmount + 0.01) {
+        return NextResponse.json(
+          { error: "Girilen ödeme toplamı sipariş tutarını aşamaz." },
+          { status: 400 }
+        );
+      }
+    }
 
     const client = await pool.connect();
     try {
@@ -257,7 +299,12 @@ export async function PUT(
       const oldPaid = oldResult.rows[0]?.paid_amount != null ? Number(oldResult.rows[0].paid_amount) : null;
       // Sipariş hiç kapatılmadıysa (paid_amount hâlâ NULL) elle dokunulmaz —
       // ödeme "Ödeme Al & Kapat" akışında set edilir, düzenlemeyle erken atanmaz.
-      const newPaidAmount = oldPaid == null ? null : (oldPaid === oldTotal ? totalAmount : oldPaid);
+      // Parçalı ödeme girişleri de bu ekrandan düzeltildiyse (editedPayments),
+      // yeni toplamları paid_amount'u belirler — eski indirim mantığı devre dışı kalır.
+      const editedPaymentsTotal = editedPayments?.reduce((sum, p) => sum + p.amount, 0) ?? null;
+      const newPaidAmount = editedPaymentsTotal != null
+        ? editedPaymentsTotal
+        : (oldPaid == null ? null : (oldPaid === oldTotal ? totalAmount : oldPaid));
 
       await client.query(
         `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
@@ -326,13 +373,28 @@ export async function PUT(
         }
       }
 
-      // Sipariş seviyesindeki payment_type özet değeridir (bkz. PATCH) — satır
-      // ödeme tipleri düzenlemede değişmiş olabileceğinden burada da güncellenir.
-      const finalTypes = (lines as EditLineInput[]).map((l) => l.payment_type).filter((p): p is string => !!p);
-      if (finalTypes.length > 0) {
-        const distinct = Array.from(new Set(finalTypes));
+      if (editedPayments) {
+        // Parçalı ödeme girişleri baştan yazılır — mevcut kayıtlar silinip
+        // düzenlenmiş liste eklenir (PATCH'teki ilk girişle aynı mantık).
+        await client.query("DELETE FROM order_payments WHERE order_id = $1", [id]);
+        for (const p of editedPayments) {
+          await client.query(
+            "INSERT INTO order_payments (order_id, payment_type, amount) VALUES ($1, $2, $3)",
+            [id, p.payment_type, p.amount]
+          );
+        }
+        const distinct = Array.from(new Set(editedPayments.map((p) => p.payment_type)));
         const summaryType = distinct.length === 1 ? distinct[0] : "Karışık";
         await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
+      } else {
+        // Sipariş seviyesindeki payment_type özet değeridir (bkz. PATCH) — satır
+        // ödeme tipleri düzenlemede değişmiş olabileceğinden burada da güncellenir.
+        const finalTypes = (lines as EditLineInput[]).map((l) => l.payment_type).filter((p): p is string => !!p);
+        if (finalTypes.length > 0) {
+          const distinct = Array.from(new Set(finalTypes));
+          const summaryType = distinct.length === 1 ? distinct[0] : "Karışık";
+          await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
+        }
       }
 
       await client.query("COMMIT");
