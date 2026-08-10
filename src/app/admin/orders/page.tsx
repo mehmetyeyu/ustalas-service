@@ -227,6 +227,7 @@ export default function OrdersPage() {
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [totalKar, setTotalKar] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
@@ -359,6 +360,7 @@ export default function OrdersPage() {
     setRows(Array.isArray(data.items) ? data.items : []);
     setTotal(data.total ?? 0);
     setTotalAmount(data.totalAmount ?? 0);
+    setTotalKar(data.totalKar ?? 0);
     setLoading(false);
   }
 
@@ -535,35 +537,50 @@ export default function OrdersPage() {
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-96"
         />
 
-        <div className="relative ml-auto">
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
-            </svg>
-            Sütunlar
-          </button>
-          {showColPicker && (
-            <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-48" onClick={(e) => e.stopPropagation()}>
-              {COLUMNS.map((col) => (
-                <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={visibleCols[col.key]}
-                    onChange={(e) => setVisibleCols((prev) => {
-                      const next = { ...prev, [col.key]: e.target.checked };
-                      try { localStorage.setItem("orders_visible_cols", JSON.stringify(next)); } catch { }
-                      return next;
-                    })}
-                    className="w-4 h-4 accent-blue-500"
-                  />
-                  {col.label}
-                </label>
-              ))}
+        <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-4 px-4 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
+            <div>
+              <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Toplam Tutar</div>
+              <div className="text-sm font-semibold text-gray-800">{formatCurrency(totalAmount)}</div>
             </div>
-          )}
+            <div className="w-px h-7 bg-gray-200" />
+            <div>
+              <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Kâr</div>
+              <div className={`text-sm font-semibold ${totalKar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                {formatCurrency(totalKar)}
+              </div>
+            </div>
+          </div>
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+              </svg>
+              Sütunlar
+            </button>
+            {showColPicker && (
+              <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-48" onClick={(e) => e.stopPropagation()}>
+                {COLUMNS.map((col) => (
+                  <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={visibleCols[col.key]}
+                      onChange={(e) => setVisibleCols((prev) => {
+                        const next = { ...prev, [col.key]: e.target.checked };
+                        try { localStorage.setItem("orders_visible_cols", JSON.stringify(next)); } catch { }
+                        return next;
+                      })}
+                      className="w-4 h-4 accent-blue-500"
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -866,8 +883,6 @@ export default function OrdersPage() {
         <div className="flex items-center gap-3">
           <span>
             {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} satır
-            <span className="text-gray-400"> — Toplam Tutar: </span>
-            <span className="font-semibold text-gray-800">{formatCurrency(totalAmount)}</span>
           </span>
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
             Sayfa başına
