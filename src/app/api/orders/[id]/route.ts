@@ -245,30 +245,38 @@ export async function PUT(
     // Parçalı ödeme (order_payments) düzeltmesi: yalnızca sipariş daha önce
     // "Ödeme Al & Kapat" ile kapatılmışsa (Düzelt ekranı bu bölümü o zaman
     // gösterir) gönderilir — undefined ise hiç dokunulmaz (PATCH akışı korunur).
+    // Boş dizi ([]) ise, kullanıcı bir satıra tek bir ödeme tipi seçerek parçalı
+    // ödemeyi bilinçli olarak sıfırlamış demektir — mevcut order_payments kayıtları
+    // silinir, özet satır bazlı payment_type'lardan yeniden hesaplanır.
     let editedPayments: { payment_type: string; amount: number }[] | null = null;
+    let clearPayments = false;
     if (payments !== undefined) {
-      if (!Array.isArray(payments) || payments.length === 0) {
-        return NextResponse.json({ error: "En az bir ödeme girişi gereklidir." }, { status: 400 });
+      if (!Array.isArray(payments)) {
+        return NextResponse.json({ error: "Geçersiz ödeme verisi." }, { status: 400 });
       }
-      for (const p of payments as { payment_type: string; amount: number }[]) {
-        if (!p.payment_type || !isValidPaymentType(p.payment_type)) {
-          return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
+      if (payments.length === 0) {
+        clearPayments = true;
+      } else {
+        for (const p of payments as { payment_type: string; amount: number }[]) {
+          if (!p.payment_type || !isValidPaymentType(p.payment_type)) {
+            return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
+          }
+          const amt = Number(p.amount);
+          if (!Number.isFinite(amt) || amt <= 0) {
+            return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
+          }
         }
-        const amt = Number(p.amount);
-        if (!Number.isFinite(amt) || amt <= 0) {
-          return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
+        editedPayments = (payments as { payment_type: string; amount: number }[]).map((p) => ({
+          payment_type: p.payment_type,
+          amount: Number(p.amount),
+        }));
+        const totalPaid = editedPayments.reduce((sum, p) => sum + p.amount, 0);
+        if (totalPaid > totalAmount + 0.01) {
+          return NextResponse.json(
+            { error: "Girilen ödeme toplamı sipariş tutarını aşamaz." },
+            { status: 400 }
+          );
         }
-      }
-      editedPayments = (payments as { payment_type: string; amount: number }[]).map((p) => ({
-        payment_type: p.payment_type,
-        amount: Number(p.amount),
-      }));
-      const totalPaid = editedPayments.reduce((sum, p) => sum + p.amount, 0);
-      if (totalPaid > totalAmount + 0.01) {
-        return NextResponse.json(
-          { error: "Girilen ödeme toplamı sipariş tutarını aşamaz." },
-          { status: 400 }
-        );
       }
     }
 
@@ -387,12 +395,19 @@ export async function PUT(
         const summaryType = distinct.length === 1 ? distinct[0] : "Karışık";
         await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
       } else {
+        // clearPayments: kullanıcı bir satıra tek bir ödeme tipi seçip parçalı
+        // ödemeyi bilinçli sıfırladı — eski order_payments kayıtları artık satır
+        // bazlı özetle çelişir, bu yüzden silinir (aksi hâlde raporlar hâlâ eski
+        // parçalı dağılımı gösterirdi).
+        if (clearPayments) {
+          await client.query("DELETE FROM order_payments WHERE order_id = $1", [id]);
+        }
         // Sipariş seviyesindeki payment_type özet değeridir (bkz. PATCH) — satır
         // ödeme tipleri düzenlemede değişmiş olabileceğinden burada da güncellenir.
         const finalTypes = (lines as EditLineInput[]).map((l) => l.payment_type).filter((p): p is string => !!p);
-        if (finalTypes.length > 0) {
-          const distinct = Array.from(new Set(finalTypes));
-          const summaryType = distinct.length === 1 ? distinct[0] : "Karışık";
+        const distinct = Array.from(new Set(finalTypes));
+        const summaryType = distinct.length === 0 ? null : distinct.length === 1 ? distinct[0] : "Karışık";
+        if (finalTypes.length > 0 || clearPayments) {
           await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
         }
       }

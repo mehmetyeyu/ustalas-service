@@ -250,7 +250,7 @@ function PaymentTypeSelect({
         }}
         className={selectClassName}
       >
-        <option value="">Seçilmedi</option>
+        <option value="">Karışık</option>
         {PAYMENT_OPTIONS.map((val) => (
           <option key={val} value={val}>{val}</option>
         ))}
@@ -353,6 +353,13 @@ function OrderDetailPageInner() {
   const [editNotes, setEditNotes] = useState("");
   const [editLines, setEditLines] = useState<EditLine[]>([]);
   const [editPayments, setEditPayments] = useState<{ payment_type: string; amount: string }[]>([]);
+  // Bir satıra tek bir ödeme tipi seçilip parçalı ödeme bilinçli sıfırlandığında
+  // true olur — kaydederken backend'e "payments: []" gönderilip mevcut parçalı
+  // ödeme kayıtlarının silinmesi sağlanır (aksi hâlde payments hiç gönderilmez).
+  const [paymentsCleared, setPaymentsCleared] = useState(false);
+  // Düzenleme açılırken gelen orijinal parçalı ödeme girişleri — sıfırlama geri
+  // alınırsa (bir satır tekrar Karışık'a dönerse) buradan aynen geri yüklenir.
+  const [originalEditPayments, setOriginalEditPayments] = useState<{ payment_type: string; amount: string }[]>([]);
   const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
@@ -430,7 +437,10 @@ function OrderDetailPageInner() {
       unit_sale_price: null,
       unit_purchase_price: null,
     })));
-    setEditPayments(order.payments.map((p) => ({ payment_type: p.payment_type, amount: String(p.amount) })));
+    const initialPayments = order.payments.map((p) => ({ payment_type: p.payment_type, amount: String(p.amount) }));
+    setEditPayments(initialPayments);
+    setOriginalEditPayments(initialPayments);
+    setPaymentsCleared(false);
     // Mevcut "Lastik Satışı" satırlarının tedarikçileri için kod önerilerini
     // önden çeker, böylece parti seçici açılır açılmaz dolu gelir.
     order.services
@@ -572,6 +582,8 @@ function OrderDetailPageInner() {
           })),
           ...(editPayments.length > 0
             ? { payments: validEditPayments.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount) })) }
+            : paymentsCleared
+            ? { payments: [] }
             : {}),
         }),
       });
@@ -864,7 +876,33 @@ function OrderDetailPageInner() {
                         <td className="px-2 py-2 align-top">
                           <PaymentTypeSelect
                             value={line.payment_type}
-                            onChange={(val) => updateEditLine(i, { payment_type: val })}
+                            onChange={(val) => {
+                              // Karışık (boş) durumdan tek bir ödeme tipine geçmek, aşağıdaki
+                              // parçalı ödeme girişleriyle çelişir — bu yüzden önce onaylatılır,
+                              // onaylanırsa parçalı girişler sıfırlanır.
+                              if (!line.payment_type && val && editPayments.length > 0) {
+                                const ok = window.confirm(
+                                  "Bu satıra ödeme tipi seçmek, aşağıdaki parçalı ödeme girişlerini sıfırlayacak. Devam edilsin mi?"
+                                );
+                                if (!ok) return;
+                                setEditPayments([]);
+                                setPaymentsCleared(true);
+                              } else if (line.payment_type && !val) {
+                                // Karışık'a dönüldü — parçalı ödeme girişleri henüz boşsa
+                                // (hiç girilmemiş ya da az önce sıfırlanmış) doldurulabilir
+                                // hâle getirilir: varsa orijinal (sıfırlama öncesi) değerlerle,
+                                // yoksa boş bir başlangıç satırıyla.
+                                if (editPayments.length === 0) {
+                                  setEditPayments(
+                                    originalEditPayments.length > 0
+                                      ? originalEditPayments
+                                      : [{ payment_type: "Nakit", amount: "" }]
+                                  );
+                                }
+                                setPaymentsCleared(false);
+                              }
+                              updateEditLine(i, { payment_type: val });
+                            }}
                             supplierOptions={supplierOptions}
                             selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
