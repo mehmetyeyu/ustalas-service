@@ -149,10 +149,16 @@ export async function GET(request: NextRequest) {
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset]
     );
-    const countResult = await pool.query(`SELECT COUNT(*)::int AS total ${fromClause}`, values);
+    // Aynı WHERE ile tek sorguda hem toplam satır sayısı hem toplam tutar —
+    // ekstra bir tam tarama gerektirmez, mevcut COUNT sorgusuna eklenir.
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total, COALESCE(SUM(os.unit_price), 0)::float AS total_amount ${fromClause}`,
+      values
+    );
     const total: number = countResult.rows[0].total;
+    const totalAmount: number = countResult.rows[0].total_amount;
 
-    return NextResponse.json({ items: result.rows, total, page, limit });
+    return NextResponse.json({ items: result.rows, total, totalAmount, page, limit });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

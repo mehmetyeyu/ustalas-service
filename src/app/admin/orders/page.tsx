@@ -226,6 +226,7 @@ const EMPTY_FIELD_FILTERS: FieldFilters = {
 export default function OrdersPage() {
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
@@ -357,6 +358,7 @@ export default function OrdersPage() {
     const data = await res.json();
     setRows(Array.isArray(data.items) ? data.items : []);
     setTotal(data.total ?? 0);
+    setTotalAmount(data.totalAmount ?? 0);
     setLoading(false);
   }
 
@@ -864,6 +866,8 @@ export default function OrdersPage() {
         <div className="flex items-center gap-3">
           <span>
             {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} satır
+            <span className="text-gray-400"> — Toplam Tutar: </span>
+            <span className="font-semibold text-gray-800">{formatCurrency(totalAmount)}</span>
           </span>
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
             Sayfa başına
