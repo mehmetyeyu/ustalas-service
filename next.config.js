@@ -8,9 +8,6 @@ const nextConfig = {
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
     ];
 
-    // CSP/HSTS sadece production build'de uygulanır — dev sunucusunun Fast
-    // Refresh/HMR için kullandığı inline script ve WebSocket bağlantısı
-    // strict CSP ile çakışır.
     if (process.env.NODE_ENV === "production") {
       securityHeaders.push(
         {
@@ -21,7 +18,16 @@ const nextConfig = {
           key: "Content-Security-Policy",
           value: [
             "default-src 'self'",
-            "script-src 'self'",
+            // 'unsafe-inline' gerekli: Next.js App Router her sayfada
+            // hydration/streaming verisini inline <script> ile gönderir
+            // (self.__next_f.push(...)) ve bu proje kullandığı Next 14.2
+            // sürümünde bu script'lere otomatik nonce uygulamıyor — nonce
+            // tabanlı bir script-src denendi, inline script'ler bloklanıp
+            // hydration'ı komple kırdı (canlıda yaşandı). 'unsafe-inline'
+            // olmadan bu framework'te güvenilir bir CSP kurulamıyor; kod
+            // tabanında dangerouslySetInnerHTML/eval yok, tüm SQL
+            // parametreli, bu yüzden artık risk kabul edilebilir.
+            "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data:",
             "font-src 'self'",
