@@ -23,12 +23,14 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 
 ## Roller
 
-| Rol | Açıklama |
-|---|---|
-| **Karşılama Görevlisi** | Giriş yapar (admin olması gerekmez) — sadece sipariş oluşturma ekranına (`/`) erişir. |
-| **Yönetici** | Kullanıcı adı + şifre ile giriş yapar, `role = 'admin'`. Tüm panele (`/admin/*`) erişir. |
+| Rol | `role` değeri | Açıklama |
+|---|---|---|
+| **Karşılama Görevlisi** | `staff` | Giriş yapar — sadece sipariş oluşturma ekranına (`/`) erişir. |
+| **Yönetici** | `admin` | Kullanıcı adı + şifre ile giriş yapar. Tüm panele (`/admin/*`) erişir. |
 
 > `/` dahil tüm sayfalar `middleware.ts` ile korunur — geçerli bir oturum (JWT cookie) olmadan hiçbir sayfa (login hariç) açılmaz. `/admin/*` ayrıca `role = 'admin'` şartı arar.
+
+Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici) yapılır — bkz. Bölüm 11.
 
 ---
 
@@ -203,6 +205,23 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 ---
 
+### 11. Profil & Kullanıcı Yönetimi
+
+Üst menüdeki **Ayarlar** açılır menüsü altında iki sayfa:
+
+**Profil** (`/admin/profile`) — herhangi bir oturum açmış kullanıcı erişir:
+- Kullanıcı adı ve rolünü görüntüler (salt okunur).
+- Şifre değiştirme — mevcut şifrenin doğrulanmasını zorunlu kılar (`PATCH /api/auth/password`).
+
+**Kullanıcılar** (`/admin/users`) — yalnızca `admin`:
+- Yeni kullanıcı oluşturma (kullanıcı adı, şifre, rol: Yönetici/Karşılama Görevlisi).
+- Satır üzerinden rol değiştirme (dropdown, anında kaydeder) ve şifre sıfırlama (admin, hedef kullanıcının mevcut şifresini bilmeden sıfırlar).
+- Kullanıcı silme.
+- **Kendi kaydınız üzerinde kısıtlı**: kendi rolünüzü bu ekrandan değiştiremez, kendi şifrenizi buradan sıfırlayamaz (şifre değişimi için Profil'e yönlendirilirsiniz) ve kendi hesabınızı silemezsiniz — kazara kendi yetkinizi kaybetmenizi engeller.
+- **Son yönetici koruması**: sistemde tek `admin` kalmışsa o kullanıcının rolü değiştirilemez veya kendisi silinemez (bkz. Güvenlik Notları).
+
+---
+
 ## Ortam Değişkenleri (.env.local)
 
 ```env
@@ -224,7 +243,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, işlem bazlı `payment_type` (yalnızca Excel içe aktarımı doldurur), ve `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`) |
 | `order_payments` | "Ödeme Al & Kapat" ile kapatılan siparişlerin parçalı ödeme kayıtları — `order_id`, `payment_type`, `amount` (bkz. Bölüm 5) |
 | `customers`, `suppliers` | Öneri/yönetim dizinleri |
-| `users` | Yöneticiler (bcrypt hash) |
+| `users` | Kullanıcılar — `role` (`admin`/`staff`), şifre bcrypt hash |
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
@@ -251,6 +270,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET | `/api/reports` | Aylık rapor (`created_at` bazlı) |
 | POST | `/api/auth/login`, `/api/auth/logout` | Giriş/çıkış |
 | GET | `/api/auth/me` | Oturum bilgisi |
+| PATCH | `/api/auth/password` | Kendi şifreni değiştir — mevcut şifre doğrulaması zorunlu |
+| GET/POST | `/api/users` | Kullanıcı listesi / oluşturma (admin) |
+| PATCH/DELETE | `/api/users/:id` | Rol değiştir, şifre sıfırla, kullanıcı sil (admin) — kendi kaydına rol/şifre değişikliği ve silme engellenir; son admin'in rolü değiştirilemez/silinemez |
 | GET/POST | `/api/storage`, `/api/storage/:id` (PATCH/DELETE) | Depolama CRUD (teslim işaretleme dahil) |
 | POST/GET | `/api/storage/import`, `/api/storage/export` | Excel içe/dışa aktarma |
 | GET/POST | `/api/products`, `/api/products/:id` (PATCH/DELETE) | Ürün/parti CRUD (POST: eşleşen parti varsa stok ekler + fiyat geçmişine düşer); GET (liste) sayfalı, sortBy/sortDir destekler (whitelist: code/brand/size_desc/total_stock) |
@@ -279,6 +301,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/products       → Ürün Kataloğu + Malzeme Hareketleri (admin)
 /admin/customers      → Müşteri dizini (admin)
 /admin/suppliers      → Tedarikçi dizini (admin)
+/admin/profile        → Profil (oturum açmış herkes)
+/admin/users          → Kullanıcı yönetimi (admin)
 ```
 
 ---
@@ -292,3 +316,5 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 - JWT token süresi varsayılan 8 saat (vardiya süresi), `jose` ile imzalanır/doğrulanır.
 - Tüm SQL sorguları parametrik (`$1, $2, ...`) — hiçbir yerde kullanıcı girdisi doğrudan sorgu metnine eklenmez; arama girdileri ayrıca `LIKE` özel karakterlerine (`%`, `_`, `\`) karşı kaçışlanır. Çoklu seçim filtreleri (ör. Sipariş Listesi'ndeki Yapılan İşlem/Tedarikçi/Ödeme Şekli) `= ANY($n)` ile parametrik diziler olarak gönderilir.
 - Stok düşümü/geri ekleme işlemleri satır bazlı `FOR UPDATE` kilidi ile eşzamanlılığa karşı korunur (bkz. Veritabanı Şeması notu). Sipariş kapatma (`PATCH /api/orders/:id`) da aynı şekilde siparişi `FOR UPDATE` ile kilitleyip mevcut statüyü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz.
+- **Kullanıcı yönetimi eklenirken (bkz. Bölüm 11) yetki modeli sıkılaştırıldı:** `getAuthUser()` artık `role`'ü JWT'nin imzalı payload'ından değil, **her istekte `users` tablosundan taze** okur — JWT yalnızca kimliği (userId) doğrulamak için kullanılır. Bundan önce rol JWT'ye gömülüydü ve token süresi (varsayılan 8 saat) dolana kadar değişmezdi; bu da bir kullanıcı `admin`'den `staff`'a düşürülse veya silinse bile eski yetkisiyle işlem yapmaya devam edebileceği anlamına geliyordu. Artık rolü değiştirilen/silinen bir kullanıcının bir sonraki API isteği anında yeni yetkiyi (veya "kullanıcı yok" durumunu) yansıtıyor. `middleware.ts`'e bilerek dokunulmadı (Edge runtime, yalnızca sayfa kabuğu görünürlüğünü yönetir); gerçek veri erişimi her zaman `getAuthUser()` üzerinden geçtiği için güvenlik sınırı orada tam korunuyor.
+- `PATCH /api/users/:id`, hedef `id` isteği atan kullanıcının kendisiyse hem `role` hem `password` alanlarını reddeder — aksi halde bir admin, çalınmış/ele geçirilmiş bir oturumla mevcut şifreyi hiç bilmeden kendi şifresini değiştirip hesabı ele geçirebilir ve gerçek kullanıcıyı kalıcı olarak dışarıda bırakabilirdi (kendi şifreni değiştirmenin tek yolu, mevcut şifre doğrulaması yapan `/api/auth/password`). Aynı endpoint, sistemde tek `admin` kalmışsa o kullanıcının rolünü değiştirmeyi veya silmeyi de reddeder.
