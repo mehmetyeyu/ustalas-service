@@ -3,6 +3,9 @@ import bcrypt from "bcryptjs";
 import pool from "@/lib/db";
 import { signToken } from "@/lib/auth";
 
+const MAX_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
+
 export async function POST(request: NextRequest) {
   try {
     const { username, password } = await request.json();
@@ -27,11 +30,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Art arda başarısız denemede hesap geçici kilitlenir (brute-force koruması).
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      const remainingMin = Math.ceil(
+        (new Date(user.locked_until).getTime() - Date.now()) / 60000
+      );
+      return NextResponse.json(
+        { error: `Çok fazla başarısız deneme. ${remainingMin} dakika sonra tekrar deneyin.` },
+        { status: 429 }
+      );
+    }
+
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
+      const attempts = user.failed_attempts + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await pool.query(
+          `UPDATE users SET failed_attempts = 0,
+             locked_until = NOW() + INTERVAL '${LOCK_MINUTES} minutes' WHERE id = $1`,
+          [user.id]
+        );
+      } else {
+        await pool.query("UPDATE users SET failed_attempts = $1 WHERE id = $2", [
+          attempts,
+          user.id,
+        ]);
+      }
       return NextResponse.json(
         { error: "Kullanıcı adı veya şifre hatalı." },
         { status: 401 }
+      );
+    }
+
+    if (user.failed_attempts > 0 || user.locked_until) {
+      await pool.query(
+        "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1",
+        [user.id]
       );
     }
 
@@ -46,7 +80,9 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30,
+      // JWT_EXPIRES_IN (lib/auth.ts) ile aynı süre olmalı, cookie ömrü token'ı
+      // aşarsa geçersiz token tarayıcıda gereksiz yere tutulur.
+      maxAge: 60 * 60 * 12,
       path: "/",
     });
 

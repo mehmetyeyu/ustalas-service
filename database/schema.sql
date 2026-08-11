@@ -246,6 +246,12 @@ INSERT INTO suppliers (name) VALUES
   ('Özkan Lastik'), ('Haskar')
 ON CONFLICT DO NOTHING;
 
+-- Brute-force koruması: art arda başarısız giriş denemesi sayacı ve geçici
+-- kilit süresi (bkz. src/app/api/auth/login/route.ts) — DB'de tutulur ki
+-- birden fazla sunucu örneği (serverless) arasında da tutarlı çalışsın.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+
 -- Varsayılan admin kullanıcısı
 -- Şifre: admin123  (bcrypt hash — uygulamayı başlatmadan önce değiştiriniz!)
 -- Yeni hash oluşturmak için: node -e "const b=require('bcryptjs'); b.hash('YeniSifre',10).then(h=>console.log(h))"
