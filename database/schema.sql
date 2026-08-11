@@ -252,6 +252,20 @@ ON CONFLICT DO NOTHING;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INT NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
 
+-- Hesap devre dışı bırakma (silmeden): pasif hesapla giriş yapılamaz,
+-- mevcut token'ı da getAuthUser'daki DB kontrolüyle geçersiz sayılır.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+-- Zorla oturum sonlandırma: bu zamandan ÖNCE imzalanmış (iat) token'lar
+-- artık geçersiz sayılır — bkz. getAuthUser. Şifre değişse bile eski
+-- cookie'ler token süresi dolana kadar geçerli kalırdı; bu alan yöneticinin
+-- "Oturumu Sonlandır" aksiyonuyla belirli bir kullanıcının tüm cihazlardaki
+-- oturumunu anında düşürmesini sağlar.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tokens_invalid_before TIMESTAMPTZ;
+
+-- Son başarılı giriş zamanı — Kullanıcılar listesinde görünürlük için.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
 -- Varsayılan admin kullanıcısı
 -- Şifre: admin123  (bcrypt hash — uygulamayı başlatmadan önce değiştiriniz!)
 -- Yeni hash oluşturmak için: node -e "const b=require('bcryptjs'); b.hash('YeniSifre',10).then(h=>console.log(h))"

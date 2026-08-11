@@ -19,15 +19,51 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const [newUsername, setNewUsername] = useState("");
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameError, setUsernameError] = useState("");
+  const [usernameSuccess, setUsernameSuccess] = useState(false);
+
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         setUsername(data.username || "");
+        setNewUsername(data.username || "");
         setRole(data.role || "");
         setLoading(false);
       });
   }, []);
+
+  async function handleChangeUsername() {
+    setUsernameError("");
+    setUsernameSuccess(false);
+
+    if (!newUsername.trim()) {
+      setUsernameError("Kullanıcı adı zorunludur.");
+      return;
+    }
+    if (newUsername.trim() === username) {
+      setUsernameError("Yeni kullanıcı adı mevcut kullanıcı adıyla aynı.");
+      return;
+    }
+
+    setUsernameSaving(true);
+    try {
+      const res = await fetch("/api/auth/username", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newUsername.trim() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Kullanıcı adı değiştirilemedi.");
+      setUsername(newUsername.trim());
+      setUsernameSuccess(true);
+    } catch (err: unknown) {
+      setUsernameError(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setUsernameSaving(false);
+    }
+  }
 
   async function handleChangePassword() {
     setError("");
@@ -85,6 +121,39 @@ export default function ProfilePage() {
             <span className="font-medium text-gray-800">{ROLE_LABELS[role] || role}</span>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-500 mb-4">Kullanıcı Adını Değiştir</h2>
+
+        {usernameError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+            {usernameError}
+          </div>
+        )}
+        {usernameSuccess && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+            Kullanıcı adınız başarıyla güncellendi.
+          </div>
+        )}
+
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Yeni Kullanıcı Adı</label>
+          <input
+            type="text"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <button
+          onClick={handleChangeUsername}
+          disabled={usernameSaving}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+        >
+          {usernameSaving ? "Kaydediliyor..." : "Kullanıcı Adını Güncelle"}
+        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6">

@@ -11,7 +11,9 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      "SELECT id, username, role, created_at FROM users ORDER BY created_at"
+      `SELECT id, username, role, created_at, last_login_at, is_active,
+              locked_until, failed_attempts
+       FROM users ORDER BY created_at`
     );
     return NextResponse.json(result.rows);
   } catch (error) {

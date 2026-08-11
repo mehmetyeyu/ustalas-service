@@ -30,6 +30,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!user.is_active) {
+      return NextResponse.json(
+        { error: "Bu hesap devre dışı bırakılmış. Yöneticinizle iletişime geçin." },
+        { status: 403 }
+      );
+    }
+
     // Art arda başarısız denemede hesap geçici kilitlenir (brute-force koruması).
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
       const remainingMin = Math.ceil(
@@ -62,12 +69,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.failed_attempts > 0 || user.locked_until) {
-      await pool.query(
-        "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1",
-        [user.id]
-      );
-    }
+    await pool.query(
+      "UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = $1",
+      [user.id]
+    );
 
     const token = await signToken({
       userId: user.id,
