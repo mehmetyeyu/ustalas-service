@@ -78,7 +78,8 @@ Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici
 ### 2. Yönetici Girişi
 
 - `/admin/login` rotasında kullanıcı adı + şifre formu.
-- Başarılı girişte JWT token httpOnly cookie olarak saklanır (varsayılan geçerlilik 8 saat).
+- Başarılı girişte JWT token httpOnly cookie olarak saklanır (varsayılan geçerlilik 12 saat, `JWT_EXPIRES_IN`).
+- **Brute-force koruması:** art arda 5 başarısız denemede hesap 15 dakika kilitlenir (`users.failed_attempts`/`locked_until`, DB'de tutulur); kilitliyken girişte 429 + kalan süre mesajı döner. Başarılı girişte sayaç sıfırlanır ve `last_login_at` güncellenir. Devre dışı bırakılmış (`is_active = false`) bir hesapla giriş denemesi 403 ile reddedilir (bkz. Bölüm 11).
 - Tüm yönetici sayfaları ve tüm API uçları (bkz. Güvenlik Notları) korumalıdır.
 
 ---
@@ -210,15 +211,20 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 Üst menüdeki **Ayarlar** açılır menüsü altında iki sayfa:
 
 **Profil** (`/admin/profile`) — herhangi bir oturum açmış kullanıcı erişir:
-- Kullanıcı adı ve rolünü görüntüler (salt okunur).
+- Kullanıcı adı ve rolünü görüntüler.
+- **Kullanıcı adını değiştirme** — self-service, benzersizlik kontrolüyle (`PATCH /api/auth/username`); mevcut şifre doğrulaması gerektirmez.
 - Şifre değiştirme — mevcut şifrenin doğrulanmasını zorunlu kılar (`PATCH /api/auth/password`).
 
 **Kullanıcılar** (`/admin/users`) — yalnızca `admin`:
 - Yeni kullanıcı oluşturma (kullanıcı adı, şifre, rol: Yönetici/Karşılama Görevlisi).
 - Satır üzerinden rol değiştirme (dropdown, anında kaydeder) ve şifre sıfırlama (admin, hedef kullanıcının mevcut şifresini bilmeden sıfırlar).
-- Kullanıcı silme.
-- **Kendi kaydınız üzerinde kısıtlı**: kendi rolünüzü bu ekrandan değiştiremez, kendi şifrenizi buradan sıfırlayamaz (şifre değişimi için Profil'e yönlendirilirsiniz) ve kendi hesabınızı silemezsiniz — kazara kendi yetkinizi kaybetmenizi engeller.
-- **Son yönetici koruması**: sistemde tek `admin` kalmışsa o kullanıcının rolü değiştirilemez veya kendisi silinemez (bkz. Güvenlik Notları).
+- **Kullanıcı adı yeniden adlandırma** (✎ ikonu) — başka bir kullanıcının adını değiştirir (kendi adınız bu ekrandan değiştirilemez, Profil'e yönlendirilirsiniz).
+- **Kilit rozeti + "Kilidi Aç"** — brute-force korumasıyla (bkz. Bölüm 2) kilitlenmiş bir hesap listede görünür, yönetici 15 dakika beklemeden manuel açabilir.
+- **"Oturumu Sonlandır"** — hedef kullanıcının tüm cihazlardaki aktif oturumunu (elindeki cookie/token ne kadar süre geçerli olursa olsun) anında geçersiz kılar; kayıp cihaz veya işten ayrılma gibi durumlar için (bkz. Güvenlik Notları — `tokens_invalid_before`).
+- **Aktif/Pasif toggle ("Devre Dışı Bırak"/"Aktifleştir")** — kaydı silmeden hesabı devre dışı bırakır: pasif hesapla giriş yapılamaz ve mevcut oturumu varsa o da anında düşer; geçmiş kayıtlar/izler korunur (kalıcı "Sil" ayrıca mevcut).
+- **Kayıt Tarihi** ve **Son Giriş** sütunları — hesabın ne zaman açıldığı ve en son ne zaman kullanıldığı görünür.
+- **Kendi kaydınız üzerinde kısıtlı**: kendi rolünüzü/kullanıcı adınızı bu ekrandan değiştiremez, kendi şifrenizi buradan sıfırlayamaz (Profil'e yönlendirilirsiniz), kendi oturumunuzu buradan sonlandıramaz, kendi hesabınızı devre dışı bırakamaz veya silemezsiniz — kazara kendi yetkinizi/erişiminizi kaybetmenizi engeller.
+- **Son yönetici koruması**: sistemde tek **aktif** `admin` kalmışsa o kullanıcının rolü değiştirilemez, devre dışı bırakılamaz veya silinemez (bkz. Güvenlik Notları).
 
 ---
 
@@ -227,7 +233,7 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 ```env
 DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 JWT_SECRET=cok_gizli_bir_anahtar_buraya
-JWT_EXPIRES_IN=8h
+JWT_EXPIRES_IN=12h
 ```
 
 ---
@@ -243,7 +249,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, işlem bazlı `payment_type` (yalnızca Excel içe aktarımı doldurur), ve `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`) |
 | `order_payments` | "Ödeme Al & Kapat" ile kapatılan siparişlerin parçalı ödeme kayıtları — `order_id`, `payment_type`, `amount` (bkz. Bölüm 5) |
 | `customers`, `suppliers` | Öneri/yönetim dizinleri |
-| `users` | Kullanıcılar — `role` (`admin`/`staff`), şifre bcrypt hash |
+| `users` | Kullanıcılar — `role` (`admin`/`staff`), şifre bcrypt hash, `failed_attempts`/`locked_until` (brute-force kilidi), `is_active` (devre dışı bırakma), `tokens_invalid_before` (zorla oturum sonlandırma), `last_login_at` |
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
@@ -271,8 +277,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST | `/api/auth/login`, `/api/auth/logout` | Giriş/çıkış |
 | GET | `/api/auth/me` | Oturum bilgisi |
 | PATCH | `/api/auth/password` | Kendi şifreni değiştir — mevcut şifre doğrulaması zorunlu |
-| GET/POST | `/api/users` | Kullanıcı listesi / oluşturma (admin) |
-| PATCH/DELETE | `/api/users/:id` | Rol değiştir, şifre sıfırla, kullanıcı sil (admin) — kendi kaydına rol/şifre değişikliği ve silme engellenir; son admin'in rolü değiştirilemez/silinemez |
+| PATCH | `/api/auth/username` | Kendi kullanıcı adını değiştir (self-service, benzersizlik kontrolü) |
+| GET/POST | `/api/users` | Kullanıcı listesi (kilit/aktiflik/son giriş dahil) / oluşturma (admin) |
+| PATCH/DELETE | `/api/users/:id` | Rol değiştir, şifre sıfırla, kullanıcı adı değiştir, kilidi aç (`unlock`), oturumu sonlandır (`forceLogout`), aktif/pasif yap (`isActive`), kullanıcı sil (admin) — kendi kaydına rol/şifre/kullanıcı adı değişikliği, oturum sonlandırma, devre dışı bırakma ve silme engellenir; son aktif admin'in rolü değiştirilemez/devre dışı bırakılamaz/silinemez |
 | GET/POST | `/api/storage`, `/api/storage/:id` (PATCH/DELETE) | Depolama CRUD (teslim işaretleme dahil) |
 | POST/GET | `/api/storage/import`, `/api/storage/export` | Excel içe/dışa aktarma |
 | GET/POST | `/api/products`, `/api/products/:id` (PATCH/DELETE) | Ürün/parti CRUD (POST: eşleşen parti varsa stok ekler + fiyat geçmişine düşer); GET (liste) sayfalı, sortBy/sortDir destekler (whitelist: code/brand/size_desc/total_stock) |
@@ -313,8 +320,12 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 - **Rol kontrolü (`role === 'admin'`) artık tüm modüllerde var.** Önce `/api/orders*` denetlendi (bkz. `e7f9022`), ardından aynı denetim `/api/products*`, `/api/storage*`, `/api/customers*`, `/api/suppliers*`, `/api/services*`, `/api/reports`'a da uygulandı: sayfa seviyesinde admin'e kapalı olan uçların (liste, oluştur, düzenle, sil, içe/dışa aktar) **API'den doğrudan çağrıldığında** herhangi bir geçerli (admin olmayan) oturumla erişilebildiği tespit edilip düzeltildi. Karşılama Görevlisi'nin (`/`) sipariş oluşturma ekranı için gerçekten ihtiyaç duyduğu, bilinçli olarak **açık bırakılan** GET uçları: `POST /api/orders`, `GET /api/customers`, `GET /api/suppliers`, `GET /api/services`, `GET /api/products/stock-codes`, `GET /api/products/stock-batches`.
 - Bu ikinci denetimde yol boyunca bulunan fonksiyonel/veri bütünlüğü düzeltmeleri: **Depolama Excel içe aktarma tamamen bozuktu** (`ON CONFLICT (plate, mevsim)` hedefi olmayan bir kısıta atıfta bulunuyordu — şema bilinçli olarak böyle bir kısıt koymuyor, bkz. Veritabanı Şeması) — artık `storage/route.ts` POST'taki aynı uygulama-katmanı (aktif kayıt ara, varsa güncelle) deseniyle çalışıyor. **Ürün/parti birleştirmede** (`PATCH /api/products/:id`) geçmiş satışlar (`order_services.product_id`) hedef partiye taşınmıyordu, birleşme sonrası Malzeme Hareketleri'nden kayboluyorlardı — düzeltildi. **Müşteri ekle/güncelle**, boş telefonla tekrar eklenince mevcut telefonu sessizce siliyordu — orders'taki `COALESCE` deseniyle hizalandı. **Depo no** eşzamanlı iki kayıtta çakışabiliyordu — `storage_active_depo_no_unique` kısmi unique index eklendi. **`/api/reports`**, ayda 5 bağımsız sorguyu sırayla ve sargable olmayan `EXTRACT(...)` filtreleriyle (tam tarama) çalıştırıyordu — `Promise.all` ile paralelleştirildi, filtreler `created_at` aralık karşılaştırmasına çevrildi (Türkiye sabit UTC+3 olduğundan ay sınırları JS'de hesaplanır), gereksiz bir toplam-ciro sorgusu kaldırıldı.
 - Yönetici şifreleri bcrypt ile hashlenmiştir.
-- JWT token süresi varsayılan 8 saat (vardiya süresi), `jose` ile imzalanır/doğrulanır.
+- JWT token süresi varsayılan 12 saat, `jose` ile imzalanır/doğrulanır. Cookie `maxAge`'i bununla senkron tutulmalıdır (login route'ta elle senkronize edilir, ortak bir kaynaktan gelmez).
+- **Login rate limiting:** `/api/auth/login`'e karşı art arda 5 başarısız denemede hesap 15 dakika kilitlenir (bkz. Bölüm 2). Sayaç/kilit DB'de tutulur (in-memory değil) — birden fazla sunucu örneği (serverless) arasında da tutarlı çalışır.
+- **Güvenlik header'ları** (`next.config.js`, yalnızca production build'de): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Strict-Transport-Security`, `Content-Security-Policy`. CSP'de `script-src` **`'unsafe-inline'` içerir** — Next.js App Router bu projenin kullandığı sürümde (14.2) her sayfada hydration/streaming verisini inline `<script>` ile gönderir (`self.__next_f.push(...)`) ve bu script'lere otomatik nonce uygulamaz; nonce tabanlı bir `script-src` denendi, inline script'ler bloklanıp hydration'ı komple kırdı (canlıda bir kez yaşandı, aynı gün düzeltildi). Kod tabanında `dangerouslySetInnerHTML`/`eval` olmadığı ve tüm SQL parametreli olduğu için bu kabul edilebilir bir risk olarak değerlendirildi. **next.config.js'e ayrıca ikinci bir CSP header'ı eklenmemelidir** (iki CSP header'ı intersection ile birleşir, biri nonce'suz `script-src 'self'` olursa hydration yine kırılır).
+- **Zorla oturum sonlandırma:** `users.tokens_invalid_before` alanı, bir tarihten önce imzalanmış tüm JWT'leri geçersiz sayar (bkz. Bölüm 11 — "Oturumu Sonlandır"). Karşılaştırma milisaniye hassasiyetiyle yapılır: standart JWT `iat` alanı saniyeye yuvarlandığından, token'a ayrıca özel bir `iatMs` claim'i gömülür (`src/lib/auth.ts`) — aksi halde "Oturumu Sonlandır" işleminden hemen sonra (aynı saniye içinde) girilen yeni bir oturum da yanlışlıkla geçersiz sayılabilirdi. Bu değişiklikten önce imzalanmış eski token'larda `iatMs` yoktur; öyle bir durumda saniyeye yuvarlanmış standart `iat`'a geriye dönük uyumlu şekilde düşülür.
+- `getAuthUser()`, rolün yanı sıra `is_active` ve `tokens_invalid_before`'ı da her istekte DB'den taze okur — pasif bir hesabın veya zorla oturumu sonlandırılmış bir kullanıcının elindeki token'ı, süresi dolmadan bile artık geçersizdir.
 - Tüm SQL sorguları parametrik (`$1, $2, ...`) — hiçbir yerde kullanıcı girdisi doğrudan sorgu metnine eklenmez; arama girdileri ayrıca `LIKE` özel karakterlerine (`%`, `_`, `\`) karşı kaçışlanır. Çoklu seçim filtreleri (ör. Sipariş Listesi'ndeki Yapılan İşlem/Tedarikçi/Ödeme Şekli) `= ANY($n)` ile parametrik diziler olarak gönderilir.
 - Stok düşümü/geri ekleme işlemleri satır bazlı `FOR UPDATE` kilidi ile eşzamanlılığa karşı korunur (bkz. Veritabanı Şeması notu). Sipariş kapatma (`PATCH /api/orders/:id`) da aynı şekilde siparişi `FOR UPDATE` ile kilitleyip mevcut statüyü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz.
-- **Kullanıcı yönetimi eklenirken (bkz. Bölüm 11) yetki modeli sıkılaştırıldı:** `getAuthUser()` artık `role`'ü JWT'nin imzalı payload'ından değil, **her istekte `users` tablosundan taze** okur — JWT yalnızca kimliği (userId) doğrulamak için kullanılır. Bundan önce rol JWT'ye gömülüydü ve token süresi (varsayılan 8 saat) dolana kadar değişmezdi; bu da bir kullanıcı `admin`'den `staff`'a düşürülse veya silinse bile eski yetkisiyle işlem yapmaya devam edebileceği anlamına geliyordu. Artık rolü değiştirilen/silinen bir kullanıcının bir sonraki API isteği anında yeni yetkiyi (veya "kullanıcı yok" durumunu) yansıtıyor. `middleware.ts`'e bilerek dokunulmadı (Edge runtime, yalnızca sayfa kabuğu görünürlüğünü yönetir); gerçek veri erişimi her zaman `getAuthUser()` üzerinden geçtiği için güvenlik sınırı orada tam korunuyor.
-- `PATCH /api/users/:id`, hedef `id` isteği atan kullanıcının kendisiyse hem `role` hem `password` alanlarını reddeder — aksi halde bir admin, çalınmış/ele geçirilmiş bir oturumla mevcut şifreyi hiç bilmeden kendi şifresini değiştirip hesabı ele geçirebilir ve gerçek kullanıcıyı kalıcı olarak dışarıda bırakabilirdi (kendi şifreni değiştirmenin tek yolu, mevcut şifre doğrulaması yapan `/api/auth/password`). Aynı endpoint, sistemde tek `admin` kalmışsa o kullanıcının rolünü değiştirmeyi veya silmeyi de reddeder.
+- **Kullanıcı yönetimi eklenirken (bkz. Bölüm 11) yetki modeli sıkılaştırıldı:** `getAuthUser()` artık `role`'ü JWT'nin imzalı payload'ından değil, **her istekte `users` tablosundan taze** okur — JWT yalnızca kimliği (userId) doğrulamak için kullanılır. Bundan önce rol JWT'ye gömülüydü ve token süresi (varsayılan 12 saat) dolana kadar değişmezdi; bu da bir kullanıcı `admin`'den `staff`'a düşürülse veya silinse bile eski yetkisiyle işlem yapmaya devam edebileceği anlamına geliyordu. Artık rolü değiştirilen/silinen bir kullanıcının bir sonraki API isteği anında yeni yetkiyi (veya "kullanıcı yok" durumunu) yansıtıyor. `middleware.ts`'e bilerek dokunulmadı (Edge runtime, yalnızca sayfa kabuğu görünürlüğünü yönetir); gerçek veri erişimi her zaman `getAuthUser()` üzerinden geçtiği için güvenlik sınırı orada tam korunuyor.
+- `PATCH /api/users/:id`, hedef `id` isteği atan kullanıcının kendisiyse `role`, `password`, `username`, `forceLogout` ve `isActive: false` alanlarının hiçbirini kabul etmez — aksi halde bir admin, çalınmış/ele geçirilmiş bir oturumla mevcut şifreyi hiç bilmeden kendi şifresini değiştirip hesabı ele geçirebilir ve gerçek kullanıcıyı kalıcı olarak dışarıda bırakabilirdi (kendi şifreni/kullanıcı adını değiştirmenin tek yolu Profil sayfasıdır, `/api/auth/password` mevcut şifre doğrulaması yapar). Aynı endpoint, sistemde tek **aktif** `admin` kalmışsa o kullanıcının rolünü değiştirmeyi, devre dışı bırakmayı veya silmeyi de reddeder (`isActive` kontrolü de admin sayımına dahildir).
