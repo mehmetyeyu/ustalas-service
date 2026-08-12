@@ -108,12 +108,9 @@ const PAYMENT_LABELS: Record<string, string> = {
 const PAYMENT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap", "Mail Order"];
 const MAIL_ORDER_SUFFIX = " Mail Order";
 
-const TEDARIKCI_SEED = [
-  "Servis İşçiliği", "YUKE", "Keskin", "Artvin", "FB Lastik", "Uspa", "Güler",
-  "Simetri", "Mollaoğlu", "Karaoğlu", "Yedi Oto", "Jantçı Bülent", "Sel Oto",
-  "Mutaflar", "Güncan Veysel", "DRS", "LastikBurada", "Atlastur", "Gizem Oto",
-  "İkinci El", "Hankook Fabrika", "Diğer", "Has Ticaret", "Özkan Lastik", "Haskar",
-];
+// "Servis İşçiliği" hariç firmaya özel tedarikçi isimleri burada tutulmaz
+// (bkz. suppliers tablosu) — bkz. src/app/page.tsx'teki aynı sabit.
+const TEDARIKCI_SEED = ["Servis İşçiliği"];
 
 const EMPTY_EDIT_LINE: EditLine = {
   id: null, service_name: "", supplier: "Servis İşçiliği", stock_code: "", size_desc: "",

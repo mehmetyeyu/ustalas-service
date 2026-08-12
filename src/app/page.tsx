@@ -58,13 +58,11 @@ const TIRE_SALE_SERVICE = "Lastik Satışı";
 const PRODUCT_SALE_SERVICES = new Set(["Lastik Satışı", "Jant Satışı", "İkinci El Lastik", "İkinci El Jant"]);
 
 // Başlangıç tedarikçi listesi — sunucudan gelen dinamik listeyle (daha önce
-// girilmiş tedarikçiler) birleştirilir, böylece hiç sipariş yokken de boş kalmaz.
-const TEDARIKCI_SEED = [
-  "Servis İşçiliği", "YUKE", "Keskin", "Artvin", "FB Lastik", "Uspa", "Güler",
-  "Simetri", "Mollaoğlu", "Karaoğlu", "Yedi Oto", "Jantçı Bülent", "Sel Oto",
-  "Mutaflar", "Güncan Veysel", "DRS", "LastikBurada", "Atlastur", "Gizem Oto",
-  "İkinci El", "Hankook Fabrika", "Diğer", "Has Ticaret", "Özkan Lastik", "Haskar",
-];
+// girilmiş tedarikçiler) birleştirilir. "Servis İşçiliği" hariç firmaya özel
+// tedarikçi isimleri burada tutulmaz (bkz. suppliers tablosu) — bu proje
+// başka firmalara da sunulacağından kod içine bir firmanın gerçek tedarikçi
+// listesini gömmek yanlış olur.
+const TEDARIKCI_SEED = ["Servis İşçiliği"];
 
 const EMPTY_LINE: OrderLine = {
   service_name: "", supplier: "Servis İşçiliği", stock_code: "", size_desc: "",

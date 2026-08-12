@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 
-// Sipariş oluşturma ekranındaki Tedarikçi alanı için dizin listesi.
+// Sipariş oluşturma ekranındaki Tedarikçi alanı için dizin listesi. Nadiren
+// değişen bir liste olduğundan uzun cache'lenir (yeni bir tedarikçi eklense
+// bile otomatik tamamlamada elle yazmak her zaman çalışır — bkz. src/lib/directories.ts).
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -10,7 +12,7 @@ export async function GET() {
   try {
     const result = await pool.query("SELECT id, name FROM suppliers ORDER BY name");
     return NextResponse.json(result.rows, {
-      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },
+      headers: { "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400" },
     });
   } catch (error) {
     console.error(error);
