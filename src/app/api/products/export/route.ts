@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import * as XLSX from "xlsx";
+import { sanitizeExcelRow } from "@/lib/excelSafety";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -13,7 +14,7 @@ export async function GET() {
       "SELECT * FROM products ORDER BY code ASC, production_year NULLS FIRST, production_week NULLS FIRST"
     );
 
-    const rows = result.rows.map((r) => ({
+    const rows = result.rows.map((r) => sanitizeExcelRow({
       "Ürün Kodu":            r.code ?? "",
       "Marka":                r.brand ?? "",
       "Ebat":                 r.size_desc ?? "",

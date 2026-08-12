@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import * as XLSX from "xlsx";
+import { sanitizeExcelRow } from "@/lib/excelSafety";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -11,7 +12,7 @@ export async function GET() {
   try {
     const result = await pool.query("SELECT * FROM storage WHERE teslim_edildi = false ORDER BY created_at DESC");
 
-    const rows = result.rows.map((r) => ({
+    const rows = result.rows.map((r) => sanitizeExcelRow({
       "Depo No":        r.depo_no ?? "",
       "Plaka":          r.plate ?? "",
       "Müşteri":        r.customer_name ?? "",
