@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
+import { getAppSettings } from "@/lib/settings";
 
 interface EditLineInput {
   id?: number;
@@ -22,10 +23,10 @@ interface EditLineInput {
 // "<Tedarikçi> Mail Order" olmalıdır (bkz. admin/orders/[id]/page.tsx).
 // Hem PATCH (ödeme kapatma) hem PUT (düzenleme) bu kontrolü kullanır —
 // PUT'ta boş/null bir değer de geçerlidir (henüz kapanmamış sipariş satırı).
-const PAYMENT_FLAT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap"];
+// flatOptions Genel Ayarlar'daki ödeme şekilleri listesidir ("Mail Order" hariç).
 const MAIL_ORDER_SUFFIX = " Mail Order";
-function isValidPaymentType(v: string): boolean {
-  if (PAYMENT_FLAT_OPTIONS.includes(v)) return true;
+function isValidPaymentType(v: string, flatOptions: string[]): boolean {
+  if (flatOptions.includes(v)) return true;
   return v.endsWith(MAIL_ORDER_SUFFIX) && v.length > MAIL_ORDER_SUFFIX.length;
 }
 
@@ -135,8 +136,10 @@ export async function PATCH(
     if (!Array.isArray(payments) || payments.length === 0) {
       return NextResponse.json({ error: "En az bir ödeme girişi gereklidir." }, { status: 400 });
     }
+    const { payment_types } = await getAppSettings();
+    const flatPaymentOptions = payment_types.filter((t) => t !== "Mail Order");
     for (const p of payments as { payment_type: string; amount: number }[]) {
-      if (!p.payment_type || !isValidPaymentType(p.payment_type)) {
+      if (!p.payment_type || !isValidPaymentType(p.payment_type, flatPaymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
       const amt = Number(p.amount);
@@ -229,13 +232,29 @@ export async function PUT(
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
     }
+    const { payment_types } = await getAppSettings();
+    // Genel Ayarlar'dan sonradan kaldırılmış bir ödeme tipi, o değeri zaten
+    // taşıyan eski bir siparişin düzenlenmesini (alakasız bir alan değişse
+    // bile) engellemesin diye bu siparişte hâlâ kayıtlı olan değerler de bu
+    // istek özelinde ayrıca kabul edilir — ayarlar listesine geri eklenmez,
+    // sadece bu siparişin kendi geçmiş verisiyle çakışmayı önler.
+    const existingPaymentTypes = await pool.query<{ payment_type: string }>(
+      `SELECT payment_type FROM order_services WHERE order_id = $1 AND payment_type IS NOT NULL
+       UNION
+       SELECT payment_type FROM order_payments WHERE order_id = $1`,
+      [id]
+    );
+    const flatPaymentOptions = Array.from(new Set([
+      ...payment_types.filter((t) => t !== "Mail Order"),
+      ...existingPaymentTypes.rows.map((r) => r.payment_type),
+    ]));
     for (const l of lines as EditLineInput[]) {
       if (!l.service_name || !String(l.service_name).trim()) {
         return NextResponse.json({ error: "Her satır için işlem adı zorunludur." }, { status: 400 });
       }
       // Boş/null geçerlidir (henüz ödeme tipi girilmemiş satır) — ama doluysa
       // PATCH ile aynı kurala uymalı (ör. tek başına "Mail Order" geçersiz).
-      if (l.payment_type && !isValidPaymentType(l.payment_type)) {
+      if (l.payment_type && !isValidPaymentType(l.payment_type, flatPaymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
     }
@@ -258,7 +277,7 @@ export async function PUT(
         clearPayments = true;
       } else {
         for (const p of payments as { payment_type: string; amount: number }[]) {
-          if (!p.payment_type || !isValidPaymentType(p.payment_type)) {
+          if (!p.payment_type || !isValidPaymentType(p.payment_type, flatPaymentOptions)) {
             return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
           }
           const amt = Number(p.amount);

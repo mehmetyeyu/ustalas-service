@@ -9,6 +9,11 @@ import { Tooltip } from "@/components/Tooltip";
 
 const IMPORT_BATCH_SIZE = 20;
 
+// Genel Ayarlar'daki ödeme şekilleri fetch edilene kadar (veya fetch
+// başarısız olursa) kullanılacak varsayılan — DB'deki app_settings
+// varsayılanıyla aynı.
+const DEFAULT_PAYMENT_TYPES = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap", "Mail Order"];
+
 // Filtrele modalındaki Yapılan İşlem/Tedarikçi/Ödeme Şekli alanları için:
 // bilinen bir listeden checkbox'larla birden fazla değer seçilebilen dropdown.
 // Modal kendi içinde kaydırıldığından (overflow-y-auto), liste modalın DOM
@@ -255,6 +260,10 @@ export default function OrdersPage() {
   const [serviceOptions, setServiceOptions] = useState<string[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
   const [paymentTypeOptions, setPaymentTypeOptions] = useState<string[]>([]);
+  // Genel Ayarlar'daki ödeme şekilleri listesi — Filtrele modalındaki
+  // paymentTypeOptions'tan farklı (o gerçekten kullanılmış değerlerdir),
+  // bu Excel içe aktarma normalizasyonu için kullanılır (bkz. handleImport).
+  const [settingsPaymentTypes, setSettingsPaymentTypes] = useState<string[]>(DEFAULT_PAYMENT_TYPES);
 
   // Filtrele modalındaki Yapılan İşlem/Tedarikçi/Ödeme Şekli çoklu seçim
   // listeleri — Yapılan İşlem/Tedarikçi katalogdan (Hizmetler/Tedarikçiler),
@@ -279,6 +288,10 @@ export default function OrdersPage() {
       .then((data: string[]) => {
         if (Array.isArray(data)) setPaymentTypeOptions(data.sort((a, b) => a.localeCompare(b, "tr-TR")));
       })
+      .catch(() => { });
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.payment_types)) setSettingsPaymentTypes(d.payment_types); })
       .catch(() => { });
   }, []);
 
@@ -394,7 +407,7 @@ export default function OrdersPage() {
 
       let parsed: { orders: ParsedOrder[]; skipped: number };
       try {
-        parsed = parseOrderRows(rawRows);
+        parsed = parseOrderRows(rawRows, settingsPaymentTypes);
       } catch (err) {
         setImportMsg(err instanceof Error ? err.message : "Dosya okunamadı.");
         setImportHasWarning(true);

@@ -103,10 +103,16 @@ CREATE TABLE IF NOT EXISTS suppliers (
 -- çoklu firma (SaaS) desteği eklenirse bu tabloya company_id eklenip firma
 -- başına bir satır olur; şimdilik firmaya özel değerleri kod içinde dağınık
 -- hardcode etmek yerine burada toplamak o geçişi ucuzlatır.
+-- payment_types: sipariş kapama ekranındaki ödeme seçenekleri + Excel içe
+-- aktarmada "bilinen" (Mail Order'a çevrilmeyen) ödeme tipleri (bkz.
+-- src/lib/ordersExcel.ts) — "Mail Order" hariç listenin geri kalanı. Bu
+-- listeyi değiştirmek geçmiş sipariş kayıtlarını (serbest metin olarak
+-- saklanır) etkilemez, yalnızca yeni seçim/içe aktarma davranışını etkiler.
 CREATE TABLE IF NOT EXISTS app_settings (
   id                     INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   business_name          VARCHAR(150) NOT NULL DEFAULT 'Lastik Servis Yönetim Sistemi',
   storage_overdue_months INT NOT NULL DEFAULT 6,
+  payment_types          TEXT[] NOT NULL DEFAULT ARRAY['Nakit','POS','Cari','Fatura Edildi.','Garanti Hesap','Nazım Hesap','Sait Hesap','Mail Order'],
   updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

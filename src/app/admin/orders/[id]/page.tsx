@@ -105,7 +105,9 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 // "Mail Order" seçilirse tedarikçi listesinden biri seçilir; nihai değer
 // "<Tedarikçi> Mail Order" olarak saklanır (Excel'deki tarihi verilerle aynı format).
-const PAYMENT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap", "Mail Order"];
+// Liste Genel Ayarlar'dan gelir (bkz. paymentOptions state) — bu, fetch
+// tamamlanana/başarısız olana kadarki varsayılan.
+const DEFAULT_PAYMENT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap", "Mail Order"];
 const MAIL_ORDER_SUFFIX = " Mail Order";
 
 // "Servis İşçiliği" hariç firmaya özel tedarikçi isimleri burada tutulmaz
@@ -220,11 +222,12 @@ function SearchableCombobox({
 // nihai değer "<Tedarikçi> Mail Order" olur. selectClassName ile modal/tablo
 // bağlamlarında farklı boyut uygulanabilir.
 function PaymentTypeSelect({
-  value, onChange, supplierOptions, selectClassName,
+  value, onChange, supplierOptions, paymentOptions, selectClassName,
 }: {
   value: string;
   onChange: (val: string) => void;
   supplierOptions: string[];
+  paymentOptions: string[];
   selectClassName: string;
 }) {
   const isMailOrder = value === "Mail Order" || value.endsWith(MAIL_ORDER_SUFFIX);
@@ -248,7 +251,7 @@ function PaymentTypeSelect({
         className={selectClassName}
       >
         <option value="">Karışık</option>
-        {PAYMENT_OPTIONS.map((val) => (
+        {paymentOptions.map((val) => (
           <option key={val} value={val}>{val}</option>
         ))}
       </select>
@@ -362,6 +365,7 @@ function OrderDetailPageInner() {
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
+  const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
   async function fetchOrder() {
@@ -384,6 +388,10 @@ function OrderDetailPageInner() {
         const merged = Array.from(new Set([...TEDARIKCI_SEED, ...d.map((s) => s.name)])).sort((a, b) => a.localeCompare(b, "tr-TR"));
         setSupplierOptions(merged);
       })
+      .catch(() => { });
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types); })
       .catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -901,6 +909,7 @@ function OrderDetailPageInner() {
                               updateEditLine(i, { payment_type: val });
                             }}
                             supplierOptions={supplierOptions}
+                            paymentOptions={paymentOptions}
                             selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
@@ -940,6 +949,7 @@ function OrderDetailPageInner() {
                         value={entry.payment_type}
                         onChange={(val) => updateEditPayment(i, { payment_type: val })}
                         supplierOptions={supplierOptions}
+                        paymentOptions={paymentOptions}
                         selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       <input
@@ -1174,6 +1184,7 @@ function OrderDetailPageInner() {
                       value={entry.payment_type}
                       onChange={(val) => updatePaymentEntry(i, { payment_type: val })}
                       supplierOptions={supplierOptions}
+                      paymentOptions={paymentOptions}
                       selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     <input
