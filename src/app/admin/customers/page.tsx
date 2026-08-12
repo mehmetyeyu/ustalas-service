@@ -39,7 +39,7 @@ export default function CustomersPage() {
     // GET /api/customers tarayıcı önbelleğine izin verir (Cache-Control) — bu
     // yönetim ekranı bir ekleme/düzenleme/silmeden hemen sonra her zaman güncel
     // veriyi göstermeli, o yüzden önbellek burada devre dışı bırakılır.
-    const res = await fetch("/api/customers", { cache: "no-store" });
+    const res = await fetch("/api/customers?withCounts=1", { cache: "no-store" });
     const data = await res.json();
     setCustomers(Array.isArray(data) ? data : []);
     setLoading(false);

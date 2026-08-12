@@ -3,19 +3,27 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 
 // Sipariş oluşturma ekranındaki Müşteri alanı için dizin listesi.
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    // order_count: Müşteriler ekranındaki "Siparişler" linkinin hiç siparişi
-    // olmayan müşterilerde gösterilmemesi için (bkz. admin/customers/page.tsx).
+    // order_count hesabı tüm siparişler üzerinde JOIN+GROUP BY gerektirir; bu
+    // sadece admin Müşteriler sayfasında ("Siparişler" linki hiç siparişi
+    // olmayan müşteride gösterilmesin diye) kullanılıyor. Sipariş oluşturma
+    // ekranındaki Müşteri otomatik tamamlaması (page.tsx, admin/orders/[id])
+    // order_count'u hiç okumuyor ama bu endpoint'i çok sık çağırıyor — o yüzden
+    // varsayılan olarak ucuz sorgu (sadece customers tablosu) dönüyor, sayım
+    // yalnızca ?withCounts=1 istendiğinde hesaplanıyor.
+    const withCounts = request.nextUrl.searchParams.get("withCounts") === "1";
     const result = await pool.query(
-      `SELECT c.id, c.name, c.phone, COUNT(o.id)::int AS order_count
-       FROM customers c
-       LEFT JOIN orders o ON o.customer_name = c.name
-       GROUP BY c.id, c.name, c.phone
-       ORDER BY c.name`
+      withCounts
+        ? `SELECT c.id, c.name, c.phone, COUNT(o.id)::int AS order_count
+           FROM customers c
+           LEFT JOIN orders o ON o.customer_name = c.name
+           GROUP BY c.id, c.name, c.phone
+           ORDER BY c.name`
+        : `SELECT id, name, phone FROM customers ORDER BY name`
     );
     return NextResponse.json(result.rows, {
       headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },
