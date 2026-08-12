@@ -486,6 +486,13 @@ export default function StoragePage() {
             Dışa Aktar
           </button>
           <button
+            onClick={() => { window.location.href = "/api/storage/import/template"; }}
+            title="Sadece Plaka zorunludur. Depo No'yu doldurursanız aktif bir depoyla çakışmadığından emin olun, aksi halde içe aktarma tamamen başarısız olur."
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50"
+          >
+            Şablon İndir
+          </button>
+          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"

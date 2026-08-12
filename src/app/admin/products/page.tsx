@@ -553,6 +553,13 @@ export default function ProductsPage() {
             Dışa Aktar
           </button>
           <button
+            onClick={() => { window.location.href = "/api/products/import/template"; }}
+            title="Sadece Ürün Kodu zorunludur, diğer sütunlar isteğe bağlıdır."
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50"
+          >
+            Şablon İndir
+          </button>
+          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
