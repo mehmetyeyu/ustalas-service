@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { parseProductRows, chunk, type ParsedProductRow } from "@/lib/productsExcel";
+import { Tooltip } from "@/components/Tooltip";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -547,17 +548,23 @@ export default function ProductsPage() {
             className="hidden"
           />
           <button
+            onClick={() => { window.location.href = "/api/products/import/template"; }}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1.5"
+          >
+            Şablon İndir
+            <Tooltip text="Sadece Ürün Kodu zorunludur, diğer sütunlar isteğe bağlıdır.">
+              <span className="text-gray-400 hover:text-gray-600 cursor-help">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+                </svg>
+              </span>
+            </Tooltip>
+          </button>
+          <button
             onClick={() => { window.location.href = "/api/products/export"; }}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Dışa Aktar
-          </button>
-          <button
-            onClick={() => { window.location.href = "/api/products/import/template"; }}
-            title="Sadece Ürün Kodu zorunludur, diğer sütunlar isteğe bağlıdır."
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50"
-          >
-            Şablon İndir
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -781,218 +788,218 @@ export default function ProductsPage() {
           </div>
         </>
       ) : (
-      <>
-      {/* Tablo */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <SortTh sortK="code" label="Ürün Kodu" />
-                <SortTh sortK="brand" label="Marka" />
-                <SortTh sortK="size_desc" label="Ebat" />
-                <SortTh sortK="total_stock" label="Stok" align="center" />
-                {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
-                {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
-                {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
-                {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
-                {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                Array.from({ length: SKELETON_ROWS }).map((_, i) => (
-                  <tr key={`skeleton-${i}`}>
-                    <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
-                    <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
-                    <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-100 rounded animate-pulse" /></td>
-                    <td className="px-4 py-3 text-center"><div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" /></td>
-                    {BATCH_COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
-                      <td key={c.key} className="px-4 py-3">
-                        <div className={`h-4 ${BATCH_SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
-                      </td>
-                    ))}
-                    <td className="px-4 py-3">
-                      <div className="h-4 w-24 bg-gray-100 rounded animate-pulse ml-auto" />
-                    </td>
+        <>
+          {/* Tablo */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <SortTh sortK="code" label="Ürün Kodu" />
+                    <SortTh sortK="brand" label="Marka" />
+                    <SortTh sortK="size_desc" label="Ebat" />
+                    <SortTh sortK="total_stock" label="Stok" align="center" />
+                    {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
+                    {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
+                    {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
+                    {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
+                    {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
+                    <th className="px-4 py-3"></th>
                   </tr>
-                ))
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">Ürün bulunamadı.</td>
-                </tr>
-              ) : (
-                items.map((group) => {
-                  const expanded = expandedCodes.has(group.code);
-                  return (
-                    <Fragment key={group.code}>
-                      <tr className="hover:bg-gray-50 transition-colors bg-gray-50/40">
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {loading ? (
+                    Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                      <tr key={`skeleton-${i}`}>
+                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-100 rounded animate-pulse" /></td>
+                        <td className="px-4 py-3 text-center"><div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" /></td>
+                        {BATCH_COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
+                          <td key={c.key} className="px-4 py-3">
+                            <div className={`h-4 ${BATCH_SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
+                          </td>
+                        ))}
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => toggleExpand(group.code)}
-                            className="flex items-center gap-2 font-mono font-semibold text-gray-800"
-                          >
-                            <svg
-                              className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? "rotate-90" : ""}`}
-                              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            {group.code}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{group.brand || "—"}</td>
-                        <td className="px-4 py-3 text-gray-700">{group.size_desc || "—"}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${group.total_stock === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
-                            {group.total_stock}
-                          </span>
-                        </td>
-                        {visibleCols.production_date && <td className="px-4 py-3 text-gray-400 text-xs">{group.batches.length} parti</td>}
-                        {visibleCols.season && <td className="px-4 py-3">{seasonBadge(group.season)}</td>}
-                        {visibleCols.supplier && <td className="px-4 py-3"></td>}
-                        {visibleCols.purchase_price && (
-                          <td className="px-4 py-3 text-right text-gray-800 font-medium">
-                            {group.avg_purchase_price != null ? formatCurrency(num(group.avg_purchase_price)) : "—"}
-                          </td>
-                        )}
-                        {visibleCols.sale_price && (
-                          <td className="px-4 py-3 text-right text-gray-800 font-medium">
-                            {group.avg_sale_price != null ? formatCurrency(num(group.avg_sale_price)) : "—"}
-                          </td>
-                        )}
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                            <button
-                              onClick={() => openAdd(group.code, group.brand, group.size_desc)}
-                              className="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap"
-                            >
-                              Stok Girişi
-                            </button>
-                            <button
-                              onClick={() => group.batches.length === 1 ? openEdit(group.batches[0]) : toggleExpand(group.code)}
-                              className="text-gray-600 hover:text-gray-900 text-xs font-medium whitespace-nowrap"
-                            >
-                              Düzenle
-                            </button>
-                          </div>
+                          <div className="h-4 w-24 bg-gray-100 rounded animate-pulse ml-auto" />
                         </td>
                       </tr>
-                      {expanded && group.batches.map((batch) => (
-                        <tr key={batch.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3 pl-10 text-gray-300 text-xs">#{batch.id}</td>
-                          <td className="px-4 py-3"></td>
-                          <td className="px-4 py-3"></td>
-                          <td className="px-4 py-3 text-center">
-                            <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${(batch.stock_qty ?? 0) === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
-                              {batch.stock_qty ?? 0}
-                            </span>
-                          </td>
-                          {visibleCols.production_date && (
-                            <td className="px-4 py-3 text-gray-700 font-mono">
-                              {weekYearLabel(batch.production_week, batch.production_year)}
-                            </td>
-                          )}
-                          {visibleCols.season && <td className="px-4 py-3"></td>}
-                          {visibleCols.supplier && <td className="px-4 py-3 text-gray-500">{batch.supplier ?? "—"}</td>}
-                          {visibleCols.purchase_price && <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(num(batch.avg_purchase_price ?? batch.purchase_price))}</td>}
-                          {visibleCols.sale_price && <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatCurrency(num(batch.avg_sale_price ?? batch.sale_price))}</td>}
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                              <button onClick={() => openHistoryModal(batch)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Fiyat Geçmişi</button>
-                              <button onClick={() => openEdit(batch)} className="text-gray-600 hover:text-gray-900 text-xs font-medium">Düzenle</button>
-                              <button onClick={() => handleDelete(batch.id)} disabled={deletingId === batch.id}
-                                className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40">
-                                {deletingId === batch.id ? "..." : "Sil"}
+                    ))
+                  ) : items.length === 0 ? (
+                    <tr>
+                      <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">Ürün bulunamadı.</td>
+                    </tr>
+                  ) : (
+                    items.map((group) => {
+                      const expanded = expandedCodes.has(group.code);
+                      return (
+                        <Fragment key={group.code}>
+                          <tr className="hover:bg-gray-50 transition-colors bg-gray-50/40">
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() => toggleExpand(group.code)}
+                                className="flex items-center gap-2 font-mono font-semibold text-gray-800"
+                              >
+                                <svg
+                                  className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? "rotate-90" : ""}`}
+                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                {group.code}
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Pagination */}
-      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-        <div className="flex items-center gap-3">
-          <span>
-            {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} ürün kodu
-          </span>
-          <label className="flex items-center gap-1.5 text-xs text-gray-500">
-            Sayfa başına
-            <select
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-        </div>
-        {total > limit && (
-          <div className="flex gap-1">
-            <button
-              onClick={() => setPage(1)}
-              disabled={page === 1}
-              className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              «
-            </button>
-            <button
-              onClick={() => setPage((p) => p - 1)}
-              disabled={page === 1}
-              className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              ‹
-            </button>
-            {Array.from({ length: Math.ceil(total / limit) }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === Math.ceil(total / limit) || Math.abs(p - page) <= 2)
-              .reduce<(number | "…")[]>((acc, p, i, arr) => {
-                if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
-                acc.push(p);
-                return acc;
-              }, [])
-              .map((p, i) =>
-                p === "…" ? (
-                  <span key={`ellipsis-${i}`} className="px-2 py-1 text-gray-400">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p as number)}
-                    className={`px-3 py-1 rounded border ${page === p
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "border-gray-300 hover:bg-gray-100"
-                      }`}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page * limit >= total}
-              className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              ›
-            </button>
-            <button
-              onClick={() => setPage(Math.ceil(total / limit))}
-              disabled={page * limit >= total}
-              className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              »
-            </button>
+                            </td>
+                            <td className="px-4 py-3 text-gray-700">{group.brand || "—"}</td>
+                            <td className="px-4 py-3 text-gray-700">{group.size_desc || "—"}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${group.total_stock === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
+                                {group.total_stock}
+                              </span>
+                            </td>
+                            {visibleCols.production_date && <td className="px-4 py-3 text-gray-400 text-xs">{group.batches.length} parti</td>}
+                            {visibleCols.season && <td className="px-4 py-3">{seasonBadge(group.season)}</td>}
+                            {visibleCols.supplier && <td className="px-4 py-3"></td>}
+                            {visibleCols.purchase_price && (
+                              <td className="px-4 py-3 text-right text-gray-800 font-medium">
+                                {group.avg_purchase_price != null ? formatCurrency(num(group.avg_purchase_price)) : "—"}
+                              </td>
+                            )}
+                            {visibleCols.sale_price && (
+                              <td className="px-4 py-3 text-right text-gray-800 font-medium">
+                                {group.avg_sale_price != null ? formatCurrency(num(group.avg_sale_price)) : "—"}
+                              </td>
+                            )}
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                                <button
+                                  onClick={() => openAdd(group.code, group.brand, group.size_desc)}
+                                  className="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap"
+                                >
+                                  Stok Girişi
+                                </button>
+                                <button
+                                  onClick={() => group.batches.length === 1 ? openEdit(group.batches[0]) : toggleExpand(group.code)}
+                                  className="text-gray-600 hover:text-gray-900 text-xs font-medium whitespace-nowrap"
+                                >
+                                  Düzenle
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {expanded && group.batches.map((batch) => (
+                            <tr key={batch.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-3 pl-10 text-gray-300 text-xs">#{batch.id}</td>
+                              <td className="px-4 py-3"></td>
+                              <td className="px-4 py-3"></td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${(batch.stock_qty ?? 0) === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
+                                  {batch.stock_qty ?? 0}
+                                </span>
+                              </td>
+                              {visibleCols.production_date && (
+                                <td className="px-4 py-3 text-gray-700 font-mono">
+                                  {weekYearLabel(batch.production_week, batch.production_year)}
+                                </td>
+                              )}
+                              {visibleCols.season && <td className="px-4 py-3"></td>}
+                              {visibleCols.supplier && <td className="px-4 py-3 text-gray-500">{batch.supplier ?? "—"}</td>}
+                              {visibleCols.purchase_price && <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(num(batch.avg_purchase_price ?? batch.purchase_price))}</td>}
+                              {visibleCols.sale_price && <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatCurrency(num(batch.avg_sale_price ?? batch.sale_price))}</td>}
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                                  <button onClick={() => openHistoryModal(batch)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Fiyat Geçmişi</button>
+                                  <button onClick={() => openEdit(batch)} className="text-gray-600 hover:text-gray-900 text-xs font-medium">Düzenle</button>
+                                  <button onClick={() => handleDelete(batch.id)} disabled={deletingId === batch.id}
+                                    className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40">
+                                    {deletingId === batch.id ? "..." : "Sil"}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
-      </div>
-      </>
+
+          {/* Pagination */}
+          <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center gap-3">
+              <span>
+                {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} ürün kodu
+              </span>
+              <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                Sayfa başına
+                <select
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </div>
+            {total > limit && (
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  «
+                </button>
+                <button
+                  onClick={() => setPage((p) => p - 1)}
+                  disabled={page === 1}
+                  className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ‹
+                </button>
+                {Array.from({ length: Math.ceil(total / limit) }, (_, i) => i + 1)
+                  .filter((p) => p === 1 || p === Math.ceil(total / limit) || Math.abs(p - page) <= 2)
+                  .reduce<(number | "…")[]>((acc, p, i, arr) => {
+                    if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, i) =>
+                    p === "…" ? (
+                      <span key={`ellipsis-${i}`} className="px-2 py-1 text-gray-400">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p as number)}
+                        className={`px-3 py-1 rounded border ${page === p
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "border-gray-300 hover:bg-gray-100"
+                          }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page * limit >= total}
+                  className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ›
+                </button>
+                <button
+                  onClick={() => setPage(Math.ceil(total / limit))}
+                  disabled={page * limit >= total}
+                  className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  »
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* Yeni Ürün / Parti Modal */}
