@@ -18,6 +18,7 @@ const navItems = [
 const settingsItems = [
   { href: "/admin/profile", label: "Profil" },
   { href: "/admin/users", label: "Kullanıcılar" },
+  { href: "/admin/settings", label: "Genel Ayarlar" },
 ];
 
 function SettingsMenu({ pathname }: { pathname: string }) {

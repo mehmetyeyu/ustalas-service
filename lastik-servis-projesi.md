@@ -206,9 +206,9 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 ---
 
-### 11. Profil & Kullanıcı Yönetimi
+### 11. Profil, Kullanıcı Yönetimi & Genel Ayarlar
 
-Üst menüdeki **Ayarlar** açılır menüsü altında iki sayfa:
+Üst menüdeki **Ayarlar** açılır menüsü altında üç sayfa:
 
 **Profil** (`/admin/profile`) — herhangi bir oturum açmış kullanıcı erişir:
 - Kullanıcı adı ve rolünü görüntüler.
@@ -225,6 +225,11 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 - **Kayıt Tarihi** ve **Son Giriş** sütunları — hesabın ne zaman açıldığı ve en son ne zaman kullanıldığı görünür.
 - **Kendi kaydınız üzerinde kısıtlı**: kendi rolünüzü/kullanıcı adınızı bu ekrandan değiştiremez, kendi şifrenizi buradan sıfırlayamaz (Profil'e yönlendirilirsiniz), kendi oturumunuzu buradan sonlandıramaz, kendi hesabınızı devre dışı bırakamaz veya silemezsiniz — kazara kendi yetkinizi/erişiminizi kaybetmenizi engeller.
 - **Son yönetici koruması**: sistemde tek **aktif** `admin` kalmışsa o kullanıcının rolü değiştirilemez, devre dışı bırakılamaz veya silinemez (bkz. Güvenlik Notları).
+
+**Genel Ayarlar** (`/admin/settings`) — yalnızca `admin`:
+- İşletme adı ve depoda bekleme uyarı eşiği (ay) — `app_settings` tablosunda tek satır (id=1) olarak tutulur, `GET/PUT /api/settings` üzerinden okunur/güncellenir.
+- Depolama modülündeki (Bölüm 8) "N aydan uzun süredir bekliyor" uyarısı hem liste sayfasında hem `/api/storage?overdue=true` sorgusunda artık bu ayardan okunur (önceden kod içinde sabit 6 ay idi).
+- İleride çoklu firma (SaaS) desteği düşünülerek eklendi: firmaya özel değerleri kod içinde dağınık hardcode etmek yerine tek bir yerde toplamak, ileride bu tabloya `company_id` eklenip firma başına bir satıra geçişi ucuzlatır (bkz. proje hedefleri).
 
 ---
 
@@ -253,6 +258,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
+| `app_settings` | Genel ayarlar — tek satır (`id=1`, `CHECK` ile zorlanır): `business_name`, `storage_overdue_months` (bkz. Bölüm 11) |
 
 **İndeksler** (performans): `orders(created_at)`, `orders(status)`, `orders(customer_name)` (Müşteri Detayı/silme kontrolü için), `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `order_payments(order_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `storage(created_at)`, `storage(islem_tarihi)`, `storage(depo_no)` (yalnızca aktif kayıtlarda benzersiz — bkz. `storage_active_depo_no_unique`), `products(code)`, `products(supplier)`, `products(season)`, `products` üzerindeki iki benzersizlik indeksi.
 
@@ -292,6 +298,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST/GET | `/api/products/import`, `/api/products/export` | Excel içe/dışa aktarma |
 | GET/POST | `/api/customers`, `/api/customers/:id` (PATCH/DELETE) | Müşteri dizini |
 | GET/POST | `/api/suppliers`, `/api/suppliers/:id` (PATCH/DELETE) | Tedarikçi dizini |
+| GET/PUT | `/api/settings` | Genel ayarlar — işletme adı, depoda bekleme uyarı eşiği (admin) |
 
 ---
 
@@ -310,6 +317,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/suppliers      → Tedarikçi dizini (admin)
 /admin/profile        → Profil (oturum açmış herkes)
 /admin/users          → Kullanıcı yönetimi (admin)
+/admin/settings       → Genel ayarlar (admin)
 ```
 
 ---

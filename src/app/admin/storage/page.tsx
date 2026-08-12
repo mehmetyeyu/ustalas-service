@@ -182,12 +182,12 @@ const EMPTY_FORM = {
   islem_tarihi: new Date().toISOString().split("T")[0],
 };
 
-function isOverdue(islem_tarihi: string | null): boolean {
+function isOverdue(islem_tarihi: string | null, thresholdMonths: number): boolean {
   if (!islem_tarihi) return false;
   const stored = new Date(islem_tarihi);
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  return stored < sixMonthsAgo;
+  const threshold = new Date();
+  threshold.setMonth(threshold.getMonth() - thresholdMonths);
+  return stored < threshold;
 }
 
 function printLabel(item: StorageItem) {
@@ -285,6 +285,7 @@ export default function StoragePage() {
     } catch { }
   }, []);
   const [overdueTotal, setOverdueTotal] = useState(0);
+  const [overdueMonths, setOverdueMonths] = useState(6);
   const [showDelivered, setShowDelivered] = useState(false);
   const [teslimId, setTeslimId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -294,6 +295,13 @@ export default function StoragePage() {
     const data = await res.json();
     setOverdueTotal(data.total ?? 0);
   }
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => { if (d.storage_overdue_months) setOverdueMonths(d.storage_overdue_months); })
+      .catch(() => { });
+  }, []);
 
   async function fetchItems(targetPage = page, delivered = showDelivered) {
     setLoading(true);
@@ -527,7 +535,7 @@ export default function StoragePage() {
           <svg className="w-5 h-5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
-          Depoda <span className="font-bold mx-1">{overdueTotal}</span> lastik 6 aydan uzun süredir bekliyor.
+          Depoda <span className="font-bold mx-1">{overdueTotal}</span> lastik {overdueMonths} aydan uzun süredir bekliyor.
         </div>
       )}
 
@@ -612,14 +620,14 @@ export default function StoragePage() {
                 </tr>
               ) : (
                 items.map((item, index) => (
-                  <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isOverdue(item.islem_tarihi) ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
+                  <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isOverdue(item.islem_tarihi, overdueMonths) ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
                     {visibleCols.depo_no && <td className="px-4 py-3 text-gray-400">{item.depo_no ?? "—"}</td>}
                     {visibleCols.plate && (
                       <td className="px-4 py-3 font-mono font-semibold text-gray-800">
                         <div className="flex items-center gap-1.5">
                           {item.plate ?? "—"}
-                          {isOverdue(item.islem_tarihi) && (
-                            <span title="6 aydan uzun süredir depoda">
+                          {isOverdue(item.islem_tarihi, overdueMonths) && (
+                            <span title={`${overdueMonths} aydan uzun süredir depoda`}>
                               <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                               </svg>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { getAppSettings } from "@/lib/settings";
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
@@ -29,7 +30,9 @@ export async function GET(request: NextRequest) {
     conditions.push(`(plate ILIKE $${values.length} OR customer_name ILIKE $${values.length})`);
   }
   if (overdue) {
-    conditions.push(`islem_tarihi < NOW() - INTERVAL '6 months'`);
+    const { storage_overdue_months } = await getAppSettings();
+    values.push(storage_overdue_months);
+    conditions.push(`islem_tarihi < NOW() - ($${values.length} * INTERVAL '1 month')`);
   }
 
   const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";

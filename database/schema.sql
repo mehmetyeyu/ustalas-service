@@ -99,6 +99,18 @@ CREATE TABLE IF NOT EXISTS suppliers (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Genel uygulama ayarları — tek satır (id=1, CHECK ile zorlanır). İleride
+-- çoklu firma (SaaS) desteği eklenirse bu tabloya company_id eklenip firma
+-- başına bir satır olur; şimdilik firmaya özel değerleri kod içinde dağınık
+-- hardcode etmek yerine burada toplamak o geçişi ucuzlatır.
+CREATE TABLE IF NOT EXISTS app_settings (
+  id                     INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  business_name          VARCHAR(150) NOT NULL DEFAULT 'Lastik Servis Yönetim Sistemi',
+  storage_overdue_months INT NOT NULL DEFAULT 6,
+  updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
 -- Kullanıcılar (yöneticiler)
 CREATE TABLE IF NOT EXISTS users (
   id            SERIAL PRIMARY KEY,
