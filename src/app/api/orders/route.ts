@@ -20,6 +20,22 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+// Türkiye sabit UTC+3 kullanır (2016'dan beri yaz saati yok), bu yüzden
+// "YYYY-MM-DD" filtre değerinin Europe/Istanbul gece yarısı sınırı burada
+// bir kez UTC timestamp'e çevrilip düz aralık karşılaştırması (created_at
+// >= $1) olarak kullanılır — bkz. src/app/api/reports/route.ts'teki aynı
+// desen. Önceki hâl her satırda (created_at AT TIME ZONE ...)::date
+// hesaplıyordu — sargable olmadığından orders_created_at_idx'i
+// kullanamıyor, tarih filtrelendiğinde her istekte tam tarama yapıyordu.
+function istanbulDayStartUTC(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, -3, 0, 0));
+}
+function istanbulNextDayStartUTC(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1, -3, 0, 0));
+}
+
 // Sıralama, sonucun geneline (WHERE ile filtrelenmiş TÜM satırlara) uygulanmalı
 // — bu yüzden sunucu tarafında, sayfalamayla birlikte yapılır (Ürünler
 // sayfasındaki whitelist deseniyle aynı: sortBy doğrudan sorguya değil, bu
@@ -72,19 +88,19 @@ export async function GET(request: NextRequest) {
   const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
 
   const conditions: string[] = [];
-  const values: (string | number | string[])[] = [];
+  const values: (string | number | string[] | Date)[] = [];
 
   if (status) {
     values.push(status);
     conditions.push(`o.status = $${values.length}`);
   }
   if (dateFrom) {
-    values.push(dateFrom);
-    conditions.push(`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date >= $${values.length}`);
+    values.push(istanbulDayStartUTC(dateFrom));
+    conditions.push(`o.created_at >= $${values.length}`);
   }
   if (dateTo) {
-    values.push(dateTo);
-    conditions.push(`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date <= $${values.length}`);
+    values.push(istanbulNextDayStartUTC(dateTo));
+    conditions.push(`o.created_at < $${values.length}`);
   }
   if (customerName) {
     values.push(`%${escapeLike(customerName)}%`);
