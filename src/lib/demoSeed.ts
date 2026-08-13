@@ -6,15 +6,15 @@
 // Bu modül SADECE elevire dağıtımında çağrılır (route, CRON_SECRET env var'ı
 // tanımlı değilse çalışmayı reddeder) — Ustalas'ın gerçek verisine asla
 // dokunmaz.
-import { Pool, neonConfig } from "@neondatabase/serverless";
+import { Pool } from "pg";
 
-// Bu dosyaya özel, izole bir bağlantı: paylaşılan src/lib/db.ts (WebSocket
-// tabanlı Pool, tüm uygulamanın geri kalanında kullanılıyor) cron ortamında
-// WebSocket el sıkışması başarısız oluyordu ("ErrorEvent" / fetch failed).
-// poolQueryViaFetch, sorguları WebSocket yerine düz HTTP fetch üzerinden
-// gönderir — bu modülün dışına sızmayan, tek dosyalık bir ayar.
-neonConfig.poolQueryViaFetch = true;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Bu dosyaya özel, izole bir bağlantı: paylaşılan src/lib/db.ts
+// (@neondatabase/serverless, WebSocket tabanlı) bu ortamda bağlantı
+// kuramıyordu (hem WebSocket hem poolQueryViaFetch/HTTP modunda "fetch
+// failed"). Standart pg paketi (ham TCP) burada güvenilir çalışıyor — sadece
+// bu dosyayı etkiliyor, uygulamanın geri kalanının (Ustalas dahil)
+// kullandığı paylaşılan pool'a dokunmuyor.
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 const GENERIC_SUPPLIERS = [
   "Servis İşçiliği",
