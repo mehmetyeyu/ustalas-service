@@ -6,7 +6,15 @@
 // Bu modül SADECE elevire dağıtımında çağrılır (route, CRON_SECRET env var'ı
 // tanımlı değilse çalışmayı reddeder) — Ustalas'ın gerçek verisine asla
 // dokunmaz.
-import pool from "@/lib/db";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+
+// Bu dosyaya özel, izole bir bağlantı: paylaşılan src/lib/db.ts (WebSocket
+// tabanlı Pool, tüm uygulamanın geri kalanında kullanılıyor) cron ortamında
+// WebSocket el sıkışması başarısız oluyordu ("ErrorEvent" / fetch failed).
+// poolQueryViaFetch, sorguları WebSocket yerine düz HTTP fetch üzerinden
+// gönderir — bu modülün dışına sızmayan, tek dosyalık bir ayar.
+neonConfig.poolQueryViaFetch = true;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const GENERIC_SUPPLIERS = [
   "Servis İşçiliği",
