@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
+
+// Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
+// NEXT_PUBLIC_LOGO_SRC_DARK ile gösterebilir (bu menü koyu arka planlı) —
+// set edilmezse Ustalas'ın gerçek logosu (public/logo.jpg) kullanılmaya devam eder.
+const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC_DARK || "/logo.jpg";
 
 const navItems = [
   { href: "/admin/orders", label: "Siparişler" },
@@ -85,7 +89,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Mobile: iki satır */}
         <div className="flex flex-col gap-2 sm:hidden">
           <div className="flex items-center justify-between">
-            <Image src="/logo.jpg" alt="Logo" width={120} height={41} className="object-contain" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
+            <img src={LOGO_SRC} alt="Logo" width={120} height={41} className="object-contain" />
             <div className="flex items-center gap-3">
               <SettingsMenu pathname={pathname} />
               <button
@@ -116,7 +121,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Desktop: tek satır */}
         <div className="hidden sm:flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <Image src="/logo.jpg" alt="Logo" width={150} height={51} className="object-contain" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
+            <img src={LOGO_SRC} alt="Logo" width={150} height={51} className="object-contain" />
             <div className="flex gap-1">
               {navItems.map((item) => (
                 <Link
