@@ -18,10 +18,31 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
+const TITLE = "Elevire — Lastik Servisi Yönetim Yazılımı";
+const DESCRIPTION =
+  "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu.";
+
 export const metadata: Metadata = {
-  title: "Elevire — Lastik Servisi Yönetim Yazılımı",
-  description:
-    "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu.",
+  // Vercel'in her deploy'a otomatik enjekte ettiği değişken — proje için
+  // atanmış üretim domaini (Elevire'de elevire.yeyu.co). Bunsuz Next.js,
+  // og:image gibi göreli metadata URL'lerini localhost'a göre çözerdi.
+  metadataBase: process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? new URL(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
+    : undefined,
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    siteName: "Elevire",
+    locale: "tr_TR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 const FEATURES = [
