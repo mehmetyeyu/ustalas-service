@@ -7,9 +7,16 @@ import { useState } from "react";
 // logosu (public/logo.jpg) kullanılmaya devam eder.
 const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC || "/logo.jpg";
 
+// Sadece Elevire'de (NEXT_PUBLIC_DEMO_MODE=true) — paylaşılan demo hesabının
+// bilgileri zaten landing sayfasında ve schema.sql'de açıkça public, o yüzden
+// burada önceden doldurmak yeni bir bilgi ifşa etmiyor, sadece ziyaretçinin
+// yazmadan doğrudan Giriş Yap'a basabilmesini sağlıyor. Ustalas'ta bu değişken
+// tanımlı değildir, alanlar her zaman boş başlar.
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 export default function LoginPage() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState(DEMO_MODE ? "admin" : "");
+  const [password, setPassword] = useState(DEMO_MODE ? "admin123" : "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
