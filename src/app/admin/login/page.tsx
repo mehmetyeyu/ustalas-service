@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+
+// Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
+// NEXT_PUBLIC_LOGO_SRC ile gösterebilir — set edilmezse Ustalas'ın gerçek
+// logosu (public/logo.jpg) kullanılmaya devam eder.
+const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC || "/logo.jpg";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -41,7 +45,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
-            <Image src="/logo.jpg" alt="Logo" width={150} height={51} className="mx-auto mb-4 object-contain" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
+            <img src={LOGO_SRC} alt="Logo" width={150} height={51} className="mx-auto mb-4 object-contain" />
             <h1 className="text-2xl font-bold text-gray-800">Yönetici Girişi</h1>
             <p className="text-gray-500 text-sm mt-1">Lastik Servis Paneli</p>
           </div>
