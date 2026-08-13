@@ -124,7 +124,7 @@ export default function ElevirePage() {
           <h2>Hemen Deneyin,<br />Farkı Görün.</h2>
           <p>Kurulum gerekmez, kredi kartı istenmez — demo hesabıyla dakikalar içinde sisteme göz atın.</p>
           <div className="hero-actions">
-            <a className="btn btn-primary" href="#">Demoyu Ücretsiz Dene</a>
+            <a className="btn btn-primary" href="/admin/login">Demoyu Ücretsiz Dene</a>
           </div>
           <p style={{ marginTop: "18px" }} className="hero-note">KURULUM YOK · KREDİ KARTI GEREKMEZ</p>
         </div>
