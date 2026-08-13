@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-// import { resetDemoData } from "@/lib/demoSeed";
+import { resetDemoData } from "@/lib/demoSeed";
 
 // Yalnızca Elevire demo dağıtımında anlamlı — CRON_SECRET env var'ı sadece o
 // projede tanımlı olduğundan Ustalas'ın prod ortamında bu route hep 404 döner
@@ -14,11 +14,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // GEÇİCİ TEŞHİS — değeri değil sadece varlığını/uzunluğunu loglar, kaldırılacak.
-  console.log("DEBUG_DATABASE_URL", JSON.stringify({
-    hasDatabaseUrl: typeof process.env.DATABASE_URL === "string",
-    databaseUrlLength: process.env.DATABASE_URL?.length ?? 0,
-    databaseUrlHost: process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).host : null,
-  }));
-  return NextResponse.json({ debug: true });
+  await resetDemoData();
+  return NextResponse.json({ ok: true, resetAt: new Date().toISOString() });
 }
