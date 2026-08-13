@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Oswald, Source_Sans_3, JetBrains_Mono } from "next/font/google";
+import ShowcaseTabs from "./ShowcaseTabs";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -25,6 +26,7 @@ export const metadata: Metadata = {
 
 const FEATURES = [
   { code: "SİP", title: "Sipariş Yönetimi", text: "Plaka bazlı sipariş kaydı, uygulanan hizmetler ve ödeme takibi tek ekranda." },
+  { code: "MUS", title: "Müşteri Yönetimi", text: "Müşteri dizini, iletişim bilgileri ve geçmiş sipariş kayıtları tek tıkla." },
   { code: "STK", title: "Stok & Fiyat Takibi", text: "Ürün stok seviyeleri, parti bazlı alış/satış fiyat geçmişi." },
   { code: "DEPO", title: "Mevsimlik Depolama Takibi", text: "Hangi lastik ne zaman depoya girdi, bekleyen kayıtlar için otomatik uyarı." },
   { code: "TED", title: "Tedarikçi Takibi", text: "Tedarikçi bazlı ürün ve maliyet kayıtları." },
@@ -87,10 +89,21 @@ export default function ElevirePage() {
         </div>
       </div>
 
+      <div className="showcase">
+        <div className="wrap">
+          <div className="showcase-head">
+            <span className="problem-tag">UYGULAMADAN</span>
+            <h2>Ekranın arkasında<br />gerçek bir sistem var.</h2>
+            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız dört ekranı: sipariş oluşturma, sipariş listesi, depolama takibi ve raporlama.</p>
+          </div>
+          <ShowcaseTabs />
+        </div>
+      </div>
+
       <div className="features">
         <div className="wrap">
           <div className="features-head">
-            <h2>Tek Sistem,<br />Yedi İş.</h2>
+            <h2>Tek Sistem,<br />Sekiz İş.</h2>
             <p>Sabahtan akşama işletmenizi ayakta tutan her şey Elevire içinde.</p>
           </div>
           <div className="feature-grid">
@@ -410,6 +423,289 @@ const CSS = `
     padding: 4px 9px;
     border-radius: 3px;
     margin-bottom: 16px;
+  }
+
+  /* ---------- showcase ---------- */
+  .elevire .showcase {
+    padding: 84px 0 96px;
+    background: var(--ground-alt);
+    border-bottom: 1px solid var(--line);
+  }
+  .elevire .showcase-head {
+    text-align: center;
+    max-width: 620px;
+    margin: 0 auto 40px;
+  }
+  .elevire .showcase-head h2 {
+    font-size: clamp(1.7rem, 3vw, 2.3rem);
+    line-height: 1.12;
+    margin-top: 16px;
+  }
+  .elevire .showcase-intro {
+    margin-top: 16px;
+    color: var(--ink-soft);
+    font-size: 1.02rem;
+  }
+  .elevire .showcase-tabs {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 22px;
+  }
+  .elevire .showcase-tab {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 9px 18px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .elevire .showcase-tab:hover { border-color: var(--accent-2); color: var(--ink); }
+  .elevire .showcase-tab.is-active {
+    background: var(--ink);
+    color: var(--ground);
+    border-color: var(--ink);
+  }
+
+  .elevire .showcase-frame {
+    max-width: 880px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 30px 60px -30px hsl(var(--shadow) / 0.35);
+  }
+  .elevire .showcase-chrome {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--ground-alt);
+    border-bottom: 1px solid var(--line);
+  }
+  .elevire .showcase-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--line);
+  }
+  .elevire .showcase-dot[data-c="1"] { background: color-mix(in srgb, var(--accent) 70%, var(--line)); }
+  .elevire .showcase-dot[data-c="2"] { background: color-mix(in srgb, var(--accent-2) 60%, var(--line)); }
+  .elevire .showcase-addr {
+    margin-left: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 3px 10px;
+  }
+  .elevire .showcase-screen {
+    padding: 28px 28px 32px;
+    background: var(--surface);
+  }
+
+  .elevire .mock-field-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .elevire .mock-field { display: flex; flex-direction: column; gap: 6px; }
+  .elevire .mock-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+  }
+  .elevire .mock-input {
+    font-size: 0.92rem;
+    color: var(--ink);
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 9px 11px;
+  }
+  .elevire .mock-input-plate { font-family: var(--font-mono); letter-spacing: 0.04em; }
+
+  .elevire .mock-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    margin-bottom: 4px;
+  }
+  .elevire .mock-table th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+    font-weight: 500;
+    padding: 0 10px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .elevire .mock-table td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .elevire .mock-table tbody tr:last-child td { border-bottom: none; }
+  .elevire .mock-table .num { text-align: right; }
+  .elevire .mock-table th.num { text-align: right; }
+  .elevire .mock-table .mono { font-family: var(--font-mono); font-size: 0.84rem; }
+
+  .elevire .mock-form-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--ground);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 14px 0 18px;
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+  .elevire .mock-form-footer strong { color: var(--ink); font-size: 1.1rem; font-family: var(--font-display); }
+  .elevire .mock-btn {
+    display: inline-flex;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.92rem;
+    letter-spacing: 0.02em;
+    background: var(--accent);
+    color: var(--accent-ink);
+    padding: 11px 20px;
+    border-radius: 6px;
+  }
+
+  .elevire .mock-chips { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .elevire .mock-chip {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--ink-soft);
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 12px;
+  }
+
+  .elevire .mock-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.84rem;
+    color: var(--ink-soft);
+  }
+  .elevire .mock-status i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--line);
+    border: 1px solid var(--ink-soft);
+  }
+  .elevire .mock-status.is-done { color: var(--ink); }
+  .elevire .mock-status.is-done i { background: var(--accent-2); border-color: var(--accent-2); }
+
+  .elevire .mock-badge-overdue {
+    display: inline-block;
+    margin-left: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+    color: var(--accent-ink);
+    background: var(--accent);
+    border-radius: 4px;
+    padding: 2px 7px;
+    vertical-align: middle;
+  }
+
+  .elevire .mock-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .elevire .mock-stat {
+    background: var(--ground);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .elevire .mock-stat-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+  }
+  .elevire .mock-stat-value {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .elevire .mock-chart {
+    background: var(--ground);
+    border-radius: 8px;
+    padding: 18px 20px 14px;
+  }
+  .elevire .mock-chart-title {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+    margin-bottom: 14px;
+  }
+  .elevire .mock-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+    height: 120px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0;
+  }
+  .elevire .mock-bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    position: relative;
+  }
+  .elevire .mock-bar {
+    width: 100%;
+    max-width: 34px;
+    background: var(--accent);
+    border-radius: 4px 4px 0 0;
+  }
+  .elevire .mock-bar-value {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+  .elevire .mock-bar-label {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--ink-soft);
+  }
+
+  @media (max-width: 640px) {
+    .elevire .mock-field-row { grid-template-columns: 1fr; }
+    .elevire .mock-stats { grid-template-columns: 1fr; }
+    .elevire .showcase-screen { padding: 20px 16px 24px; }
+    .elevire .mock-table { font-size: 0.8rem; }
   }
 
   /* ---------- features ---------- */
