@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
   id                     INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   business_name          VARCHAR(150) NOT NULL DEFAULT 'Lastik Servis Yönetim Sistemi',
   storage_overdue_months INT NOT NULL DEFAULT 6,
-  payment_types          TEXT[] NOT NULL DEFAULT ARRAY['Nakit','POS','Cari','Fatura Edildi.','Garanti Hesap','Nazım Hesap','Sait Hesap','Mail Order'],
+  payment_types          TEXT[] NOT NULL DEFAULT ARRAY['Nakit','POS','Cari','Fatura Edildi.','Havale/EFT','Mail Order'],
   updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
@@ -255,13 +255,12 @@ INSERT INTO services (name, price) VALUES
   ('Klima Gazı', NULL), ('Jant Boyama', NULL), ('Yerinde Montaj Hizmeti', NULL)
 ON CONFLICT (name) DO NOTHING;
 
--- Varsayılan tedarikçiler
+-- Varsayılan tedarikçiler — genel/nötr bir başlangıç listesi (bkz. src/app/page.tsx
+-- TEDARIKCI_SEED yorumu): bu proje başka firmalara da sunulacağından kod ve
+-- şema içine tek bir firmanın gerçek tedarikçi listesini gömmek yanlış olur.
 INSERT INTO suppliers (name) VALUES
-  ('Servis İşçiliği'), ('YUKE'), ('Keskin'), ('Artvin'), ('FB Lastik'), ('Uspa'),
-  ('Güler'), ('Simetri'), ('Mollaoğlu'), ('Karaoğlu'), ('Yedi Oto'), ('Jantçı Bülent'),
-  ('Sel Oto'), ('Mutaflar'), ('Güncan Veysel'), ('DRS'), ('LastikBurada'), ('Atlastur'),
-  ('Gizem Oto'), ('İkinci El'), ('Hankook Fabrika'), ('Diğer'), ('Has Ticaret'),
-  ('Özkan Lastik'), ('Haskar')
+  ('Servis İşçiliği'), ('Merkez Lastik Dağıtım'), ('Anadolu Oto Yedek Parça'),
+  ('Batı Jant'), ('Örnek Lastik A.Ş.'), ('İkinci El'), ('Diğer')
 ON CONFLICT DO NOTHING;
 
 -- Brute-force koruması: art arda başarısız giriş denemesi sayacı ve geçici

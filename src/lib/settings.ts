@@ -10,7 +10,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   business_name: "Lastik Servis Yönetim Sistemi",
   storage_overdue_months: 6,
-  payment_types: ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap", "Mail Order"],
+  payment_types: ["Nakit", "POS", "Cari", "Fatura Edildi.", "Havale/EFT", "Mail Order"],
 };
 
 export async function getAppSettings(): Promise<AppSettings> {
