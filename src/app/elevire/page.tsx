@@ -20,7 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 const TITLE = "Elevire — Lastik Servisi Yönetim Yazılımı";
 const DESCRIPTION =
-  "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu.";
+  "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu. Kurulum yok, kredi kartı gerekmez.";
 
 export const metadata: Metadata = {
   // Vercel'in her deploy'a otomatik enjekte ettiği değişken — proje için
@@ -31,6 +31,7 @@ export const metadata: Metadata = {
     : undefined,
   title: TITLE,
   description: DESCRIPTION,
+  alternates: { canonical: "/elevire" },
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,
