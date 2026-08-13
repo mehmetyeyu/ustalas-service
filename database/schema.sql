@@ -286,6 +286,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 -- Varsayılan admin kullanıcısı
 -- Şifre: admin123  (bcrypt hash — uygulamayı başlatmadan önce değiştiriniz!)
 -- Yeni hash oluşturmak için: node -e "const b=require('bcryptjs'); b.hash('YeniSifre',10).then(h=>console.log(h))"
+-- Not: buradaki hash önceden "admin123" ile eşleşmiyordu (2026-08-14'te fark edildi,
+-- Elevire demo girişini kalıcı olarak kilitliyordu) — düzeltildi ve doğrulandı.
 INSERT INTO users (username, password_hash, role) VALUES
-  ('admin', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin')
+  ('admin', '$2a$10$OpYuNAPfyj4RT4OootiFKu2yfYfPKVOrmMk3GyvAiFIUf4dCZvQ5y', 'admin')
 ON CONFLICT DO NOTHING;

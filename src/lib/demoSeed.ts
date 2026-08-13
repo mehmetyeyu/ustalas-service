@@ -66,6 +66,14 @@ export async function resetDemoData(): Promise<void> {
     [GENERIC_PAYMENT_TYPES]
   );
 
+  // Paylaşılan tek demo hesabı: bir ziyaretçi şifreyi değiştirirse veya art
+  // arda başarısız denemeyle hesabı kilitlerse, bu olmadan sonraki ziyaretçiler
+  // landing sayfasında reklamı yapılan admin/admin123 ile hiç giremezdi.
+  await pool.query(
+    "UPDATE users SET password_hash = $1, failed_attempts = 0, locked_until = NULL, is_active = true WHERE username = 'admin'",
+    ["$2a$10$OpYuNAPfyj4RT4OootiFKu2yfYfPKVOrmMk3GyvAiFIUf4dCZvQ5y"]
+  );
+
   for (const name of GENERIC_SUPPLIERS) {
     await pool.query("INSERT INTO suppliers (name) VALUES ($1) ON CONFLICT DO NOTHING", [name]);
   }
