@@ -25,8 +25,11 @@ CREATE TABLE IF NOT EXISTS orders (
   status         VARCHAR(20) DEFAULT 'BEKLEMEDE' CHECK (status IN ('BEKLEMEDE', 'TAMAMLANDI')),
   -- Serbest metin: elle kapatma Nakit/POS/Cari/Fatura Edildi. kullanır, Excel
   -- içe aktarımı muhasebe programındaki asıl ödeme etiketini (Cari, Mail Order,
-  -- POS, vb.) olduğu gibi korur.
-  payment_type   VARCHAR(30),
+  -- POS, vb.) olduğu gibi korur. "Mail Order" bir tedarikçiyle birleşip
+  -- "<Tedarikçi> Mail Order" olarak saklanabildiğinden (bkz. api/orders/[id])
+  -- ve tedarikçi ismi serbest/uzun metin olabildiğinden VARCHAR(30) yetersizdi
+  -- (ör. "Anadolu Oto Yedek Parça Mail Order" 34 karakter) — TEXT'e genişletildi.
+  payment_type   TEXT,
   payment_date   TIMESTAMP NULL,
   -- Excel içe aktarımından gelen siparişleri tekilleştirmek için (aynı dosya/satır
   -- tekrar içe aktarılırsa yinelenen sipariş oluşmasın diye). Elle girilenlerde NULL.
@@ -48,8 +51,8 @@ CREATE TABLE IF NOT EXISTS order_services (
   -- Aynı siparişteki farklı işlemler farklı şekilde ödenebilir (ör. biri nakit,
   -- biri kart, biri cari) — bu yüzden ödeme tipi sipariş değil, işlem (satır)
   -- seviyesindedir. orders.payment_type ise siparişin özet/görünüm değeridir
-  -- (tüm satırlar aynıysa o değer, karışıksa 'Karışık').
-  payment_type  VARCHAR(30)
+  -- (tüm satırlar aynıysa o değer, karışıksa 'Karışık'). TEXT — bkz. orders.payment_type yorumu.
+  payment_type  TEXT
 );
 
 -- "Ödeme Al & Kapat" sırasında tek bir tutar/tip yerine parçalı ödeme
@@ -61,10 +64,21 @@ CREATE TABLE IF NOT EXISTS order_services (
 CREATE TABLE IF NOT EXISTS order_payments (
   id            SERIAL PRIMARY KEY,
   order_id      INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  payment_type  VARCHAR(30) NOT NULL,
+  payment_type  TEXT NOT NULL,
   amount        DECIMAL(10,2) NOT NULL,
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Yukarıdaki üç payment_type sütunu başlangıçta VARCHAR(30) idi — "Mail
+-- Order" bir tedarikçiyle birleşince (bkz. yukarıdaki yorumlar) bazı
+-- tedarikçi isimleriyle 30 karakteri aşıp INSERT'te 500 hatasına yol
+-- açıyordu (canlıda gerçekleşti: "Anadolu Oto Yedek Parça Mail Order", 34
+-- karakter). Zaten var olan tablolarda CREATE TABLE IF NOT EXISTS kolon
+-- tipini değiştirmediğinden, mevcut Ustalas/Elevire veritabanları için
+-- burada ayrıca genişletiliyor.
+ALTER TABLE orders ALTER COLUMN payment_type TYPE TEXT;
+ALTER TABLE order_services ALTER COLUMN payment_type TYPE TEXT;
+ALTER TABLE order_payments ALTER COLUMN payment_type TYPE TEXT;
 
 -- Performans: Sipariş Listesi'nin varsayılan sıralaması (created_at DESC) ve
 -- Durum/Tarih filtreleri, ayrıca order_services -> orders/services join'leri.
