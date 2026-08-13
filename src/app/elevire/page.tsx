@@ -64,9 +64,9 @@ export default function ElevirePage() {
       <div className="topbar">
         <div className="wrap">
           <a className="wordmark" href="#top">
-            <span className="bar"></span>Elevire
+            <span className="bar"></span>Elevıre
           </a>
-          <a className="nav-cta" href="#demo">Demoyu Dene</a>
+          <a className="nav-cta" href="/admin/login">Demoyu Dene</a>
         </div>
       </div>
 
@@ -90,7 +90,7 @@ export default function ElevirePage() {
             Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Excel dosyaları ve kağıt fişlerle uğraşmayı bırakın.
           </p>
           <div className="hero-actions">
-            <a className="btn btn-primary" href="#demo">Demoyu Ücretsiz Dene</a>
+            <a className="btn btn-primary" href="/admin/login">Demoyu Ücretsiz Dene</a>
             <span className="hero-note">KURULUM YOK · KREDİ KARTI GEREKMEZ</span>
           </div>
         </div>
