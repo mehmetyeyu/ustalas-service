@@ -10,10 +10,6 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("auth_token")?.value;
 
-  if (pathname === "/" && LANDING_REDIRECT) {
-    return NextResponse.redirect(new URL(LANDING_REDIRECT, request.url));
-  }
-
   // Login sayfası — zaten giriş yapmışsa yönlendir
   if (pathname === "/admin/login") {
     if (token) {
@@ -39,13 +35,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Ana sayfa — giriş yapmış herkes erişebilir
+  // Ana sayfa — giriş yapmış herkes erişebilir. Giriş yapılmamışsa (Elevire'de
+  // LANDING_REDIRECT tanımlıysa) pazarlama sayfasına, yoksa login'e yönlendirir —
+  // ama zaten giriş yapmış birini asla landing'e göndermez (aksi halde "/"'ye
+  // giden dahili linkler, ör. Sipariş Ekle, oturum açıkken bile landing'e düşerdi).
   if (pathname === "/") {
-    if (!token) return NextResponse.redirect(new URL("/admin/login", request.url));
-    const user = await verifyToken(token);
+    const user = token ? await verifyToken(token) : null;
     if (!user) {
-      const res = NextResponse.redirect(new URL("/admin/login", request.url));
-      res.cookies.delete("auth_token");
+      const res = NextResponse.redirect(new URL(LANDING_REDIRECT || "/admin/login", request.url));
+      if (token) res.cookies.delete("auth_token");
       return res;
     }
     return NextResponse.next();
