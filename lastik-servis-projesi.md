@@ -2,7 +2,7 @@
 
 ## Genel Bakış
 
-Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı müşteri, sipariş, stok ve depolama yönetim uygulaması.
+Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı müşteri, sipariş, stok ve depolama yönetim uygulaması. Admin paneli mobil cihazlarda da tam kullanılabilir (responsive) — tablolar, formlar ve modallar küçük ekranlara uyarlanmıştır.
 
 ---
 
