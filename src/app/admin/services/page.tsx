@@ -91,11 +91,11 @@ export default function ServicesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Hizmet Yönetimi</h1>
         <button
           onClick={openNew}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+          className="self-start sm:self-auto bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
         >
           + Yeni Hizmet
         </button>
@@ -105,41 +105,43 @@ export default function ServicesPage() {
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Hizmet Adı</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Fiyat</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {services.map((svc) => (
-                <tr key={svc.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-800">{svc.name}</td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {svc.price != null ? formatCurrency(svc.price) : <span className="text-gray-400">Fiyat girilmemiş</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openEdit(svc)}
-                        className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                      >
-                        Düzenle
-                      </button>
-                      <button
-                        onClick={() => handleDelete(svc.id)}
-                        className="text-red-500 hover:text-red-700 text-xs font-medium"
-                      >
-                        Sil
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Hizmet Adı</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Fiyat</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {services.map((svc) => (
+                  <tr key={svc.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{svc.name}</td>
+                    <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
+                      {svc.price != null ? formatCurrency(svc.price) : <span className="text-gray-400">Fiyat girilmemiş</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2 whitespace-nowrap">
+                        <button
+                          onClick={() => openEdit(svc)}
+                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                        >
+                          Düzenle
+                        </button>
+                        <button
+                          onClick={() => handleDelete(svc.id)}
+                          className="text-red-500 hover:text-red-700 text-xs font-medium"
+                        >
+                          Sil
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

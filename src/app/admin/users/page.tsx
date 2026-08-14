@@ -46,6 +46,7 @@ export default function UsersPage() {
   const [renameSaving, setRenameSaving] = useState(false);
 
   const [busyAction, setBusyAction] = useState<number | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
   async function fetchUsers() {
     const res = await fetch("/api/users", { cache: "no-store" });
@@ -224,12 +225,12 @@ export default function UsersPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div onClick={() => setOpenMenuId(null)}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Kullanıcılar</h1>
         <button
           onClick={openNew}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+          className="self-start sm:self-auto bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
         >
           + Yeni Kullanıcı
         </button>
@@ -247,13 +248,13 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Kullanıcı Adı</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Rol</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Durum</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kayıt Tarihi</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Son Giriş</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kayıt Tarihi</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Son Giriş</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.map((u) => {
+              {users.map((u, index) => {
                 const self = u.username === currentUsername;
                 const locked = isLocked(u);
                 return (
@@ -309,12 +310,13 @@ export default function UsersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(u.created_at)}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                    <td className="hidden sm:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(u.created_at)}</td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">
                       {u.last_login_at ? formatDate(u.last_login_at) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-3 flex-wrap">
+                    <td className={`px-4 py-3 text-right ${openMenuId === u.id ? "relative z-50" : ""}`}>
+                      {/* Desktop */}
+                      <div className="hidden sm:flex justify-end gap-3 flex-wrap">
                         {locked && (
                           <button
                             onClick={() => handleUnlock(u)}
@@ -355,6 +357,70 @@ export default function UsersPage() {
                           >
                             Sil
                           </button>
+                        )}
+                      </div>
+                      {/* Mobile */}
+                      <div className="relative sm:hidden inline-block">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === u.id ? null : u.id); }}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                        >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <circle cx="10" cy="4" r="1.5" />
+                            <circle cx="10" cy="10" r="1.5" />
+                            <circle cx="10" cy="16" r="1.5" />
+                          </svg>
+                        </button>
+                        {openMenuId === u.id && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className={`absolute right-0 z-40 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48 ${index < 3 ? "top-full mt-1" : "bottom-full mb-1"}`}
+                          >
+                            {locked && (
+                              <button
+                                onClick={() => { setOpenMenuId(null); handleUnlock(u); }}
+                                disabled={busyAction === u.id}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-amber-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                Kilidi Aç
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setOpenMenuId(null); openReset(u); }}
+                              className="block w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-gray-50"
+                            >
+                              Şifre Sıfırla
+                            </button>
+                            {!self && (
+                              <button
+                                onClick={() => { setOpenMenuId(null); handleForceLogout(u); }}
+                                disabled={busyAction === u.id}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-orange-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                Oturumu Sonlandır
+                              </button>
+                            )}
+                            {!self && (
+                              <button
+                                onClick={() => { setOpenMenuId(null); handleToggleActive(u); }}
+                                disabled={busyAction === u.id}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                {u.is_active ? "Devre Dışı Bırak" : "Aktifleştir"}
+                              </button>
+                            )}
+                            {!self && (
+                              <>
+                                <div className="border-t border-gray-100 my-1" />
+                                <button
+                                  onClick={() => { setOpenMenuId(null); handleDelete(u); }}
+                                  className="block w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50"
+                                >
+                                  Sil
+                                </button>
+                              </>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>

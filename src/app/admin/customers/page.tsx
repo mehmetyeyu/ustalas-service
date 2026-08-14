@@ -118,11 +118,11 @@ export default function CustomersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Müşteriler</h1>
         <button
           onClick={openNew}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+          className="self-start sm:self-auto bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
         >
           + Yeni Müşteri
         </button>
@@ -144,47 +144,49 @@ export default function CustomersPage() {
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Müşteri bulunamadı.</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Müşteri Adı</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Telefon</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.phone || "-"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      {c.order_count > 0 && (
-                        <button
-                          onClick={() => openOrders(c)}
-                          className="text-gray-600 hover:text-gray-900 text-xs font-medium"
-                        >
-                          Siparişler
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openEdit(c)}
-                        className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                      >
-                        Düzenle
-                      </button>
-                      <button
-                        onClick={() => handleDelete(c.id)}
-                        className="text-red-500 hover:text-red-700 text-xs font-medium"
-                      >
-                        Sil
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri Adı</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Telefon</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map((c) => (
+                  <tr key={c.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{c.name}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{c.phone || "-"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2 whitespace-nowrap">
+                        {c.order_count > 0 && (
+                          <button
+                            onClick={() => openOrders(c)}
+                            className="text-gray-600 hover:text-gray-900 text-xs font-medium"
+                          >
+                            Siparişler
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEdit(c)}
+                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                        >
+                          Düzenle
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id)}
+                          className="text-red-500 hover:text-red-700 text-xs font-medium"
+                        >
+                          Sil
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
