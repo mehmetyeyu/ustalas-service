@@ -306,12 +306,12 @@ export default function OrdersPage() {
 
   const ALIGN_CLASS = { left: "text-left", right: "text-right", center: "text-center" } as const;
 
-  function SortTh({ sortK, label, align = "left", stickyClassName }: { sortK: SortKey; label: string; align?: "left" | "right" | "center"; stickyClassName?: string }) {
+  function SortTh({ sortK, label, align = "left", stickyClassName, narrow }: { sortK: SortKey; label: string; align?: "left" | "right" | "center"; stickyClassName?: string; narrow?: boolean }) {
     const active = sortKey === sortK;
     return (
       <th
         onClick={() => toggleSort(sortK)}
-        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]} ${stickyClassName ?? ""}`}
+        className={`${narrow ? "px-2" : "px-4"} py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]} ${stickyClassName ?? ""}`}
       >
         <span className="inline-flex items-center gap-1">
           {label}
@@ -482,9 +482,9 @@ export default function OrdersPage() {
 
   return (
     <div onClick={() => setShowColPicker(false)}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Sipariş Listesi</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 sm:gap-2">
           <input
             type="file"
             accept=".xlsx,.xls"
@@ -494,11 +494,11 @@ export default function OrdersPage() {
           />
           <button
             onClick={() => { window.location.href = "/api/orders/import/template"; }}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1.5"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
           >
             Şablon İndir
             <Tooltip text="Tarih, Plaka ve Yapılan İşlem zorunludur, diğer sütunlar isteğe bağlıdır.">
-              <span className="text-gray-400 hover:text-gray-600 cursor-help">
+              <span className="hidden sm:inline text-gray-400 hover:text-gray-600 cursor-help">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
                 </svg>
@@ -508,13 +508,13 @@ export default function OrdersPage() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
             {importing ? "İçe Aktarılıyor..." : "Excel'den İçe Aktar"}
           </button>
           <Link
             href="/"
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
           >
             + Sipariş Ekle
           </Link>
@@ -531,57 +531,59 @@ export default function OrdersPage() {
       )}
 
       {/* Filtreler */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-center">
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowFilterModal(true); }}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h18M6 8h12M9 12h6M11 16h2" />
-          </svg>
-          Filtrele
-          {activeFilterCount > 0 && (
-            <span className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[1.25rem] h-5 px-1 flex items-center justify-center">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowFilterModal(true); }}
+            className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h18M6 8h12M9 12h6M11 16h2" />
+            </svg>
+            Filtrele
+            {activeFilterCount > 0 && (
+              <span className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[1.25rem] h-5 px-1 flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Hızlı ara: Plaka, Müşteri, Tedarikçi..."
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 sm:w-96 sm:flex-none"
+          />
+        </div>
 
         {activeFilterCount > 0 && (
           <button
             onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
-            className="text-sm text-gray-400 hover:text-gray-700"
+            className="self-start text-sm text-gray-400 hover:text-gray-700"
           >
             Filtreleri Temizle
           </button>
         )}
 
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Hızlı ara: Plaka, Müşteri, Tedarikçi, Stok Kodu, Ebat..."
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-96"
-        />
-
-        <div className="ml-auto flex items-center gap-3">
-          <div className="flex items-center gap-4 px-4 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="flex items-stretch gap-1.5 sm:gap-3 sm:ml-auto">
+          <div className="shrink-0 flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
             <div>
-              <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Toplam Tutar</div>
-              <div className="text-sm font-semibold text-gray-800">{formatCurrency(totalAmount)}</div>
+              <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Toplam Tutar</div>
+              <div className="text-xs sm:text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(totalAmount)}</div>
             </div>
-            <div className="w-px h-7 bg-gray-200" />
+            <div className="w-px h-6 sm:h-7 bg-gray-200" />
             <div>
-              <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Kâr</div>
-              <div className={`text-sm font-semibold ${totalKar >= 0 ? "text-green-600" : "text-red-500"}`}>
+              <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Kâr</div>
+              <div className={`text-xs sm:text-sm font-semibold whitespace-nowrap ${totalKar >= 0 ? "text-green-600" : "text-red-500"}`}>
                 {formatCurrency(totalKar)}
               </div>
             </div>
           </div>
-          <div className="relative">
+          <div className="relative shrink-0 flex">
             <button
               onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+              className="h-full px-1.5 sm:px-3 border border-gray-300 rounded-lg text-[11px] sm:text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1 sm:gap-2 whitespace-nowrap"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
@@ -618,9 +620,10 @@ export default function OrdersPage() {
           onClick={() => setShowFilterModal(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="p-6 pb-4">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-bold text-gray-800">Siparişleri Filtrele</h2>
               <button onClick={() => setShowFilterModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -749,8 +752,9 @@ export default function OrdersPage() {
                 />
               </div>
             </div>
+            </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
               <button
                 onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
                 className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
@@ -771,10 +775,10 @@ export default function OrdersPage() {
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs sm:text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" />}
+                {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" narrow />}
                 {visibleCols.date && <SortTh sortK="date" label="Tarih" />}
                 {visibleCols.customer_name && <SortTh sortK="customer_name" label="Müşteri" />}
                 {visibleCols.plate && <SortTh sortK="plate" label="Plaka" />}
@@ -788,8 +792,8 @@ export default function OrdersPage() {
                 {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
                 {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
                 {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
-                <SortTh sortK="status" label="Statü" align="center" stickyClassName="sticky right-[240px] z-20 bg-gray-50 shadow-[-1px_0_0_0_#e5e7eb]" />
-                <th className="px-4 py-3 sticky right-0 z-20 bg-gray-50 w-[240px] min-w-[240px] max-w-[240px]"></th>
+                <SortTh sortK="status" label="Statü" align="center" stickyClassName="sm:sticky sm:right-[220px] sm:z-20 sm:bg-gray-50 sm:shadow-[-1px_0_0_0_#e5e7eb]" />
+                <th className="px-1.5 py-3 sticky right-0 z-20 bg-gray-50 w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -823,7 +827,7 @@ export default function OrdersPage() {
                   return (
                     <tr key={`${r.id}-${r.line_id ?? "none"}`} className="group hover:bg-gray-50 transition-colors">
                       {visibleCols.order_no && (
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="px-2 py-3 whitespace-nowrap">
                           <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
                             #{r.id}
                           </Link>
@@ -862,7 +866,7 @@ export default function OrdersPage() {
                           {r.notes || "-"}
                         </td>
                       )}
-                      <td className="px-4 py-3 text-center sticky right-[240px] z-10 bg-white group-hover:bg-gray-50 shadow-[-1px_0_0_0_#f3f4f6]">
+                      <td className="px-1.5 py-3 text-center sm:sticky sm:right-[220px] sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 sm:shadow-[-1px_0_0_0_#f3f4f6]">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
                             r.status === "TAMAMLANDI"
@@ -873,26 +877,50 @@ export default function OrdersPage() {
                           {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 w-[240px] min-w-[240px] max-w-[240px]">
-                        <div className="flex items-center gap-3">
+                      <td className="px-1 sm:px-3 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]">
+                        <div className="flex items-center justify-center sm:justify-start gap-0.5 sm:gap-3">
                           <Link
                             href={`/admin/orders/${r.id}`}
-                            className="text-blue-600 hover:text-blue-800 font-medium text-xs whitespace-nowrap"
+                            title="Detay"
+                            aria-label="Detay"
+                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-blue-600 hover:bg-blue-50 sm:hover:bg-transparent hover:text-blue-800 text-xs font-medium whitespace-nowrap"
                           >
-                            Detay →
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="hidden sm:inline">Detay</span>
                           </Link>
                           <Link
                             href={`/admin/orders/${r.id}?edit=1`}
-                            className="text-gray-500 hover:text-gray-700 font-medium text-xs whitespace-nowrap"
+                            title="Düzenle"
+                            aria-label="Düzenle"
+                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium whitespace-nowrap"
                           >
-                            Düzelt
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 19.5H4.5" />
+                            </svg>
+                            <span className="hidden sm:inline">Düzenle</span>
                           </Link>
                           <button
                             onClick={() => deleteOrder(r.id)}
                             disabled={deletingId === r.id}
-                            className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40 whitespace-nowrap"
+                            title="Sil"
+                            aria-label="Sil"
+                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-red-500 hover:bg-red-50 sm:hover:bg-transparent hover:text-red-700 disabled:opacity-40 text-xs font-medium whitespace-nowrap"
                           >
-                            {deletingId === r.id ? "Siliniyor..." : "Sil"}
+                            {deletingId === r.id ? (
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                              </svg>
+                            )}
+                            <span className="hidden sm:inline">{deletingId === r.id ? "Siliniyor..." : "Sil"}</span>
                           </button>
                         </div>
                       </td>
@@ -906,7 +934,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Pagination */}
-      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-gray-600">
         <div className="flex items-center gap-3">
           <span>
             {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} satır
@@ -923,7 +951,7 @@ export default function OrdersPage() {
           </label>
         </div>
         {total > limit && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto">
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}

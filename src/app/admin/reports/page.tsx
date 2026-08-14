@@ -9,9 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
   Legend,
 } from "recharts";
 import { formatCurrency } from "@/lib/format";
@@ -104,7 +101,23 @@ function computePeriodRow(
   };
 }
 
+// Recharts prop'ları (interval, fontSize, height) CSS breakpoint'leriyle değil
+// JS ile ayarlanır — mobilde günlük grafikte 31 gün etiketinin üst üste
+// binmemesi için bu bilgiye ihtiyaç var.
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
+
 export default function ReportsPage() {
+  const isMobile = useIsMobile();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [periodView, setPeriodView] = useState<PeriodView>("day");
@@ -155,6 +168,8 @@ export default function ReportsPage() {
   const otherPayments = data.paymentBreakdown.filter((p) => !p.payment_type.endsWith(" Mail Order"));
   const mailOrderTotal = mailOrderItems.reduce((sum, p) => sum + Number(p.total || 0), 0);
 
+  const serviceCountTotal = data.serviceStats.reduce((sum, s) => sum + s.count, 0);
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -188,16 +203,16 @@ export default function ReportsPage() {
           {/* Özet Kartlar */}
           {s && (
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-white rounded-xl shadow-sm p-4">
+              <div className="bg-white rounded-xl shadow-sm p-4 min-w-0">
                 <p className="text-xs text-gray-500 mb-1">Toplam Sipariş</p>
-                <p className="text-2xl font-bold text-gray-800">{s.total_orders}</p>
+                <p className="text-xl sm:text-2xl font-bold text-gray-800 truncate">{s.total_orders}</p>
                 <p className="text-xs text-gray-400 mt-1">
                   {s.completed} tamamlandı, {s.pending} bekliyor
                 </p>
               </div>
-              <div className="bg-white rounded-xl shadow-sm p-4">
+              <div className="bg-white rounded-xl shadow-sm p-4 min-w-0">
                 <p className="text-xs text-gray-500 mb-1">Toplam Gelir</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-xl sm:text-2xl font-bold text-green-600 truncate">
                   {formatCurrency(Number(s.total_revenue || 0))}
                 </p>
               </div>
@@ -255,16 +270,36 @@ export default function ReportsPage() {
                 Bu ay için veri yok.
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={dailyChartData}>
+              <ResponsiveContainer key={isMobile ? "mobile" : "desktop"} width="100%" height={isMobile ? 240 : 280}>
+                <BarChart data={dailyChartData} margin={{ left: 0, right: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />
-                  <Legend />
-                  <Bar dataKey="ciro" name="Ciro" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="maliyet" name="Maliyet" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="kar" name="Kâr" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fontSize: isMobile ? 9 : 12 }}
+                    interval={isMobile ? Math.ceil(dailyChartData.length / 8) - 1 : 0}
+                  />
+                  <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 42 : 60} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload || payload.length === 0) return null;
+                      const row = payload[0].payload as DailyDatum & { kar: number };
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-0.5">
+                          <p className="font-medium text-gray-700 mb-1">{label}. Gün</p>
+                          <p className="text-gray-800 font-semibold">Ciro: {formatCurrency(row.ciro)}</p>
+                          <p style={{ color: "#f59e0b" }}>Maliyet: {formatCurrency(row.maliyet)}</p>
+                          <p style={{ color: "#10b981" }}>Kâr: {formatCurrency(row.kar)}</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: isMobile ? 11 : 13 }} />
+                  {/* Maliyet + Kâr üst üste yığılır — toplam yükseklik Ciro'ya eşittir,
+                      böylece tek (daha kalın) bar üzerinde maliyet/kâr oranı görülür.
+                      isAnimationActive=false: bu recharts sürümünde stacked bar'ların
+                      büyüme animasyonu tamamlanmıyor ve barlar hiç çizilmeden kalıyor. */}
+                  <Bar dataKey="maliyet" name="Maliyet" stackId="ciro" fill="#f59e0b" radius={[0, 0, 4, 4]} isAnimationActive={false} />
+                  <Bar dataKey="kar" name="Kâr" stackId="ciro" fill="#10b981" radius={[4, 4, 0, 0]} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -293,25 +328,25 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">Dönem</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Ciro</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Maliyet</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Kâr</th>
+                    <th className="text-left px-2 sm:px-3 py-2 font-medium text-gray-600">Dönem</th>
+                    <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Ciro</th>
+                    <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Maliyet</th>
+                    <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Kâr</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   <tr>
-                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{activePeriodRow.label}</td>
-                    <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
+                    <td className="px-2 sm:px-3 py-2 text-gray-700">{activePeriodRow.label}</td>
+                    <td className="px-2 sm:px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
                       {formatCurrency(activePeriodRow.ciro)}
                     </td>
-                    <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
+                    <td className="px-2 sm:px-3 py-2 text-right text-gray-500 whitespace-nowrap">
                       {formatCurrency(activePeriodRow.maliyet)}
                     </td>
-                    <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${activePeriodRow.ciro - activePeriodRow.maliyet >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    <td className={`px-2 sm:px-3 py-2 text-right font-semibold whitespace-nowrap ${activePeriodRow.ciro - activePeriodRow.maliyet >= 0 ? "text-green-600" : "text-red-500"}`}>
                       {formatCurrency(activePeriodRow.ciro - activePeriodRow.maliyet)}
                     </td>
                   </tr>
@@ -329,28 +364,26 @@ export default function ReportsPage() {
               </div>
             ) : (
               <div className="flex flex-col gap-6">
-                <div className="w-full shrink-0">
-                  <ResponsiveContainer width="100%" height={350}>
-                    <PieChart>
-                      <Pie
-                        data={data.serviceStats}
-                        dataKey="count"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={100}
-                        label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-                      >
-                        {data.serviceStats.map((_, index) => (
-                          <Cell key={index} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
+                {/* Çok sayıda küçük yüzdeli hizmet olunca pasta grafiğin dilim
+                    etiketleri üst üste binip okunmaz hale geliyordu — bunun
+                    yerine tek, orantılı bir çubuk kullanılır; adları ve tam
+                    sayıları zaten hemen altındaki tabloda okunuyor. */}
+                <div className="w-full h-6 rounded-lg overflow-hidden flex bg-gray-100">
+                  {data.serviceStats.map((s, i) => {
+                    const pct = serviceCountTotal > 0 ? (s.count / serviceCountTotal) * 100 : 0;
+                    if (pct <= 0) return null;
+                    return (
+                      <div
+                        key={s.name}
+                        title={`${s.name}: %${pct.toFixed(0)} (${s.count} adet)`}
+                        style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }}
+                        className="h-full"
+                      />
+                    );
+                  })}
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-xs sm:text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="text-left px-3 py-2 font-medium text-gray-600">Hizmet</th>

@@ -480,7 +480,7 @@ export default function StoragePage() {
             {showDelivered ? "Teslim Edilenler" : "Aktif Depolar"}
           </button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 sm:gap-2">
           <input
             type="file"
             accept=".xlsx,.xls"
@@ -490,11 +490,11 @@ export default function StoragePage() {
           />
           <button
             onClick={() => { window.location.href = "/api/storage/import/template"; }}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1.5"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
           >
             Şablon İndir
             <Tooltip text="Sadece Plaka zorunludur. Depo No'yu doldurursanız aktif bir depoyla çakışmadığından emin olun, aksi halde içe aktarma tamamen başarısız olur.">
-              <span className="text-gray-400 hover:text-gray-600 cursor-help">
+              <span className="hidden sm:inline text-gray-400 hover:text-gray-600 cursor-help">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
                 </svg>
@@ -503,7 +503,7 @@ export default function StoragePage() {
           </button>
           <button
             onClick={() => { window.location.href = "/api/storage/export"; }}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
           >
             Dışa Aktar
           </button>
@@ -511,13 +511,13 @@ export default function StoragePage() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
             {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
           </button>
           <button
             onClick={() => { setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
           >
             + Yeni Kayıt
           </button>
@@ -583,7 +583,7 @@ export default function StoragePage() {
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs sm:text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 {visibleCols.depo_no && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">No</th>}
@@ -745,7 +745,7 @@ export default function StoragePage() {
       </div>
 
       {/* Pagination */}
-      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-gray-600">
         <div className="flex items-center gap-3">
           <span>
             {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} kayıt
@@ -762,7 +762,7 @@ export default function StoragePage() {
           </label>
         </div>
         {total > limit && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto">
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
@@ -821,7 +821,8 @@ export default function StoragePage() {
       {/* Yeni Kayıt Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Yeni Depolama Kaydı</h2>
 
             {saveError && (
@@ -830,7 +831,7 @@ export default function StoragePage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
                 <input
@@ -919,8 +920,9 @@ export default function StoragePage() {
                 />
               </div>
             </div>
+            </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
               <button
                 onClick={() => setShowAddModal(false)}
                 className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
@@ -941,10 +943,11 @@ export default function StoragePage() {
       {/* Düzenle Modal */}
       {editItem && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Kaydı Düzenle — #{editItem.depo_no}</h2>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
                 <input type="number" value={editForm.depo_no} onChange={(e) => setEditForm({ ...editForm, depo_no: e.target.value })}
@@ -998,8 +1001,9 @@ export default function StoragePage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
+            </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
               <button onClick={() => setEditItem(null)}
                 className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50">
                 İptal

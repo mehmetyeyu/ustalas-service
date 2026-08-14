@@ -336,6 +336,36 @@ export default function OrderPage() {
     setLines((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
   }
 
+  // Masaüstü tablosu ve mobil kart görünümü aynı satır mantığını paylaşır.
+  function handleSupplierChange(index: number, line: OrderLine, val: string) {
+    if (line.service_name.trim() === TIRE_SALE_SERVICE) {
+      // Stok Kodu/Ebat yalnızca gerçek bir stok partisine bağlıysa
+      // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
+      // ait, artık geçersiz olur.
+      if (line.product_id != null) {
+        updateLine(index, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
+      } else {
+        updateLine(index, { supplier: val });
+      }
+      ensureStockCodes(val);
+    } else {
+      updateLine(index, { supplier: val });
+    }
+  }
+
+  function handleQuantityChange(index: number, line: OrderLine, quantity: string) {
+    if (line.product_id != null && (line.unit_sale_price != null || line.unit_purchase_price != null)) {
+      const qty = Math.max(1, Math.round(num(quantity)) || 1);
+      updateLine(index, {
+        quantity,
+        unit_price: amountToStr(line.unit_sale_price, qty),
+        cost_price: amountToStr(line.unit_purchase_price, qty),
+      });
+    } else {
+      updateLine(index, { quantity });
+    }
+  }
+
   const total = lines.reduce((sum, l) => sum + num(l.unit_price), 0);
   // Ebat sütunu (başlık dahil) yalnızca en az bir "Lastik Satışı" satırı
   // varsa gösterilir — diğer işlemlerde bu bilgi anlamsız.
@@ -500,7 +530,7 @@ export default function OrderPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 İşlem Satırları <span className="text-red-500">*</span>
               </label>
-              <div className="border border-gray-200 rounded-lg overflow-x-auto">
+              <div className="hidden sm:block border border-gray-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm border-collapse">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -534,21 +564,7 @@ export default function OrderPage() {
                           <td className="px-2 py-2 align-top">
                             <SearchableCombobox
                               value={line.supplier}
-                              onChange={(val) => {
-                                if (isTireSale) {
-                                  // Stok Kodu/Ebat yalnızca gerçek bir stok partisine bağlıysa
-                                  // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
-                                  // ait, artık geçersiz olur.
-                                  if (line.product_id != null) {
-                                    updateLine(i, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
-                                  } else {
-                                    updateLine(i, { supplier: val });
-                                  }
-                                  ensureStockCodes(val);
-                                } else {
-                                  updateLine(i, { supplier: val });
-                                }
-                              }}
+                              onChange={(val) => handleSupplierChange(i, line, val)}
                               options={supplierOptions}
                               placeholder="Tedarikçi seç veya yaz..."
                             />
@@ -609,19 +625,7 @@ export default function OrderPage() {
                               type="number"
                               min="1"
                               value={line.quantity}
-                              onChange={(e) => {
-                                const quantity = e.target.value;
-                                if (line.product_id != null && (line.unit_sale_price != null || line.unit_purchase_price != null)) {
-                                  const qty = Math.max(1, Math.round(num(quantity)) || 1);
-                                  updateLine(i, {
-                                    quantity,
-                                    unit_price: amountToStr(line.unit_sale_price, qty),
-                                    cost_price: amountToStr(line.unit_purchase_price, qty),
-                                  });
-                                } else {
-                                  updateLine(i, { quantity });
-                                }
-                              }}
+                              onChange={(e) => handleQuantityChange(i, line, e.target.value)}
                               className={`w-16 border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
                             />
                             {line.product_id != null && line.max_stock != null && (
@@ -670,6 +674,148 @@ export default function OrderPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobil: her satır tabloda sığmadığı için kart olarak gösterilir */}
+              <div className="sm:hidden space-y-3">
+                {lines.map((line, i) => {
+                  const kar = num(line.unit_price) - num(line.cost_price);
+                  const isTireSale = line.service_name.trim() === TIRE_SALE_SERVICE;
+                  const isProductSale = PRODUCT_SALE_SERVICES.has(line.service_name.trim());
+                  const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
+                  return (
+                    <div key={i} className="border border-gray-200 rounded-lg bg-gray-50 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-500">Satır {i + 1}</span>
+                        {lines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeLine(i)}
+                            className="text-red-400 hover:text-red-600 text-xs font-medium"
+                          >
+                            Sil
+                          </button>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Yapılan İşlem</label>
+                        <SearchableCombobox
+                          value={line.service_name}
+                          onChange={(val) => updateLine(i, { service_name: val })}
+                          options={islemOptions}
+                          placeholder="İşlem seç veya yaz..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Tedarikçi</label>
+                        <SearchableCombobox
+                          value={line.supplier}
+                          onChange={(val) => handleSupplierChange(i, line, val)}
+                          options={supplierOptions}
+                          placeholder="Tedarikçi seç veya yaz..."
+                        />
+                      </div>
+
+                      {isTireSale && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
+                          <TireBatchPicker
+                            supplier={line.supplier}
+                            code={line.stock_code}
+                            productId={line.product_id}
+                            codeOptions={stockCodesBySupplier[line.supplier] ?? []}
+                            onCodeChange={(val) => updateLine(i, { stock_code: val })}
+                            onBatchSelect={(batch) => {
+                              const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
+                              const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
+                              const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
+                              updateLine(i, {
+                                product_id: batch?.id ?? null,
+                                size_desc: batch?.size_desc || line.size_desc,
+                                max_stock: batch?.stock_qty ?? null,
+                                unit_sale_price: salePrice,
+                                unit_purchase_price: purchasePrice,
+                                unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
+                                cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
+                              });
+                            }}
+                          />
+                        </div>
+                      )}
+                      {isProductSale && !isTireSale && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
+                          <input
+                            type="text"
+                            value={line.stock_code}
+                            onChange={(e) => updateLine(i, { stock_code: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      )}
+                      {isTireSale && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
+                          <input
+                            type="text"
+                            value={line.size_desc}
+                            onChange={(e) => updateLine(i, { size_desc: e.target.value })}
+                            placeholder="205/60R16"
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Adet</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={line.quantity}
+                            onChange={(e) => handleQuantityChange(i, line, e.target.value)}
+                            className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
+                          />
+                          {line.product_id != null && line.max_stock != null && (
+                            <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
+                              Stok: {line.max_stock}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Tutar (₺)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.unit_price}
+                            onChange={(e) => updateLine(i, { unit_price: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Maliyet (₺)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.cost_price}
+                            onChange={(e) => updateLine(i, { cost_price: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
+                        <span className="text-xs font-medium text-gray-500">Kar</span>
+                        <span className="font-medium text-gray-700">{kar.toLocaleString("tr-TR")} ₺</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
               <button
                 type="button"
                 onClick={addLine}
@@ -692,20 +838,40 @@ export default function OrderPage() {
               />
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
-              <span className="text-gray-600 font-medium">Toplam Tutar:</span>
-              <span className="text-xl font-bold text-green-600">
-                {total.toLocaleString("tr-TR")} ₺
-              </span>
-            </div>
+            <div className="sticky bottom-0 sm:static -mx-6 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0 bg-white sm:bg-transparent border-t border-gray-100 sm:border-t-0 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:shadow-none z-10">
+              {/* Mobil: kompakt tek satır */}
+              <div className="flex sm:hidden items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Toplam Tutar</div>
+                  <div className="text-base font-bold text-green-600 truncate">{total.toLocaleString("tr-TR")} ₺</div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-5 py-2 rounded-lg transition-colors text-sm"
+                >
+                  {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
+                </button>
+              </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-lg transition-colors text-lg"
-            >
-              {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
-            </button>
+              {/* Masaüstü: dikey görünüm */}
+              <div className="hidden sm:block space-y-3">
+                <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+                  <span className="text-gray-600 font-medium">Toplam Tutar:</span>
+                  <span className="text-xl font-bold text-green-600">
+                    {total.toLocaleString("tr-TR")} ₺
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-lg transition-colors text-lg"
+                >
+                  {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
+                </button>
+              </div>
+            </div>
           </form>
         </div>
       </div>

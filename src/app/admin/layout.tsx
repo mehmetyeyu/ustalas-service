@@ -72,6 +72,89 @@ function SettingsMenu({ pathname }: { pathname: string }) {
   );
 }
 
+function MobileMenu({
+  pathname,
+  onLogout,
+}: {
+  pathname: string;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <div className="sm:hidden">
+      <div className="flex items-center justify-between">
+        {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
+        <img src={LOGO_SRC} alt="Logo" width={120} height={41} className="object-contain" />
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Menüyü kapat" : "Menüyü aç"}
+          aria-expanded={open}
+          className="p-2 -mr-2 text-gray-300 hover:text-white transition-colors"
+        >
+          {open ? (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3 pt-3 border-t border-gray-800 flex flex-col gap-1">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                pathname.startsWith(item.href)
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-300 hover:bg-gray-700"
+              }`}
+            >
+              {item.label}
+            </Link>
+          ))}
+
+          <div className="my-2 border-t border-gray-800" />
+          <span className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+            Ayarlar
+          </span>
+          {settingsItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                pathname.startsWith(item.href)
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-300 hover:bg-gray-700"
+              }`}
+            >
+              {item.label}
+            </Link>
+          ))}
+
+          <div className="my-2 border-t border-gray-800" />
+          <button
+            onClick={onLogout}
+            className="text-left px-3 py-2 rounded-lg text-sm font-medium text-red-400 hover:bg-gray-800 transition-colors"
+          >
+            Çıkış Yap
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -86,37 +169,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gray-900 text-white px-4 py-3">
-        {/* Mobile: iki satır */}
-        <div className="flex flex-col gap-2 sm:hidden">
-          <div className="flex items-center justify-between">
-            {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
-            <img src={LOGO_SRC} alt="Logo" width={120} height={41} className="object-contain" />
-            <div className="flex items-center gap-3">
-              <SettingsMenu pathname={pathname} />
-              <button
-                onClick={handleLogout}
-                className="text-sm text-gray-400 hover:text-white transition-colors"
-              >
-                Çıkış Yap
-              </button>
-            </div>
-          </div>
-          <div className="flex gap-1 flex-wrap">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  pathname.startsWith(item.href)
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-300 hover:bg-gray-700"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        <MobileMenu pathname={pathname} onLogout={handleLogout} />
 
         {/* Desktop: tek satır */}
         <div className="hidden sm:flex items-center justify-between">
@@ -150,7 +203,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
       </nav>
-      <main className="p-6">{children}</main>
+      <main className="p-4 sm:p-6">{children}</main>
     </div>
   );
 }

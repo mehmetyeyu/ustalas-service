@@ -532,6 +532,65 @@ function OrderDetailPageInner() {
     setEditLines((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
   }
 
+  // Masaüstü tablosu ve mobil kart görünümü aynı satır mantığını paylaşır.
+  function handleEditSupplierChange(index: number, line: EditLine, val: string) {
+    if (line.service_name.trim() === TIRE_SALE_SERVICE) {
+      // Stok Kodu/Ebat yalnızca gerçek bir stok partisine bağlıysa
+      // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
+      // ait, artık geçersiz olur. Excel'den aktarılmış/elle girilmiş
+      // (stoğa bağlı olmayan) Ebat, tedarikçi düzeltirken silinmesin.
+      if (line.product_id != null) {
+        updateEditLine(index, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
+      } else {
+        updateEditLine(index, { supplier: val });
+      }
+      ensureStockCodes(val);
+    } else {
+      updateEditLine(index, { supplier: val });
+    }
+  }
+
+  function handleEditQuantityChange(index: number, line: EditLine, quantity: string) {
+    if (line.product_id != null && (line.unit_sale_price != null || line.unit_purchase_price != null)) {
+      const qty = Math.max(1, Math.round(num(quantity)) || 1);
+      updateEditLine(index, {
+        quantity,
+        unit_price: amountToStr(line.unit_sale_price, qty),
+        cost_price: amountToStr(line.unit_purchase_price, qty),
+      });
+    } else {
+      updateEditLine(index, { quantity });
+    }
+  }
+
+  function handleEditLinePaymentChange(index: number, line: EditLine, val: string) {
+    // Karışık (boş) durumdan tek bir ödeme tipine geçmek, aşağıdaki
+    // parçalı ödeme girişleriyle çelişir — bu yüzden önce onaylatılır,
+    // onaylanırsa parçalı girişler sıfırlanır.
+    if (!line.payment_type && val && editPayments.length > 0) {
+      const ok = window.confirm(
+        "Bu satıra ödeme tipi seçmek, aşağıdaki parçalı ödeme girişlerini sıfırlayacak. Devam edilsin mi?"
+      );
+      if (!ok) return;
+      setEditPayments([]);
+      setPaymentsCleared(true);
+    } else if (line.payment_type && !val) {
+      // Karışık'a dönüldü — parçalı ödeme girişleri henüz boşsa
+      // (hiç girilmemiş ya da az önce sıfırlanmış) doldurulabilir
+      // hâle getirilir: varsa orijinal (sıfırlama öncesi) değerlerle,
+      // yoksa boş bir başlangıç satırıyla.
+      if (editPayments.length === 0) {
+        setEditPayments(
+          originalEditPayments.length > 0
+            ? originalEditPayments
+            : [{ payment_type: "Nakit", amount: "" }]
+        );
+      }
+      setPaymentsCleared(false);
+    }
+    updateEditLine(index, { payment_type: val });
+  }
+
   async function handleSaveEdit() {
     setEditError("");
     if (!editPlate.trim()) {
@@ -726,7 +785,7 @@ function OrderDetailPageInner() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 İşlem Satırları <span className="text-red-500">*</span>
               </label>
-              <div className="border border-gray-200 rounded-lg overflow-x-auto">
+              <div className="hidden sm:block border border-gray-200 rounded-lg overflow-x-auto">
                 {/* table-fixed: sütun genişlikleri sabit kalır, Ödeme sütunu
                     Mail Order için ikinci bir seçici gösterse bile diğer
                     sütunlar sıkışmaz — taşma yatay kaydırmayla karşılanır. */}
@@ -762,22 +821,7 @@ function OrderDetailPageInner() {
                         <td className="px-2 py-2 align-top">
                           <SearchableCombobox
                             value={line.supplier}
-                            onChange={(val) => {
-                              if (isTireSale) {
-                                // Stok Kodu/Ebat yalnızca gerçek bir stok partisine bağlıysa
-                                // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
-                                // ait, artık geçersiz olur. Excel'den aktarılmış/elle girilmiş
-                                // (stoğa bağlı olmayan) Ebat, tedarikçi düzeltirken silinmesin.
-                                if (line.product_id != null) {
-                                  updateEditLine(i, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
-                                } else {
-                                  updateEditLine(i, { supplier: val });
-                                }
-                                ensureStockCodes(val);
-                              } else {
-                                updateEditLine(i, { supplier: val });
-                              }
-                            }}
+                            onChange={(val) => handleEditSupplierChange(i, line, val)}
                             options={supplierOptions}
                             placeholder="Tedarikçi seç veya yaz..."
                           />
@@ -837,19 +881,7 @@ function OrderDetailPageInner() {
                             type="number"
                             min="1"
                             value={line.quantity}
-                            onChange={(e) => {
-                              const quantity = e.target.value;
-                              if (line.product_id != null && (line.unit_sale_price != null || line.unit_purchase_price != null)) {
-                                const qty = Math.max(1, Math.round(num(quantity)) || 1);
-                                updateEditLine(i, {
-                                  quantity,
-                                  unit_price: amountToStr(line.unit_sale_price, qty),
-                                  cost_price: amountToStr(line.unit_purchase_price, qty),
-                                });
-                              } else {
-                                updateEditLine(i, { quantity });
-                              }
-                            }}
+                            onChange={(e) => handleEditQuantityChange(i, line, e.target.value)}
                             className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
                           />
                           {line.product_id != null && line.max_stock != null && (
@@ -881,33 +913,7 @@ function OrderDetailPageInner() {
                         <td className="px-2 py-2 align-top">
                           <PaymentTypeSelect
                             value={line.payment_type}
-                            onChange={(val) => {
-                              // Karışık (boş) durumdan tek bir ödeme tipine geçmek, aşağıdaki
-                              // parçalı ödeme girişleriyle çelişir — bu yüzden önce onaylatılır,
-                              // onaylanırsa parçalı girişler sıfırlanır.
-                              if (!line.payment_type && val && editPayments.length > 0) {
-                                const ok = window.confirm(
-                                  "Bu satıra ödeme tipi seçmek, aşağıdaki parçalı ödeme girişlerini sıfırlayacak. Devam edilsin mi?"
-                                );
-                                if (!ok) return;
-                                setEditPayments([]);
-                                setPaymentsCleared(true);
-                              } else if (line.payment_type && !val) {
-                                // Karışık'a dönüldü — parçalı ödeme girişleri henüz boşsa
-                                // (hiç girilmemiş ya da az önce sıfırlanmış) doldurulabilir
-                                // hâle getirilir: varsa orijinal (sıfırlama öncesi) değerlerle,
-                                // yoksa boş bir başlangıç satırıyla.
-                                if (editPayments.length === 0) {
-                                  setEditPayments(
-                                    originalEditPayments.length > 0
-                                      ? originalEditPayments
-                                      : [{ payment_type: "Nakit", amount: "" }]
-                                  );
-                                }
-                                setPaymentsCleared(false);
-                              }
-                              updateEditLine(i, { payment_type: val });
-                            }}
+                            onChange={(val) => handleEditLinePaymentChange(i, line, val)}
                             supplierOptions={supplierOptions}
                             paymentOptions={paymentOptions}
                             selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -930,6 +936,152 @@ function OrderDetailPageInner() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobil: her satır tabloda sığmadığı için kart olarak gösterilir */}
+              <div className="sm:hidden space-y-3">
+                {editLines.map((line, i) => {
+                  const isTireSale = line.service_name.trim() === TIRE_SALE_SERVICE;
+                  const isProductSale = PRODUCT_SALE_SERVICES.has(line.service_name.trim());
+                  const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
+                  return (
+                    <div key={i} className="border border-gray-200 rounded-lg bg-gray-50 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-500">Satır {i + 1}</span>
+                        {editLines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeEditLine(i)}
+                            className="text-red-400 hover:text-red-600 text-xs font-medium"
+                          >
+                            Sil
+                          </button>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Yapılan İşlem</label>
+                        <SearchableCombobox
+                          value={line.service_name}
+                          onChange={(val) => updateEditLine(i, { service_name: val })}
+                          options={islemOptions}
+                          placeholder="İşlem seç veya yaz..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Tedarikçi</label>
+                        <SearchableCombobox
+                          value={line.supplier}
+                          onChange={(val) => handleEditSupplierChange(i, line, val)}
+                          options={supplierOptions}
+                          placeholder="Tedarikçi seç veya yaz..."
+                        />
+                      </div>
+
+                      {isTireSale && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
+                          <TireBatchPicker
+                            supplier={line.supplier}
+                            code={line.stock_code}
+                            productId={line.product_id}
+                            codeOptions={stockCodesBySupplier[line.supplier] ?? []}
+                            onCodeChange={(val) => updateEditLine(i, { stock_code: val })}
+                            onBatchSelect={(batch) => {
+                              const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
+                              const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
+                              const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
+                              updateEditLine(i, {
+                                product_id: batch?.id ?? null,
+                                size_desc: batch?.size_desc || line.size_desc,
+                                max_stock: batch?.stock_qty ?? null,
+                                unit_sale_price: salePrice,
+                                unit_purchase_price: purchasePrice,
+                                unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
+                                cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
+                              });
+                            }}
+                          />
+                        </div>
+                      )}
+                      {isProductSale && !isTireSale && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
+                          <input
+                            type="text"
+                            value={line.stock_code}
+                            onChange={(e) => updateEditLine(i, { stock_code: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      )}
+                      {isTireSale && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
+                          <input
+                            type="text"
+                            value={line.size_desc}
+                            onChange={(e) => updateEditLine(i, { size_desc: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Adet</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={line.quantity}
+                            onChange={(e) => handleEditQuantityChange(i, line, e.target.value)}
+                            className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
+                          />
+                          {line.product_id != null && line.max_stock != null && (
+                            <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
+                              Stok: {line.max_stock}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Tutar (₺)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.unit_price}
+                            onChange={(e) => updateEditLine(i, { unit_price: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Maliyet (₺)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.cost_price}
+                            onChange={(e) => updateEditLine(i, { cost_price: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Ödeme</label>
+                        <PaymentTypeSelect
+                          value={line.payment_type}
+                          onChange={(val) => handleEditLinePaymentChange(i, line, val)}
+                          supplierOptions={supplierOptions}
+                          paymentOptions={paymentOptions}
+                          selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
               <button
                 type="button"
                 onClick={addEditLine}
@@ -1004,20 +1156,44 @@ function OrderDetailPageInner() {
               />
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setEditing(false)}
-                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
-              >
-                İptal
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                disabled={savingEdit || (editPayments.length > 0 && editPaymentsTotal > editLinesTotalAmount + 0.01)}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
-              >
-                {savingEdit ? "Kaydediliyor..." : "Kaydet"}
-              </button>
+            <div className="sticky bottom-0 sm:static -mx-6 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0 bg-white sm:bg-transparent border-t border-gray-100 sm:border-t-0 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:shadow-none z-10">
+              {/* Mobil: kompakt tek satır */}
+              <div className="flex sm:hidden items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Toplam Tutar</div>
+                  <div className="text-base font-bold text-green-600 truncate">{formatCurrency(editLinesTotalAmount)}</div>
+                </div>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="shrink-0 border border-gray-300 text-gray-700 font-medium px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit || (editPayments.length > 0 && editPaymentsTotal > editLinesTotalAmount + 0.01)}
+                  className="shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+                >
+                  {savingEdit ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
+
+              {/* Masaüstü: eski görünüm */}
+              <div className="hidden sm:flex gap-3">
+                <button
+                  onClick={() => setEditing(false)}
+                  className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit || (editPayments.length > 0 && editPaymentsTotal > editLinesTotalAmount + 0.01)}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+                >
+                  {savingEdit ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
             </div>
         </div>
       </div>
