@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
+import { buildOrderQuery } from "@/lib/orderQuery";
 
 interface OrderLineInput {
   service_name: string;
@@ -16,51 +17,6 @@ interface OrderLineInput {
   product_id?: number | null;
 }
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
-
-// Türkiye sabit UTC+3 kullanır (2016'dan beri yaz saati yok), bu yüzden
-// "YYYY-MM-DD" filtre değerinin Europe/Istanbul gece yarısı sınırı burada
-// bir kez UTC timestamp'e çevrilip düz aralık karşılaştırması (created_at
-// >= $1) olarak kullanılır — bkz. src/app/api/reports/route.ts'teki aynı
-// desen. Önceki hâl her satırda (created_at AT TIME ZONE ...)::date
-// hesaplıyordu — sargable olmadığından orders_created_at_idx'i
-// kullanamıyor, tarih filtrelendiğinde her istekte tam tarama yapıyordu.
-function istanbulDayStartUTC(dateStr: string): Date {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d, -3, 0, 0));
-}
-function istanbulNextDayStartUTC(dateStr: string): Date {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1, -3, 0, 0));
-}
-
-// Sıralama, sonucun geneline (WHERE ile filtrelenmiş TÜM satırlara) uygulanmalı
-// — bu yüzden sunucu tarafında, sayfalamayla birlikte yapılır (Ürünler
-// sayfasındaki whitelist deseniyle aynı: sortBy doğrudan sorguya değil, bu
-// haritadan geçerek eklenir).
-const SORTABLE_COLUMNS: Record<string, string> = {
-  order_no: "o.id",
-  date: "o.created_at",
-  customer_name: "o.customer_name",
-  plate: "o.plate",
-  service_name: "s.name",
-  supplier: "os.supplier",
-  stock_code: "os.stock_code",
-  size_desc: "os.size_desc",
-  quantity: "os.quantity",
-  unit_price: "os.unit_price",
-  cost_price: "os.cost_price",
-  kar: "(COALESCE(os.unit_price, 0) - COALESCE(os.cost_price, 0))",
-  // Yeni "parçalı ödeme" akışıyla kapatılan siparişlerde satır bazlı
-  // payment_type artık set edilmez (bkz. PATCH /api/orders/:id) — bu yüzden
-  // sipariş özet değerine (o.payment_type) geri düşülür.
-  payment_type: "COALESCE(os.payment_type, o.payment_type)",
-  notes: "o.notes",
-  status: "o.status",
-};
-
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -70,84 +26,11 @@ export async function GET(request: NextRequest) {
   if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
-  const status = searchParams.get("status");
-  const dateFrom = searchParams.get("dateFrom");
-  const dateTo = searchParams.get("dateTo");
-  const search = searchParams.get("search");
-  const customerName = searchParams.get("customer_name");
-  const plate = searchParams.get("plate");
-  const serviceNames = searchParams.getAll("service_name");
-  const suppliers = searchParams.getAll("supplier");
-  const stockCode = searchParams.get("stock_code");
-  const sizeDesc = searchParams.get("size_desc");
-  const paymentTypes = searchParams.getAll("payment_type");
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
-  const sortBy = searchParams.get("sortBy");
-  const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
 
-  const conditions: string[] = [];
-  const values: (string | number | string[] | Date)[] = [];
-
-  if (status) {
-    values.push(status);
-    conditions.push(`o.status = $${values.length}`);
-  }
-  if (dateFrom) {
-    values.push(istanbulDayStartUTC(dateFrom));
-    conditions.push(`o.created_at >= $${values.length}`);
-  }
-  if (dateTo) {
-    values.push(istanbulNextDayStartUTC(dateTo));
-    conditions.push(`o.created_at < $${values.length}`);
-  }
-  if (customerName) {
-    values.push(`%${escapeLike(customerName)}%`);
-    conditions.push(`o.customer_name ILIKE $${values.length}`);
-  }
-  if (plate) {
-    values.push(`%${escapeLike(plate)}%`);
-    conditions.push(`o.plate ILIKE $${values.length}`);
-  }
-  if (serviceNames.length > 0) {
-    // Çoklu seçim: bilinen (katalogdaki) değerlerden birebir eşleşme, kendi
-    // içinde VEYA — ILIKE değil, checkbox listesi zaten tam adları sunuyor.
-    values.push(serviceNames);
-    conditions.push(`s.name = ANY($${values.length})`);
-  }
-  if (suppliers.length > 0) {
-    values.push(suppliers);
-    conditions.push(`os.supplier = ANY($${values.length})`);
-  }
-  if (stockCode) {
-    values.push(`%${escapeLike(stockCode)}%`);
-    conditions.push(`os.stock_code ILIKE $${values.length}`);
-  }
-  if (sizeDesc) {
-    // Ebat aramasında "/" zorunlu olmasın diye ("205/45R19" yerine "20545R19" de
-    // yazılabilsin) hem arama metninden hem size_desc'ten "/" çıkarılıp da ayrıca
-    // karşılaştırılır.
-    values.push(`%${escapeLike(sizeDesc)}%`, `%${escapeLike(sizeDesc.replace(/\//g, ""))}%`);
-    conditions.push(`(os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length})`);
-  }
-  if (paymentTypes.length > 0) {
-    values.push(paymentTypes);
-    conditions.push(`COALESCE(os.payment_type, o.payment_type) = ANY($${values.length})`);
-  }
-  if (search) {
-    // Filtrele modalındaki alan bazlı (VE) filtrelerden ayrı, hızlı bir arama:
-    // tek bir metni birden çok alanda (VEYA) arar.
-    values.push(`%${escapeLike(search)}%`, `%${escapeLike(search.replace(/\//g, ""))}%`);
-    conditions.push(
-      `(o.plate ILIKE $${values.length - 1} OR o.customer_name ILIKE $${values.length - 1} OR os.supplier ILIKE $${values.length - 1} OR os.stock_code ILIKE $${values.length - 1} OR os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length})`
-    );
-  }
-
-  const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
-  const orderBy = sortBy && SORTABLE_COLUMNS[sortBy]
-    ? `${SORTABLE_COLUMNS[sortBy]} ${sortDir} NULLS LAST, o.id ASC`
-    : "o.created_at DESC, os.id ASC";
+  const { where, values, orderBy } = buildOrderQuery(searchParams);
 
   const fromClause = `
     FROM orders o

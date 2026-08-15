@@ -344,8 +344,10 @@ export default function OrdersPage() {
     }
   }
 
-  async function fetchOrders(targetPage = page) {
-    setLoading(true);
+  // Aktif filtreleri query param'a çevirir — hem liste fetch'i hem Excel'e
+  // Dışa Aktar butonu aynı fonksiyonu kullanır ki ikisi asla farklı sonuç
+  // vermesin (bkz. handleExport).
+  function buildFilterParams(): URLSearchParams {
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
 
@@ -366,6 +368,12 @@ export default function OrdersPage() {
     if (fieldFilters.size_desc) params.set("size_desc", fieldFilters.size_desc);
     fieldFilters.payment_type.forEach((v) => params.append("payment_type", v));
     if (sortKey) { params.set("sortBy", sortKey); params.set("sortDir", sortDir); }
+    return params;
+  }
+
+  async function fetchOrders(targetPage = page) {
+    setLoading(true);
+    const params = buildFilterParams();
     params.set("page", String(targetPage));
     params.set("limit", String(limit));
 
@@ -473,6 +481,11 @@ export default function OrdersPage() {
     }
   }
 
+  function handleExport() {
+    const params = buildFilterParams();
+    window.location.href = `/api/orders/export?${params}`;
+  }
+
   const activeFilterCount =
     (statusFilter ? 1 : 0) + (dateFilter ? 1 : 0) +
     Object.values(fieldFilters).filter((v) => Array.isArray(v) ? v.length > 0 : v.trim()).length;
@@ -511,6 +524,12 @@ export default function OrdersPage() {
             className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
             {importing ? "İçe Aktarılıyor..." : "Excel'den İçe Aktar"}
+          </button>
+          <button
+            onClick={handleExport}
+            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+          >
+            {activeFilterCount > 0 || search ? "Filtreliyi Dışa Aktar" : "Dışa Aktar"}
           </button>
           <Link
             href="/"
