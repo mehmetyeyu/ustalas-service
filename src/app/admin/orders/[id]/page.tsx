@@ -1307,9 +1307,9 @@ function OrderDetailPageInner() {
               {order.payments.length > 0 && (
                 <div className="pt-1">
                   {order.payments.map((p) => (
-                    <p key={p.id} className="flex justify-between max-w-xs">
-                      <span>{p.payment_type}</span>
-                      <span className="font-medium text-gray-600">{formatCurrency(p.amount)}</span>
+                    <p key={p.id} className="flex max-w-xs">
+                      <span>{p.payment_type} :</span>
+                      <span className="font-medium text-gray-600"> {formatCurrency(p.amount)}</span>
                     </p>
                   ))}
                 </div>
