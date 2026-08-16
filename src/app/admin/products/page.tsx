@@ -717,19 +717,25 @@ export default function ProductsPage() {
                         <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">{m.code}</td>
                         <td className="px-4 py-3 text-gray-700">{m.brand ?? "—"}</td>
                         <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{m.size_desc ?? "—"}</td>
-                        <td className="px-4 py-3 text-gray-700">{m.supplier ?? "—"}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          <div className="line-clamp-2 max-w-[160px]">{m.supplier ?? "—"}</div>
+                        </td>
                         <td className="px-4 py-3 text-gray-700 font-mono">{weekYearLabel(m.production_week, m.production_year)}</td>
                         <td className="px-4 py-3 text-gray-700">
                           {m.type === "out" ? (
-                            <>
-                              {m.customer_name ?? "—"}
-                              {m.plate && <span className="text-gray-400 text-xs"> — {m.plate}</span>}
-                              {m.order_id != null && (
-                                <Link href={`/admin/orders/${m.order_id}`} className="ml-1 text-blue-600 hover:text-blue-800 font-mono text-xs whitespace-nowrap">
-                                  #{m.order_id}
-                                </Link>
+                            <div className="flex flex-col">
+                              <span className="whitespace-nowrap">{m.customer_name ?? "—"}</span>
+                              {(m.plate || m.order_id != null) && (
+                                <span className="whitespace-nowrap text-gray-400 text-xs">
+                                  {m.plate}
+                                  {m.order_id != null && (
+                                    <Link href={`/admin/orders/${m.order_id}`} className="ml-1 text-blue-600 hover:text-blue-800 font-mono">
+                                      #{m.order_id}
+                                    </Link>
+                                  )}
+                                </span>
                               )}
-                            </>
+                            </div>
                           ) : "—"}
                         </td>
                         <td className="px-4 py-3 text-center text-gray-700">{m.type === "out" ? `-${m.quantity}` : m.quantity}</td>

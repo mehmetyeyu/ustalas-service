@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatDate } from "@/lib/format";
+
+const MENU_WIDTH = 192; // w-48
+const MENU_MAX_HEIGHT = 260;
 
 interface User {
   id: number;
@@ -47,6 +51,40 @@ export default function UsersPage() {
 
   const [busyAction, setBusyAction] = useState<number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number | null; bottom: number | null }>({ left: 0, top: null, bottom: null });
+
+  // 3 noktalı menü (mobil) — tablo overflow-x-auto ile sarmalı olduğundan
+  // (bkz. Sipariş Listesi'ndeki MultiSelectDropdown) absolute konumlandırma
+  // satır sınırında kırpılır; document.body'e portal ile taşınıp konumu
+  // butonun ekran koordinatlarına göre hesaplanır.
+  useEffect(() => {
+    if (!openMenuId || !menuAnchor) return;
+    function updatePos() {
+      if (!menuAnchor) return;
+      const r = menuAnchor.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const spaceAbove = r.top;
+      const openUp = spaceBelow < MENU_MAX_HEIGHT && spaceAbove > spaceBelow;
+      setMenuPos({
+        left: r.right - MENU_WIDTH,
+        top: openUp ? null : r.bottom + 4,
+        bottom: openUp ? window.innerHeight - r.top + 4 : null,
+      });
+    }
+    updatePos();
+    window.addEventListener("scroll", updatePos, true);
+    window.addEventListener("resize", updatePos);
+    return () => {
+      window.removeEventListener("scroll", updatePos, true);
+      window.removeEventListener("resize", updatePos);
+    };
+  }, [openMenuId, menuAnchor]);
+
+  function closeMenu() {
+    setOpenMenuId(null);
+    setMenuAnchor(null);
+  }
 
   async function fetchUsers() {
     const res = await fetch("/api/users", { cache: "no-store" });
@@ -225,7 +263,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div onClick={() => setOpenMenuId(null)}>
+    <div onClick={closeMenu}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Kullanıcılar</h1>
         <button
@@ -254,7 +292,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.map((u, index) => {
+              {users.map((u) => {
                 const self = u.username === currentUsername;
                 const locked = isLocked(u);
                 return (
@@ -314,7 +352,7 @@ export default function UsersPage() {
                     <td className="hidden sm:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">
                       {u.last_login_at ? formatDate(u.last_login_at) : "—"}
                     </td>
-                    <td className={`px-4 py-3 text-right ${openMenuId === u.id ? "relative z-50" : ""}`}>
+                    <td className="px-4 py-3 text-right">
                       {/* Desktop */}
                       <div className="hidden sm:flex justify-end gap-3 flex-wrap">
                         {locked && (
@@ -362,7 +400,12 @@ export default function UsersPage() {
                       {/* Mobile */}
                       <div className="relative sm:hidden inline-block">
                         <button
-                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === u.id ? null : u.id); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (openMenuId === u.id) { closeMenu(); return; }
+                            setOpenMenuId(u.id);
+                            setMenuAnchor(e.currentTarget);
+                          }}
                           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
                         >
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -371,14 +414,18 @@ export default function UsersPage() {
                             <circle cx="10" cy="16" r="1.5" />
                           </svg>
                         </button>
-                        {openMenuId === u.id && (
+                        {openMenuId === u.id && menuAnchor && typeof document !== "undefined" && createPortal(
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className={`absolute right-0 z-40 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48 ${index < 3 ? "top-full mt-1" : "bottom-full mb-1"}`}
+                            style={{
+                              position: "fixed", left: menuPos.left, width: MENU_WIDTH,
+                              top: menuPos.top ?? undefined, bottom: menuPos.bottom ?? undefined,
+                            }}
+                            className="z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1"
                           >
                             {locked && (
                               <button
-                                onClick={() => { setOpenMenuId(null); handleUnlock(u); }}
+                                onClick={() => { closeMenu(); handleUnlock(u); }}
                                 disabled={busyAction === u.id}
                                 className="block w-full text-left px-4 py-2.5 text-sm text-amber-600 hover:bg-gray-50 disabled:opacity-40"
                               >
@@ -386,14 +433,14 @@ export default function UsersPage() {
                               </button>
                             )}
                             <button
-                              onClick={() => { setOpenMenuId(null); openReset(u); }}
+                              onClick={() => { closeMenu(); openReset(u); }}
                               className="block w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-gray-50"
                             >
                               Şifre Sıfırla
                             </button>
                             {!self && (
                               <button
-                                onClick={() => { setOpenMenuId(null); handleForceLogout(u); }}
+                                onClick={() => { closeMenu(); handleForceLogout(u); }}
                                 disabled={busyAction === u.id}
                                 className="block w-full text-left px-4 py-2.5 text-sm text-orange-600 hover:bg-gray-50 disabled:opacity-40"
                               >
@@ -402,7 +449,7 @@ export default function UsersPage() {
                             )}
                             {!self && (
                               <button
-                                onClick={() => { setOpenMenuId(null); handleToggleActive(u); }}
+                                onClick={() => { closeMenu(); handleToggleActive(u); }}
                                 disabled={busyAction === u.id}
                                 className="block w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                               >
@@ -413,14 +460,15 @@ export default function UsersPage() {
                               <>
                                 <div className="border-t border-gray-100 my-1" />
                                 <button
-                                  onClick={() => { setOpenMenuId(null); handleDelete(u); }}
+                                  onClick={() => { closeMenu(); handleDelete(u); }}
                                   className="block w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50"
                                 >
                                   Sil
                                 </button>
                               </>
                             )}
-                          </div>
+                          </div>,
+                          document.body
                         )}
                       </div>
                     </td>
