@@ -623,7 +623,7 @@ export default function StoragePage() {
                   <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isOverdue(item.islem_tarihi, overdueMonths) ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
                     {visibleCols.depo_no && <td className="px-4 py-3 text-gray-400">{item.depo_no ?? "—"}</td>}
                     {visibleCols.plate && (
-                      <td className="px-4 py-3 font-mono font-semibold text-gray-800">
+                      <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           {item.plate ?? "—"}
                           {isOverdue(item.islem_tarihi, overdueMonths) && (

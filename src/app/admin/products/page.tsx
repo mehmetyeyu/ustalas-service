@@ -714,7 +714,7 @@ export default function ProductsPage() {
                             {m.type === "in" ? "Giriş" : "Çıkış"}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-mono font-semibold text-gray-800">{m.code}</td>
+                        <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">{m.code}</td>
                         <td className="px-4 py-3 text-gray-700">{m.brand ?? "—"}</td>
                         <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{m.size_desc ?? "—"}</td>
                         <td className="px-4 py-3 text-gray-700">{m.supplier ?? "—"}</td>
@@ -833,7 +833,7 @@ export default function ProductsPage() {
                       return (
                         <Fragment key={group.code}>
                           <tr className="group hover:bg-gray-50 transition-colors bg-gray-50/40">
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3 whitespace-nowrap">
                               <button
                                 onClick={() => toggleExpand(group.code)}
                                 className="flex items-center gap-2 font-mono font-semibold text-gray-800"
