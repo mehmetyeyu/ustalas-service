@@ -637,7 +637,7 @@ export default function ProductsPage() {
                 Sütunlar
               </button>
               {showColPicker && (
-                <div className="absolute left-0 sm:left-auto sm:right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-52" onClick={(e) => e.stopPropagation()}>
+                <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-52" onClick={(e) => e.stopPropagation()}>
                   <p className="text-xs text-gray-400 px-2 mb-1">Parti (üretim tarihi) sütunları</p>
                   {BATCH_COLUMNS.map((col) => (
                     <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
