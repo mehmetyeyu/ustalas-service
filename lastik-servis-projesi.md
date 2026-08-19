@@ -30,7 +30,7 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 
 > `/` dahil tüm sayfalar `middleware.ts` ile korunur — geçerli bir oturum (JWT cookie) olmadan hiçbir sayfa (login hariç) açılmaz. `/admin/*` ayrıca `role = 'admin'` şartı arar.
 
-Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici) yapılır — bkz. Bölüm 11.
+Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici) yapılır — bkz. Bölüm 12.
 
 ---
 
@@ -79,7 +79,7 @@ Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici
 
 - `/admin/login` rotasında kullanıcı adı + şifre formu.
 - Başarılı girişte JWT token httpOnly cookie olarak saklanır (varsayılan geçerlilik 12 saat, `JWT_EXPIRES_IN`).
-- **Brute-force koruması:** art arda 5 başarısız denemede hesap 15 dakika kilitlenir (`users.failed_attempts`/`locked_until`, DB'de tutulur); kilitliyken girişte 429 + kalan süre mesajı döner. Başarılı girişte sayaç sıfırlanır ve `last_login_at` güncellenir. Devre dışı bırakılmış (`is_active = false`) bir hesapla giriş denemesi 403 ile reddedilir (bkz. Bölüm 11).
+- **Brute-force koruması:** art arda 5 başarısız denemede hesap 15 dakika kilitlenir (`users.failed_attempts`/`locked_until`, DB'de tutulur); kilitliyken girişte 429 + kalan süre mesajı döner. Başarılı girişte sayaç sıfırlanır ve `last_login_at` güncellenir. Devre dışı bırakılmış (`is_active = false`) bir hesapla giriş denemesi 403 ile reddedilir (bkz. Bölüm 12).
 - Tüm yönetici sayfaları ve tüm API uçları (bkz. Güvenlik Notları) korumalıdır.
 
 ---
@@ -137,8 +137,9 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 
 **Zaman Filtresi:** Ay/Yıl seçici. **Tüm hesaplamalar `orders.created_at`'e (hizmetin girildiği tarih) göredir** — ödeme tarihine göre değil; bir hizmet Temmuz'da girilip ödemesi Ağustos'ta alınsa bile Temmuz raporunda görünür. Gelir hesabında `paid_amount` (NULL ise `total_amount`) kullanılır. **Statüye bakılmaz** — Beklemede siparişler de rakamlara dahildir (stok zaten statüden bağımsız düştüğü için raporlar da tutarlı şekilde statüden bağımsızdır).
 
-- **Ciro/Maliyet/Kâr grafiği** — günlük kırılım.
-- **Günlük/Haftalık/Aylık periyot tablosu** — üstteki Ay/Yıl seçiciyle birlikte çalışır.
+- **Ciro/Maliyet/Masraf/Kâr grafiği** — günlük kırılım; Kâr = Ciro − Maliyet − Masraf (Bölüm 11, `expenses.expense_date` bazlı — sipariş kaydı gerektirmez, o yüzden hiç siparişi olmayan bir günde de masraf görünüp Kâr'ı negatife çekebilir).
+- **Eklenmemiş sabit gider rozeti** — seçili ay için henüz "Sabit Giderleri Ekle" ile masrafa dönüştürülmemiş aktif sabit gider varsa (ör. unutulmuş kira), "Toplam Masraf" özet kartında kategorileri listeleyen (tooltip) turuncu bir rozet (`+N eklenmedi`) gösterilir, tıklanınca Masraflar'a götürür — bu giderler henüz Kâr hesabında yer almadığından o ayın kârı olduğundan yüksek görünüyor olabilir.
+- **Günlük/Haftalık/Aylık periyot tablosu** — üstteki Ay/Yıl seçiciyle birlikte çalışır, Masraf sütunu dahildir.
 - **Ödeme Tipine Göre Gelir** — tüm `"<Tedarikçi> Mail Order"` etiketleri tek bir "Mail Order" kutusunda toplanır, tıklanınca tedarikçi kırılımı açılır. Kaynak: `order_payments` (parçalı ödeme) varsa o, yoksa satır bazlı `order_services.payment_type` (bkz. Bölüm 5).
 - **En Çok Verilen Hizmetler** — hizmet başına adet ve yüzdelik dağılım.
 
@@ -206,7 +207,20 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 ---
 
-### 11. Profil, Kullanıcı Yönetimi & Genel Ayarlar
+### 11. Masraflar
+
+**Sayfa:** `/admin/expenses` — yalnızca `admin`. Sipariş/hizmetlerden bağımsız günlük işletme giderlerinin (kira, elektrik, personel, malzeme vb.) takibi.
+
+- Üstteki Ay/Yıl seçiciyle o aya ait masraflar listelenir (varsayılan içinde bulunulan ay), seçili ayın toplam masrafı üstte gösterilir.
+- **"Yeni Masraf" — çoklu satır girişi:** Sipariş Oluşturma ekranındaki İşlem Satırları'na benzer şekilde, tek formda "+ Satır Ekle" ile birden fazla masraf satırı eklenip tek "Kaydet" ile hepsi aynı anda kaydedilir (`POST /api/expenses` bir `{ items: [...] }` dizisi kabul eder, hepsini tek bir transaction'da ekler — biri geçersizse hiçbiri kaydedilmez). Yeni eklenen satır, önceki satırın Tarih/Ödeme Şekli değerlerini devralır (aynı gün birden fazla masraf girmek yaygın olduğundan). **Düzenle** ise her zaman tek bir kaydı hedefleyen ayrı, küçük bir form.
+- **Alanlar:** Tarih (zorunlu), Kategori (zorunlu, serbest metin — bir oto/lastik servisinde sık görülen kalemlerin sabit listesi (`src/lib/expenseCategories.ts`) + bugüne kadar fiilen kullanılmış tüm kategoriler `datalist` ile önerilir, bkz. `/api/expenses/categories`; listede olmayan bir isim de serbestçe yazılabilir), Açıklama (opsiyonel), Tutar (₺, zorunlu), Ödeme Şekli (opsiyonel — Genel Ayarlar'daki `payment_types` listesinden seçilir, bkz. Bölüm 12).
+- Ekleme/düzenleme modal formu, silme (kalıcı — soft-delete yok, başka hiçbir tabloya FK ile bağlı değil).
+- **Raporlar entegrasyonu:** Bölüm 6'daki Ciro/Maliyet/Kâr hesabına üçüncü bir kalem olarak dahildir — Kâr artık Ciro − Maliyet − Masraf'tır (`created_at` yerine `expenses.expense_date`, ki bu bir sipariş kaydı gerektirmediğinden sipariş olmayan bir günde de masraf görünebilir).
+- **Sabit Giderler:** Kira gibi ayda bir tekrar eden, tutarı nadiren değişen giderler için Masraflar sayfasına gömülü ayrı bir panel (`recurring_expenses` tablosu — kategori, tutar, ödeme şekli, aktif/pasif; ayrı bir sayfa değil). "Sabit Giderleri Ekle" butonu, seçili ay için henüz masrafa dönüştürülmemiş aktif şablonları (buton üzerinde sayı rozetiyle) Yeni Masraf formuna hazır satırlar olarak doldurur — kullanıcı gözden geçirip Kaydet'e basmadan hiçbir şey kaydedilmez (tam otomatik/arka plan cron değil). Bir masrafın hangi şablondan geldiği `expenses.recurring_expense_id` ile izlenir (şablon silinse bile geçmiş masraf kayıtları etkilenmez, `SET NULL`); tabloda bu satırlar "Sabit" rozetiyle işaretlenir. Şablon Pasif yapılırsa "Sabit Giderleri Ekle" onu bir daha önermez (silmeden durdurma).
+
+---
+
+### 12. Profil, Kullanıcı Yönetimi & Genel Ayarlar
 
 Üst menüdeki **Ayarlar** açılır menüsü altında üç sayfa:
 
@@ -261,7 +275,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
-| `app_settings` | Genel ayarlar — tek satır (`id=1`, `CHECK` ile zorlanır): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 11) |
+| `app_settings` | Genel ayarlar — tek satır (`id=1`, `CHECK` ile zorlanır): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 12) |
+| `expenses` | Masraflar (Bölüm 11) — `expense_date`, `category`, `description`, `amount`, `payment_type`, `recurring_expense_id` (opsiyonel, bkz. `recurring_expenses`) |
+| `recurring_expenses` | Sabit gider şablonları (Bölüm 11) — `category`, `description`, `amount`, `payment_type`, `is_active`; "Sabit Giderleri Ekle" bunlardan `expenses` satırı üretir |
 
 **İndeksler** (performans): `orders(created_at)`, `orders(status)`, `orders(customer_name)` (Müşteri Detayı/silme kontrolü için), `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `order_payments(order_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `storage(created_at)`, `storage(islem_tarihi)`, `storage(depo_no)` (yalnızca aktif kayıtlarda benzersiz — bkz. `storage_active_depo_no_unique`), `products(code)`, `products(supplier)`, `products(season)`, `products` üzerindeki iki benzersizlik indeksi.
 
@@ -282,7 +298,10 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST | `/api/orders/import` | Excel'den toplu içe aktar; yanıtta `changedDuplicates` — mükerrer sayılıp atlanan ama satır sayısı değişmiş gruplar |
 | GET | `/api/orders/payment-types` | Filtrele modalı için gerçekten kullanılmış Ödeme Şekli değerleri (distinct) |
 | GET/POST | `/api/services`, `/api/services/:id` (PATCH/DELETE) | Hizmet yönetimi |
-| GET | `/api/reports` | Aylık rapor (`created_at` bazlı) |
+| GET | `/api/reports` | Aylık rapor (`created_at` bazlı Ciro/Maliyet + `expenses.expense_date` bazlı Masraf) |
+| GET/POST | `/api/expenses`, `/api/expenses/:id` (PUT/DELETE) | Masraf CRUD (admin) — GET `year`/`month` filtreler; POST `{ items: [...] }` çoklu satırı tek transaction'da ekler |
+| GET | `/api/expenses/categories` | Bugüne kadar fiilen kullanılmış masraf kategorileri (distinct, tüm zamanlar) — Kategori alanı önerisi için |
+| GET/POST | `/api/recurring-expenses`, `/api/recurring-expenses/:id` (PUT/DELETE) | Sabit gider şablonu CRUD (admin) — PUT `is_active` ile aktif/pasif de yapılır |
 | POST | `/api/auth/login`, `/api/auth/logout` | Giriş/çıkış |
 | GET | `/api/auth/me` | Oturum bilgisi |
 | PATCH | `/api/auth/password` | Kendi şifreni değiştir — mevcut şifre doğrulaması zorunlu |
@@ -313,6 +332,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/orders         → Sipariş listesi (admin)
 /admin/orders/:id     → Sipariş detayı / düzenleme (admin)
 /admin/reports        → İstatistik & raporlama (admin)
+/admin/expenses       → Masraflar (admin)
 /admin/services       → Hizmet & fiyat yönetimi (admin)
 /admin/storage        → Depolama yönetimi (admin)
 /admin/products       → Ürün Kataloğu + Malzeme Hareketleri (admin)
@@ -334,9 +354,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 - JWT token süresi varsayılan 12 saat, `jose` ile imzalanır/doğrulanır. Cookie `maxAge`'i bununla senkron tutulmalıdır (login route'ta elle senkronize edilir, ortak bir kaynaktan gelmez).
 - **Login rate limiting:** `/api/auth/login`'e karşı art arda 5 başarısız denemede hesap 15 dakika kilitlenir (bkz. Bölüm 2). Sayaç/kilit DB'de tutulur (in-memory değil) — birden fazla sunucu örneği (serverless) arasında da tutarlı çalışır.
 - **Güvenlik header'ları** (`next.config.js`, yalnızca production build'de): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Strict-Transport-Security`, `Content-Security-Policy`. CSP'de `script-src` **`'unsafe-inline'` içerir** — Next.js App Router bu projenin kullandığı sürümde (14.2) her sayfada hydration/streaming verisini inline `<script>` ile gönderir (`self.__next_f.push(...)`) ve bu script'lere otomatik nonce uygulamaz; nonce tabanlı bir `script-src` denendi, inline script'ler bloklanıp hydration'ı komple kırdı (canlıda bir kez yaşandı, aynı gün düzeltildi). Kod tabanında `dangerouslySetInnerHTML`/`eval` olmadığı ve tüm SQL parametreli olduğu için bu kabul edilebilir bir risk olarak değerlendirildi. **next.config.js'e ayrıca ikinci bir CSP header'ı eklenmemelidir** (iki CSP header'ı intersection ile birleşir, biri nonce'suz `script-src 'self'` olursa hydration yine kırılır).
-- **Zorla oturum sonlandırma:** `users.tokens_invalid_before` alanı, bir tarihten önce imzalanmış tüm JWT'leri geçersiz sayar (bkz. Bölüm 11 — "Oturumu Sonlandır"). Karşılaştırma milisaniye hassasiyetiyle yapılır: standart JWT `iat` alanı saniyeye yuvarlandığından, token'a ayrıca özel bir `iatMs` claim'i gömülür (`src/lib/auth.ts`) — aksi halde "Oturumu Sonlandır" işleminden hemen sonra (aynı saniye içinde) girilen yeni bir oturum da yanlışlıkla geçersiz sayılabilirdi. Bu değişiklikten önce imzalanmış eski token'larda `iatMs` yoktur; öyle bir durumda saniyeye yuvarlanmış standart `iat`'a geriye dönük uyumlu şekilde düşülür.
+- **Zorla oturum sonlandırma:** `users.tokens_invalid_before` alanı, bir tarihten önce imzalanmış tüm JWT'leri geçersiz sayar (bkz. Bölüm 12 — "Oturumu Sonlandır"). Karşılaştırma milisaniye hassasiyetiyle yapılır: standart JWT `iat` alanı saniyeye yuvarlandığından, token'a ayrıca özel bir `iatMs` claim'i gömülür (`src/lib/auth.ts`) — aksi halde "Oturumu Sonlandır" işleminden hemen sonra (aynı saniye içinde) girilen yeni bir oturum da yanlışlıkla geçersiz sayılabilirdi. Bu değişiklikten önce imzalanmış eski token'larda `iatMs` yoktur; öyle bir durumda saniyeye yuvarlanmış standart `iat`'a geriye dönük uyumlu şekilde düşülür.
 - `getAuthUser()`, rolün yanı sıra `is_active` ve `tokens_invalid_before`'ı da her istekte DB'den taze okur — pasif bir hesabın veya zorla oturumu sonlandırılmış bir kullanıcının elindeki token'ı, süresi dolmadan bile artık geçersizdir.
 - Tüm SQL sorguları parametrik (`$1, $2, ...`) — hiçbir yerde kullanıcı girdisi doğrudan sorgu metnine eklenmez; arama girdileri ayrıca `LIKE` özel karakterlerine (`%`, `_`, `\`) karşı kaçışlanır. Çoklu seçim filtreleri (ör. Sipariş Listesi'ndeki Yapılan İşlem/Tedarikçi/Ödeme Şekli) `= ANY($n)` ile parametrik diziler olarak gönderilir.
 - Stok düşümü/geri ekleme işlemleri satır bazlı `FOR UPDATE` kilidi ile eşzamanlılığa karşı korunur (bkz. Veritabanı Şeması notu). Sipariş kapatma (`PATCH /api/orders/:id`) da aynı şekilde siparişi `FOR UPDATE` ile kilitleyip mevcut statüyü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz.
-- **Kullanıcı yönetimi eklenirken (bkz. Bölüm 11) yetki modeli sıkılaştırıldı:** `getAuthUser()` artık `role`'ü JWT'nin imzalı payload'ından değil, **her istekte `users` tablosundan taze** okur — JWT yalnızca kimliği (userId) doğrulamak için kullanılır. Bundan önce rol JWT'ye gömülüydü ve token süresi (varsayılan 12 saat) dolana kadar değişmezdi; bu da bir kullanıcı `admin`'den `staff`'a düşürülse veya silinse bile eski yetkisiyle işlem yapmaya devam edebileceği anlamına geliyordu. Artık rolü değiştirilen/silinen bir kullanıcının bir sonraki API isteği anında yeni yetkiyi (veya "kullanıcı yok" durumunu) yansıtıyor. `middleware.ts`'e bilerek dokunulmadı (Edge runtime, yalnızca sayfa kabuğu görünürlüğünü yönetir); gerçek veri erişimi her zaman `getAuthUser()` üzerinden geçtiği için güvenlik sınırı orada tam korunuyor.
+- **Kullanıcı yönetimi eklenirken (bkz. Bölüm 12) yetki modeli sıkılaştırıldı:** `getAuthUser()` artık `role`'ü JWT'nin imzalı payload'ından değil, **her istekte `users` tablosundan taze** okur — JWT yalnızca kimliği (userId) doğrulamak için kullanılır. Bundan önce rol JWT'ye gömülüydü ve token süresi (varsayılan 12 saat) dolana kadar değişmezdi; bu da bir kullanıcı `admin`'den `staff`'a düşürülse veya silinse bile eski yetkisiyle işlem yapmaya devam edebileceği anlamına geliyordu. Artık rolü değiştirilen/silinen bir kullanıcının bir sonraki API isteği anında yeni yetkiyi (veya "kullanıcı yok" durumunu) yansıtıyor. `middleware.ts`'e bilerek dokunulmadı (Edge runtime, yalnızca sayfa kabuğu görünürlüğünü yönetir); gerçek veri erişimi her zaman `getAuthUser()` üzerinden geçtiği için güvenlik sınırı orada tam korunuyor.
 - `PATCH /api/users/:id`, hedef `id` isteği atan kullanıcının kendisiyse `role`, `password`, `username`, `forceLogout` ve `isActive: false` alanlarının hiçbirini kabul etmez — aksi halde bir admin, çalınmış/ele geçirilmiş bir oturumla mevcut şifreyi hiç bilmeden kendi şifresini değiştirip hesabı ele geçirebilir ve gerçek kullanıcıyı kalıcı olarak dışarıda bırakabilirdi (kendi şifreni/kullanıcı adını değiştirmenin tek yolu Profil sayfasıdır, `/api/auth/password` mevcut şifre doğrulaması yapar). Aynı endpoint, sistemde tek **aktif** `admin` kalmışsa o kullanıcının rolünü değiştirmeyi, devre dışı bırakmayı veya silmeyi de reddeder (`isActive` kontrolü de admin sayımına dahildir).

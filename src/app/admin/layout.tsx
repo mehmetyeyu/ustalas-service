@@ -14,6 +14,7 @@ const navItems = [
   { href: "/admin/storage", label: "Depolama" },
   { href: "/admin/products", label: "Ürünler" },
   { href: "/admin/reports", label: "Raporlar" },
+  { href: "/admin/expenses", label: "Masraflar" },
   { href: "/admin/services", label: "Hizmetler" },
   { href: "/admin/customers", label: "Müşteriler" },
   { href: "/admin/suppliers", label: "Tedarikçiler" },

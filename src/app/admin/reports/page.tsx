@@ -11,12 +11,14 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 
 interface DailyDatum {
   date: string;
   ciro: number;
   maliyet: number;
+  masraf: number;
 }
 interface ServiceStat {
   name: string;
@@ -27,12 +29,17 @@ interface ServiceStat {
 interface Summary {
   total_orders: number;
   total_revenue: number;
+  total_expenses: number;
   completed: number;
   pending: number;
 }
 interface PaymentBreakdown {
   payment_type: string;
   total: number;
+}
+interface UnaddedRecurring {
+  id: number;
+  category: string;
 }
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
@@ -67,23 +74,23 @@ function weekRange(dateStr: string): { start: string; end: string } {
 // kısmının) toplamını, Aylık ise seçili ayın tamamının toplamını gösterir.
 function computePeriodRow(
   dailyData: DailyDatum[], view: PeriodView, year: number, month: number
-): { label: string; ciro: number; maliyet: number } {
+): { label: string; ciro: number; maliyet: number; masraf: number } {
   if (dailyData.length === 0) {
     const lastDay = new Date(year, month, 0).getDate();
     const refDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-    if (view === "day") return { label: formatDayLabel(refDate), ciro: 0, maliyet: 0 };
+    if (view === "day") return { label: formatDayLabel(refDate), ciro: 0, maliyet: 0, masraf: 0 };
     if (view === "week") {
       const { start, end } = weekRange(refDate);
-      return { label: `${formatDayLabel(start)} – ${formatDayLabel(end)}`, ciro: 0, maliyet: 0 };
+      return { label: `${formatDayLabel(start)} – ${formatDayLabel(end)}`, ciro: 0, maliyet: 0, masraf: 0 };
     }
-    return { label: formatMonthLabel(year, month), ciro: 0, maliyet: 0 };
+    return { label: formatMonthLabel(year, month), ciro: 0, maliyet: 0, masraf: 0 };
   }
 
   const refDate = [...dailyData].sort((a, b) => b.date.localeCompare(a.date))[0].date;
 
   if (view === "day") {
     const d = dailyData.find((x) => x.date === refDate)!;
-    return { label: formatDayLabel(refDate), ciro: Number(d.ciro), maliyet: Number(d.maliyet) };
+    return { label: formatDayLabel(refDate), ciro: Number(d.ciro), maliyet: Number(d.maliyet), masraf: Number(d.masraf) };
   }
   if (view === "week") {
     const { start, end } = weekRange(refDate);
@@ -92,12 +99,14 @@ function computePeriodRow(
       label: `${formatDayLabel(start)} – ${formatDayLabel(end)}`,
       ciro: inWeek.reduce((s, x) => s + Number(x.ciro), 0),
       maliyet: inWeek.reduce((s, x) => s + Number(x.maliyet), 0),
+      masraf: inWeek.reduce((s, x) => s + Number(x.masraf), 0),
     };
   }
   return {
     label: formatMonthLabel(year, month),
     ciro: dailyData.reduce((s, x) => s + Number(x.ciro), 0),
     maliyet: dailyData.reduce((s, x) => s + Number(x.maliyet), 0),
+    masraf: dailyData.reduce((s, x) => s + Number(x.masraf), 0),
   };
 }
 
@@ -127,7 +136,8 @@ export default function ReportsPage() {
     serviceStats: ServiceStat[];
     summary: Summary | null;
     paymentBreakdown: PaymentBreakdown[];
-  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [] });
+    unaddedRecurring: UnaddedRecurring[];
+  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [], unaddedRecurring: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -157,7 +167,8 @@ export default function ReportsPage() {
     const found = data.dailyData.find((d) => d.date === dateStr);
     const ciro = found ? Number(found.ciro) : 0;
     const maliyet = found ? Number(found.maliyet) : 0;
-    return { day, ciro, maliyet, kar: ciro - maliyet };
+    const masraf = found ? Number(found.masraf) : 0;
+    return { day, ciro, maliyet, masraf, kar: ciro - maliyet - masraf };
   });
 
   const activePeriodRow = computePeriodRow(data.dailyData, periodView, year, month);
@@ -202,7 +213,7 @@ export default function ReportsPage() {
         <>
           {/* Özet Kartlar */}
           {s && (
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
               <div className="bg-white rounded-xl shadow-sm p-4 min-w-0">
                 <p className="text-xs text-gray-500 mb-1">Toplam Sipariş</p>
                 <p className="text-xl sm:text-2xl font-bold text-gray-800 truncate">{s.total_orders}</p>
@@ -214,6 +225,27 @@ export default function ReportsPage() {
                 <p className="text-xs text-gray-500 mb-1">Toplam Gelir</p>
                 <p className="text-xl sm:text-2xl font-bold text-green-600 truncate">
                   {formatCurrency(Number(s.total_revenue || 0))}
+                </p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-4 min-w-0 col-span-2 sm:col-span-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs text-gray-500">Toplam Masraf</p>
+                  {/* Bu ay için henüz "Sabit Giderleri Ekle" ile masrafa
+                      dönüştürülmemiş aktif sabit gider varsa (ör. unutulmuş
+                      kira) rozet olarak uyarır — bu tutar henüz Kâr hesabında
+                      yer almıyor, o yüzden ay olduğundan kârlı görünüyor olabilir. */}
+                  {data.unaddedRecurring.length > 0 && (
+                    <Link
+                      href="/admin/expenses"
+                      title={`Eklenmemiş sabit giderler: ${data.unaddedRecurring.map((r) => r.category).join(", ")}`}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors whitespace-nowrap"
+                    >
+                      +{data.unaddedRecurring.length} eklenmedi
+                    </Link>
+                  )}
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-red-500 truncate">
+                  {formatCurrency(Number(s.total_expenses || 0))}
                 </p>
               </div>
             </div>
@@ -264,8 +296,8 @@ export default function ReportsPage() {
 
           {/* Günlük Gelir Grafiği */}
           <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-            <h2 className="font-semibold text-gray-700 mb-4">Günlük Ciro / Maliyet / Kâr (₺)</h2>
-            {dailyChartData.every((d) => d.ciro === 0 && d.maliyet === 0) ? (
+            <h2 className="font-semibold text-gray-700 mb-4">Günlük Ciro / Maliyet / Masraf / Kâr (₺)</h2>
+            {dailyChartData.every((d) => d.ciro === 0 && d.maliyet === 0 && d.masraf === 0) ? (
               <div className="h-40 flex items-center justify-center text-gray-400">
                 Bu ay için veri yok.
               </div>
@@ -288,6 +320,7 @@ export default function ReportsPage() {
                           <p className="font-medium text-gray-700 mb-1">{label}. Gün</p>
                           <p className="text-gray-800 font-semibold">Ciro: {formatCurrency(row.ciro)}</p>
                           <p style={{ color: "#f59e0b" }}>Maliyet: {formatCurrency(row.maliyet)}</p>
+                          <p style={{ color: "#ef4444" }}>Masraf: {formatCurrency(row.masraf)}</p>
                           <p style={{ color: "#10b981" }}>Kâr: {formatCurrency(row.kar)}</p>
                         </div>
                       );
@@ -299,6 +332,7 @@ export default function ReportsPage() {
                       isAnimationActive=false: bu recharts sürümünde stacked bar'ların
                       büyüme animasyonu tamamlanmıyor ve barlar hiç çizilmeden kalıyor. */}
                   <Bar dataKey="maliyet" name="Maliyet" stackId="ciro" fill="#f59e0b" radius={[0, 0, 4, 4]} isAnimationActive={false} />
+                  <Bar dataKey="masraf" name="Masraf" stackId="ciro" fill="#ef4444" isAnimationActive={false} />
                   <Bar dataKey="kar" name="Kâr" stackId="ciro" fill="#10b981" radius={[4, 4, 0, 0]} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
@@ -308,7 +342,7 @@ export default function ReportsPage() {
           {/* Dönemsel Ciro / Maliyet / Kâr Tablosu */}
           <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <h2 className="font-semibold text-gray-700">Dönemsel Ciro / Maliyet / Kâr</h2>
+              <h2 className="font-semibold text-gray-700">Dönemsel Ciro / Maliyet / Masraf / Kâr</h2>
               <div className="flex gap-1">
                 {([
                   { v: "day", label: "Günlük" },
@@ -334,6 +368,7 @@ export default function ReportsPage() {
                     <th className="text-left px-2 sm:px-3 py-2 font-medium text-gray-600">Dönem</th>
                     <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Ciro</th>
                     <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Maliyet</th>
+                    <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Masraf</th>
                     <th className="text-right px-2 sm:px-3 py-2 font-medium text-gray-600">Kâr</th>
                   </tr>
                 </thead>
@@ -346,8 +381,11 @@ export default function ReportsPage() {
                     <td className="px-2 sm:px-3 py-2 text-right text-gray-500 whitespace-nowrap">
                       {formatCurrency(activePeriodRow.maliyet)}
                     </td>
-                    <td className={`px-2 sm:px-3 py-2 text-right font-semibold whitespace-nowrap ${activePeriodRow.ciro - activePeriodRow.maliyet >= 0 ? "text-green-600" : "text-red-500"}`}>
-                      {formatCurrency(activePeriodRow.ciro - activePeriodRow.maliyet)}
+                    <td className="px-2 sm:px-3 py-2 text-right text-red-500 whitespace-nowrap">
+                      {formatCurrency(activePeriodRow.masraf)}
+                    </td>
+                    <td className={`px-2 sm:px-3 py-2 text-right font-semibold whitespace-nowrap ${activePeriodRow.ciro - activePeriodRow.maliyet - activePeriodRow.masraf >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      {formatCurrency(activePeriodRow.ciro - activePeriodRow.maliyet - activePeriodRow.masraf)}
                     </td>
                   </tr>
                 </tbody>

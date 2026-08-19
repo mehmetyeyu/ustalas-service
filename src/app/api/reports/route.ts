@@ -21,6 +21,14 @@ export async function GET(request: NextRequest) {
   const startDate = new Date(Date.UTC(year, month - 1, 1, -3, 0, 0));
   const endDate = new Date(Date.UTC(year, month, 1, -3, 0, 0));
 
+  // expenses.expense_date bir DATE kolonu (saat/saat dilimi yok) — timestamp
+  // aralık dönüşümüne gerek yok, ayın ilk günü ile bir sonraki ayın ilk günü
+  // arasındaki düz tarih string aralığı yeterli.
+  const expenseStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const expenseNextYear = month === 12 ? year + 1 : year;
+  const expenseNextMonth = month === 12 ? 1 : month + 1;
+  const expenseEnd = `${expenseNextYear}-${String(expenseNextMonth).padStart(2, "0")}-01`;
+
   try {
     // Rapor tarihi, ödemenin alındığı gün (payment_date) değil, hizmetin GİRİLDİĞİ
     // gündür (created_at) — bir hizmet Temmuz'da girilip parası Ağustos'ta alınsa
@@ -40,9 +48,11 @@ export async function GET(request: NextRequest) {
     const [
       dailyCiroResult,
       dailyMaliyetResult,
+      dailyExpenseResult,
       serviceStatsResult,
       summaryResult,
       paymentBreakdownResult,
+      unaddedRecurringResult,
     ] = await Promise.all([
       pool.query(
         `SELECT
@@ -62,6 +72,15 @@ export async function GET(request: NextRequest) {
          WHERE o.created_at >= $1 AND o.created_at < $2
          GROUP BY date`,
         [startDate, endDate]
+      ),
+      // Masraflar (kira, elektrik, personel vb.) — sipariş/hizmetlerden bağımsız,
+      // Kâr hesabından günlük bazda düşülür (bkz. dailyData birleştirmesi altta).
+      pool.query(
+        `SELECT expense_date::text AS date, SUM(amount)::float AS masraf
+         FROM expenses
+         WHERE expense_date >= $1 AND expense_date < $2
+         GROUP BY date`,
+        [expenseStart, expenseEnd]
       ),
       // Hizmet Dağılımı: sadece adet değil, o hizmetten gelen Ciro/Maliyet/Kâr da
       // gösterilir — "Bijon'dan ne kadar kazandım" gibi sorulara pasta grafik tek
@@ -121,28 +140,60 @@ export async function GET(request: NextRequest) {
          ORDER BY total DESC`,
         [startDate, endDate]
       ),
+      // Seçili ay için henüz masraf satırına dönüştürülmemiş aktif sabit gider
+      // şablonları (bkz. Masraflar — "Sabit Giderleri Ekle") — unutulmuş bir
+      // kira gibi kalemin o ayın Kâr'ını olduğundan yüksek göstermesine karşı
+      // Raporlar'da bir uyarı olarak gösterilir.
+      pool.query(
+        `SELECT re.id, re.category
+         FROM recurring_expenses re
+         WHERE re.is_active = true
+           AND NOT EXISTS (
+             SELECT 1 FROM expenses e
+             WHERE e.recurring_expense_id = re.id
+               AND e.expense_date >= $1 AND e.expense_date < $2
+           )
+         ORDER BY re.category`,
+        [expenseStart, expenseEnd]
+      ),
     ]);
 
     // Her siparişin en az bir order_services satırı olduğundan, maliyet
-    // sonuçlarındaki her tarih zaten ciro sonuçlarında da vardır.
+    // sonuçlarındaki her tarih zaten ciro sonuçlarında da vardır. Masraflar
+    // ise siparişten bağımsız günlerde de olabileceğinden (ör. hiç sipariş
+    // olmayan bir günde kira ödenmesi) ayrı bir tarih seti oluşturabilir —
+    // bu yüzden tüm tarih anahtarları (ciro ∪ masraf) birleştirilir.
     const maliyetByDate = new Map(
       dailyMaliyetResult.rows.map((r: { date: string; maliyet: number }) => [r.date, r.maliyet])
     );
-    const dailyData = dailyCiroResult.rows
-      .map((r: { date: string; ciro: number }) => ({
-        date: r.date,
-        ciro: r.ciro,
-        maliyet: maliyetByDate.get(r.date) ?? 0,
-      }))
+    const masrafByDate = new Map(
+      dailyExpenseResult.rows.map((r: { date: string; masraf: number }) => [r.date, r.masraf])
+    );
+    const allDates = new Set([
+      ...dailyCiroResult.rows.map((r: { date: string }) => r.date),
+      ...Array.from(masrafByDate.keys()),
+    ]);
+    const dailyData = Array.from(allDates)
+      .map((date) => {
+        const ciroRow = dailyCiroResult.rows.find((r: { date: string }) => r.date === date);
+        return {
+          date,
+          ciro: ciroRow?.ciro ?? 0,
+          maliyet: maliyetByDate.get(date) ?? 0,
+          masraf: masrafByDate.get(date) ?? 0,
+        };
+      })
       .sort((a, b) => a.date.localeCompare(b.date));
 
     const totalRevenue = dailyData.reduce((sum, r) => sum + r.ciro, 0);
+    const totalExpenses = dailyData.reduce((sum, r) => sum + r.masraf, 0);
 
     return NextResponse.json({
       dailyData,
       serviceStats: serviceStatsResult.rows,
-      summary: { ...summaryResult.rows[0], total_revenue: totalRevenue },
+      summary: { ...summaryResult.rows[0], total_revenue: totalRevenue, total_expenses: totalExpenses },
       paymentBreakdown: paymentBreakdownResult.rows,
+      unaddedRecurring: unaddedRecurringResult.rows,
     });
   } catch (error) {
     console.error(error);

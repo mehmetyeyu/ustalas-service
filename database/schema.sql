@@ -257,6 +257,42 @@ WHERE NOT EXISTS (SELECT 1 FROM product_stock_entries e WHERE e.product_id = p.i
 ALTER TABLE order_services ADD COLUMN IF NOT EXISTS product_id INT REFERENCES products(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS order_services_product_id_idx ON order_services(product_id);
 
+-- Masraflar (kira, elektrik, personel, malzeme vb. işletme giderleri) —
+-- sipariş/hizmetlerden bağımsız, sadece yönetici tarafından girilir;
+-- Raporlar sayfasındaki Kâr hesabından düşülür (bkz. /api/reports).
+CREATE TABLE IF NOT EXISTS expenses (
+  id             SERIAL PRIMARY KEY,
+  expense_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+  category       VARCHAR(100) NOT NULL,
+  description    TEXT,
+  amount         DECIMAL(10,2) NOT NULL,
+  payment_type   TEXT,
+  created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS expenses_expense_date_idx ON expenses(expense_date);
+
+-- Sabit Giderler (kira gibi ayda bir tekrar eden, tutarı yılda belki bir kez
+-- değişen giderler) — her ay elle yeniden girmek yerine bir kere tanımlanır,
+-- Masraflar ekranındaki "Sabit Giderleri Ekle" ile o ay için tek tıkla
+-- masraf satırına dönüştürülür (bkz. expenses.recurring_expense_id).
+-- is_active=false: geçici olarak durdurulmuş bir sabit gider (silinmeden).
+CREATE TABLE IF NOT EXISTS recurring_expenses (
+  id           SERIAL PRIMARY KEY,
+  category     VARCHAR(100) NOT NULL,
+  description  TEXT,
+  amount       DECIMAL(10,2) NOT NULL,
+  payment_type TEXT,
+  is_active    BOOLEAN NOT NULL DEFAULT true,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Bir masrafın hangi sabit gider şablonundan oluşturulduğunu izler — "Sabit
+-- Giderleri Ekle" akışı, seçili ay için henüz eklenmemiş şablonları bulmak
+-- amacıyla bunu kullanır. Şablon silinirse geçmiş masraf kayıtları etkilenmez
+-- (SET NULL) — bu yalnızca soy/köken bilgisidir, FK zorunlu değildir.
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurring_expense_id INT REFERENCES recurring_expenses(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS expenses_recurring_expense_id_idx ON expenses(recurring_expense_id);
+
 -- Varsayılan hizmetler (Yapılan İşlem listesi) — fiyatı girilmemiş, yönetici
 -- Hizmetler ekranından istediği kaleme fiyat verebilir/vermeyebilir.
 INSERT INTO services (name, price) VALUES
