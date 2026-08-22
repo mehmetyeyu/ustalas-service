@@ -63,3 +63,20 @@ export function canAccessPath(user: PermissionUser, pathname: string): boolean {
   if (match.resource === "__admin_only__") return false;
   return hasPermission(user, `${match.resource}.view`);
 }
+
+// staff girişte ("/admin/login" sonrası) veya "/" sipariş formundan panele
+// dönerken hangi sayfaya yönlendirileceğini belirler — src/app/admin/layout.tsx
+// içindeki navItems ile aynı öncelik sırası. Kullanıcının erişebildiği ilk
+// sayfayı döner; hiçbir sayfa izni yoksa null (o zaman header'da panel linki
+// gösterilmez, sadece çıkış).
+const LANDING_ORDER: Resource[] = [
+  "orders", "storage", "products", "reports", "expenses", "services", "customers", "suppliers",
+];
+
+export function getDefaultAdminPath(user: PermissionUser): string | null {
+  if (user.role === "admin") return "/admin/orders";
+  for (const resource of LANDING_ORDER) {
+    if (hasPermission(user, `${resource}.view`)) return `/admin/${resource}`;
+  }
+  return null;
+}

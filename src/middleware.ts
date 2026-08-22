@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getAuthUserByToken } from "@/lib/auth";
-import { canAccessPath } from "@/lib/permissions";
+import { canAccessPath, getDefaultAdminPath } from "@/lib/permissions";
 
 // Sadece pazarlama/demo dağıtımlarında (ör. Elevire) set edilir — ayarlıysa
 // kök yol dahili sipariş aracı yerine doğrudan landing sayfasına yönlendirir.
@@ -16,7 +16,14 @@ export async function middleware(request: NextRequest) {
     if (token) {
       const user = await verifyToken(token);
       if (user) {
-        const dest = user.role === "admin" ? "/admin/orders" : "/";
+        // admin için hızlı yol (DB'ye gitmeden); staff için izinler DB'den
+        // taze okunur — aksi halde erişimi olmayan bir sayfaya (ör. eski
+        // JWT'deki bayat "/") yönlendirilebilir, bkz. getAuthUserByToken.
+        if (user.role === "admin") {
+          return NextResponse.redirect(new URL("/admin/orders", request.url));
+        }
+        const freshUser = await getAuthUserByToken(token);
+        const dest = (freshUser && getDefaultAdminPath(freshUser)) || "/";
         return NextResponse.redirect(new URL(dest, request.url));
       }
     }

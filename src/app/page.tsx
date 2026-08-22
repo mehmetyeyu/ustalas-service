@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getDefaultAdminPath } from "@/lib/permissions";
 
 interface Service {
   id: number;
@@ -245,7 +246,9 @@ export default function OrderPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
+  // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
+  // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
+  const [panelPath, setPanelPath] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
@@ -258,7 +261,7 @@ export default function OrderPage() {
 
     fetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
-      .then((user) => { if (user?.role === "admin") setIsAdmin(true); })
+      .then((user) => { if (user) setPanelPath(getDefaultAdminPath(user)); })
       .catch(() => { });
 
     fetch("/api/customers")
@@ -450,23 +453,25 @@ export default function OrderPage() {
               <h1 className="text-2xl font-bold text-gray-800">Lastik Servis</h1>
               <p className="text-gray-500 text-sm mt-1">Yeni Sipariş Oluştur</p>
             </div>
-            {isAdmin && (
-              <div className="flex items-center gap-3">
-                <a
-                  href="/admin/orders"
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                >
-                  Yönetici Paneli
-                </a>
-                <span className="text-gray-300">|</span>
-                <button
-                  onClick={handleLogout}
-                  className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
-                >
-                  Çıkış
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {panelPath && (
+                <>
+                  <a
+                    href={panelPath}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                  >
+                    Yönetici Paneli
+                  </a>
+                  <span className="text-gray-300">|</span>
+                </>
+              )}
+              <button
+                onClick={handleLogout}
+                className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
+              >
+                Çıkış
+              </button>
+            </div>
           </div>
 
           {success && (
