@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
+import { useViewGuard } from "../AuthContext";
 
 interface DailyDatum {
   date: string;
@@ -126,6 +127,7 @@ function useIsMobile(): boolean {
 }
 
 export default function ReportsPage() {
+  const allowed = useViewGuard("reports");
   const isMobile = useIsMobile();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -180,6 +182,8 @@ export default function ReportsPage() {
   const mailOrderTotal = mailOrderItems.reduce((sum, p) => sum + Number(p.total || 0), 0);
 
   const serviceCountTotal = data.serviceStats.reduce((sum, s) => sum + s.count, 0);
+
+  if (!allowed) return null;
 
   return (
     <div>

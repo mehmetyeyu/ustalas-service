@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatDate } from "@/lib/format";
+import { RESOURCE_ACTIONS } from "@/lib/permissions";
 
 const MENU_WIDTH = 192; // w-48
 const MENU_MAX_HEIGHT = 260;
@@ -11,6 +12,8 @@ interface User {
   id: number;
   username: string;
   role: string;
+  permissions: string[];
+  is_primary_admin: boolean;
   created_at: string;
   last_login_at: string | null;
   is_active: boolean;
@@ -23,8 +26,62 @@ const ROLES = [
   { value: "staff", label: "Karşılama Görevlisi" },
 ];
 
+const RESOURCE_LABELS: Record<string, string> = {
+  orders: "Siparişler",
+  reports: "Raporlar",
+  services: "Hizmetler",
+  storage: "Depolama",
+  products: "Ürünler",
+  customers: "Müşteriler",
+  suppliers: "Tedarikçiler",
+  expenses: "Masraflar",
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  view: "Görüntüle",
+  create: "Ekle",
+  edit: "Düzenle",
+  delete: "Sil",
+  approve: "Onayla",
+};
+
 function isLocked(u: User): boolean {
   return !!u.locked_until && new Date(u.locked_until) > new Date();
+}
+
+// Karşılama Görevlisi'ne (staff) hangi admin sayfalarını/aksiyonlarını
+// görebileceğini seçmek için — bkz. src/lib/permissions.ts (aynı taksonomi
+// hem burada hem middleware/API route'larda kullanılıyor). Kullanıcılar ve
+// Genel Ayarlar bilinçli olarak bu listede yok (hep sadece gerçek admin).
+function PermissionMatrix({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+  function toggle(key: string) {
+    onChange(value.includes(key) ? value.filter((v) => v !== key) : [...value, key]);
+  }
+  return (
+    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+      {Object.entries(RESOURCE_ACTIONS).map(([resource, actions]) => (
+        <div key={resource} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+          <span className="w-24 shrink-0 text-sm font-medium text-gray-700">{RESOURCE_LABELS[resource]}</span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {actions.map((action) => {
+              const key = `${resource}.${action}`;
+              return (
+                <label key={key} className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={value.includes(key)}
+                    onChange={() => toggle(key)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  {ACTION_LABELS[action]}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function UsersPage() {
@@ -36,8 +93,13 @@ export default function UsersPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("staff");
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const [permTarget, setPermTarget] = useState<User | null>(null);
+  const [permValue, setPermValue] = useState<string[]>([]);
+  const [permSaving, setPermSaving] = useState(false);
 
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPassword, setResetPassword] = useState("");
@@ -104,6 +166,7 @@ export default function UsersPage() {
     setUsername("");
     setPassword("");
     setRole("staff");
+    setPermissions([]);
     setError("");
     setShowForm(true);
   }
@@ -123,7 +186,7 @@ export default function UsersPage() {
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim(), password, role }),
+        body: JSON.stringify({ username: username.trim(), password, role, permissions }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setShowForm(false);
@@ -239,6 +302,30 @@ export default function UsersPage() {
     setResetError("");
   }
 
+  function openPerm(u: User) {
+    setPermTarget(u);
+    setPermValue(u.permissions ?? []);
+  }
+
+  async function handleSavePermissions() {
+    if (!permTarget) return;
+    setPermSaving(true);
+    try {
+      const res = await fetch(`/api/users/${permTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: permValue }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Güncelleme başarısız.");
+      setPermTarget(null);
+      await fetchUsers();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setPermSaving(false);
+    }
+  }
+
   async function handleResetPassword() {
     if (!resetTarget) return;
     setResetError("");
@@ -295,12 +382,20 @@ export default function UsersPage() {
               {users.map((u) => {
                 const self = u.username === currentUsername;
                 const locked = isLocked(u);
+                // Ana admin — kendisi dışında hiç kimse bu satırda hiçbir
+                // şeyi değiştiremez (bkz. PATCH/DELETE /api/users/:id).
+                const protectedAdmin = u.is_primary_admin && !self;
                 return (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                       {u.username}
+                      {u.is_primary_admin && (
+                        <span className="ml-2 text-xs text-amber-600 font-normal" title="Ana admin — başka kimse tarafından değiştirilemez/silinemez">
+                          🔐 Ana Admin
+                        </span>
+                      )}
                       {self && <span className="ml-2 text-xs text-gray-400 font-normal">(siz)</span>}
-                      {!self && (
+                      {!self && !protectedAdmin && (
                         <button
                           onClick={() => openRename(u)}
                           className="ml-2 text-gray-400 hover:text-blue-600 text-xs"
@@ -311,8 +406,8 @@ export default function UsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {self ? (
-                        <span className="text-gray-500" title="Kendi rolünüzü değiştiremezsiniz.">
+                      {self || protectedAdmin ? (
+                        <span className="text-gray-500" title={protectedAdmin ? "Ana admin hesabının rolü değiştirilemez." : "Kendi rolünüzü değiştiremezsiniz."}>
                           {ROLES.find((r) => r.value === u.role)?.label || u.role}
                         </span>
                       ) : (
@@ -355,7 +450,7 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-right">
                       {/* Desktop */}
                       <div className="hidden sm:flex justify-end gap-3 flex-wrap">
-                        {locked && (
+                        {locked && !protectedAdmin && (
                           <button
                             onClick={() => handleUnlock(u)}
                             disabled={busyAction === u.id}
@@ -364,13 +459,23 @@ export default function UsersPage() {
                             Kilidi Aç
                           </button>
                         )}
-                        <button
-                          onClick={() => openReset(u)}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                        >
-                          Şifre Sıfırla
-                        </button>
-                        {!self && (
+                        {!protectedAdmin && (
+                          <button
+                            onClick={() => openReset(u)}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                          >
+                            Şifre Sıfırla
+                          </button>
+                        )}
+                        {!self && u.role === "staff" && (
+                          <button
+                            onClick={() => openPerm(u)}
+                            className="text-purple-600 hover:text-purple-800 text-xs font-medium"
+                          >
+                            İzinler
+                          </button>
+                        )}
+                        {!self && !protectedAdmin && (
                           <button
                             onClick={() => handleForceLogout(u)}
                             disabled={busyAction === u.id}
@@ -379,7 +484,7 @@ export default function UsersPage() {
                             Oturumu Sonlandır
                           </button>
                         )}
-                        {!self && (
+                        {!self && !protectedAdmin && (
                           <button
                             onClick={() => handleToggleActive(u)}
                             disabled={busyAction === u.id}
@@ -388,7 +493,7 @@ export default function UsersPage() {
                             {u.is_active ? "Devre Dışı Bırak" : "Aktifleştir"}
                           </button>
                         )}
-                        {!self && (
+                        {!self && !protectedAdmin && (
                           <button
                             onClick={() => handleDelete(u)}
                             className="text-red-500 hover:text-red-700 text-xs font-medium"
@@ -423,7 +528,7 @@ export default function UsersPage() {
                             }}
                             className="z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1"
                           >
-                            {locked && (
+                            {locked && !protectedAdmin && (
                               <button
                                 onClick={() => { closeMenu(); handleUnlock(u); }}
                                 disabled={busyAction === u.id}
@@ -432,13 +537,23 @@ export default function UsersPage() {
                                 Kilidi Aç
                               </button>
                             )}
-                            <button
-                              onClick={() => { closeMenu(); openReset(u); }}
-                              className="block w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-gray-50"
-                            >
-                              Şifre Sıfırla
-                            </button>
-                            {!self && (
+                            {!protectedAdmin && (
+                              <button
+                                onClick={() => { closeMenu(); openReset(u); }}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-gray-50"
+                              >
+                                Şifre Sıfırla
+                              </button>
+                            )}
+                            {!self && u.role === "staff" && (
+                              <button
+                                onClick={() => { closeMenu(); openPerm(u); }}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-purple-600 hover:bg-gray-50"
+                              >
+                                İzinler
+                              </button>
+                            )}
+                            {!self && !protectedAdmin && (
                               <button
                                 onClick={() => { closeMenu(); handleForceLogout(u); }}
                                 disabled={busyAction === u.id}
@@ -447,7 +562,7 @@ export default function UsersPage() {
                                 Oturumu Sonlandır
                               </button>
                             )}
-                            {!self && (
+                            {!self && !protectedAdmin && (
                               <button
                                 onClick={() => { closeMenu(); handleToggleActive(u); }}
                                 disabled={busyAction === u.id}
@@ -456,7 +571,7 @@ export default function UsersPage() {
                                 {u.is_active ? "Devre Dışı Bırak" : "Aktifleştir"}
                               </button>
                             )}
-                            {!self && (
+                            {!self && !protectedAdmin && (
                               <>
                                 <div className="border-t border-gray-100 my-1" />
                                 <button
@@ -482,7 +597,7 @@ export default function UsersPage() {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Yeni Kullanıcı Ekle</h2>
 
             {error && (
@@ -524,6 +639,14 @@ export default function UsersPage() {
                   ))}
                 </select>
               </div>
+              {role === "staff" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Erişim İzinleri <span className="text-gray-400 font-normal">(hiçbiri seçilmezse sadece sipariş oluşturma ekranını görür)</span>
+                  </label>
+                  <PermissionMatrix value={permissions} onChange={setPermissions} />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -623,6 +746,37 @@ export default function UsersPage() {
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
               >
                 {renameSaving ? "Kaydediliyor..." : "Kaydet"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {permTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
+            <h2 className="text-xl font-bold text-gray-800 mb-1">
+              &quot;{permTarget.username}&quot; Erişim İzinleri
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">Hiçbiri seçilmezse sadece sipariş oluşturma ekranını görür.</p>
+
+            <div className="mb-5">
+              <PermissionMatrix value={permValue} onChange={setPermValue} />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPermTarget(null)}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleSavePermissions}
+                disabled={permSaving}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                {permSaving ? "Kaydediliyor..." : "Kaydet"}
               </button>
             </div>
           </div>

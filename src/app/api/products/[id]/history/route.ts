@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(
   _request: NextRequest,
@@ -8,7 +9,7 @@ export async function GET(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "products.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { ALLOWED_ROLES } from "@/lib/roles";
+import { isValidPermissionKey } from "@/lib/permissions";
 
 export async function PATCH(
   request: NextRequest,
@@ -14,7 +15,7 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { role, password, username, unlock, forceLogout, isActive } = await request.json();
+    const { role, password, username, unlock, forceLogout, isActive, permissions } = await request.json();
 
     if (
       role === undefined &&
@@ -22,12 +23,19 @@ export async function PATCH(
       username === undefined &&
       !unlock &&
       !forceLogout &&
-      isActive === undefined
+      isActive === undefined &&
+      permissions === undefined
     ) {
       return NextResponse.json({ error: "Güncellenecek bir alan gönderilmedi." }, { status: 400 });
     }
     if (role !== undefined && !ALLOWED_ROLES.includes(role)) {
       return NextResponse.json({ error: "Geçersiz rol." }, { status: 400 });
+    }
+    if (
+      permissions !== undefined &&
+      (!Array.isArray(permissions) || !permissions.every((p) => typeof p === "string" && isValidPermissionKey(p)))
+    ) {
+      return NextResponse.json({ error: "Geçersiz izin." }, { status: 400 });
     }
     if (password && String(password).length < 6) {
       return NextResponse.json({ error: "Şifre en az 6 karakter olmalıdır." }, { status: 400 });
@@ -56,6 +64,14 @@ export async function PATCH(
       }
       if (isActive === false) {
         return NextResponse.json({ error: "Kendi hesabınızı devre dışı bırakamazsınız." }, { status: 400 });
+      }
+    } else {
+      // Ana admin hesabı — kendisi dışında (yukarıdaki self-koruma zaten
+      // kendisinin kendine yapabileceklerini kısıtlıyor) hiç kimse bu hesap
+      // üzerinde hiçbir alanı değiştiremez.
+      const primaryCheck = await pool.query("SELECT is_primary_admin FROM users WHERE id = $1", [id]);
+      if (primaryCheck.rows[0]?.is_primary_admin) {
+        return NextResponse.json({ error: "Ana admin hesabı başka bir kullanıcı tarafından değiştirilemez." }, { status: 403 });
       }
     }
 
@@ -106,6 +122,9 @@ export async function PATCH(
     if (isActive !== undefined) {
       await pool.query("UPDATE users SET is_active = $1 WHERE id = $2", [isActive, id]);
     }
+    if (permissions !== undefined) {
+      await pool.query("UPDATE users SET permissions = $1 WHERE id = $2", [permissions, id]);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -133,7 +152,10 @@ export async function DELETE(
       return NextResponse.json({ error: "Kendi hesabınızı silemezsiniz." }, { status: 400 });
     }
 
-    const target = await pool.query("SELECT role FROM users WHERE id = $1", [id]);
+    const target = await pool.query("SELECT role, is_primary_admin FROM users WHERE id = $1", [id]);
+    if (target.rows[0]?.is_primary_admin) {
+      return NextResponse.json({ error: "Ana admin hesabı silinemez." }, { status: 403 });
+    }
     if (target.rows[0]?.role === "admin") {
       const adminCount = await pool.query(
         "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = true"

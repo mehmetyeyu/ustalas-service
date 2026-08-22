@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import * as XLSX from "xlsx";
 
 const MAX_BATCH_SIZE = 500;
@@ -47,7 +48,7 @@ function parseRow(r: unknown[]): StorageRow | null {
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "storage.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const formData = await request.formData();

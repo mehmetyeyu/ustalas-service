@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 // Müşteriler ekranındaki "Siparişler" görünümü için — orders.customer_name
 // serbest metin olduğundan (FK değil) müşterinin adıyla eşleştirilir. Liste
@@ -11,7 +12,13 @@ export async function GET(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  // Bu uç, siparişlerin tutar/ödeme tipi gibi finansal alanlarını döndürüyor —
+  // sadece customers.view yeterli görülürse, orders.view'ı olmayan bir
+  // kullanıcı müşteri ekranı üzerinden sipariş finansallarını görebilirdi.
+  // İkisi de gerekli (bkz. güvenlik testi bulgusu).
+  if (!hasPermission(user, "customers.view") || !hasPermission(user, "orders.view")) {
+    return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  }
 
   try {
     const { id } = await params;

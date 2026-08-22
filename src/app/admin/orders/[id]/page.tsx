@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
+import { useViewGuard, usePermission } from "../../AuthContext";
 
 interface OrderDetail {
   id: number;
@@ -331,6 +332,9 @@ function TireBatchPicker({
 }
 
 function OrderDetailPageInner() {
+  const allowed = useViewGuard("orders");
+  const canEdit = usePermission("orders.edit");
+  const canApprove = usePermission("orders.approve");
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -721,8 +725,9 @@ function OrderDetailPageInner() {
   if (!order) {
     return <div className="p-12 text-center text-gray-400">Sipariş bulunamadı.</div>;
   }
+  if (!allowed) return null;
 
-  if (editing) {
+  if (editing && canEdit) {
     return (
       <div className="fixed inset-0 z-40 bg-white overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6">
@@ -1216,12 +1221,14 @@ function OrderDetailPageInner() {
                 <p className="text-gray-500 text-sm mt-1">Sipariş #{order.id}</p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={openEdit}
-                  className="px-3 py-1 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
-                >
-                  Düzelt
-                </button>
+                {canEdit && (
+                  <button
+                    onClick={openEdit}
+                    className="px-3 py-1 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
+                  >
+                    Düzelt
+                  </button>
+                )}
                 <span
                   className={`px-3 py-1 rounded-full text-sm font-medium ${order.status === "TAMAMLANDI"
                     ? "bg-green-100 text-green-700"
@@ -1317,7 +1324,7 @@ function OrderDetailPageInner() {
             </div>
 
             {/* Ödeme Al butonu */}
-            {order.status === "BEKLEMEDE" && (
+            {order.status === "BEKLEMEDE" && canApprove && (
               <button
                 onClick={() => {
                   setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount) }]);

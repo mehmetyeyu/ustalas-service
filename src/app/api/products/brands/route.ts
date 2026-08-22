@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 // Yeni Ürün/Parti ekranındaki Marka alanı için mevcut ürünlerde kullanılan
 // markaların dinamik listesi — ayrı bir dizin tablosu yok, doğrudan products
@@ -8,7 +9,7 @@ import { getAuthUser } from "@/lib/auth";
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "products.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const result = await pool.query(

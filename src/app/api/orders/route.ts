@@ -5,6 +5,7 @@ import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
 import { buildOrderQuery } from "@/lib/orderQuery";
+import { hasPermission } from "@/lib/permissions";
 
 interface OrderLineInput {
   service_name: string;
@@ -22,8 +23,8 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   // Sipariş listesi (müşteri/finansal veriler dahil) yalnızca yönetici panelinde
   // gösterilir — Karşılama Görevlisi yalnızca sipariş oluşturabilir (aşağıdaki
-  // POST), listeyi görememeli.
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  // POST), listeyi görememeli (ayrı bir orders.view izni olmadıkça).
+  if (!hasPermission(user, "orders.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));

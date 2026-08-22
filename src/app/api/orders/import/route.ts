@@ -4,13 +4,14 @@ import { getAuthUser } from "@/lib/auth";
 import { ParsedOrder } from "@/lib/ordersExcel";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
+import { hasPermission } from "@/lib/permissions";
 
 const MAX_BATCH_SIZE = 20;
 
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const body = await request.json();

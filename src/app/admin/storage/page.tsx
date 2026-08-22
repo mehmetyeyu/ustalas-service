@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Tooltip } from "@/components/Tooltip";
+import { useViewGuard, usePermission } from "../AuthContext";
 
 interface StorageItem {
   id: number;
@@ -254,6 +255,10 @@ function printLabel(item: StorageItem) {
 }
 
 export default function StoragePage() {
+  const allowed = useViewGuard("storage");
+  const canCreate = usePermission("storage.create");
+  const canEdit = usePermission("storage.edit");
+  const canDelete = usePermission("storage.delete");
   const [items, setItems] = useState<StorageItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -465,6 +470,8 @@ export default function StoragePage() {
   // + 1: her zaman görünen işlemler sütunu.
   const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
 
+  if (!allowed) return null;
+
   return (
     <div onClick={() => { setShowColPicker(false); setOpenMenuId(null); }}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -508,19 +515,23 @@ export default function StoragePage() {
             Dışa Aktar
           </button>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
-          >
-            {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
-          </button>
-          <button
-            onClick={() => { setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
-          >
-            + Yeni Kayıt
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+            >
+              {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+            </button>
+          )}
+          {canCreate && (
+            <button
+              onClick={() => { setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
+              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
+            >
+              + Yeni Kayıt
+            </button>
+          )}
         </div>
       </div>
 
@@ -662,17 +673,19 @@ export default function StoragePage() {
                       {/* Desktop */}
                       <div className="hidden sm:flex items-center gap-3 whitespace-nowrap">
                         <button onClick={() => printLabel(item)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Etiket</button>
-                        <button onClick={() => openEdit(item)} className="text-gray-600 hover:text-gray-900 text-xs font-medium">Düzenle</button>
-                        {!item.teslim_edildi && (
+                        {canEdit && <button onClick={() => openEdit(item)} className="text-gray-600 hover:text-gray-900 text-xs font-medium">Düzenle</button>}
+                        {canEdit && !item.teslim_edildi && (
                           <button onClick={() => handleTeslim(item)} disabled={teslimId === item.id}
                             className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-40">
                             {teslimId === item.id ? "..." : "Teslim Et"}
                           </button>
                         )}
-                        <button onClick={() => handleDelete(item.id)} disabled={deletingId === item.id}
-                          className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40">
-                          {deletingId === item.id ? "..." : "Sil"}
-                        </button>
+                        {canDelete && (
+                          <button onClick={() => handleDelete(item.id)} disabled={deletingId === item.id}
+                            className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-40">
+                            {deletingId === item.id ? "..." : "Sil"}
+                          </button>
+                        )}
                       </div>
                       {/* Mobile */}
                       <div className="relative sm:hidden">
@@ -700,16 +713,18 @@ export default function StoragePage() {
                               </svg>
                               Etiket
                             </button>
-                            <button
-                              onClick={() => { openEdit(item); setOpenMenuId(null); }}
-                              className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                              Düzenle
-                            </button>
-                            {!item.teslim_edildi && (
+                            {canEdit && (
+                              <button
+                                onClick={() => { openEdit(item); setOpenMenuId(null); }}
+                                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Düzenle
+                              </button>
+                            )}
+                            {canEdit && !item.teslim_edildi && (
                               <button
                                 onClick={() => { setOpenMenuId(null); handleTeslim(item); }}
                                 disabled={teslimId === item.id}
@@ -721,17 +736,21 @@ export default function StoragePage() {
                                 Teslim Et
                               </button>
                             )}
-                            <div className="border-t border-gray-100 my-1" />
-                            <button
-                              onClick={() => { setOpenMenuId(null); handleDelete(item.id); }}
-                              disabled={deletingId === item.id}
-                              className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50 disabled:opacity-40"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                              Sil
-                            </button>
+                            {canDelete && (
+                              <>
+                                <div className="border-t border-gray-100 my-1" />
+                                <button
+                                  onClick={() => { setOpenMenuId(null); handleDelete(item.id); }}
+                                  disabled={deletingId === item.id}
+                                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50 disabled:opacity-40"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  Sil
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>

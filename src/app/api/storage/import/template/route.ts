@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import { buildTemplateBuffer } from "@/lib/excelTemplate";
 
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "storage.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   // Sütun sırası storage/import'un okuduğu sıradır (başlık metni değil, sütun
   // konumu esas alınır) — bkz. src/app/api/storage/import/route.ts.

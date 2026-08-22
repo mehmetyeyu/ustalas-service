@@ -333,6 +333,23 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS tokens_invalid_before TIMESTAMPTZ;
 -- Son başarılı giriş zamanı — Kullanıcılar listesinde görünürlük için.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
+-- Sayfa/aksiyon bazlı ek yetkiler — sadece role='staff' için anlamlı (admin
+-- her zaman tam yetkili, bu alanı yoksayar). "kaynak.aksiyon" biçiminde
+-- düz metin dizisi (ör. 'orders.view', 'storage.edit') — bkz. src/lib/permissions.ts
+-- (tek doğruluk kaynağı: hangi kaynak/aksiyon çiftleri geçerli). Var olan
+-- kullanıcılar boş dizi alır — bu, mevcut staff davranışını (sadece /) hiç
+-- değiştirmez, geriye dönük tam uyumlu.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] NOT NULL DEFAULT '{}';
+
+-- Ana admin: tek, sabit bir hesap — rolü/aktifliği/şifresi/kullanıcı adı
+-- başka HİÇBİR admin tarafından değiştirilemez veya silinemez (bkz.
+-- PATCH/DELETE /api/users/:id). Son-admin korumasından farklı: admin sayısı
+-- kaç olursa olsun bu hesap dokunulmaz kalır. UI'da bunu değiştirecek bir
+-- buton yok — kasıtlı olarak sabit, elle DB'den değiştirilir.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_primary_admin BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS users_single_primary_admin ON users(is_primary_admin) WHERE is_primary_admin = true;
+UPDATE users SET is_primary_admin = true WHERE username = 'admin';
+
 -- Varsayılan admin kullanıcısı
 -- Şifre: admin123  (bcrypt hash — uygulamayı başlatmadan önce değiştiriniz!)
 -- Yeni hash oluşturmak için: node -e "const b=require('bcryptjs'); b.hash('YeniSifre',10).then(h=>console.log(h))"

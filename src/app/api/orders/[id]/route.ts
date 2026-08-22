@@ -5,6 +5,7 @@ import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
 import { getAppSettings } from "@/lib/settings";
+import { hasPermission } from "@/lib/permissions";
 
 interface EditLineInput {
   id?: number;
@@ -36,7 +37,7 @@ export async function GET(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -79,7 +80,7 @@ export async function DELETE(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.delete")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -123,7 +124,7 @@ export async function PATCH(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.approve")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -223,7 +224,7 @@ export async function PUT(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;

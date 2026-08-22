@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import * as XLSX from "xlsx";
 import { sanitizeExcelRow } from "@/lib/excelSafety";
 import { buildOrderQuery } from "@/lib/orderQuery";
+import { hasPermission } from "@/lib/permissions";
 
 // Sipariş Listesi'ndeki aktif filtrelerle (bkz. GET /api/orders) aynı satır
 // bazlı görünümü Excel'e döker — sayfalama uygulanmaz, filtrelere uyan TÜM
@@ -11,7 +12,7 @@ import { buildOrderQuery } from "@/lib/orderQuery";
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const { where, values, orderBy } = buildOrderQuery(searchParams);

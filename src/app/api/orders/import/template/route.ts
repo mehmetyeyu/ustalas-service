@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { buildTemplateBuffer } from "@/lib/excelTemplate";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   // Başlıklar orders/import'un tanıdığı sütun adlarıdır (sıra önemli değil,
   // eşleşme başlık metnine göre yapılır) — bkz. src/lib/ordersExcel.ts.

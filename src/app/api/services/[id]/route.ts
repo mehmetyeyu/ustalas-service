@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 export async function PUT(
   request: NextRequest,
@@ -8,7 +9,7 @@ export async function PUT(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "services.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;
@@ -40,7 +41,7 @@ export async function DELETE(
 ) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "services.delete")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const { id } = await params;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { parseProductRows, chunk, type ParsedProductRow } from "@/lib/productsExcel";
 import { Tooltip } from "@/components/Tooltip";
+import { useViewGuard, usePermission } from "../AuthContext";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -190,6 +191,10 @@ function seasonBadge(season: string | null) {
 }
 
 export default function ProductsPage() {
+  const allowed = useViewGuard("products");
+  const canCreate = usePermission("products.create");
+  const canEdit = usePermission("products.edit");
+  const canDelete = usePermission("products.delete");
   const [items, setItems] = useState<ProductGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -535,6 +540,8 @@ export default function ProductsPage() {
   // 4 sabit sütun (Ürün Kodu/Marka/Ebat/Stok) + görünür parti sütunları + işlemler.
   const visibleColCount = 4 + BATCH_COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
 
+  if (!allowed) return null;
+
   return (
     <div onClick={() => setShowColPicker(false)}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -566,19 +573,23 @@ export default function ProductsPage() {
           >
             Dışa Aktar
           </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
-          >
-            {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
-          </button>
-          <button
-            onClick={() => openAdd()}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
-          >
-            + Yeni Ürün
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+            >
+              {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+            </button>
+          )}
+          {canCreate && (
+            <button
+              onClick={() => openAdd()}
+              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
+            >
+              + Yeni Ürün
+            </button>
+          )}
         </div>
       </div>
 
@@ -875,29 +886,33 @@ export default function ProductsPage() {
                             )}
                             <td className="sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]">
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
-                                <button
-                                  onClick={() => openAdd(group.code, group.brand, group.size_desc)}
-                                  title="Stok Girişi"
-                                  aria-label="Stok Girişi"
-                                  className="flex items-center gap-1 p-1 sm:p-0 rounded text-blue-600 hover:bg-blue-50 sm:hover:bg-transparent hover:text-blue-800 text-xs font-medium whitespace-nowrap"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <span className="hidden sm:inline">Stok Girişi</span>
-                                </button>
-                                <button
-                                  onClick={() => group.batches.length === 1 ? openEdit(group.batches[0]) : toggleExpand(group.code)}
-                                  title="Düzenle"
-                                  aria-label="Düzenle"
-                                  className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium whitespace-nowrap"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 19.5H4.5" />
-                                  </svg>
-                                  <span className="hidden sm:inline">Düzenle</span>
-                                </button>
+                                {canCreate && (
+                                  <button
+                                    onClick={() => openAdd(group.code, group.brand, group.size_desc)}
+                                    title="Stok Girişi"
+                                    aria-label="Stok Girişi"
+                                    className="flex items-center gap-1 p-1 sm:p-0 rounded text-blue-600 hover:bg-blue-50 sm:hover:bg-transparent hover:text-blue-800 text-xs font-medium whitespace-nowrap"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span className="hidden sm:inline">Stok Girişi</span>
+                                  </button>
+                                )}
+                                {canEdit && (
+                                  <button
+                                    onClick={() => group.batches.length === 1 ? openEdit(group.batches[0]) : toggleExpand(group.code)}
+                                    title="Düzenle"
+                                    aria-label="Düzenle"
+                                    className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium whitespace-nowrap"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 19.5H4.5" />
+                                    </svg>
+                                    <span className="hidden sm:inline">Düzenle</span>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -933,37 +948,41 @@ export default function ProductsPage() {
                                     </svg>
                                     <span className="hidden sm:inline">Fiyat Geçmişi</span>
                                   </button>
-                                  <button
-                                    onClick={() => openEdit(batch)}
-                                    title="Düzenle"
-                                    aria-label="Düzenle"
-                                    className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 19.5H4.5" />
-                                    </svg>
-                                    <span className="hidden sm:inline">Düzenle</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(batch.id)}
-                                    disabled={deletingId === batch.id}
-                                    title="Sil"
-                                    aria-label="Sil"
-                                    className="flex items-center gap-1 p-1 sm:p-0 rounded text-red-500 hover:bg-red-50 sm:hover:bg-transparent hover:text-red-700 disabled:opacity-40 text-xs font-medium"
-                                  >
-                                    {deletingId === batch.id ? (
-                                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-                                      </svg>
-                                    ) : (
+                                  {canEdit && (
+                                    <button
+                                      onClick={() => openEdit(batch)}
+                                      title="Düzenle"
+                                      aria-label="Düzenle"
+                                      className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium"
+                                    >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 19.5H4.5" />
                                       </svg>
-                                    )}
-                                    <span className="hidden sm:inline">{deletingId === batch.id ? "Siliniyor..." : "Sil"}</span>
-                                  </button>
+                                      <span className="hidden sm:inline">Düzenle</span>
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button
+                                      onClick={() => handleDelete(batch.id)}
+                                      disabled={deletingId === batch.id}
+                                      title="Sil"
+                                      aria-label="Sil"
+                                      className="flex items-center gap-1 p-1 sm:p-0 rounded text-red-500 hover:bg-red-50 sm:hover:bg-transparent hover:text-red-700 disabled:opacity-40 text-xs font-medium"
+                                    >
+                                      {deletingId === batch.id ? (
+                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                                        </svg>
+                                      ) : (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                        </svg>
+                                      )}
+                                      <span className="hidden sm:inline">{deletingId === batch.id ? "Siliniyor..." : "Sil"}</span>
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>

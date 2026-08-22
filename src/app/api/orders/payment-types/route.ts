@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 // Sipariş sayfasındaki Filtrele modalında Ödeme Şekli çoklu seçimi için:
 // sabit bir katalog yerine gerçekten kullanılmış değerler döner — "Mail
@@ -9,7 +10,7 @@ import { getAuthUser } from "@/lib/auth";
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  if (!hasPermission(user, "orders.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     // Hem eski satır bazlı (Excel içe aktarımı) hem yeni parçalı ödeme

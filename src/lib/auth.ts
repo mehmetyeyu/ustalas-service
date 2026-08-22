@@ -9,6 +9,7 @@ export interface JwtPayload {
   userId: number;
   username: string;
   role: string;
+  permissions?: string[];
   iat?: number;
   iatMs?: number;
 }
@@ -33,23 +34,23 @@ export async function verifyToken(token: string): Promise<JwtPayload | null> {
   }
 }
 
-// Yetki (role) her istekte DB'den taze okunur — JWT sadece kimliği (userId)
-// doğrulamak için kullanılır. Böylece bir kullanıcının rolü değiştirildiğinde
-// veya hesabı silindiğinde, elindeki eski token süresi dolmadan bile artık
-// eski rolüyle işlem yapamaz (aksi halde token süresine kadar, ör. 8 saat,
-// yetkisi geri alınamazdı). Aynı taze-okuma pratiği hesap devre dışı
-// bırakma ve zorla oturum sonlandırma (tokens_invalid_before) için de
-// kullanılır — bkz. src/app/api/users/[id]/route.ts.
-export async function getAuthUser(): Promise<JwtPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("auth_token")?.value;
-  if (!token) return null;
-
+// Yetki (role/permissions) her istekte DB'den taze okunur — JWT sadece
+// kimliği (userId) doğrulamak için kullanılır. Böylece bir kullanıcının rolü
+// veya izinleri değiştirildiğinde ya da hesabı silindiğinde, elindeki eski
+// token süresi dolmadan bile artık eski yetkisiyle işlem yapamaz (aksi
+// halde token süresine kadar, ör. 8 saat, yetkisi geri alınamazdı). Aynı
+// taze-okuma pratiği hesap devre dışı bırakma ve zorla oturum sonlandırma
+// (tokens_invalid_before) için de kullanılır — bkz. src/app/api/users/[id]/route.ts.
+//
+// Gövde `getAuthUserByToken` olarak ayrı tutulur çünkü middleware.ts (Edge
+// runtime) `next/headers`'ın `cookies()`'ini kullanamaz — NextRequest'ten
+// token'ı zaten kendisi okur, aynı DB-taze mantığı doğrudan token ile çağırır.
+export async function getAuthUserByToken(token: string): Promise<JwtPayload | null> {
   const payload = await verifyToken(token);
   if (!payload) return null;
 
   const result = await pool.query(
-    "SELECT username, role, is_active, tokens_invalid_before FROM users WHERE id = $1",
+    "SELECT username, role, permissions, is_active, tokens_invalid_before FROM users WHERE id = $1",
     [payload.userId]
   );
   const user = result.rows[0];
@@ -68,5 +69,12 @@ export async function getAuthUser(): Promise<JwtPayload | null> {
     return null;
   }
 
-  return { userId: payload.userId, username: user.username, role: user.role };
+  return { userId: payload.userId, username: user.username, role: user.role, permissions: user.permissions ?? [] };
+}
+
+export async function getAuthUser(): Promise<JwtPayload | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("auth_token")?.value;
+  if (!token) return null;
+  return getAuthUserByToken(token);
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, getAuthUserByToken } from "@/lib/auth";
+import { canAccessPath } from "@/lib/permissions";
 
 // Sadece pazarlama/demo dağıtımlarında (ör. Elevire) set edilir — ayarlıysa
 // kök yol dahili sipariş aracı yerine doğrudan landing sayfasına yönlendirir.
@@ -22,7 +23,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Admin rotaları — admin rolü gerekli
+  // Admin rotaları — admin her zaman geçer (JWT-only, hızlı yol, DB'ye
+  // gitmeden — davranış öncekiyle birebir aynı). staff için ise sayfa bazlı
+  // izin kontrolü gerekiyor; bu, DB'den taze permissions gerektirir (bkz.
+  // src/lib/permissions.ts canAccessPath) — o yüzden sadece staff durumunda
+  // (öncesinde zaten hep "/" e atılan, hiç buraya giremeyen kullanıcılar)
+  // yeni bir DB sorgusu ekleniyor.
   if (pathname.startsWith("/admin")) {
     if (!token) return NextResponse.redirect(new URL("/admin/login", request.url));
     const user = await verifyToken(token);
@@ -31,7 +37,15 @@ export async function middleware(request: NextRequest) {
       res.cookies.delete("auth_token");
       return res;
     }
-    if (user.role !== "admin") return NextResponse.redirect(new URL("/", request.url));
+    if (user.role === "admin") return NextResponse.next();
+
+    const freshUser = await getAuthUserByToken(token);
+    if (!freshUser) {
+      const res = NextResponse.redirect(new URL("/admin/login", request.url));
+      res.cookies.delete("auth_token");
+      return res;
+    }
+    if (!canAccessPath(freshUser, pathname)) return NextResponse.redirect(new URL("/", request.url));
     return NextResponse.next();
   }
 

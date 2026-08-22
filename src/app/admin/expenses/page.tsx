@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/format";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/expenseCategories";
+import { useViewGuard, usePermission } from "../AuthContext";
 
 interface Expense {
   id: number;
@@ -62,6 +63,10 @@ function emptyRecurringForm(): { category: string; description: string; amount: 
 }
 
 export default function ExpensesPage() {
+  const allowed = useViewGuard("expenses");
+  const canCreate = usePermission("expenses.create");
+  const canEdit = usePermission("expenses.edit");
+  const canDelete = usePermission("expenses.delete");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [items, setItems] = useState<Expense[]>([]);
@@ -338,6 +343,8 @@ export default function ExpensesPage() {
     await fetchRecurringTemplates();
   }
 
+  if (!allowed) return null;
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -367,7 +374,7 @@ export default function ExpensesPage() {
           >
             Sabit Giderler
           </button>
-          {recurringTemplates.some((t) => t.is_active) && (
+          {canCreate && recurringTemplates.some((t) => t.is_active) && (
             <button
               onClick={openAddFromRecurring}
               disabled={unaddedRecurringTemplates.length === 0}
@@ -377,12 +384,14 @@ export default function ExpensesPage() {
               Sabit Giderleri Ekle{unaddedRecurringTemplates.length > 0 ? ` (${unaddedRecurringTemplates.length})` : ""}
             </button>
           )}
+          {canCreate && (
           <button
             onClick={openAdd}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
           >
             + Yeni Masraf
           </button>
+          )}
         </div>
       </div>
 
@@ -428,6 +437,7 @@ export default function ExpensesPage() {
                     <td className="px-4 py-3 text-right text-gray-800 font-medium whitespace-nowrap">{formatCurrency(exp.amount)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
+                        {canEdit && (
                         <button
                           onClick={() => openEdit(exp)}
                           title="Düzenle"
@@ -440,6 +450,8 @@ export default function ExpensesPage() {
                           </svg>
                           <span className="hidden sm:inline">Düzenle</span>
                         </button>
+                        )}
+                        {canDelete && (
                         <button
                           onClick={() => handleDelete(exp.id)}
                           title="Sil"
@@ -451,6 +463,7 @@ export default function ExpensesPage() {
                           </svg>
                           <span className="hidden sm:inline">Sil</span>
                         </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -782,11 +795,13 @@ export default function ExpensesPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 text-xs">
-                        <button onClick={() => handleToggleRecurringActive(t)} className="text-gray-500 hover:text-gray-700 font-medium">
-                          {t.is_active ? "Pasif Yap" : "Aktifleştir"}
-                        </button>
-                        <button onClick={() => openRecEdit(t)} className="text-blue-600 hover:text-blue-800 font-medium">Düzenle</button>
-                        <button onClick={() => handleDeleteRecurring(t.id)} className="text-red-500 hover:text-red-700 font-medium">Sil</button>
+                        {canEdit && (
+                          <button onClick={() => handleToggleRecurringActive(t)} className="text-gray-500 hover:text-gray-700 font-medium">
+                            {t.is_active ? "Pasif Yap" : "Aktifleştir"}
+                          </button>
+                        )}
+                        {canEdit && <button onClick={() => openRecEdit(t)} className="text-blue-600 hover:text-blue-800 font-medium">Düzenle</button>}
+                        {canDelete && <button onClick={() => handleDeleteRecurring(t.id)} className="text-red-500 hover:text-red-700 font-medium">Sil</button>}
                       </div>
                     </div>
                   ))}
@@ -863,7 +878,7 @@ export default function ExpensesPage() {
               )}
             </div>
 
-            {!recFormOpen && (
+            {!recFormOpen && canCreate && (
               <button
                 onClick={openRecNew}
                 className="mt-4 text-blue-600 hover:text-blue-800 text-sm font-medium text-left"

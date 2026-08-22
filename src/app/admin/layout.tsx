@@ -3,33 +3,43 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { AuthProvider, useAuth } from "./AuthContext";
+import { hasPermission } from "@/lib/permissions";
 
 // Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
 // NEXT_PUBLIC_LOGO_SRC_DARK ile gösterebilir (bu menü koyu arka planlı) —
 // set edilmezse Ustalas'ın gerçek logosu (public/logo.jpg) kullanılmaya devam eder.
 const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC_DARK || "/logo.jpg";
 
+// `resource: null` → her authenticated kullanıcıya (admin da staff da) her
+// zaman görünür. staff için görünürlük ilgili "<resource>.view" iznine bağlı
+// — bkz. src/lib/permissions.ts (aynı kaynak/aksiyon taksonomisi).
 const navItems = [
-  { href: "/admin/orders", label: "Siparişler" },
-  { href: "/admin/storage", label: "Depolama" },
-  { href: "/admin/products", label: "Ürünler" },
-  { href: "/admin/reports", label: "Raporlar" },
-  { href: "/admin/expenses", label: "Masraflar" },
-  { href: "/admin/services", label: "Hizmetler" },
-  { href: "/admin/customers", label: "Müşteriler" },
-  { href: "/admin/suppliers", label: "Tedarikçiler" },
-];
+  { href: "/admin/orders", label: "Siparişler", resource: "orders" },
+  { href: "/admin/storage", label: "Depolama", resource: "storage" },
+  { href: "/admin/products", label: "Ürünler", resource: "products" },
+  { href: "/admin/reports", label: "Raporlar", resource: "reports" },
+  { href: "/admin/expenses", label: "Masraflar", resource: "expenses" },
+  { href: "/admin/services", label: "Hizmetler", resource: "services" },
+  { href: "/admin/customers", label: "Müşteriler", resource: "customers" },
+  { href: "/admin/suppliers", label: "Tedarikçiler", resource: "suppliers" },
+] as const;
 
+// Kullanıcılar/Genel Ayarlar hiçbir zaman staff'a devredilemez (bkz. plan) —
+// bu ikisi resource=null DEĞİL, "adminOnly" — staff için filtrelenirken
+// koşulsuz elenir.
 const settingsItems = [
-  { href: "/admin/profile", label: "Profil" },
-  { href: "/admin/users", label: "Kullanıcılar" },
-  { href: "/admin/settings", label: "Genel Ayarlar" },
-];
+  { href: "/admin/profile", label: "Profil", adminOnly: false },
+  { href: "/admin/users", label: "Kullanıcılar", adminOnly: true },
+  { href: "/admin/settings", label: "Genel Ayarlar", adminOnly: true },
+] as const;
 
-function SettingsMenu({ pathname }: { pathname: string }) {
+type NavItem = { href: string; label: string };
+
+function SettingsMenu({ pathname, items }: { pathname: string; items: readonly NavItem[] }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isActive = settingsItems.some((item) => pathname.startsWith(item.href));
+  const isActive = items.some((item) => pathname.startsWith(item.href));
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -53,7 +63,7 @@ function SettingsMenu({ pathname }: { pathname: string }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-lg shadow-xl overflow-hidden z-50">
-          {settingsItems.map((item) => (
+          {items.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -76,9 +86,13 @@ function SettingsMenu({ pathname }: { pathname: string }) {
 function MobileMenu({
   pathname,
   onLogout,
+  navItems,
+  settingsItems,
 }: {
   pathname: string;
   onLogout: () => void;
+  navItems: readonly NavItem[];
+  settingsItems: readonly NavItem[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -156,11 +170,20 @@ function MobileMenu({
   );
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, loading } = useAuth();
 
-  if (pathname === "/admin/login") return <>{children}</>;
+  // Yüklenirken tüm linkler gösterilir (kısa an) — asıl erişim zaten
+  // middleware + her sayfanın kendi guard'ı ile korunuyor, bu sadece nav'ın
+  // görünürlüğü. admin için filtreleme hiç uygulanmaz (her zaman tam liste).
+  const visibleNavItems = loading || user?.role === "admin"
+    ? navItems
+    : navItems.filter((item) => user && hasPermission(user, `${item.resource}.view`));
+  const visibleSettingsItems = loading || user?.role === "admin"
+    ? settingsItems
+    : settingsItems.filter((item) => !item.adminOnly);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -170,7 +193,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gray-900 text-white px-4 py-3">
-        <MobileMenu pathname={pathname} onLogout={handleLogout} />
+        <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} />
 
         {/* Desktop: tek satır */}
         <div className="hidden sm:flex items-center justify-between">
@@ -178,7 +201,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
             <img src={LOGO_SRC} alt="Logo" width={150} height={51} className="object-contain" />
             <div className="flex gap-1">
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -194,7 +217,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <SettingsMenu pathname={pathname} />
+            <SettingsMenu pathname={pathname} items={visibleSettingsItems} />
             <button
               onClick={handleLogout}
               className="text-sm text-gray-400 hover:text-white transition-colors"
@@ -206,5 +229,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </nav>
       <main className="p-4 sm:p-6">{children}</main>
     </div>
+  );
+}
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  if (pathname === "/admin/login") return <>{children}</>;
+
+  return (
+    <AuthProvider>
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </AuthProvider>
   );
 }
