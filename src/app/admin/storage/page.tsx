@@ -279,6 +279,7 @@ export default function StoragePage() {
   );
   const [showColPicker, setShowColPicker] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [showMobileActions, setShowMobileActions] = useState(false);
 
   // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
   // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
@@ -473,7 +474,7 @@ export default function StoragePage() {
   if (!allowed) return null;
 
   return (
-    <div onClick={() => { setShowColPicker(false); setOpenMenuId(null); }}>
+    <div onClick={() => { setShowColPicker(false); setOpenMenuId(null); setShowMobileActions(false); }}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold text-gray-800">Depolama</h1>
@@ -495,43 +496,95 @@ export default function StoragePage() {
             onChange={handleImport}
             className="hidden"
           />
-          <button
-            onClick={() => { window.location.href = "/api/storage/import/template"; }}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
-          >
-            Şablon İndir
-            <Tooltip text="Sadece Plaka zorunludur. Depo No'yu doldurursanız aktif bir depoyla çakışmadığından emin olun, aksi halde içe aktarma tamamen başarısız olur.">
-              <span className="hidden sm:inline text-gray-400 hover:text-gray-600 cursor-help">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
-                </svg>
-              </span>
-            </Tooltip>
-          </button>
-          <button
-            onClick={() => { window.location.href = "/api/storage/export"; }}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
-          >
-            Dışa Aktar
-          </button>
 
-          {canEdit && (
+          {/* Masaüstü: ayrı ayrı butonlar */}
+          <div className="hidden sm:flex gap-2">
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+              onClick={() => { window.location.href = "/api/storage/import/template"; }}
+              className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
             >
-              {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+              Şablon İndir
+              <Tooltip text="Sadece Plaka zorunludur. Depo No'yu doldurursanız aktif bir depoyla çakışmadığından emin olun, aksi halde içe aktarma tamamen başarısız olur.">
+                <span className="text-gray-400 hover:text-gray-600 cursor-help">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+                  </svg>
+                </span>
+              </Tooltip>
             </button>
-          )}
-          {canCreate && (
             <button
-              onClick={() => { setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
-              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
+              onClick={() => { window.location.href = "/api/storage/export"; }}
+              className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
             >
-              + Yeni Kayıt
+              Dışa Aktar
             </button>
-          )}
+            {canEdit && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+              >
+                {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+              </button>
+            )}
+            {canCreate && (
+              <button
+                onClick={() => { setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
+                className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium whitespace-nowrap"
+              >
+                + Yeni Kayıt
+              </button>
+            )}
+          </div>
+
+          {/* Mobil: hızlı menü altında toplanmış aksiyonlar */}
+          <div className="relative sm:hidden shrink-0">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowMobileActions((v) => !v); }}
+              className="shrink-0 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
+            >
+              İşlemler
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showMobileActions && (
+              <div
+                className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-56"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => { setShowMobileActions(false); window.location.href = "/api/storage/import/template"; }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Şablon İndir
+                </button>
+                <button
+                  onClick={() => { setShowMobileActions(false); window.location.href = "/api/storage/export"; }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Dışa Aktar
+                </button>
+                {canEdit && (
+                  <button
+                    onClick={() => { setShowMobileActions(false); fileInputRef.current?.click(); }}
+                    disabled={importing}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+                  </button>
+                )}
+                {canCreate && (
+                  <button
+                    onClick={() => { setShowMobileActions(false); setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
+                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                  >
+                    + Yeni Kayıt
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
