@@ -43,7 +43,7 @@ export interface OrderQuery {
   orderBy: string;
 }
 
-export function buildOrderQuery(searchParams: URLSearchParams): OrderQuery {
+export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams): OrderQuery {
   const status = searchParams.get("status");
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
@@ -58,8 +58,8 @@ export function buildOrderQuery(searchParams: URLSearchParams): OrderQuery {
   const sortBy = searchParams.get("sortBy");
   const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
 
-  const conditions: string[] = [];
-  const values: (string | number | string[] | Date)[] = [];
+  const conditions: string[] = ["o.tenant_id = $1"];
+  const values: (string | number | string[] | Date)[] = [tenantId];
 
   if (status) {
     values.push(status);

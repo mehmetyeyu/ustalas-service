@@ -24,9 +24,9 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(
       `SELECT id, expense_date::text AS expense_date, category, description, amount::float AS amount, payment_type, recurring_expense_id
        FROM expenses
-       WHERE expense_date >= $1 AND expense_date < $2
+       WHERE tenant_id = $1 AND expense_date >= $2 AND expense_date < $3
        ORDER BY expense_date DESC, id DESC`,
-      [startDate, endDate]
+      [user.tenantId, startDate, endDate]
     );
     const total = result.rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
     return NextResponse.json({ items: result.rows, total });
@@ -78,16 +78,33 @@ export async function POST(request: NextRequest) {
       if (err) return NextResponse.json({ error: err }, { status: 400 });
     }
 
+    // recurring_expense_id istemciden geliyor — başka bir firmanın şablonuna
+    // referans verilmesin diye (var/yok değil, gerçekten BU firmaya mı ait)
+    // doğrulanır.
+    const recurringIds = Array.from(
+      new Set((items as ExpenseInput[]).map((e) => e.recurring_expense_id).filter((v): v is number => v != null))
+    );
+    if (recurringIds.length > 0) {
+      const owned = await pool.query(
+        "SELECT id FROM recurring_expenses WHERE id = ANY($1) AND tenant_id = $2",
+        [recurringIds, user.tenantId]
+      );
+      if (owned.rows.length !== recurringIds.length) {
+        return NextResponse.json({ error: "Geçersiz sabit gider şablonu." }, { status: 400 });
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const ids: number[] = [];
       for (const e of items as ExpenseInput[]) {
         const result = await client.query(
-          `INSERT INTO expenses (expense_date, category, description, amount, payment_type, recurring_expense_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO expenses (tenant_id, expense_date, category, description, amount, payment_type, recurring_expense_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING id`,
           [
+            user.tenantId,
             e.expense_date,
             String(e.category).trim(),
             e.description ? String(e.description).trim() : null,

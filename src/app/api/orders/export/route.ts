@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   if (!hasPermission(user, "orders.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
-  const { where, values, orderBy } = buildOrderQuery(searchParams);
+  const { where, values, orderBy } = buildOrderQuery(user.tenantId!, searchParams);
 
   try {
     const result = await pool.query(

@@ -23,8 +23,8 @@ export async function GET(
   try {
     const { id } = await params;
     const customerResult = await pool.query<{ name: string }>(
-      "SELECT name FROM customers WHERE id = $1",
-      [id]
+      "SELECT name FROM customers WHERE id = $1 AND tenant_id = $2",
+      [id, user.tenantId]
     );
     if (customerResult.rows.length === 0) {
       return NextResponse.json({ error: "Müşteri bulunamadı." }, { status: 404 });
@@ -32,9 +32,9 @@ export async function GET(
 
     const ordersResult = await pool.query(
       `SELECT id, plate, total_amount, paid_amount, status, payment_type, created_at
-       FROM orders WHERE customer_name = $1
+       FROM orders WHERE customer_name = $1 AND tenant_id = $2
        ORDER BY created_at DESC`,
-      [customerResult.rows[0].name]
+      [customerResult.rows[0].name, user.tenantId]
     );
 
     return NextResponse.json(ordersResult.rows);

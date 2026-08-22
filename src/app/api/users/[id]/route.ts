@@ -43,6 +43,13 @@ export async function PATCH(
     if (username !== undefined && !String(username).trim()) {
       return NextResponse.json({ error: "Kullanıcı adı zorunludur." }, { status: 400 });
     }
+    // Hedef kullanıcı gerçekten bu firmaya mı ait — bir tenant'ın admin'i
+    // başka bir tenant'ın kullanıcısını id tahmin ederek düzenleyemesin diye.
+    const ownershipCheck = await pool.query("SELECT id FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
+    if (ownershipCheck.rowCount === 0) {
+      return NextResponse.json({ error: "Kullanıcı bulunamadı." }, { status: 404 });
+    }
+
     if (Number(id) === authUser.userId) {
       if (role !== undefined) {
         return NextResponse.json({ error: "Kendi rolünüzü değiştiremezsiniz." }, { status: 400 });
@@ -69,7 +76,7 @@ export async function PATCH(
       // Ana admin hesabı — kendisi dışında (yukarıdaki self-koruma zaten
       // kendisinin kendine yapabileceklerini kısıtlıyor) hiç kimse bu hesap
       // üzerinde hiçbir alanı değiştiremez.
-      const primaryCheck = await pool.query("SELECT is_primary_admin FROM users WHERE id = $1", [id]);
+      const primaryCheck = await pool.query("SELECT is_primary_admin FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
       if (primaryCheck.rows[0]?.is_primary_admin) {
         return NextResponse.json({ error: "Ana admin hesabı başka bir kullanıcı tarafından değiştirilemez." }, { status: 403 });
       }
@@ -79,12 +86,15 @@ export async function PATCH(
       (role !== undefined && role !== "admin") ||
       isActive === false
     ) {
-      const target = await pool.query("SELECT role FROM users WHERE id = $1", [id]);
+      const target = await pool.query("SELECT role FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
       const willLoseAdmin =
         target.rows[0]?.role === "admin" && ((role !== undefined && role !== "admin") || isActive === false);
       if (willLoseAdmin) {
+        // Bu sayım firma-bazlı olmalı — aksi halde başka bir firmanın admin
+        // sayısı bu firmanın "son admin" kararını (yanlışlıkla) etkilerdi.
         const adminCount = await pool.query(
-          "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = true"
+          "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = true AND tenant_id = $1",
+          [authUser.tenantId]
         );
         if (Number(adminCount.rows[0].count) <= 1) {
           return NextResponse.json(
@@ -101,29 +111,29 @@ export async function PATCH(
     }
 
     if (role !== undefined) {
-      await pool.query("UPDATE users SET role = $1 WHERE id = $2", [role, id]);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2 AND tenant_id = $3", [role, id, authUser.tenantId]);
     }
     if (password) {
       const passwordHash = await bcrypt.hash(password, 10);
-      await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, id]);
+      await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3", [passwordHash, id, authUser.tenantId]);
     }
     if (username !== undefined) {
-      await pool.query("UPDATE users SET username = $1 WHERE id = $2", [String(username).trim(), id]);
+      await pool.query("UPDATE users SET username = $1 WHERE id = $2 AND tenant_id = $3", [String(username).trim(), id, authUser.tenantId]);
     }
     if (unlock) {
       await pool.query(
-        "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1",
-        [id]
+        "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1 AND tenant_id = $2",
+        [id, authUser.tenantId]
       );
     }
     if (forceLogout) {
-      await pool.query("UPDATE users SET tokens_invalid_before = NOW() WHERE id = $1", [id]);
+      await pool.query("UPDATE users SET tokens_invalid_before = NOW() WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
     }
     if (isActive !== undefined) {
-      await pool.query("UPDATE users SET is_active = $1 WHERE id = $2", [isActive, id]);
+      await pool.query("UPDATE users SET is_active = $1 WHERE id = $2 AND tenant_id = $3", [isActive, id, authUser.tenantId]);
     }
     if (permissions !== undefined) {
-      await pool.query("UPDATE users SET permissions = $1 WHERE id = $2", [permissions, id]);
+      await pool.query("UPDATE users SET permissions = $1 WHERE id = $2 AND tenant_id = $3", [permissions, id, authUser.tenantId]);
     }
 
     return NextResponse.json({ success: true });
@@ -152,13 +162,17 @@ export async function DELETE(
       return NextResponse.json({ error: "Kendi hesabınızı silemezsiniz." }, { status: 400 });
     }
 
-    const target = await pool.query("SELECT role, is_primary_admin FROM users WHERE id = $1", [id]);
+    const target = await pool.query("SELECT role, is_primary_admin FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
+    if (target.rows.length === 0) {
+      return NextResponse.json({ error: "Kullanıcı bulunamadı." }, { status: 404 });
+    }
     if (target.rows[0]?.is_primary_admin) {
       return NextResponse.json({ error: "Ana admin hesabı silinemez." }, { status: 403 });
     }
     if (target.rows[0]?.role === "admin") {
       const adminCount = await pool.query(
-        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = true"
+        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = true AND tenant_id = $1",
+        [authUser.tenantId]
       );
       if (Number(adminCount.rows[0].count) <= 1) {
         return NextResponse.json(
@@ -168,7 +182,7 @@ export async function DELETE(
       }
     }
 
-    await pool.query("DELETE FROM users WHERE id = $1", [id]);
+    await pool.query("DELETE FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

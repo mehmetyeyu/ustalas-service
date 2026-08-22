@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  const { where, values, orderBy } = buildOrderQuery(searchParams);
+  const { where, values, orderBy } = buildOrderQuery(user.tenantId!, searchParams);
 
   const fromClause = `
     FROM orders o
@@ -100,20 +100,20 @@ export async function POST(request: NextRequest) {
     try {
       await client.query("BEGIN");
 
-      const serviceIdByName = await resolveServiceIds(client, lines as OrderLineInput[]);
-      await upsertDirectoryNames(client, "suppliers", (lines as OrderLineInput[]).map((l) => l.supplier));
+      const serviceIdByName = await resolveServiceIds(client, user.tenantId!, lines as OrderLineInput[]);
+      await upsertDirectoryNames(client, "suppliers", user.tenantId!, (lines as OrderLineInput[]).map((l) => l.supplier));
       if (customer_name && String(customer_name).trim()) {
         await client.query(
-          `INSERT INTO customers (name, phone) VALUES ($1, $2)
-           ON CONFLICT (name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
-          [String(customer_name).trim(), customer_phone || null]
+          `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
+           ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
+          [user.tenantId, String(customer_name).trim(), customer_phone || null]
         );
       }
 
       const orderResult = await client.query(
-        `INSERT INTO orders (plate, customer_name, customer_phone, notes, total_amount, status)
-         VALUES ($1, $2, $3, $4, $5, 'BEKLEMEDE') RETURNING id`,
-        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount]
+        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE') RETURNING id`,
+        [user.tenantId, plate, customer_name || null, customer_phone || null, notes || null, totalAmount]
       );
 
       const orderId = orderResult.rows[0].id;
@@ -122,12 +122,13 @@ export async function POST(request: NextRequest) {
         const serviceId = serviceIdByName.get(String(l.service_name).trim());
         if (!serviceId) continue;
         const quantity = Math.max(1, Math.round(Number(l.quantity) || 1));
-        if (l.product_id) await deductStock(client, l.product_id, quantity);
+        if (l.product_id) await deductStock(client, user.tenantId!, l.product_id, quantity);
         await client.query(
           `INSERT INTO order_services
-             (order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, product_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+             (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, product_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
+            user.tenantId,
             orderId,
             serviceId,
             Number(l.unit_price) || 0,

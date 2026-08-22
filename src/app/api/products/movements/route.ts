@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  const conditions: string[] = [];
-  const values: (string | number)[] = [];
+  const conditions: string[] = ["tenant_id = $1"];
+  const values: (string | number)[] = [user.tenantId!];
 
   if (search) {
     // Ebat aramasında "/" zorunlu olmasın diye ("205/45R19" yerine "20545R19" de
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         e.quantity, e.purchase_price, e.sale_price,
         NULL::varchar AS customer_name, NULL::varchar AS plate, NULL::int AS order_id,
         p.id AS product_id, p.code, p.brand, p.size_desc, p.supplier,
-        p.production_week, p.production_year, p.stock_qty AS current_stock
+        p.production_week, p.production_year, p.stock_qty AS current_stock, p.tenant_id
       FROM product_stock_entries e
       JOIN products p ON p.id = e.product_id
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
         CASE WHEN os.quantity > 0 THEN os.unit_price / os.quantity ELSE NULL END AS sale_price,
         o.customer_name, o.plate, o.id AS order_id,
         p.id AS product_id, p.code, p.brand, p.size_desc, p.supplier,
-        p.production_week, p.production_year, p.stock_qty AS current_stock
+        p.production_week, p.production_year, p.stock_qty AS current_stock, p.tenant_id
       FROM order_services os
       JOIN orders o ON o.id = os.order_id
       JOIN products p ON p.id = os.product_id

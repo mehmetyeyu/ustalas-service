@@ -18,7 +18,10 @@ export async function PATCH(
       return NextResponse.json({ error: "Tedarikçi adı zorunludur." }, { status: 400 });
     }
 
-    await pool.query("UPDATE suppliers SET name = $1 WHERE id = $2", [String(name).trim(), id]);
+    const result = await pool.query("UPDATE suppliers SET name = $1 WHERE id = $2 AND tenant_id = $3", [String(name).trim(), id, user.tenantId]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Tedarikçi bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -36,7 +39,10 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    await pool.query("DELETE FROM suppliers WHERE id = $1", [id]);
+    const result = await pool.query("DELETE FROM suppliers WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Tedarikçi bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

@@ -296,25 +296,17 @@ CREATE TABLE IF NOT EXISTS recurring_expenses (
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurring_expense_id INT REFERENCES recurring_expenses(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS expenses_recurring_expense_id_idx ON expenses(recurring_expense_id);
 
--- Varsayılan hizmetler (Yapılan İşlem listesi) — fiyatı girilmemiş, yönetici
--- Hizmetler ekranından istediği kaleme fiyat verebilir/vermeyebilir.
-INSERT INTO services (name, price) VALUES
-  ('Rot Ayarı', NULL), ('Lastik Satışı', NULL), ('Lastik Değişimi', NULL),
-  ('Lastik Tamiri', NULL), ('Depolama', NULL), ('Diğer', NULL),
-  ('Jant Düzeltme', NULL), ('Sensör', NULL), ('Balans Ayarı', NULL),
-  ('Far Ayarı', NULL), ('Kargo Geliri', NULL), ('Subap Değişimi', NULL),
-  ('Bijon', NULL), ('Jant Satışı', NULL), ('Ön Düzen Kontrolü', NULL),
-  ('İkinci El Jant', NULL), ('İkinci El Lastik', NULL), ('Nitrojen Hava', NULL),
-  ('Klima Gazı', NULL), ('Jant Boyama', NULL), ('Yerinde Montaj Hizmeti', NULL)
-ON CONFLICT (name) DO NOTHING;
-
--- Varsayılan tedarikçiler — genel/nötr bir başlangıç listesi (bkz. src/app/page.tsx
--- TEDARIKCI_SEED yorumu): bu proje başka firmalara da sunulacağından kod ve
--- şema içine tek bir firmanın gerçek tedarikçi listesini gömmek yanlış olur.
-INSERT INTO suppliers (name) VALUES
-  ('Servis İşçiliği'), ('Merkez Lastik Dağıtım'), ('Anadolu Oto Yedek Parça'),
-  ('Batı Jant'), ('Örnek Lastik A.Ş.'), ('İkinci El'), ('Diğer')
-ON CONFLICT DO NOTHING;
+-- Not: varsayılan hizmet/tedarikçi seed'leri artık burada değil — bu iki
+-- INSERT tek bir global kuruluma özeldi (ON CONFLICT (name)/DO NOTHING),
+-- services/suppliers artık (tenant_id, name) bazında benzersiz olduğundan
+-- (bkz. aşağıdaki "ÇOKLU FİRMA" bloğu) bu satırlar hem hatalı hem tehlikeli
+-- hale geldi: services'teki ON CONFLICT (name) artık hiçbir index'i
+-- hedeflemediğinden hata verirdi; suppliers'taki hedefsiz ON CONFLICT DO
+-- NOTHING ise (tenant_id eklenmediği için NULL'a düşen) her yeniden
+-- çalıştırmada sessizce yeni tenant_id=NULL kopyalar üretiyordu (NULL hiçbir
+-- unique kısıtta "eşit" sayılmaz). Bu iki listenin firma başına doğru
+-- şekilde eklenmesi artık `src/lib/provisionTenant.ts` / `scripts/create-tenant.mjs`
+-- ile oluyor (tenant oluşturulurken tek seferlik).
 
 -- Brute-force koruması: art arda başarısız giriş denemesi sayacı ve geçici
 -- kilit süresi (bkz. src/app/api/auth/login/route.ts) — DB'de tutulur ki
@@ -509,3 +501,49 @@ ALTER TABLE app_settings DROP COLUMN IF EXISTS id;
 -- ön koşuludur.
 DROP INDEX IF EXISTS users_single_primary_admin;
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_primary_admin ON users(tenant_id) WHERE is_primary_admin = true;
+
+-- ============================================================================
+-- ÇOKLU FİRMA — Aşama 2: kalan global unique kısıtların firma-bazlıya
+-- dönüşümü. Her biri, o kısıtı ON CONFLICT hedefi olarak kullanan route'ların
+-- (bkz. ilgili dosyalar) AYNI commit'inde gidiyor — aksi halde eski
+-- "ON CONFLICT (name)" gibi ifadeler artık var olmayan bir kısıtı hedefleyip
+-- 500 hatası verirdi.
+
+-- services: services/route.ts, services/[id]/route.ts
+DROP INDEX IF EXISTS services_name_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS services_name_unique ON services(tenant_id, name);
+
+-- suppliers: suppliers/route.ts, suppliers/[id]/route.ts, src/lib/directories.ts
+ALTER TABLE suppliers DROP CONSTRAINT IF EXISTS suppliers_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS suppliers_tenant_name_unique ON suppliers(tenant_id, name);
+
+-- customers: customers/route.ts, customers/[id]/route.ts, src/lib/directories.ts
+ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS customers_tenant_name_unique ON customers(tenant_id, name);
+
+-- orders.import_ref: import_ref NULL olabilir (elle girilen siparişler) —
+-- düz unique index NULL'ları birbirinden farklı sayar, eski davranışla aynı.
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_import_ref_key;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_tenant_import_ref_unique ON orders(tenant_id, import_ref);
+
+-- products: iki parti-benzersizliği index'i de tenant_id ile öne alınıyor.
+DROP INDEX IF EXISTS products_code_batch_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS products_code_batch_unique ON products(tenant_id, code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL;
+DROP INDEX IF EXISTS products_code_nodate_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS products_code_nodate_unique ON products(tenant_id, code) WHERE production_year IS NULL;
+
+-- storage: aktif depo no artık firma başına benzersiz.
+DROP INDEX IF EXISTS storage_active_depo_no_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS storage_active_depo_no_unique ON storage(tenant_id, depo_no) WHERE teslim_edildi = false AND depo_no IS NOT NULL;
+
+-- Performans: her sorgu artık tenant_id'yi eşitlikle filtreliyor (bkz. yukarısı)
+-- ama en sık çalışan liste/rapor sorgularının WHERE'inde kullanılan mevcut
+-- index'lerin hiçbiri tenant_id ile başlamıyordu — 100 firmalı bir kurulumda
+-- bu, Seq Scan'e düşüyordu (EXPLAIN ile doğrulandı, bkz. proje planı/multi-tenant
+-- performans incelemesi). tenant_id her zaman en solda: her sorgu onu eşitlikle
+-- filtrelediğinden en seçici/en sık kullanılan öndeki sütun budur.
+CREATE INDEX IF NOT EXISTS orders_tenant_created_at_idx ON orders(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS storage_tenant_created_at_idx ON storage(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS expenses_tenant_expense_date_idx ON expenses(tenant_id, expense_date DESC);
+CREATE INDEX IF NOT EXISTS products_tenant_code_idx ON products(tenant_id, code);
+CREATE INDEX IF NOT EXISTS product_stock_entries_tenant_product_idx ON product_stock_entries(tenant_id, product_id);

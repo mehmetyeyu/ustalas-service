@@ -9,7 +9,8 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      "SELECT * FROM services WHERE is_active = 1 ORDER BY name"
+      "SELECT * FROM services WHERE tenant_id = $1 AND is_active = 1 ORDER BY name",
+      [user.tenantId]
     );
     return NextResponse.json(result.rows, {
       headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
@@ -36,8 +37,8 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await pool.query(
-      "INSERT INTO services (name, price) VALUES ($1, $2) RETURNING id",
-      [String(name).trim(), priceValue]
+      "INSERT INTO services (tenant_id, name, price) VALUES ($1, $2, $3) RETURNING id",
+      [user.tenantId, String(name).trim(), priceValue]
     );
     return NextResponse.json(
       { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1 },

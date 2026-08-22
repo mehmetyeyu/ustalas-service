@@ -59,15 +59,16 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     );
 
     // Yeni bir tenant_id için hiçbir satır zaten var olamayacağından ON
-    // CONFLICT'e gerek yok (services/suppliers'ın name unique index'i henüz
-    // tenant_id'yi içermiyor — bkz. plan Faz 3 — o yüzden burada ON CONFLICT
-    // (tenant_id, name) hedefi zaten mevcut olmazdı).
-    for (const name of DEFAULT_SERVICE_NAMES) {
-      await client.query(`INSERT INTO services (tenant_id, name) VALUES ($1, $2)`, [tenantId, name]);
-    }
-    for (const name of DEFAULT_SUPPLIER_NAMES) {
-      await client.query(`INSERT INTO suppliers (tenant_id, name) VALUES ($1, $2)`, [tenantId, name]);
-    }
+    // CONFLICT'e gerek yok. Tek tek 21+7 INSERT yerine (100 firma
+    // provizyonunda gereksiz round-trip biriktirirdi) tek sorguda toplu insert.
+    await client.query(
+      `INSERT INTO services (tenant_id, name) SELECT $1, unnest($2::text[])`,
+      [tenantId, DEFAULT_SERVICE_NAMES]
+    );
+    await client.query(
+      `INSERT INTO suppliers (tenant_id, name) SELECT $1, unnest($2::text[])`,
+      [tenantId, DEFAULT_SUPPLIER_NAMES]
+    );
 
     const passwordHash = await bcrypt.hash(input.adminPassword, 10);
     const userResult = await client.query(

@@ -128,8 +128,8 @@ export async function POST(request: NextRequest) {
            FROM storage s
            JOIN (VALUES ${placeholders.join(",")}) AS v(plate, mevsim)
              ON s.plate = v.plate AND s.mevsim = v.mevsim
-           WHERE s.teslim_edildi = false`,
-          values
+           WHERE s.teslim_edildi = false AND s.tenant_id = $${values.length + 1}`,
+          [...values, user.tenantId]
         );
         for (const row of existing.rows) {
           existingMap.set(`${row.plate}|${row.mevsim}`, row.id);
@@ -156,20 +156,20 @@ export async function POST(request: NextRequest) {
              depo_no=v.depo_no, customer_name=v.customer_name, phone=v.phone, ebat=v.ebat,
              marka=v.marka, dis_derinligi=v.dis_derinligi, adet=v.adet, aciklama=v.aciklama
            FROM (VALUES ${placeholders.join(",")}) AS v(id, depo_no, customer_name, phone, ebat, marka, dis_derinligi, adet, aciklama)
-           WHERE s.id = v.id`,
-          values
+           WHERE s.id = v.id AND s.tenant_id = $${values.length + 1}`,
+          [...values, user.tenantId]
         );
       }
 
       if (toInsert.length > 0) {
         const values: (string | number | null)[] = [];
         const placeholders = toInsert.map((r, i) => {
-          const base = i * 10;
-          values.push(r.depo_no, r.plate, r.customer_name, r.phone, r.ebat, r.marka, r.dis_derinligi, r.adet, r.mevsim, r.aciklama);
-          return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10})`;
+          const base = i * 11;
+          values.push(user.tenantId!, r.depo_no, r.plate, r.customer_name, r.phone, r.ebat, r.marka, r.dis_derinligi, r.adet, r.mevsim, r.aciklama);
+          return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11})`;
         });
         await client.query(
-          `INSERT INTO storage (depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama)
+          `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama)
            VALUES ${placeholders.join(",")}`,
           values
         );

@@ -10,21 +10,21 @@ const MAX_BATCH_SIZE = 200;
 // Üretim Haftası/Yılı olan satırlar: belirli bir partiyi hedefler, tüm alanlar
 // (Dışa Aktar'dan düzenlenip geri yüklenen tam veri olduğu varsayılarak) olduğu
 // gibi yazılır.
-async function upsertDatedBatches(rows: ParsedProductRow[]) {
+async function upsertDatedBatches(tenantId: number, rows: ParsedProductRow[]) {
   if (rows.length === 0) return;
   const values: (string | number | null)[] = [];
   const placeholders = rows.map((r, i) => {
-    const base = i * 10;
+    const base = i * 11;
     values.push(
-      r.code, r.brand, r.size_desc, r.season, r.supplier,
+      tenantId, r.code, r.brand, r.size_desc, r.season, r.supplier,
       r.production_week, r.production_year, r.purchase_price, r.sale_price, r.stock_qty
     );
-    return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10})`;
+    return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11})`;
   });
   await pool.query(
-    `INSERT INTO products (code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
+    `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
      VALUES ${placeholders.join(",")}
-     ON CONFLICT (code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL DO UPDATE SET
+     ON CONFLICT (tenant_id, code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL DO UPDATE SET
        brand=EXCLUDED.brand, size_desc=EXCLUDED.size_desc, season=EXCLUDED.season,
        supplier=EXCLUDED.supplier, purchase_price=EXCLUDED.purchase_price, sale_price=EXCLUDED.sale_price,
        stock_qty=EXCLUDED.stock_qty, updated_at=CURRENT_TIMESTAMP`,
@@ -35,21 +35,21 @@ async function upsertDatedBatches(rows: ParsedProductRow[]) {
 // Üretim Haftası/Yılı olmayan satırlar: kaynak envanter sistemindeki "temel"
 // satırı (Kod'a göre tek) hedefler. Sadece Marka/Ebat/Stok güncellenir; Mevsim/
 // Model/Tedarikçi/fiyatlar bu formatta olmadığından mevcut değer korunur (COALESCE).
-async function upsertBaseRows(rows: ParsedProductRow[]) {
+async function upsertBaseRows(tenantId: number, rows: ParsedProductRow[]) {
   if (rows.length === 0) return;
   const values: (string | number | null)[] = [];
   const placeholders = rows.map((r, i) => {
-    const base = i * 10;
+    const base = i * 11;
     values.push(
-      r.code, r.brand, r.size_desc, r.season, r.supplier,
+      tenantId, r.code, r.brand, r.size_desc, r.season, r.supplier,
       null, null, r.purchase_price, r.sale_price, r.stock_qty
     );
-    return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10})`;
+    return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11})`;
   });
   await pool.query(
-    `INSERT INTO products (code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
+    `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
      VALUES ${placeholders.join(",")}
-     ON CONFLICT (code) WHERE production_year IS NULL DO UPDATE SET
+     ON CONFLICT (tenant_id, code) WHERE production_year IS NULL DO UPDATE SET
        brand=EXCLUDED.brand, size_desc=EXCLUDED.size_desc, stock_qty=EXCLUDED.stock_qty,
        season=COALESCE(EXCLUDED.season, products.season),
        supplier=COALESCE(EXCLUDED.supplier, products.supplier),
@@ -92,9 +92,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await upsertDirectoryNames(pool, "suppliers", rows.map((r) => r.supplier));
-    await upsertDatedBatches(Array.from(dated.values()));
-    await upsertBaseRows(Array.from(base.values()));
+    await upsertDirectoryNames(pool, "suppliers", user.tenantId!, rows.map((r) => r.supplier));
+    await upsertDatedBatches(user.tenantId!, Array.from(dated.values()));
+    await upsertBaseRows(user.tenantId!, Array.from(base.values()));
 
     const imported = dated.size + base.size;
     return NextResponse.json({ imported, skipped });

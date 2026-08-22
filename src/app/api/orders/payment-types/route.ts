@@ -18,11 +18,12 @@ export async function GET() {
     // değerler birleştirilir.
     const result = await pool.query(
       `SELECT DISTINCT payment_type FROM (
-         SELECT payment_type FROM order_services WHERE payment_type IS NOT NULL AND payment_type <> ''
+         SELECT payment_type FROM order_services WHERE tenant_id = $1 AND payment_type IS NOT NULL AND payment_type <> ''
          UNION
-         SELECT payment_type FROM order_payments
+         SELECT payment_type FROM order_payments WHERE tenant_id = $1
        ) combined
-       ORDER BY payment_type`
+       ORDER BY payment_type`,
+      [user.tenantId]
     );
     return NextResponse.json(result.rows.map((r) => r.payment_type));
   } catch (error) {

@@ -13,7 +13,8 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      `SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND brand <> '' ORDER BY brand`
+      `SELECT DISTINCT brand FROM products WHERE tenant_id = $1 AND brand IS NOT NULL AND brand <> '' ORDER BY brand`,
+      [user.tenantId]
     );
     return NextResponse.json(result.rows.map((r) => r.brand));
   } catch (error) {

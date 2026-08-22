@@ -32,7 +32,9 @@ const DEFAULT_SUPPLIER_NAMES = [
 ];
 
 async function main() {
-  const [tenantName, adminUsername, adminPassword] = process.argv.slice(2);
+  const [tenantNameRaw, adminUsernameRaw, adminPassword] = process.argv.slice(2);
+  const tenantName = (tenantNameRaw ?? "").trim();
+  const adminUsername = (adminUsernameRaw ?? "").trim();
   if (!tenantName || !adminUsername || !adminPassword) {
     console.error('Kullanım: node scripts/create-tenant.mjs "Firma Adı" kullaniciadi sifre');
     process.exit(1);
@@ -64,12 +66,8 @@ async function main() {
       [tenantId, tenantName]
     );
 
-    for (const name of DEFAULT_SERVICE_NAMES) {
-      await client.query("INSERT INTO services (tenant_id, name) VALUES ($1, $2)", [tenantId, name]);
-    }
-    for (const name of DEFAULT_SUPPLIER_NAMES) {
-      await client.query("INSERT INTO suppliers (tenant_id, name) VALUES ($1, $2)", [tenantId, name]);
-    }
+    await client.query("INSERT INTO services (tenant_id, name) SELECT $1, unnest($2::text[])", [tenantId, DEFAULT_SERVICE_NAMES]);
+    await client.query("INSERT INTO suppliers (tenant_id, name) SELECT $1, unnest($2::text[])", [tenantId, DEFAULT_SUPPLIER_NAMES]);
 
     const passwordHash = await bcrypt.hash(adminPassword, 10);
     const userResult = await client.query(

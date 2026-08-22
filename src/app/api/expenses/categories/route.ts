@@ -13,7 +13,8 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      `SELECT DISTINCT category FROM expenses ORDER BY category`
+      `SELECT DISTINCT category FROM expenses WHERE tenant_id = $1 ORDER BY category`,
+      [user.tenantId]
     );
     return NextResponse.json(result.rows.map((r) => r.category));
   } catch (error) {

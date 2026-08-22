@@ -21,10 +21,10 @@ export async function PATCH(
         depo_no=$1, plate=$2, customer_name=$3, phone=$4, ebat=$5,
         marka=$6, dis_derinligi=$7, adet=$8, mevsim=$9, aciklama=$10, islem_tarihi=$11,
         teslim_edildi=$12, teslim_tarihi=$13
-       WHERE id=$14 RETURNING *`,
+       WHERE id=$14 AND tenant_id=$15 RETURNING *`,
       [depo_no || null, plate || null, customer_name || null, phone || null, ebat || null,
        marka || null, dis_derinligi || null, adet || 4, mevsim || null, aciklama || null,
-       islem_tarihi || null, teslim_edildi ?? false, teslim_tarihi || null, id]
+       islem_tarihi || null, teslim_edildi ?? false, teslim_tarihi || null, id, user.tenantId]
     );
 
     if (result.rowCount === 0) {
@@ -47,7 +47,7 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const result = await pool.query("DELETE FROM storage WHERE id = $1 RETURNING id", [id]);
+    const result = await pool.query("DELETE FROM storage WHERE id = $1 AND tenant_id = $2 RETURNING id", [id, user.tenantId]);
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Kayıt bulunamadı." }, { status: 404 });
     }

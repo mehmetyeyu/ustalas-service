@@ -20,8 +20,8 @@ export async function GET(
   try {
     const { id } = await params;
     const result = await pool.query(
-      "SELECT id, stock_qty FROM products WHERE id = $1",
-      [id]
+      "SELECT id, stock_qty FROM products WHERE id = $1 AND tenant_id = $2",
+      [id, user.tenantId]
     );
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
@@ -50,7 +50,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
     }
 
-    if (supplier) await upsertDirectoryNames(pool, "suppliers", [supplier]);
+    if (supplier) await upsertDirectoryNames(pool, "suppliers", user.tenantId!, [supplier]);
+
+    // Düzenlenmek istenen parti gerçekten bu firmaya mı ait — bir sonraki
+    // adımların (birleştirme/silme) yanlış firmanın satırına dokunmaması için.
+    const ownershipCheck = await pool.query("SELECT id FROM products WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    if (ownershipCheck.rowCount === 0) {
+      return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
+    }
 
     const trimmedCode = String(code).trim();
     const isDated = production_week != null && production_week !== "" && production_year != null && production_year !== "";
@@ -63,12 +70,12 @@ export async function PATCH(
     // stok toplanır, fiyat geçmişi hedef partiye taşınır, bu satır silinir.
     const targetResult = isDated
       ? await pool.query(
-          `SELECT * FROM products WHERE code=$1 AND production_year=$2 AND production_week=$3 AND COALESCE(supplier,'')=COALESCE($4,'') AND id != $5`,
-          [trimmedCode, yearVal, production_week, supplierVal, id]
+          `SELECT * FROM products WHERE tenant_id=$1 AND code=$2 AND production_year=$3 AND production_week=$4 AND COALESCE(supplier,'')=COALESCE($5,'') AND id != $6`,
+          [user.tenantId, trimmedCode, yearVal, production_week, supplierVal, id]
         )
       : await pool.query(
-          `SELECT * FROM products WHERE code=$1 AND production_year IS NULL AND id != $2`,
-          [trimmedCode, id]
+          `SELECT * FROM products WHERE tenant_id=$1 AND code=$2 AND production_year IS NULL AND id != $3`,
+          [user.tenantId, trimmedCode, id]
         );
 
     if (targetResult.rowCount && targetResult.rowCount > 0) {
@@ -80,15 +87,15 @@ export async function PATCH(
           `UPDATE products SET
             brand=$1, size_desc=$2, season=$3, purchase_price=$4, sale_price=$5,
             stock_qty=stock_qty + $6, updated_at=CURRENT_TIMESTAMP
-           WHERE id=$7 RETURNING *`,
-          [brand || null, size_desc || null, season || null, purchase_price ?? null, sale_price ?? null, qty, target.id]
+           WHERE id=$7 AND tenant_id=$8 RETURNING *`,
+          [brand || null, size_desc || null, season || null, purchase_price ?? null, sale_price ?? null, qty, target.id, user.tenantId]
         );
-        await client.query(`UPDATE product_stock_entries SET product_id=$1 WHERE product_id=$2`, [target.id, id]);
+        await client.query(`UPDATE product_stock_entries SET product_id=$1 WHERE product_id=$2 AND tenant_id=$3`, [target.id, id, user.tenantId]);
         // Bu partiye bağlı geçmiş satışlar da hedefe taşınır — aksi hâlde
         // silinen partinin product_id'si (ON DELETE SET NULL) NULL'a düşer ve
         // o satışlar Malzeme Hareketleri'nden (INNER JOIN products) kaybolur.
-        await client.query(`UPDATE order_services SET product_id=$1 WHERE product_id=$2`, [target.id, id]);
-        await client.query(`DELETE FROM products WHERE id=$1`, [id]);
+        await client.query(`UPDATE order_services SET product_id=$1 WHERE product_id=$2 AND tenant_id=$3`, [target.id, id, user.tenantId]);
+        await client.query(`DELETE FROM products WHERE id=$1 AND tenant_id=$2`, [id, user.tenantId]);
         await client.query("COMMIT");
         return NextResponse.json(merged.rows[0]);
       } catch (err) {
@@ -103,10 +110,10 @@ export async function PATCH(
       `UPDATE products SET
         code=$1, brand=$2, size_desc=$3, season=$4, supplier=$5,
         production_week=$6, production_year=$7, purchase_price=$8, sale_price=$9, stock_qty=$10, updated_at=CURRENT_TIMESTAMP
-       WHERE id=$11 RETURNING *`,
+       WHERE id=$11 AND tenant_id=$12 RETURNING *`,
       [
         trimmedCode, brand || null, size_desc || null, season || null, supplierVal,
-        isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, id,
+        isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, id, user.tenantId,
       ]
     );
 
@@ -133,7 +140,7 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const result = await pool.query("DELETE FROM products WHERE id = $1 RETURNING id", [id]);
+    const result = await pool.query("DELETE FROM products WHERE id = $1 AND tenant_id = $2 RETURNING id", [id, user.tenantId]);
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
     }

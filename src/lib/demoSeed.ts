@@ -50,20 +50,27 @@ function daysAgo(n: number): Date {
   return d;
 }
 
+// Elevire tek-kiracılı bir demo dağıtımıdır — çoklu firma (multi-tenant)
+// altyapısı (bkz. database/schema.sql, "ÇOKLU FİRMA" bloğu) Elevire'ın kendi
+// veritabanında da bootstrap tenant satırını (id=1) oluşturur; bu dosya da
+// hep o sabit tenant_id'yi kullanır. Ustalas'ın tenant_id=1'inden tamamen
+// ayrı bir veritabanıdır, karışma riski yok.
+const DEMO_TENANT_ID = 1;
+
 export async function resetDemoData(): Promise<void> {
   // Çocuk tablolardan ebeveyne doğru sil (FK sırası).
-  await pool.query("DELETE FROM order_payments");
-  await pool.query("DELETE FROM order_services");
-  await pool.query("DELETE FROM orders");
-  await pool.query("DELETE FROM product_stock_entries");
-  await pool.query("DELETE FROM products");
-  await pool.query("DELETE FROM storage");
-  await pool.query("DELETE FROM customers");
-  await pool.query("DELETE FROM suppliers");
+  await pool.query("DELETE FROM order_payments WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM order_services WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM orders WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM product_stock_entries WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM products WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM storage WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM customers WHERE tenant_id = $1", [DEMO_TENANT_ID]);
+  await pool.query("DELETE FROM suppliers WHERE tenant_id = $1", [DEMO_TENANT_ID]);
 
   await pool.query(
-    "UPDATE app_settings SET business_name = 'Lastik Servis Yönetim Sistemi', storage_overdue_months = 6, payment_types = $1 WHERE id = 1",
-    [GENERIC_PAYMENT_TYPES]
+    "UPDATE app_settings SET business_name = 'Lastik Servis Yönetim Sistemi', storage_overdue_months = 6, payment_types = $1 WHERE tenant_id = $2",
+    [GENERIC_PAYMENT_TYPES, DEMO_TENANT_ID]
   );
 
   // Paylaşılan tek demo hesabı: bir ziyaretçi şifreyi değiştirirse veya art
@@ -75,30 +82,30 @@ export async function resetDemoData(): Promise<void> {
   );
 
   for (const name of GENERIC_SUPPLIERS) {
-    await pool.query("INSERT INTO suppliers (name) VALUES ($1) ON CONFLICT DO NOTHING", [name]);
+    await pool.query("INSERT INTO suppliers (tenant_id, name) VALUES ($1, $2) ON CONFLICT (tenant_id, name) DO NOTHING", [DEMO_TENANT_ID, name]);
   }
 
   for (const c of CUSTOMERS) {
-    await pool.query("INSERT INTO customers (name, phone) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING", [c.name, c.phone]);
+    await pool.query("INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3) ON CONFLICT (tenant_id, name) DO NOTHING", [DEMO_TENANT_ID, c.name, c.phone]);
   }
 
   const productIds: number[] = [];
   for (const p of PRODUCTS) {
     const res = await pool.query<{ id: number }>(
-      `INSERT INTO products (code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
-       VALUES ($1, $2, $3, $4, $5, 12, 2026, $6, $7, $8) RETURNING id`,
-      [p.code, p.brand, p.size_desc, p.season, p.supplier, p.purchase_price, p.sale_price, p.stock_qty]
+      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
+       VALUES ($1, $2, $3, $4, $5, $6, 12, 2026, $7, $8, $9) RETURNING id`,
+      [DEMO_TENANT_ID, p.code, p.brand, p.size_desc, p.season, p.supplier, p.purchase_price, p.sale_price, p.stock_qty]
     );
     const id = res.rows[0].id;
     productIds.push(id);
     await pool.query(
-      `INSERT INTO product_stock_entries (product_id, entry_date, quantity, purchase_price, sale_price)
-       VALUES ($1, CURRENT_DATE - INTERVAL '20 days', $2, $3, $4)`,
-      [id, p.stock_qty, p.purchase_price, p.sale_price]
+      `INSERT INTO product_stock_entries (tenant_id, product_id, entry_date, quantity, purchase_price, sale_price)
+       VALUES ($1, $2, CURRENT_DATE - INTERVAL '20 days', $3, $4, $5)`,
+      [DEMO_TENANT_ID, id, p.stock_qty, p.purchase_price, p.sale_price]
     );
   }
 
-  const servicesRes = await pool.query<{ id: number; name: string }>("SELECT id, name FROM services");
+  const servicesRes = await pool.query<{ id: number; name: string }>("SELECT id, name FROM services WHERE tenant_id = $1", [DEMO_TENANT_ID]);
   const serviceId = new Map(servicesRes.rows.map((s) => [s.name, s.id]));
 
   type OrderLine = { service: string; supplier: string; unit_price: number; quantity: number; cost_price: number; productIdx?: number; size_desc?: string };
@@ -161,9 +168,10 @@ export async function resetDemoData(): Promise<void> {
     const createdAt = daysAgo(o.daysAgo);
 
     const orderRes = await pool.query<{ id: number }>(
-      `INSERT INTO orders (plate, customer_name, customer_phone, total_amount, paid_amount, status, payment_type, payment_date, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, total_amount, paid_amount, status, payment_type, payment_date, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
+        DEMO_TENANT_ID,
         o.plate,
         o.customer_name,
         o.customer_phone,
@@ -182,16 +190,16 @@ export async function resetDemoData(): Promise<void> {
       if (!svcId) continue;
       const productId = l.productIdx != null ? productIds[l.productIdx] : null;
       await pool.query(
-        `INSERT INTO order_services (order_id, service_id, unit_price, quantity, cost_price, supplier, size_desc, payment_type, product_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [orderId, svcId, l.unit_price, l.quantity, l.cost_price, l.supplier, l.size_desc ?? null, o.payment_type, productId]
+        `INSERT INTO order_services (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, size_desc, payment_type, product_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [DEMO_TENANT_ID, orderId, svcId, l.unit_price, l.quantity, l.cost_price, l.supplier, l.size_desc ?? null, o.payment_type, productId]
       );
     }
 
     if (o.status === "TAMAMLANDI" && o.payment_type) {
       await pool.query(
-        "INSERT INTO order_payments (order_id, payment_type, amount, created_at) VALUES ($1, $2, $3, $4)",
-        [orderId, o.payment_type, totalAmount, createdAt]
+        "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount, created_at) VALUES ($1, $2, $3, $4, $5)",
+        [DEMO_TENANT_ID, orderId, o.payment_type, totalAmount, createdAt]
       );
     }
   }
@@ -206,9 +214,9 @@ export async function resetDemoData(): Promise<void> {
 
   for (const s of storageRows) {
     await pool.query(
-      `INSERT INTO storage (depo_no, plate, customer_name, phone, ebat, marka, adet, mevsim, islem_tarihi, teslim_edildi)
-       VALUES ($1, $2, $3, $4, $5, $6, 4, $7, $8, false)`,
-      [s.depo_no, s.plate, s.customer_name, s.phone, s.ebat, s.marka, s.mevsim, daysAgo(s.islemDaysAgo)]
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, adet, mevsim, islem_tarihi, teslim_edildi)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 4, $8, $9, false)`,
+      [DEMO_TENANT_ID, s.depo_no, s.plate, s.customer_name, s.phone, s.ebat, s.marka, s.mevsim, daysAgo(s.islemDaysAgo)]
     );
   }
 }

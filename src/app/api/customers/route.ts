@@ -21,10 +21,12 @@ export async function GET(request: NextRequest) {
       withCounts
         ? `SELECT c.id, c.name, c.phone, COUNT(o.id)::int AS order_count
            FROM customers c
-           LEFT JOIN orders o ON o.customer_name = c.name
+           LEFT JOIN orders o ON o.customer_name = c.name AND o.tenant_id = c.tenant_id
+           WHERE c.tenant_id = $1
            GROUP BY c.id, c.name, c.phone
            ORDER BY c.name`
-        : `SELECT id, name, phone FROM customers ORDER BY name`
+        : `SELECT id, name, phone FROM customers WHERE tenant_id = $1 ORDER BY name`,
+      [user.tenantId]
     );
     return NextResponse.json(result.rows, {
       headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },
@@ -50,10 +52,10 @@ export async function POST(request: NextRequest) {
     // telefon mevcut kaydı sessizce silmesin diye orders.ts'teki upsertle aynı
     // COALESCE deseni kullanılır.
     const result = await pool.query(
-      `INSERT INTO customers (name, phone) VALUES ($1, $2)
-       ON CONFLICT (name) DO UPDATE SET phone = COALESCE(EXCLUDED.phone, customers.phone)
+      `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(EXCLUDED.phone, customers.phone)
        RETURNING id, name, phone`,
-      [String(name).trim(), phone ? String(phone).trim() : null]
+      [user.tenantId, String(name).trim(), phone ? String(phone).trim() : null]
     );
     return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error) {

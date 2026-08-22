@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  const conditions: string[] = [];
-  const values: (string | number)[] = [];
+  const conditions: string[] = ["tenant_id = $1"];
+  const values: (string | number)[] = [user.tenantId!];
 
   conditions.push(showDelivered ? `teslim_edildi = true` : `teslim_edildi = false`);
 
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
 
     if (plate && mevsim) {
       const exists = await pool.query(
-        "SELECT id FROM storage WHERE plate = $1 AND mevsim = $2 AND teslim_edildi = false",
-        [plate, mevsim]
+        "SELECT id FROM storage WHERE plate = $1 AND mevsim = $2 AND tenant_id = $3 AND teslim_edildi = false",
+        [plate, mevsim, user.tenantId]
       );
       if (exists.rows.length > 0) {
         return NextResponse.json(
@@ -88,18 +88,18 @@ export async function POST(request: NextRequest) {
     // Boşta kalan en küçük depo nosunu bul, yoksa max+1
     const nextDepoNo = depo_no ?? (await pool.query(`
       WITH active_nos AS (
-        SELECT depo_no FROM storage WHERE teslim_edildi = false AND depo_no IS NOT NULL
+        SELECT depo_no FROM storage WHERE tenant_id = $1 AND teslim_edildi = false AND depo_no IS NOT NULL
       ),
-      max_no AS (SELECT COALESCE(MAX(depo_no), 0) AS m FROM storage)
+      max_no AS (SELECT COALESCE(MAX(depo_no), 0) AS m FROM storage WHERE tenant_id = $1)
       SELECT MIN(n)::int AS next
       FROM generate_series(1, (SELECT m + 1 FROM max_no)) n
       WHERE n NOT IN (SELECT depo_no FROM active_nos)
-    `)).rows[0].next;
+    `, [user.tenantId])).rows[0].next;
 
     const result = await pool.query(
-      `INSERT INTO storage (depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [nextDepoNo, plate || null, customer_name || null, phone || null, ebat || null, marka || null,
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [user.tenantId, nextDepoNo, plate || null, customer_name || null, phone || null, ebat || null, marka || null,
        dis_derinligi || null, adet || 4, mevsim || null, aciklama || null, islem_tarihi || null]
     );
 

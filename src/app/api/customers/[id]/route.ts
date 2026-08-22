@@ -18,10 +18,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Müşteri adı zorunludur." }, { status: 400 });
     }
 
-    await pool.query(
-      "UPDATE customers SET name = $1, phone = $2 WHERE id = $3",
-      [String(name).trim(), phone ? String(phone).trim() : null, id]
+    const result = await pool.query(
+      "UPDATE customers SET name = $1, phone = $2 WHERE id = $3 AND tenant_id = $4",
+      [String(name).trim(), phone ? String(phone).trim() : null, id, user.tenantId]
     );
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Müşteri bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -45,16 +48,16 @@ export async function DELETE(
     // kaybeder; bu yüzden aktif siparişi varken silme engellenir. Tamamlanmış
     // (geçmiş) siparişleri olan müşteriler yine de silinebilir.
     const customerResult = await pool.query<{ name: string }>(
-      "SELECT name FROM customers WHERE id = $1",
-      [id]
+      "SELECT name FROM customers WHERE id = $1 AND tenant_id = $2",
+      [id, user.tenantId]
     );
     if (customerResult.rows.length === 0) {
       return NextResponse.json({ error: "Müşteri bulunamadı." }, { status: 404 });
     }
 
     const activeOrders = await pool.query(
-      "SELECT id FROM orders WHERE customer_name = $1 AND status = 'BEKLEMEDE' LIMIT 1",
-      [customerResult.rows[0].name]
+      "SELECT id FROM orders WHERE customer_name = $1 AND tenant_id = $2 AND status = 'BEKLEMEDE' LIMIT 1",
+      [customerResult.rows[0].name, user.tenantId]
     );
     if (activeOrders.rows.length > 0) {
       return NextResponse.json(
@@ -63,7 +66,7 @@ export async function DELETE(
       );
     }
 
-    await pool.query("DELETE FROM customers WHERE id = $1", [id]);
+    await pool.query("DELETE FROM customers WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

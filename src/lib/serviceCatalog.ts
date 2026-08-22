@@ -8,6 +8,7 @@ interface QueryClient {
 // Excel içe aktarımında kullanılır.
 export async function resolveServiceIds(
   client: QueryClient,
+  tenantId: number,
   lines: { service_name: string }[]
 ): Promise<Map<string, number>> {
   const names = Array.from(new Set(lines.map((l) => l.service_name.trim()).filter(Boolean)));
@@ -15,8 +16,8 @@ export async function resolveServiceIds(
   if (names.length === 0) return serviceIdByName;
 
   const existing = await client.query<{ id: number; name: string }>(
-    "SELECT id, name FROM services WHERE name = ANY($1)",
-    [names]
+    "SELECT id, name FROM services WHERE tenant_id = $1 AND name = ANY($2)",
+    [tenantId, names]
   );
   for (const row of existing.rows) serviceIdByName.set(row.name, row.id);
 
@@ -26,8 +27,8 @@ export async function resolveServiceIds(
     // katalog fiyatı değil — bu yüzden burada asla fiyat tahmini yapılmaz;
     // kullanıcı isterse Hizmetler sayfasından sonradan fiyat girer.
     const inserted = await client.query<{ id: number }>(
-      "INSERT INTO services (name, price) VALUES ($1, NULL) RETURNING id",
-      [name]
+      "INSERT INTO services (tenant_id, name, price) VALUES ($1, $2, NULL) RETURNING id",
+      [tenantId, name]
     );
     serviceIdByName.set(name, inserted.rows[0].id);
   }

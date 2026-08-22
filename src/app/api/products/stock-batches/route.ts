@@ -27,12 +27,12 @@ export async function GET(request: NextRequest) {
                 SUM(quantity * purchase_price) / NULLIF(SUM(quantity) FILTER (WHERE purchase_price IS NOT NULL), 0) AS avg_purchase_price,
                 SUM(quantity * sale_price) / NULLIF(SUM(quantity) FILTER (WHERE sale_price IS NOT NULL), 0) AS avg_sale_price
          FROM product_stock_entries
-         WHERE product_id IN (SELECT id FROM products WHERE supplier = $1 AND code = $2)
+         WHERE product_id IN (SELECT id FROM products WHERE supplier = $1 AND code = $2 AND tenant_id = $3)
          GROUP BY product_id
        ) avg_sub ON avg_sub.product_id = p.id
-       WHERE p.supplier = $1 AND p.code = $2 AND p.stock_qty > 0
+       WHERE p.supplier = $1 AND p.code = $2 AND p.tenant_id = $3 AND p.stock_qty > 0
        ORDER BY p.production_year NULLS FIRST, p.production_week NULLS FIRST, p.id`,
-      [supplier.trim(), code.trim()]
+      [supplier.trim(), code.trim(), user.tenantId]
     );
     return NextResponse.json(result.rows);
   } catch (error) {

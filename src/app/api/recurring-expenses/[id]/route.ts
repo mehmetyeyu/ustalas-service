@@ -22,9 +22,9 @@ export async function PUT(
       return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
     }
 
-    await pool.query(
+    const result = await pool.query(
       `UPDATE recurring_expenses SET category = $1, description = $2, amount = $3, payment_type = $4, is_active = $5
-       WHERE id = $6`,
+       WHERE id = $6 AND tenant_id = $7`,
       [
         String(category).trim(),
         description ? String(description).trim() : null,
@@ -32,8 +32,12 @@ export async function PUT(
         payment_type ? String(payment_type).trim() : null,
         is_active ?? true,
         id,
+        user.tenantId,
       ]
     );
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Sabit gider bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -51,7 +55,10 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    await pool.query("DELETE FROM recurring_expenses WHERE id = $1", [id]);
+    const result = await pool.query("DELETE FROM recurring_expenses WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Sabit gider bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

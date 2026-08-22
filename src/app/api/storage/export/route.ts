@@ -11,7 +11,7 @@ export async function GET() {
   if (!hasPermission(user, "storage.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const result = await pool.query("SELECT * FROM storage WHERE teslim_edildi = false ORDER BY created_at DESC");
+    const result = await pool.query("SELECT * FROM storage WHERE tenant_id = $1 AND teslim_edildi = false ORDER BY created_at DESC", [user.tenantId]);
 
     const rows = result.rows.map((r) => sanitizeExcelRow({
       "Depo No":        r.depo_no ?? "",

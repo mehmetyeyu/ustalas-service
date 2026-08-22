@@ -34,14 +34,14 @@ export async function POST(request: NextRequest) {
     let productsAdded = 0;
     try {
       const allLines = orders.flatMap((o) => o.lines);
-      const serviceIdByName = await resolveServiceIds(client, allLines);
+      const serviceIdByName = await resolveServiceIds(client, user.tenantId!, allLines);
       // "Perakende Müşteri" gerçek bir müşteri değil, anonim satışları temsil
       // eden bir yer tutucudur — Müşteri dizinine eklenmez.
       const customerNames = orders
         .map((o) => o.customer_name)
         .filter((n) => (n ?? "").trim().toLocaleLowerCase("tr-TR") !== "perakende müşteri");
-      await upsertDirectoryNames(client, "customers", customerNames);
-      await upsertDirectoryNames(client, "suppliers", allLines.map((l) => l.supplier));
+      await upsertDirectoryNames(client, "customers", user.tenantId!, customerNames);
+      await upsertDirectoryNames(client, "suppliers", user.tenantId!, allLines.map((l) => l.supplier));
 
       // Excel'deki Stok Kodu (Ürün Kodu) Ürün Kataloğu'nda henüz yoksa, en azından
       // kodu (ve o satırdaki Ebat/Tedarikçi bilgisi varsa onu) tarihsiz "temel" bir
@@ -57,19 +57,19 @@ export async function POST(request: NextRequest) {
       if (codeInfo.size > 0) {
         const codes = Array.from(codeInfo.keys());
         const existing = await client.query<{ code: string }>(
-          "SELECT DISTINCT code FROM products WHERE code = ANY($1)",
-          [codes]
+          "SELECT DISTINCT code FROM products WHERE code = ANY($1) AND tenant_id = $2",
+          [codes, user.tenantId]
         );
         const existingCodes = new Set(existing.rows.map((r) => r.code));
         const missingCodes = codes.filter((c) => !existingCodes.has(c));
         for (const code of missingCodes) {
           const info = codeInfo.get(code)!;
           const result = await client.query(
-            `INSERT INTO products (code, size_desc, supplier, stock_qty)
-             VALUES ($1, $2, $3, 0)
-             ON CONFLICT (code) WHERE production_year IS NULL DO NOTHING
+            `INSERT INTO products (tenant_id, code, size_desc, supplier, stock_qty)
+             VALUES ($1, $2, $3, $4, 0)
+             ON CONFLICT (tenant_id, code) WHERE production_year IS NULL DO NOTHING
              RETURNING id`,
-            [code, info.size_desc, info.supplier]
+            [user.tenantId, code, info.size_desc, info.supplier]
           );
           if (result.rowCount) productsAdded++;
         }
@@ -91,11 +91,11 @@ export async function POST(request: NextRequest) {
 
           const orderResult = await client.query<{ id: number }>(
             `INSERT INTO orders
-               (plate, customer_name, notes, total_amount, paid_amount, status, payment_type, payment_date, created_at, import_ref)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             ON CONFLICT (import_ref) DO NOTHING
+               (tenant_id, plate, customer_name, notes, total_amount, paid_amount, status, payment_type, payment_date, created_at, import_ref)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (tenant_id, import_ref) DO NOTHING
              RETURNING id`,
-            [order.plate, order.customer_name, order.notes, totalAmount, paidAmount, status, order.payment_type, paymentDate, order.date, order.import_ref]
+            [user.tenantId, order.plate, order.customer_name, order.notes, totalAmount, paidAmount, status, order.payment_type, paymentDate, order.date, order.import_ref]
           );
 
           if (orderResult.rows.length === 0) {
@@ -109,8 +109,8 @@ export async function POST(request: NextRequest) {
             // uyarılır — sessizce atlanmaz.
             const existingLines = await client.query<{ line_count: string }>(
               `SELECT COUNT(*)::int AS line_count FROM order_services os
-               JOIN orders o ON o.id = os.order_id WHERE o.import_ref = $1`,
-              [order.import_ref]
+               JOIN orders o ON o.id = os.order_id WHERE o.import_ref = $1 AND o.tenant_id = $2`,
+              [order.import_ref, user.tenantId]
             );
             if (Number(existingLines.rows[0]?.line_count ?? 0) !== order.lines.length) {
               changedDuplicates++;
@@ -125,9 +125,9 @@ export async function POST(request: NextRequest) {
             if (!serviceId) continue;
             await client.query(
               `INSERT INTO order_services
-                 (order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-              [orderId, serviceId, line.unit_price, line.quantity, line.cost_price, line.supplier, line.stock_code, line.size_desc, line.payment_type]
+                 (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+              [user.tenantId, orderId, serviceId, line.unit_price, line.quantity, line.cost_price, line.supplier, line.stock_code, line.size_desc, line.payment_type]
             );
           }
 

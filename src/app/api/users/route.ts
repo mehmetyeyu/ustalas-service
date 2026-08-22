@@ -14,7 +14,8 @@ export async function GET() {
     const result = await pool.query(
       `SELECT id, username, role, permissions, is_primary_admin, created_at, last_login_at, is_active,
               locked_until, failed_attempts
-       FROM users ORDER BY created_at`
+       FROM users WHERE tenant_id = $1 ORDER BY created_at`,
+      [user.tenantId]
     );
     return NextResponse.json(result.rows);
   } catch (error) {
@@ -53,10 +54,10 @@ export async function POST(request: NextRequest) {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (username, password_hash, role, permissions)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (tenant_id, username, password_hash, role, permissions)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, username, role, permissions, created_at`,
-      [String(username).trim(), passwordHash, role, perms]
+      [user.tenantId, String(username).trim(), passwordHash, role, perms]
     );
     return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error) {

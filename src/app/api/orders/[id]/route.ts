@@ -42,8 +42,8 @@ export async function GET(
   try {
     const { id } = await params;
     const orderResult = await pool.query(
-      "SELECT * FROM orders WHERE id = $1",
-      [id]
+      "SELECT * FROM orders WHERE id = $1 AND tenant_id = $2",
+      [id, user.tenantId]
     );
     if (!orderResult.rows[0]) {
       return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
@@ -54,17 +54,17 @@ export async function GET(
               os.supplier, os.stock_code, os.size_desc, os.payment_type, os.product_id
        FROM order_services os
        JOIN services s ON os.service_id = s.id
-       WHERE os.order_id = $1
+       WHERE os.order_id = $1 AND os.tenant_id = $2
        ORDER BY os.id`,
-      [id]
+      [id, user.tenantId]
     );
 
     // Parçalı ödeme girişleri (bkz. PATCH) — Excel'den içe aktarılmış eski
     // siparişlerde boş olabilir, o durumda ödeme kırılımı satır bazlı
     // payment_type üzerinden (yukarıdaki services[].payment_type) okunur.
     const paymentsResult = await pool.query(
-      "SELECT id, payment_type, amount FROM order_payments WHERE order_id = $1 ORDER BY id",
-      [id]
+      "SELECT id, payment_type, amount FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY id",
+      [id, user.tenantId]
     );
 
     return NextResponse.json({ ...orderResult.rows[0], services: servicesResult.rows, payments: paymentsResult.rows });
@@ -91,14 +91,14 @@ export async function DELETE(
       // Sipariş tamamen silinmeden önce, stoktan düşülmüş partili satırlar
       // varsa stok geri eklenir.
       const linked = await client.query<{ product_id: number; quantity: number }>(
-        "SELECT product_id, quantity FROM order_services WHERE order_id = $1 AND product_id IS NOT NULL",
-        [id]
+        "SELECT product_id, quantity FROM order_services WHERE order_id = $1 AND tenant_id = $2 AND product_id IS NOT NULL",
+        [id, user.tenantId]
       );
       for (const row of linked.rows) {
-        await restoreStock(client, row.product_id, row.quantity);
+        await restoreStock(client, user.tenantId!, row.product_id, row.quantity);
       }
 
-      const result = await client.query("DELETE FROM orders WHERE id = $1 RETURNING id", [id]);
+      const result = await client.query("DELETE FROM orders WHERE id = $1 AND tenant_id = $2 RETURNING id", [id, user.tenantId]);
       if (result.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
@@ -164,8 +164,8 @@ export async function PATCH(
       // API'ye doğrudan istek atılarak mevcut ödeme kaydı sessizce ezilebilirdi;
       // arayüzdeki "Ödeme Al & Kapat" butonu da zaten yalnızca BEKLEMEDE'de görünür).
       const orderCheck = await client.query<{ status: string; total_amount: string }>(
-        "SELECT status, total_amount FROM orders WHERE id = $1 FOR UPDATE",
-        [id]
+        "SELECT status, total_amount FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+        [id, user.tenantId]
       );
       if (orderCheck.rows.length === 0) {
         await client.query("ROLLBACK");
@@ -187,16 +187,16 @@ export async function PATCH(
 
       for (const p of payments as { payment_type: string; amount: number }[]) {
         await client.query(
-          "INSERT INTO order_payments (order_id, payment_type, amount) VALUES ($1, $2, $3)",
-          [id, p.payment_type, Number(p.amount)]
+          "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount) VALUES ($1, $2, $3, $4)",
+          [user.tenantId, id, p.payment_type, Number(p.amount)]
         );
       }
 
       await client.query(
         `UPDATE orders
          SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(), paid_amount = $3
-         WHERE id = $2`,
-        [summaryType, id, totalPaid]
+         WHERE id = $2 AND tenant_id = $4`,
+        [summaryType, id, totalPaid, user.tenantId]
       );
 
       await client.query("COMMIT");
@@ -235,6 +235,15 @@ export async function PUT(
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
     }
+
+    // Sipariş gerçekten bu firmaya mı ait — bu kontrol olmadan da
+    // order_services'teki composite FK (tenant_id, order_id) yanlış firmaya
+    // yazmayı engeller, ama o zaman düzgün bir 404 yerine 500 dönerdi.
+    const ownershipCheck = await pool.query("SELECT id FROM orders WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    if (ownershipCheck.rowCount === 0) {
+      return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
+    }
+
     // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
     // tenant_id atadığından burada her zaman dolu olur.
     const { payment_types } = await getAppSettings(user.tenantId!);
@@ -244,10 +253,10 @@ export async function PUT(
     // istek özelinde ayrıca kabul edilir — ayarlar listesine geri eklenmez,
     // sadece bu siparişin kendi geçmiş verisiyle çakışmayı önler.
     const existingPaymentTypes = await pool.query<{ payment_type: string }>(
-      `SELECT payment_type FROM order_services WHERE order_id = $1 AND payment_type IS NOT NULL
+      `SELECT payment_type FROM order_services WHERE order_id = $1 AND tenant_id = $2 AND payment_type IS NOT NULL
        UNION
-       SELECT payment_type FROM order_payments WHERE order_id = $1`,
-      [id]
+       SELECT payment_type FROM order_payments WHERE order_id = $1 AND tenant_id = $2`,
+      [id, user.tenantId]
     );
     const flatPaymentOptions = Array.from(new Set([
       ...payment_types.filter((t) => t !== "Mail Order"),
@@ -308,13 +317,13 @@ export async function PUT(
     try {
       await client.query("BEGIN");
 
-      const serviceIdByName = await resolveServiceIds(client, lines as EditLineInput[]);
-      await upsertDirectoryNames(client, "suppliers", (lines as EditLineInput[]).map((l) => l.supplier));
+      const serviceIdByName = await resolveServiceIds(client, user.tenantId!, lines as EditLineInput[]);
+      await upsertDirectoryNames(client, "suppliers", user.tenantId!, (lines as EditLineInput[]).map((l) => l.supplier));
       if (customer_name && String(customer_name).trim()) {
         await client.query(
-          `INSERT INTO customers (name, phone) VALUES ($1, $2)
-           ON CONFLICT (name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
-          [String(customer_name).trim(), customer_phone || null]
+          `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
+           ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
+          [user.tenantId, String(customer_name).trim(), customer_phone || null]
         );
       }
 
@@ -324,8 +333,8 @@ export async function PUT(
       // senkron tutulur — aksi hâlde raporlar silinen/değişen satırlardan önceki
       // eski tutarı göstermeye devam ederdi. Gerçek bir indirim varsa dokunulmaz.
       const oldResult = await client.query<{ total_amount: string | null; paid_amount: string | null }>(
-        "SELECT total_amount, paid_amount FROM orders WHERE id = $1",
-        [id]
+        "SELECT total_amount, paid_amount FROM orders WHERE id = $1 AND tenant_id = $2",
+        [id, user.tenantId]
       );
       const oldTotal = oldResult.rows[0]?.total_amount != null ? Number(oldResult.rows[0].total_amount) : null;
       const oldPaid = oldResult.rows[0]?.paid_amount != null ? Number(oldResult.rows[0].paid_amount) : null;
@@ -341,13 +350,13 @@ export async function PUT(
       await client.query(
         `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
                             total_amount = $5, paid_amount = $6
-         WHERE id = $7`,
-        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id]
+         WHERE id = $7 AND tenant_id = $8`,
+        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId]
       );
 
       const existingResult = await client.query<{ id: number; product_id: number | null; quantity: number }>(
-        "SELECT id, product_id, quantity FROM order_services WHERE order_id = $1",
-        [id]
+        "SELECT id, product_id, quantity FROM order_services WHERE order_id = $1 AND tenant_id = $2",
+        [id, user.tenantId]
       );
       const existingIds = new Set(existingResult.rows.map((r) => r.id));
       const existingById = new Map(existingResult.rows.map((r) => [r.id, r]));
@@ -357,10 +366,10 @@ export async function PUT(
       // Kaldırılan satırlar bir partiye bağlıysa, düştükleri stok geri eklenir.
       for (const eid of toDelete) {
         const old = existingById.get(eid);
-        if (old?.product_id) await restoreStock(client, old.product_id, old.quantity);
+        if (old?.product_id) await restoreStock(client, user.tenantId!, old.product_id, old.quantity);
       }
       if (toDelete.length > 0) {
-        await client.query("DELETE FROM order_services WHERE id = ANY($1)", [toDelete]);
+        await client.query("DELETE FROM order_services WHERE id = ANY($1) AND tenant_id = $2", [toDelete, user.tenantId]);
       }
 
       for (const l of lines as EditLineInput[]) {
@@ -379,28 +388,28 @@ export async function PUT(
           const oldProductId = old?.product_id ?? null;
           const oldQuantity = old?.quantity ?? 0;
           if (oldProductId !== productId) {
-            if (oldProductId) await restoreStock(client, oldProductId, oldQuantity);
-            if (productId) await deductStock(client, productId, quantity);
+            if (oldProductId) await restoreStock(client, user.tenantId!, oldProductId, oldQuantity);
+            if (productId) await deductStock(client, user.tenantId!, productId, quantity);
           } else if (productId) {
             const delta = quantity - oldQuantity;
-            if (delta > 0) await deductStock(client, productId, delta);
-            else if (delta < 0) await restoreStock(client, productId, -delta);
+            if (delta > 0) await deductStock(client, user.tenantId!, productId, delta);
+            else if (delta < 0) await restoreStock(client, user.tenantId!, productId, -delta);
           }
 
           await client.query(
             `UPDATE order_services
              SET service_id = $1, unit_price = $2, quantity = $3, cost_price = $4,
                  supplier = $5, stock_code = $6, size_desc = $7, payment_type = $8, product_id = $9
-             WHERE id = $10 AND order_id = $11`,
-            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.id, id]
+             WHERE id = $10 AND order_id = $11 AND tenant_id = $12`,
+            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.id, id, user.tenantId]
           );
         } else {
-          if (productId) await deductStock(client, productId, quantity);
+          if (productId) await deductStock(client, user.tenantId!, productId, quantity);
           await client.query(
             `INSERT INTO order_services
-               (order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId]
+               (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId]
           );
         }
       }
@@ -408,23 +417,23 @@ export async function PUT(
       if (editedPayments) {
         // Parçalı ödeme girişleri baştan yazılır — mevcut kayıtlar silinip
         // düzenlenmiş liste eklenir (PATCH'teki ilk girişle aynı mantık).
-        await client.query("DELETE FROM order_payments WHERE order_id = $1", [id]);
+        await client.query("DELETE FROM order_payments WHERE order_id = $1 AND tenant_id = $2", [id, user.tenantId]);
         for (const p of editedPayments) {
           await client.query(
-            "INSERT INTO order_payments (order_id, payment_type, amount) VALUES ($1, $2, $3)",
-            [id, p.payment_type, p.amount]
+            "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount) VALUES ($1, $2, $3, $4)",
+            [user.tenantId, id, p.payment_type, p.amount]
           );
         }
         const distinct = Array.from(new Set(editedPayments.map((p) => p.payment_type)));
         const summaryType = distinct.length === 1 ? distinct[0] : "Karışık";
-        await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
+        await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2 AND tenant_id = $3", [summaryType, id, user.tenantId]);
       } else {
         // clearPayments: kullanıcı bir satıra tek bir ödeme tipi seçip parçalı
         // ödemeyi bilinçli sıfırladı — eski order_payments kayıtları artık satır
         // bazlı özetle çelişir, bu yüzden silinir (aksi hâlde raporlar hâlâ eski
         // parçalı dağılımı gösterirdi).
         if (clearPayments) {
-          await client.query("DELETE FROM order_payments WHERE order_id = $1", [id]);
+          await client.query("DELETE FROM order_payments WHERE order_id = $1 AND tenant_id = $2", [id, user.tenantId]);
         }
         // Sipariş seviyesindeki payment_type özet değeridir (bkz. PATCH) — satır
         // ödeme tipleri düzenlemede değişmiş olabileceğinden burada da güncellenir.
@@ -432,7 +441,7 @@ export async function PUT(
         const distinct = Array.from(new Set(finalTypes));
         const summaryType = distinct.length === 0 ? null : distinct.length === 1 ? distinct[0] : "Karışık";
         if (finalTypes.length > 0 || clearPayments) {
-          await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2", [summaryType, id]);
+          await client.query("UPDATE orders SET payment_type = $1 WHERE id = $2 AND tenant_id = $3", [summaryType, id, user.tenantId]);
         }
       }
 

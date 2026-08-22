@@ -15,9 +15,9 @@ export async function GET(
     const { id } = await params;
     const result = await pool.query(
       `SELECT id, entry_date, quantity, purchase_price, sale_price, created_at
-       FROM product_stock_entries WHERE product_id = $1
+       FROM product_stock_entries WHERE product_id = $1 AND tenant_id = $2
        ORDER BY entry_date DESC, created_at DESC, id DESC`,
-      [id]
+      [id, user.tenantId]
     );
     return NextResponse.json({ items: result.rows });
   } catch (error) {

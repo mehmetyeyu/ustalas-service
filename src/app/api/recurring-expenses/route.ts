@@ -12,7 +12,9 @@ export async function GET() {
     const result = await pool.query(
       `SELECT id, category, description, amount::float AS amount, payment_type, is_active
        FROM recurring_expenses
-       ORDER BY is_active DESC, category`
+       WHERE tenant_id = $1
+       ORDER BY is_active DESC, category`,
+      [user.tenantId]
     );
     return NextResponse.json(result.rows);
   } catch (error) {
@@ -37,10 +39,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await pool.query(
-      `INSERT INTO recurring_expenses (category, description, amount, payment_type)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO recurring_expenses (tenant_id, category, description, amount, payment_type)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
       [
+        user.tenantId,
         String(category).trim(),
         description ? String(description).trim() : null,
         amountValue,

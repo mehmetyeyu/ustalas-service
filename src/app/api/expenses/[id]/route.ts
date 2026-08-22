@@ -26,9 +26,9 @@ export async function PUT(
       return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
     }
 
-    await pool.query(
+    const result = await pool.query(
       `UPDATE expenses SET expense_date = $1, category = $2, description = $3, amount = $4, payment_type = $5
-       WHERE id = $6`,
+       WHERE id = $6 AND tenant_id = $7`,
       [
         expense_date,
         String(category).trim(),
@@ -36,8 +36,12 @@ export async function PUT(
         amountValue,
         payment_type ? String(payment_type).trim() : null,
         id,
+        user.tenantId,
       ]
     );
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Masraf bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -55,7 +59,10 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    await pool.query("DELETE FROM expenses WHERE id = $1", [id]);
+    const result = await pool.query("DELETE FROM expenses WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Masraf bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

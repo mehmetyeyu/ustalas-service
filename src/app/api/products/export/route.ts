@@ -12,7 +12,8 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      "SELECT * FROM products ORDER BY code ASC, production_year NULLS FIRST, production_week NULLS FIRST"
+      "SELECT * FROM products WHERE tenant_id = $1 ORDER BY code ASC, production_year NULLS FIRST, production_week NULLS FIRST",
+      [user.tenantId]
     );
 
     const rows = result.rows.map((r) => sanitizeExcelRow({

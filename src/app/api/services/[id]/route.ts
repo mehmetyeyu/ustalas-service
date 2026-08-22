@@ -21,10 +21,13 @@ export async function PUT(
     if (priceValue != null && (!Number.isFinite(priceValue) || priceValue < 0)) {
       return NextResponse.json({ error: "Geçersiz fiyat." }, { status: 400 });
     }
-    await pool.query(
-      "UPDATE services SET name = $1, price = $2, is_active = $3 WHERE id = $4",
-      [String(name).trim(), priceValue, is_active ? 1 : 0, id]
+    const result = await pool.query(
+      "UPDATE services SET name = $1, price = $2, is_active = $3 WHERE id = $4 AND tenant_id = $5",
+      [String(name).trim(), priceValue, is_active ? 1 : 0, id, user.tenantId]
     );
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Hizmet bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
@@ -45,7 +48,10 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    await pool.query("UPDATE services SET is_active = 0 WHERE id = $1", [id]);
+    const result = await pool.query("UPDATE services SET is_active = 0 WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Hizmet bulunamadı." }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

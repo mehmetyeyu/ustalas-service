@@ -9,6 +9,7 @@ interface QueryClient {
 export async function upsertDirectoryNames(
   client: QueryClient,
   table: "customers" | "suppliers",
+  tenantId: number,
   names: (string | null | undefined)[]
 ): Promise<void> {
   const unique = Array.from(
@@ -16,9 +17,9 @@ export async function upsertDirectoryNames(
   );
   if (unique.length === 0) return;
 
-  const placeholders = unique.map((_, i) => `($${i + 1})`).join(",");
+  const placeholders = unique.map((_, i) => `($1, $${i + 2})`).join(",");
   await client.query(
-    `INSERT INTO ${table} (name) VALUES ${placeholders} ON CONFLICT (name) DO NOTHING`,
-    unique
+    `INSERT INTO ${table} (tenant_id, name) VALUES ${placeholders} ON CONFLICT (tenant_id, name) DO NOTHING`,
+    [tenantId, ...unique]
   );
 }

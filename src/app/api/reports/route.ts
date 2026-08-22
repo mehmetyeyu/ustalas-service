@@ -60,9 +60,9 @@ export async function GET(request: NextRequest) {
            ((created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date)::text AS date,
            SUM(COALESCE(paid_amount, total_amount))::float AS ciro
          FROM orders
-         WHERE created_at >= $1 AND created_at < $2
+         WHERE created_at >= $1 AND created_at < $2 AND tenant_id = $3
          GROUP BY date`,
-        [startDate, endDate]
+        [startDate, endDate, user.tenantId]
       ),
       pool.query(
         `SELECT
@@ -70,18 +70,18 @@ export async function GET(request: NextRequest) {
            SUM(COALESCE(os.cost_price, 0))::float AS maliyet
          FROM order_services os
          JOIN orders o ON os.order_id = o.id
-         WHERE o.created_at >= $1 AND o.created_at < $2
+         WHERE o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3
          GROUP BY date`,
-        [startDate, endDate]
+        [startDate, endDate, user.tenantId]
       ),
       // Masraflar (kira, elektrik, personel vb.) — sipariş/hizmetlerden bağımsız,
       // Kâr hesabından günlük bazda düşülür (bkz. dailyData birleştirmesi altta).
       pool.query(
         `SELECT expense_date::text AS date, SUM(amount)::float AS masraf
          FROM expenses
-         WHERE expense_date >= $1 AND expense_date < $2
+         WHERE expense_date >= $1 AND expense_date < $2 AND tenant_id = $3
          GROUP BY date`,
-        [expenseStart, expenseEnd]
+        [expenseStart, expenseEnd, user.tenantId]
       ),
       // Hizmet Dağılımı: sadece adet değil, o hizmetten gelen Ciro/Maliyet/Kâr da
       // gösterilir — "Bijon'dan ne kadar kazandım" gibi sorulara pasta grafik tek
@@ -95,10 +95,10 @@ export async function GET(request: NextRequest) {
          FROM order_services os
          JOIN services s ON os.service_id = s.id
          JOIN orders o ON os.order_id = o.id
-         WHERE o.created_at >= $1 AND o.created_at < $2
+         WHERE o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3
          GROUP BY s.name
          ORDER BY count DESC`,
-        [startDate, endDate]
+        [startDate, endDate, user.tenantId]
       ),
       // total_orders/completed/pending artık created_at'e göre sayılır — önceden
       // payment_date'e göre filtrelendiği için BEKLEMEDE siparişler (payment_date
@@ -111,8 +111,8 @@ export async function GET(request: NextRequest) {
            COUNT(CASE WHEN status = 'TAMAMLANDI' THEN 1 END)::int AS completed,
            COUNT(CASE WHEN status = 'BEKLEMEDE' THEN 1 END)::int AS pending
          FROM orders
-         WHERE created_at >= $1 AND created_at < $2`,
-        [startDate, endDate]
+         WHERE created_at >= $1 AND created_at < $2 AND tenant_id = $3`,
+        [startDate, endDate, user.tenantId]
       ),
       // Ödeme tipi serbest metin olduğu için (Nakit/POS/Cari/Fatura Edildi./Excel'den
       // gelen Mail Order hesapları vb.) sabit kategoriler yerine dinamik kırılım.
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
            SELECT op.payment_type AS payment_type, op.amount AS total
            FROM order_payments op
            JOIN orders o ON o.id = op.order_id
-           WHERE o.created_at >= $1 AND o.created_at < $2
+           WHERE o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3
 
            UNION ALL
 
@@ -135,11 +135,11 @@ export async function GET(request: NextRequest) {
            FROM order_services os
            JOIN orders o ON os.order_id = o.id
            WHERE NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id)
-             AND o.created_at >= $1 AND o.created_at < $2
+             AND o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3
          ) combined
          GROUP BY payment_type
          ORDER BY total DESC`,
-        [startDate, endDate]
+        [startDate, endDate, user.tenantId]
       ),
       // Seçili ay için henüz masraf satırına dönüştürülmemiş aktif sabit gider
       // şablonları (bkz. Masraflar — "Sabit Giderleri Ekle") — unutulmuş bir
@@ -148,14 +148,14 @@ export async function GET(request: NextRequest) {
       pool.query(
         `SELECT re.id, re.category
          FROM recurring_expenses re
-         WHERE re.is_active = true
+         WHERE re.is_active = true AND re.tenant_id = $3
            AND NOT EXISTS (
              SELECT 1 FROM expenses e
              WHERE e.recurring_expense_id = re.id
-               AND e.expense_date >= $1 AND e.expense_date < $2
+               AND e.expense_date >= $1 AND e.expense_date < $2 AND e.tenant_id = $3
            )
          ORDER BY re.category`,
-        [expenseStart, expenseEnd]
+        [expenseStart, expenseEnd, user.tenantId]
       ),
     ]);
 

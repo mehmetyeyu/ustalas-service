@@ -11,7 +11,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    const result = await pool.query("SELECT id, name FROM suppliers ORDER BY name");
+    const result = await pool.query("SELECT id, name FROM suppliers WHERE tenant_id = $1 ORDER BY name", [user.tenantId]);
     return NextResponse.json(result.rows, {
       headers: { "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400" },
     });
@@ -33,10 +33,10 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await pool.query(
-      `INSERT INTO suppliers (name) VALUES ($1)
-       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+      `INSERT INTO suppliers (tenant_id, name) VALUES ($1, $2)
+       ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name
        RETURNING id, name`,
-      [String(name).trim()]
+      [user.tenantId, String(name).trim()]
     );
     return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error) {
