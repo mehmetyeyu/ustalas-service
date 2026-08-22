@@ -80,7 +80,11 @@ export async function POST(request: NextRequest) {
       role: user.role,
     });
 
-    const response = NextResponse.json({ success: true, role: user.role });
+    const response = NextResponse.json({
+      success: true,
+      role: user.role,
+      permissions: user.permissions ?? [],
+    });
     response.cookies.set("auth_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

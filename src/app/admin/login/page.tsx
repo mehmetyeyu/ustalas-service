@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getDefaultAdminPath } from "@/lib/permissions";
 
 // Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
 // NEXT_PUBLIC_LOGO_SRC ile gösterebilir — set edilmezse Ustalas'ın gerçek
@@ -35,11 +36,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Giriş başarısız.");
 
-      if (data.role === "admin") {
-        window.location.href = "/admin/orders";
-      } else {
-        window.location.href = "/";
-      }
+      window.location.href = getDefaultAdminPath(data) ?? "/";
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
