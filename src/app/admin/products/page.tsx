@@ -1191,7 +1191,7 @@ export default function ProductsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti (Birim, ₺)</label>
                 <input type="number" step="0.01" value={form.purchase_price}
                   onChange={(e) => {
                     const purchase_price = e.target.value;
@@ -1209,15 +1209,20 @@ export default function ProductsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Satış Fiyatı</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Satış Fiyatı (Birim, ₺)</label>
                 <input type="number" step="0.01" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Stok Miktarı</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Stok Miktarı (Adet)</label>
                 <input type="number" value={form.stock_qty} onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
+              {num(form.stock_qty) > 0 && (num(form.purchase_price) > 0 || num(form.sale_price) > 0) && (
+                <div className="sm:col-span-2 text-xs text-gray-500 -mt-1">
+                  Toplam ({form.stock_qty} adet): Alış {formatCurrency(num(form.purchase_price) * num(form.stock_qty))} · Satış {formatCurrency(num(form.sale_price) * num(form.stock_qty))}
+                </div>
+              )}
             </div>
             </div>
 
@@ -1288,7 +1293,7 @@ export default function ProductsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti (Birim, ₺)</label>
                 <input type="number" step="0.01" value={editForm.purchase_price}
                   onChange={(e) => {
                     const purchase_price = e.target.value;
@@ -1306,15 +1311,20 @@ export default function ProductsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Satış Fiyatı</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Satış Fiyatı (Birim, ₺)</label>
                 <input type="number" step="0.01" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Stok Miktarı</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Stok Miktarı (Adet)</label>
                 <input type="number" value={editForm.stock_qty} onChange={(e) => setEditForm({ ...editForm, stock_qty: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
+              {num(editForm.stock_qty) > 0 && (num(editForm.purchase_price) > 0 || num(editForm.sale_price) > 0) && (
+                <div className="sm:col-span-2 text-xs text-gray-500 -mt-1">
+                  Toplam ({editForm.stock_qty} adet): Alış {formatCurrency(num(editForm.purchase_price) * num(editForm.stock_qty))} · Satış {formatCurrency(num(editForm.sale_price) * num(editForm.stock_qty))}
+                </div>
+              )}
             </div>
             </div>
 
