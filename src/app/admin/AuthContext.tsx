@@ -47,12 +47,16 @@ export function useAuth(): AuthState {
   return useContext(AuthContext);
 }
 
-// Yüklenirken (henüz /api/auth/me dönmediyse) her zaman true döner — sayfa
-// guard'larının "henüz bilmiyoruz" anında kullanıcıyı yanlışlıkla dışarı
-// atmaması için (bkz. her admin sayfasındaki guard deseni).
+// Yüklenirken (henüz /api/auth/me dönmediyse) false döner — useViewGuard'ın
+// aksine (o "fail open" davranır, çünkü sayfa erişimi zaten middleware'de
+// korunur). Burada "fail closed" gerekli: bu hook Düzenle/Sil/Onayla gibi
+// aksiyon butonlarını göstermek için kullanılıyor — true dönseydi, izni
+// olmayan bir staff kullanıcı /api/auth/me yanıtı gelene kadarki kısa anda
+// (genelde birkaç yüz ms) o butonları görüp tıklayabilirdi; API isteği zaten
+// 403 dönerdi ama buton yine de yanlışlıkla görünüp kaybolmuş olurdu.
 export function usePermission(key: string): boolean {
   const { user, loading } = useAuth();
-  if (loading) return true;
+  if (loading) return false;
   if (!user) return false;
   return hasPermission(user, key);
 }
