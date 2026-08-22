@@ -23,6 +23,14 @@ const DEFAULT_SUPPLIER_NAMES = [
   "Batı Jant", "Örnek Lastik A.Ş.", "İkinci El", "Diğer",
 ];
 
+// app_settings.payment_types'ın kolon DEFAULT'una güvenmek yerine burada
+// açıkça listeleniyor — o DEFAULT bir süre (yanlışlıkla) Ustalas'a özel bir
+// listeye sabitlenmişti ve "CREATE TABLE IF NOT EXISTS" bunu canlı
+// veritabanında asla düzeltmediğinden yeni firmalar o özel listeyi miras
+// alıyordu (bkz. database/schema.sql notu). Açıkça belirtmek bu sınıf
+// hatayı bir daha imkansız kılar.
+const DEFAULT_PAYMENT_TYPES = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Havale/EFT", "Mail Order"];
+
 export interface ProvisionTenantInput {
   tenantName: string;
   adminUsername: string;
@@ -54,8 +62,8 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     const tenantId: number = tenantResult.rows[0].id;
 
     await client.query(
-      `INSERT INTO app_settings (tenant_id, business_name) VALUES ($1, $2)`,
-      [tenantId, tenantName]
+      `INSERT INTO app_settings (tenant_id, business_name, payment_types) VALUES ($1, $2, $3)`,
+      [tenantId, tenantName, DEFAULT_PAYMENT_TYPES]
     );
 
     // Yeni bir tenant_id için hiçbir satır zaten var olamayacağından ON

@@ -31,6 +31,10 @@ const DEFAULT_SUPPLIER_NAMES = [
   "Batı Jant", "Örnek Lastik A.Ş.", "İkinci El", "Diğer",
 ];
 
+// Kolon DEFAULT'una güvenmek yerine açıkça listeleniyor — bkz.
+// src/lib/provisionTenant.ts'teki aynı sabitin yanındaki not.
+const DEFAULT_PAYMENT_TYPES = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Havale/EFT", "Mail Order"];
+
 async function main() {
   const [tenantNameRaw, adminUsernameRaw, adminPassword] = process.argv.slice(2);
   const tenantName = (tenantNameRaw ?? "").trim();
@@ -62,8 +66,8 @@ async function main() {
     const tenantId = tenantResult.rows[0].id;
 
     await client.query(
-      "INSERT INTO app_settings (tenant_id, business_name) VALUES ($1, $2)",
-      [tenantId, tenantName]
+      "INSERT INTO app_settings (tenant_id, business_name, payment_types) VALUES ($1, $2, $3)",
+      [tenantId, tenantName, DEFAULT_PAYMENT_TYPES]
     );
 
     await client.query("INSERT INTO services (tenant_id, name) SELECT $1, unnest($2::text[])", [tenantId, DEFAULT_SERVICE_NAMES]);

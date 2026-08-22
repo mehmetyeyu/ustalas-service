@@ -129,6 +129,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
   payment_types          TEXT[] NOT NULL DEFAULT ARRAY['Nakit','POS','Cari','Fatura Edildi.','Havale/EFT','Mail Order'],
   updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- Not: payment_types'ın DEFAULT'u bir süre yanlışlıkla Ustalas'a özel bir
+-- listeye (Garanti Hesap/Nazım Hesap/Sait Hesap dahil) sabitlenmişti,
+-- 02890c6 ile buradaki (CREATE TABLE) tanım jenerik listeye düzeltildi —
+-- ama "CREATE TABLE IF NOT EXISTS" zaten var olan bir tabloda DEFAULT
+-- değişikliğini asla uygulamadığından, Ustalas'ın canlı veritabanındaki
+-- kolonun gerçek DEFAULT'u hâlâ o eski özel listedeydi (yeni firma
+-- oluşturulunca bu miras kalıyordu — provisionTenant() bulup düzeltti).
+-- Aşağıdaki ALTER, o eksik düzeltmeyi tamamlıyor; zararsız/idempotent
+-- (sadece gelecekteki INSERT'lerin default'unu etkiler, mevcut satırların
+-- verisini değiştirmez).
+ALTER TABLE app_settings ALTER COLUMN payment_types SET DEFAULT ARRAY['Nakit','POS','Cari','Fatura Edildi.','Havale/EFT','Mail Order'];
+
 -- Not: bu tablonun tekil-satır (id=1) seed'i artık bu dosyanın sonundaki
 -- multi-tenant bloğunda, tenant_id'ye göre yapılıyor (id kolonu o blokta
 -- kaldırılıyor — burada bırakılsaydı ikinci build'de "column id does not
