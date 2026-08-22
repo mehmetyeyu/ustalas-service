@@ -137,7 +137,9 @@ export async function PATCH(
     if (!Array.isArray(payments) || payments.length === 0) {
       return NextResponse.json({ error: "En az bir ödeme girişi gereklidir." }, { status: 400 });
     }
-    const { payment_types } = await getAppSettings();
+    // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
+    // tenant_id atadığından burada her zaman dolu olur.
+    const { payment_types } = await getAppSettings(user.tenantId!);
     const flatPaymentOptions = payment_types.filter((t) => t !== "Mail Order");
     for (const p of payments as { payment_type: string; amount: number }[]) {
       if (!p.payment_type || !isValidPaymentType(p.payment_type, flatPaymentOptions)) {
@@ -233,7 +235,9 @@ export async function PUT(
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
     }
-    const { payment_types } = await getAppSettings();
+    // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
+    // tenant_id atadığından burada her zaman dolu olur.
+    const { payment_types } = await getAppSettings(user.tenantId!);
     // Genel Ayarlar'dan sonradan kaldırılmış bir ödeme tipi, o değeri zaten
     // taşıyan eski bir siparişin düzenlenmesini (alakasız bir alan değişse
     // bile) engellemesin diye bu siparişte hâlâ kayıtlı olan değerler de bu

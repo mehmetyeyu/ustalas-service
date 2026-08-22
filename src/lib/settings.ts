@@ -13,9 +13,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   payment_types: ["Nakit", "POS", "Cari", "Fatura Edildi.", "Havale/EFT", "Mail Order"],
 };
 
-export async function getAppSettings(): Promise<AppSettings> {
+export async function getAppSettings(tenantId: number): Promise<AppSettings> {
   const result = await pool.query<AppSettings>(
-    "SELECT business_name, storage_overdue_months, payment_types FROM app_settings WHERE id = 1"
+    "SELECT business_name, storage_overdue_months, payment_types FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
   );
   const settings = result.rows[0] ?? DEFAULT_SETTINGS;
   // Genel ödeme tipleri (bkz. src/lib/paymentTypes.ts) her zaman listede

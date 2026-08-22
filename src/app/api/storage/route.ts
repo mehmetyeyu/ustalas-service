@@ -31,7 +31,9 @@ export async function GET(request: NextRequest) {
     conditions.push(`(plate ILIKE $${values.length} OR customer_name ILIKE $${values.length})`);
   }
   if (overdue) {
-    const { storage_overdue_months } = await getAppSettings();
+    // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
+    // tenant_id atadığından burada her zaman dolu olur.
+    const { storage_overdue_months } = await getAppSettings(user.tenantId!);
     values.push(storage_overdue_months);
     conditions.push(`islem_tarihi < NOW() - ($${values.length} * INTERVAL '1 month')`);
   }

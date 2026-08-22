@@ -129,7 +129,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
   payment_types          TEXT[] NOT NULL DEFAULT ARRAY['Nakit','POS','Cari','Fatura Edildi.','Havale/EFT','Mail Order'],
   updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+-- Not: bu tablonun tekil-satır (id=1) seed'i artık bu dosyanın sonundaki
+-- multi-tenant bloğunda, tenant_id'ye göre yapılıyor (id kolonu o blokta
+-- kaldırılıyor — burada bırakılsaydı ikinci build'de "column id does not
+-- exist" hatası verirdi).
 
 -- Kullanıcılar (yöneticiler)
 CREATE TABLE IF NOT EXISTS users (
@@ -358,3 +361,151 @@ UPDATE users SET is_primary_admin = true WHERE username = 'admin';
 INSERT INTO users (username, password_hash, role) VALUES
   ('admin', '$2a$10$OpYuNAPfyj4RT4OootiFKu2yfYfPKVOrmMk3GyvAiFIUf4dCZvQ5y', 'admin')
 ON CONFLICT DO NOTHING;
+
+-- ============================================================================
+-- ÇOKLU FİRMA (MULTI-TENANT) — Aşama 1: temel altyapı.
+--
+-- Amaç: tek deployment/DB'de birden çok firmayı (lastikçiyi) birbirinin
+-- verisini görmeden barındırabilmek (bkz. proje planı,
+-- ~/.claude/plans/joyful-kindling-badger.md). Bu blok BİLEREK sadece
+-- ekleyici/zararsız: yeni "tenants" tablosu + her firma-sahipli tabloya
+-- nullable bir tenant_id + mevcut tek gerçek müşterinin (id=1, "Ustalas")
+-- tüm satırlarına anında geri-dolum. Henüz HİÇBİR route bu kolonu
+-- okumuyor/filtrelemiyor ve HİÇBİR eski UNIQUE index/seed değişmedi — o
+-- yüzden bu blok şu an çalışan uygulamanın davranışını hiç değiştirmez.
+-- Her kaynak (orders, products, storage, ...) kendi göç sırası geldiğinde
+-- HEM route'ları HEM o tabloya özel unique index'i (tenant_id'yi de içerecek
+-- şekilde) aynı deploy'da güncelleyecek — bkz. plan dosyasındaki Faz 3-9.
+--
+-- İSTİSNA: app_settings burada tam olarak dönüştürülüyor (tekil id=1 satırı
+-- yerine firma başına bir satır, PK=tenant_id) çünkü onu kullanan 3 dosya
+-- (src/lib/settings.ts, api/settings, api/storage, api/orders/[id]) bu
+-- commit'te birlikte güncellendi — yarım kalmış bir ara durum yok.
+CREATE TABLE IF NOT EXISTS tenants (
+  id                   SERIAL PRIMARY KEY,
+  name                 VARCHAR(150) NOT NULL,
+  slug                 VARCHAR(60) UNIQUE,
+  is_active            BOOLEAN NOT NULL DEFAULT true,
+  -- İleride merkezi kayıt/faturalandırma için ayrılmış — şu an hiçbir kod
+  -- bu alanları okumuyor/yazmıyor.
+  plan                 VARCHAR(50),
+  billing_provider     VARCHAR(30),
+  billing_customer_id  VARCHAR(100),
+  billing_status       VARCHAR(30),
+  trial_ends_at        TIMESTAMPTZ,
+  created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Mevcut tek gerçek müşteri (Ustalas prod) için bootstrap satırı — sonraki
+-- geri-dolum UPDATE'lerinin işaret ettiği firma budur. Elevire kendi ayrı
+-- veritabanında bu INSERT'i kendi başına çalıştırır (isim orada da "Ustalas"
+-- görünür ama bu sadece kozmetik bir etiket, Elevire'ın verisiyle karışmaz —
+-- Elevire tamamen ayrı bir veritabanı).
+INSERT INTO tenants (id, name) VALUES (1, 'Ustalas') ON CONFLICT (id) DO NOTHING;
+-- Yukarıdaki elle-id'li INSERT, "id SERIAL" sütununun kendi sequence'ini
+-- ilerletmez — düzeltilmezse bir sonraki "INSERT INTO tenants (name) ..."
+-- (provisionTenant/create-tenant.mjs) yine id=1 üretmeye çalışıp
+-- "duplicate key" hatası verirdi. Sequence'i mevcut en yüksek id'ye göre
+-- senkronlamak her build'de güvenle tekrarlanabilir.
+SELECT setval('tenants_id_seq', (SELECT MAX(id) FROM tenants));
+
+ALTER TABLE services ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE order_services ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE order_payments ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+-- users.username kasıtlı olarak GLOBAL unique kalıyor (bkz. plan) — girişte
+-- firma seçimi yok, tenant_id kullanıcının kendi satırından okunuyor.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE product_stock_entries ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+
+-- Şu an tek firma olduğundan geri-dolum tartışmasız: mevcut her satır o
+-- firmaya (id=1) aittir. Sonraki tüm satırlar zaten provisionTenant() ile
+-- doğru tenant_id ile oluşacak — bu UPDATE'ler idempotent (WHERE tenant_id
+-- IS NULL), sonraki build'lerde no-op olur.
+UPDATE services SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE orders SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE order_services SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE order_payments SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE customers SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE suppliers SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE storage SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE products SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE product_stock_entries SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE expenses SET tenant_id = 1 WHERE tenant_id IS NULL;
+UPDATE recurring_expenses SET tenant_id = 1 WHERE tenant_id IS NULL;
+
+-- orders/products, çocuk tablolardan composite FK ile referans alınabilsin
+-- diye (id, tenant_id) üzerinde de bir UNIQUE'e ihtiyaç duyar — id zaten tek
+-- başına PK olduğundan bu ek kısıt otomatik sağlanır, mevcut veriyle hiçbir
+-- çakışma riski yoktur.
+CREATE UNIQUE INDEX IF NOT EXISTS orders_id_tenant_unique ON orders(id, tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS products_id_tenant_unique ON products(id, tenant_id);
+
+-- Çocuk satırların ebeveynden FARKLI bir tenant_id ile eklenmesini DB
+-- seviyesinde imkansız kılan composite FK'lar (savunma katmanı — yanlış
+-- tenant_id ile INSERT artık sessiz bir sızıntı değil, 23503 hatası olur).
+-- product_id nullable olduğundan (yalnızca lastik satışı satırlarında
+-- doludur) composite FK, product_id NULL olan satırlarda standart FK NULL
+-- semantiğiyle (MATCH SIMPLE) otomatik atlanır. Postgres'te
+-- "ADD CONSTRAINT IF NOT EXISTS" yok — idempotentlik için DO bloğu +
+-- duplicate_object yakalama kullanılıyor (dosyanın geri kalanındaki
+-- IF NOT EXISTS deseniyle aynı amaç, farklı araç).
+DO $$ BEGIN
+  ALTER TABLE order_services ADD CONSTRAINT order_services_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE order_services ADD CONSTRAINT order_services_product_tenant_fk
+    FOREIGN KEY (product_id, tenant_id) REFERENCES products(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE order_payments ADD CONSTRAINT order_payments_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE product_stock_entries ADD CONSTRAINT product_stock_entries_product_tenant_fk
+    FOREIGN KEY (product_id, tenant_id) REFERENCES products(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- app_settings: tekil satır (id=1, CHECK ile zorlanıyordu) → firma başına
+-- bir satır, PK=tenant_id. id kolonu (ve ona bağlı PK/CHECK kısıtları)
+-- kaldırılıyor. Aşağıdaki DROP/ADD sırası her build'de güvenle tekrar
+-- çalışacak şekilde tasarlandı (DROP CONSTRAINT IF EXISTS + duplicate_object
+-- yakalayan DO bloğu) — dosyanın geri kalanındaki "drop then recreate"
+-- index deseniyle aynı ruhta.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
+UPDATE app_settings SET tenant_id = 1 WHERE tenant_id IS NULL;
+-- Yepyeni (boş) bir veritabanında yukarıdaki UPDATE'in geri dolduracağı
+-- satır hiç yoktur (eski tekil-satır seed'i kaldırıldı, bkz. yukarıdaki not)
+-- — bu yüzden firma 1 için satır burada, gerekirse, oluşturuluyor.
+INSERT INTO app_settings (tenant_id)
+  SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE tenant_id = 1);
+ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_pkey;
+ALTER TABLE app_settings ALTER COLUMN tenant_id SET NOT NULL;
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_pkey PRIMARY KEY (tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+-- id kolonu düşünce ona bağlı eski CHECK (id = 1) kısıtı da otomatik kalkar.
+ALTER TABLE app_settings DROP COLUMN IF EXISTS id;
+
+-- "Tek ana admin" kısıtı global'den firma-bazlıya dönüşüyor: her firma kendi
+-- ana admin'ine sahip olabilir. Bu index hiçbir route'ta ON CONFLICT hedefi
+-- olarak kullanılmıyor (sadece sessiz bir bütünlük kısıtı) — o yüzden diğer
+-- name-bazlı unique index'lerin aksine (bkz. plan Faz 3, onlar route
+-- değişiklikleriyle birlikte gidecek) burada route değişikliği beklemeden
+-- hemen dönüştürülebilir; provisionTenant() yeni bir firma için ikinci bir
+-- ana admin oluşturabilsin diye bu, Faz 2'nin (tenant oluşturma) bir
+-- ön koşuludur.
+DROP INDEX IF EXISTS users_single_primary_admin;
+CREATE UNIQUE INDEX IF NOT EXISTS users_single_primary_admin ON users(tenant_id) WHERE is_primary_admin = true;

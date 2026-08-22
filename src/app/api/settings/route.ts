@@ -9,7 +9,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
-  const settings = await getAppSettings();
+  const settings = await getAppSettings(user.tenantId!);
   return NextResponse.json(settings);
 }
 
@@ -41,8 +41,8 @@ export async function PUT(request: NextRequest) {
     }
 
     await pool.query(
-      `UPDATE app_settings SET business_name=$1, storage_overdue_months=$2, payment_types=$3, updated_at=CURRENT_TIMESTAMP WHERE id=1`,
-      [business_name, storage_overdue_months, payment_types]
+      `UPDATE app_settings SET business_name=$1, storage_overdue_months=$2, payment_types=$3, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=$4`,
+      [business_name, storage_overdue_months, payment_types, user.tenantId]
     );
 
     return NextResponse.json({ business_name, storage_overdue_months, payment_types });

@@ -10,6 +10,11 @@ export interface JwtPayload {
   username: string;
   role: string;
   permissions?: string[];
+  // role/permissions gibi tenantId de asla JWT imzasından güvenilmez —
+  // sadece getAuthUserByToken'ın döndürdüğü nesnede, her istekte taze DB
+  // okumasıyla doldurulur (bkz. getAuthUserByToken). Henüz geri
+  // doldurulmamış (çok eski) bir kullanıcı için null olabilir.
+  tenantId?: number | null;
   iat?: number;
   iatMs?: number;
 }
@@ -50,12 +55,21 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
   if (!payload) return null;
 
   const result = await pool.query(
-    "SELECT username, role, permissions, is_active, tokens_invalid_before FROM users WHERE id = $1",
+    `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
+            u.tenant_id, t.is_active AS tenant_is_active
+     FROM users u
+     LEFT JOIN tenants t ON t.id = u.tenant_id
+     WHERE u.id = $1`,
     [payload.userId]
   );
   const user = result.rows[0];
   if (!user) return null;
   if (!user.is_active) return null;
+  // tenant_id henüz geri doldurulmamış (çok eski/geçiş öncesi) kullanıcılarda
+  // NULL olabilir — o durumda firma kontrolü atlanır. tenant_id atanmışsa ve
+  // firma pasifleştirilmişse (ileride toplu askıya alma/faturalandırma için)
+  // giriş reddedilir — is_active kontrolüyle birebir aynı mantık.
+  if (user.tenant_id != null && user.tenant_is_active === false) return null;
   // Bu değişiklikten önce imzalanmış eski token'larda iatMs bulunmaz —
   // öyle bir durumda saniyeye yuvarlanmış standart iat'a düşülür (aşırı
   // uçlarda ~1 sn'lik belirsizlik payı olsa da, kontrolü tamamen atlamaktan
@@ -69,7 +83,13 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     return null;
   }
 
-  return { userId: payload.userId, username: user.username, role: user.role, permissions: user.permissions ?? [] };
+  return {
+    userId: payload.userId,
+    username: user.username,
+    role: user.role,
+    permissions: user.permissions ?? [],
+    tenantId: user.tenant_id ?? null,
+  };
 }
 
 export async function getAuthUser(): Promise<JwtPayload | null> {
