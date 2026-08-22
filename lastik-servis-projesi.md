@@ -21,16 +21,31 @@ Lastik, rot ve balans hizmeti veren bir oto servis firması için web tabanlı m
 
 ---
 
-## Roller
+## Roller ve İzinler
 
 | Rol | `role` değeri | Açıklama |
 |---|---|---|
-| **Karşılama Görevlisi** | `staff` | Giriş yapar — sadece sipariş oluşturma ekranına (`/`) erişir. |
-| **Yönetici** | `admin` | Kullanıcı adı + şifre ile giriş yapar. Tüm panele (`/admin/*`) erişir. |
+| **Karşılama Görevlisi / Personel** | `staff` | Kullanıcı adı + şifre ile giriş yapar. Sipariş oluşturma ekranına (`/`) her zaman erişir; ayrıca kendisine tanımlanan sayfa/aksiyon izinlerine göre `/admin/*` altındaki belirli sayfaları da görebilir (aşağıya bkz.) |
+| **Yönetici** | `admin` | Kullanıcı adı + şifre ile giriş yapar. Tüm panele (`/admin/*`) her zaman tam yetkiyle erişir — izin sistemi admin'i hiç etkilemez. |
 
-> `/` dahil tüm sayfalar `middleware.ts` ile korunur — geçerli bir oturum (JWT cookie) olmadan hiçbir sayfa (login hariç) açılmaz. `/admin/*` ayrıca `role = 'admin'` şartı arar.
+> `/` dahil tüm sayfalar `middleware.ts` ile korunur — geçerli bir oturum (JWT cookie) olmadan hiçbir sayfa (login hariç) açılmaz. `/admin/*` için `staff` rolü, sayfa bazında aşağıdaki izin sistemine tabidir.
 
-Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici) yapılır — bkz. Bölüm 12.
+Kullanıcı oluşturma ve rol/izin ataması `/admin/users` ekranından (yönetici) yapılır — bkz. Bölüm 12.
+
+### Sayfa/Aksiyon Bazlı İzin Sistemi
+
+Admin rolü değişmeden tam yetkili kalır; `staff` kullanıcılarına ise 8 admin sayfası için (Siparişler, Raporlar, Hizmetler, Depolama, Ürünler, Müşteriler, Tedarikçiler, Masraflar) **görüntüle / ekle / düzenle / sil** izinleri ayrı ayrı verilebilir — siparişte ayrıca bir de **onayla** (Ödeme Al & Kapat) izni vardır. **Kullanıcılar** ve **Genel Ayarlar** sayfaları izin sistemine hiç girmez, her zaman yalnızca `admin`'e özeldir (`src/lib/permissions.ts`'te `"__admin_only__"` olarak işaretlidir).
+
+Tek doğruluk kaynağı `src/lib/permissions.ts`'tir (`RESOURCE_ACTIONS`, `PAGE_RESOURCE`, `hasPermission`, `canAccessPath`) — hem sunucu hem istemci bunu import eder. Güvenlik sınırı **üç katmanda** uygulanır:
+1. **`middleware.ts`** — sayfa erişimi (staff, izni olmayan bir `/admin/*` sayfasına gitmeye çalışırsa `/`'e yönlendirilir).
+2. **Her API route** — asıl/gerçek sınır; her uç kendi `hasPermission(user, "kaynak.aksiyon")` kontrolünü yapar (middleware bypass edilse bile veri sızmaz).
+3. **UI** — izni olmayan aksiyon butonları (Düzenle/Sil/Onayla/Yeni Ekle vb.) hiç gösterilmez.
+
+**Login sonrası yönlendirme:** `admin` her zaman `/admin/orders`'a düşer. `staff` artık sabit `/` yerine, izinlerine göre erişebildiği **ilk** sayfaya yönlendirilir (öncelik sırası: Siparişler → Depolama → Ürünler → Raporlar → Masraflar → Hizmetler → Müşteriler → Tedarikçiler); hiçbir sayfa izni yoksa (yalnızca sipariş oluşturabilen personel) yine `/`'e düşer. `/` (Yeni Sipariş) ekranındaki üst köşede artık herkes için bir "Çıkış" butonu, izni olan `staff` için de "Yönetici Paneli" linki gösterilir — önceden bu alan yalnızca `admin`'e görünürdü.
+
+**Ana admin koruması:** `is_primary_admin` işaretli hesap (varsayılan olarak ilk `admin` kullanıcı) artık hiçbir başka admin tarafından rolü/aktifliği/şifresi/kullanıcı adı değiştirilemez veya silinemez — admin sayısından bağımsız, sabit bir koruma. Bu, Bölüm 12'deki "son (aktif) admin koruması"na **ek** bir katmandır, onun yerine geçmez.
+
+**Bilinen sızıntı düzeltmesi:** `GET /api/customers/:id/orders` yalnızca `customers.view` istiyordu ama sipariş tutarı/ödeme tipi gibi finansal veri döndürüyordu — artık `orders.view` de gerektiriyor.
 
 ---
 
@@ -81,6 +96,7 @@ Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici
 - Başarılı girişte JWT token httpOnly cookie olarak saklanır (varsayılan geçerlilik 12 saat, `JWT_EXPIRES_IN`).
 - **Brute-force koruması:** art arda 5 başarısız denemede hesap 15 dakika kilitlenir (`users.failed_attempts`/`locked_until`, DB'de tutulur); kilitliyken girişte 429 + kalan süre mesajı döner. Başarılı girişte sayaç sıfırlanır ve `last_login_at` güncellenir. Devre dışı bırakılmış (`is_active = false`) bir hesapla giriş denemesi 403 ile reddedilir (bkz. Bölüm 12).
 - Tüm yönetici sayfaları ve tüm API uçları (bkz. Güvenlik Notları) korumalıdır.
+- Giriş sonrası yönlendirme role/izinlere göre değişir — bkz. "Sayfa/Aksiyon Bazlı İzin Sistemi" (Roller bölümü).
 
 ---
 
@@ -106,6 +122,8 @@ Kullanıcı oluşturma ve rol atama artık `/admin/users` ekranından (yönetici
 - "Sil" ile sipariş (tüm satırlarıyla, stok bağlantılı satırların stoğu geri eklenerek) kalıcı olarak silinir.
 
 **Excel İçe Aktar:** Muhasebe programından dışa aktarılan `.xlsx` okunur, gruplanır (aynı tarih+müşteri+plaka tek siparişte birleşir; Perakende/plakasız satırlar birleştirilmez), hizmet eşleştirmesi otomatik yapılır, `import_ref` ile tekrar aktarımda mükerrer kayıt oluşmaz. Tekilleştirme tüm-ya-da-hiç çalışır (satır bazlı otomatik birleştirme yapılmaz) — kaynak dosya sonradan düzeltilip (ör. unutulan bir satır eklenip) aynı gruba ait bir sipariş tekrar yüklenirse, o sipariş yine mükerrer sayılıp atlanır, **ama** şu anki dosyadaki satır sayısı veritabanındakinden farklıysa kullanıcı ayrıca (turuncu) bir uyarıyla bilgilendirilir — sessizce veri kaybı olmaz, elle kontrol/ekleme gerekir.
+
+**Mobil:** Şablon İndir / Excel'den İçe Aktar / Dışa Aktar / + Sipariş Ekle butonları mobilde taşmayı önlemek için tek bir "İşlemler" açılır menüsünde toplanır (masaüstünde değişiklik yok, hepsi ayrı ayrı görünür). Arama kutusunun yanındaki "Filtreleri Temizle" linki mobilde gizlenir ("Filtrele" butonundaki rozet zaten aktif filtre sayısını gösterir). Tablodaki sağda sabit (sticky) İşlemler sütununun genişliği, o kullanıcının görebileceği buton sayısına göre daralır (ör. yalnızca `orders.view` izni olan bir personel için Detay dışında buton yoksa sütun neredeyse hiç yer kaplamaz) — aynı desen Depolama ve Ürün Kataloğu'nda da uygulanır.
 
 ---
 
@@ -162,6 +180,7 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 - **Teslim Et:** kaydı `teslim_edildi = true` yapar, `teslim_tarihi` bugüne set edilir, depo numarası tekrar kullanılabilir hale gelir. Aynı plaka+mevsim için ikinci bir **aktif** kayıt açılamaz (teslim edilmiş eski bir kayıtla çakışmaz — bkz. Veritabanı Şeması notu).
 - Etiket yazdırma: A4 sayfa, ikiye bölünmüş A5 etiket (biri çantaya, biri müşteriye).
 - Excel import/export.
+- **Mobil:** Şablon İndir/İçeri Aktar/Dışa Aktar/+ Yeni Kayıt butonları tek bir "İşlemler" menüsünde toplanır; satır aksiyonları zaten mobilde her zaman üç-nokta menüsü olarak gösteriliyordu (bkz. Bölüm 3'teki mobil not).
 
 ---
 
@@ -198,6 +217,7 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 - Import: Kod/Marka/Ebat/Stok (+opsiyonel Tedarikçi/Mevsim/Üretim Haftası-Yılı/fiyatlar) sütunları eşleştirilir; üretim haftası/yılı olmayan satırlar tek bir "temel" satırı (kod bazlı) günceller, olan satırlar parti olarak eklenir/güncellenir. 2 haneli yıl (`"26"`) otomatik `2026`'ya normalize edilir.
 - Export: tüm partiler, Marka/Ebat/Tedarikçi ayrı sütunlarda.
+- **Mobil:** Şablon İndir/İçeri Aktar/Dışa Aktar/+ Yeni Ürün butonları tek bir "İşlemler" menüsünde toplanır; grup/parti satırlarındaki sağda sabit İşlemler sütunu, görünen buton sayısına göre daralır (bkz. Bölüm 3'teki mobil not) — grup satırında (parti kapalıyken) sadece Stok Girişi/Düzenle olabileceğinden, açılmış bir parti satırındaki (Fiyat Geçmişi/Düzenle/Sil) genişliğe göre bazen küçük bir boşluk kalabilir, bu bilinen ve kabul edilmiş bir sınırdır.
 
 ---
 
@@ -230,7 +250,7 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 - Şifre değiştirme — mevcut şifrenin doğrulanmasını zorunlu kılar (`PATCH /api/auth/password`).
 
 **Kullanıcılar** (`/admin/users`) — yalnızca `admin`:
-- Yeni kullanıcı oluşturma (kullanıcı adı, şifre, rol: Yönetici/Karşılama Görevlisi).
+- Yeni kullanıcı oluşturma (kullanıcı adı, şifre, rol: Yönetici/Karşılama Görevlisi). Rol "Karşılama Görevlisi" seçilirse form altında sayfa/aksiyon bazlı **izin matrisi** (`PermissionMatrix`) belirir — hiçbiri seçilmezse kullanıcı yalnızca sipariş oluşturma ekranını görür (bkz. Roller bölümündeki İzin Sistemi). Bu modalın İptal/Kaydet butonları mobilde (izin matrisi uzun olduğunda içerik kaydırıldığında bile erişilebilir kalması için) ekranın altında sabittir.
 - Satır üzerinden rol değiştirme (dropdown, anında kaydeder) ve şifre sıfırlama (admin, hedef kullanıcının mevcut şifresini bilmeden sıfırlar).
 - **Kullanıcı adı yeniden adlandırma** (✎ ikonu) — başka bir kullanıcının adını değiştirir (kendi adınız bu ekrandan değiştirilemez, Profil'e yönlendirilirsiniz).
 - **Kilit rozeti + "Kilidi Aç"** — brute-force korumasıyla (bkz. Bölüm 2) kilitlenmiş bir hesap listede görünür, yönetici 15 dakika beklemeden manuel açabilir.
@@ -239,14 +259,37 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 - **Kayıt Tarihi** ve **Son Giriş** sütunları — hesabın ne zaman açıldığı ve en son ne zaman kullanıldığı görünür.
 - **Kendi kaydınız üzerinde kısıtlı**: kendi rolünüzü/kullanıcı adınızı bu ekrandan değiştiremez, kendi şifrenizi buradan sıfırlayamaz (Profil'e yönlendirilirsiniz), kendi oturumunuzu buradan sonlandıramaz, kendi hesabınızı devre dışı bırakamaz veya silemezsiniz — kazara kendi yetkinizi/erişiminizi kaybetmenizi engeller.
 - **Son yönetici koruması**: sistemde tek **aktif** `admin` kalmışsa o kullanıcının rolü değiştirilemez, devre dışı bırakılamaz veya silinemez (bkz. Güvenlik Notları).
+- **Ana admin koruması** (`is_primary_admin`): son-yönetici korumasından ayrı, ek bir katman — bkz. Roller bölümündeki İzin Sistemi.
 
 **Genel Ayarlar** (`/admin/settings`) — yalnızca `admin`:
-- İşletme adı, depoda bekleme uyarı eşiği (ay) ve ödeme şekilleri listesi — `app_settings` tablosunda tek satır (id=1) olarak tutulur, `GET/PUT /api/settings` üzerinden okunur/güncellenir.
+- İşletme adı, depoda bekleme uyarı eşiği (ay) ve ödeme şekilleri listesi — `app_settings` tablosunda tutulur, `GET/PUT /api/settings` üzerinden okunur/güncellenir. (Çoklu firma altyapısı kapsamında bu tablo artık tek satır değil, firma başına bir satırdır — bkz. "Çoklu Firma (Multi-Tenant) Altyapısı".)
 - Depolama modülündeki (Bölüm 8) "N aydan uzun süredir bekliyor" uyarısı hem liste sayfasında hem `/api/storage?overdue=true` sorgusunda artık bu ayardan okunur (önceden kod içinde sabit 6 ay idi).
 - **Ödeme şekilleri** (`payment_types`, "Mail Order" dahil) — sipariş kapama/düzenleme ekranındaki (Bölüm 5) dropdown ve Excel içe aktarmadaki (`src/lib/ordersExcel.ts`) normalizasyon ("Mail Order" hariç geri kalanı "bilinen" sabit tip sayılır, listede olmayan bir değer "<değer> Mail Order" olarak yorumlanır) artık bu listeden okunur — önceden üç ayrı dosyada (`admin/orders/[id]/page.tsx`, `api/orders/[id]/route.ts`, `lib/ordersExcel.ts`) birebir aynı sabit dizi tekrarlanıyordu. Ayarlar sayfasında bu listeyi değiştirmenin sonuçlarını (yeni seçenekler, Excel normalizasyonu) açıklayan bir uyarı gösterilir; geçmiş sipariş kayıtları (`payment_type` serbest metin) etkilenmez. Raporlar (Bölüm 6) ödeme tipini tamamen dinamik (`GROUP BY payment_type`) işlediğinden bu listeden bağımsızdır, etkilenmez.
   - **Korumalı ödeme tipleri** (`src/lib/paymentTypes.ts` — `PROTECTED_PAYMENT_TYPES`): Nakit, POS, Cari, Mail Order — her lastikçi firmasında bulunan genel kategoriler olduğundan Genel Ayarlar'dan kaldırılamaz (arayüzde 🔒 ile işaretlenir, `PUT /api/settings` da bunları liste dışında bırakan bir isteği reddeder). `getAppSettings()` bunların her zaman sonuçta bulunmasını da ayrıca garanti eder. Diğerleri ("Fatura Edildi.", isimli hesaplar gibi firmaya özel olanlar) serbestçe eklenip kaldırılabilir.
   - **Geriye dönük uyumluluk:** Bir ödeme tipi (ör. "Garanti Hesap") ayarlardan kaldırıldıktan sonra, o değeri zaten taşıyan eski siparişler kilitlenmez — `PUT /api/orders/:id`, o siparişin `order_services`/`order_payments` kayıtlarında hâlâ geçerli olan değerleri bu istek özelinde ayrıca kabul eder (ayarlar listesine geri eklemez, sadece o siparişin düzenlenmesini alakasız bir değişiklik için bile engellemez). Genel olarak yeni satır/ödeme girişleri için kaldırılmış bir tip artık seçilemez/kabul edilmez.
-- İleride çoklu firma (SaaS) desteği düşünülerek eklendi: firmaya özel değerleri kod içinde dağınık hardcode etmek yerine tek bir yerde toplamak, ileride bu tabloya `company_id` eklenip firma başına bir satıra geçişi ucuzlatır (bkz. proje hedefleri).
+- Bu tablo tam olarak çoklu firma (SaaS) desteği öngörülerek tasarlanmıştı — bu geçiş artık gerçekleşti, bkz. "Çoklu Firma (Multi-Tenant) Altyapısı".
+
+---
+
+### 13. Çoklu Firma (Multi-Tenant) Altyapısı
+
+> **Durum (2026-08-22): şema ve altyapı kodu hazır, henüz deploy edilmedi.** Bu bölüm hem hedeflenen mimariyi hem şu anki gerçek durumu anlatır — canlıya alınınca bu not güncellenmelidir.
+
+**Neden:** Bugüne kadar her müşteri (lastikçi) için ayrı bir Vercel deployment + ayrı bir Postgres veritabanı açılıyordu (aynı kod tabanı, farklı `DATABASE_URL`). Müşteri sayısı reklamlarla ~100'e çıkacağından bu model sürdürülemez (her yeni müşteri = yeni deploy + yeni migration + yeni izleme). Hedef: **tek bir paylaşılan deployment + tek bir paylaşılan veritabanı**, müşteriler birbirinin verisini (sipariş, depo, ürün, fiyat, müşteri vb.) hiç göremeden.
+
+**Tenant çözümleme:** Alt alan adı (subdomain) veya girişte firma seçimi **yok** — `users.username` kasıtlı olarak **global unique** kalır, kullanıcı hangi firmaya ait olduğunu seçmez, bu bilgi kendi kullanıcı satırından (`users.tenant_id`) okunur. Elevire (pazarlama/demo dağıtımı) tamamen ayrı bir veritabanında kalmaya devam eder, bu göçe dahil değildir.
+
+**Yapılanlar (kod tabanında mevcut, henüz canlıya deploy edilmedi):**
+- Yeni `tenants` tablosu (`id`, `name`, `slug`, `is_active`, + ileride merkezi faturalandırma için ayrılmış boş alanlar: `plan`, `billing_provider`, `billing_customer_id`, `billing_status`, `trial_ends_at`).
+- Her firma-sahipli tabloya (`services`, `orders`, `order_services`, `order_payments`, `customers`, `suppliers`, `users`, `storage`, `products`, `product_stock_entries`, `expenses`, `recurring_expenses`) `tenant_id` kolonu — mevcut tek gerçek müşterinin tüm verisi otomatik `tenant_id=1`'e geri dolduruldu.
+- `app_settings` artık tekil `id=1` satırı değil, **firma başına bir satır** (`PRIMARY KEY(tenant_id)`).
+- `users_single_primary_admin` (bkz. Bölüm 12) global'den firma-bazlı bir kısıta çevrildi — her firma kendi ana admin'ine sahip olabilir.
+- `order_services`/`order_payments`/`product_stock_entries` çocuk tablolarında, ebeveynden (orders/products) farklı bir `tenant_id` ile satır eklenmesini veritabanı seviyesinde imkansız kılan composite foreign key'ler.
+- `src/lib/auth.ts` → `getAuthUserByToken`, her istekte (role/permissions gibi) `tenant_id`'yi de taze DB'den okur — JWT'den asla güvenilmez.
+- Yeni `src/lib/provisionTenant.ts` (yeni firma + `app_settings` satırı + varsayılan hizmet/tedarikçi listesi + o firmanın ana admin kullanıcısı, tek transaction'da) ve `scripts/create-tenant.mjs` (dahili/manuel firma oluşturma CLI'ı) — HTTP'den bağımsız, ileride bir kayıt (register) sayfası aynısını çağırabilir.
+- `src/lib/settings.ts` + onu kullanan 3 route (`api/settings`, `api/storage`, `api/orders/[id]`) firma bazlı çalışacak şekilde güncellendi.
+
+**Henüz yapılmayanlar (bilinçli olarak ertelendi, sırayla devam edecek):** `orders`, `products`, `storage`, `customers`, `suppliers`, `services`, `expenses`, `users`, `reports` route'larının kendisi henüz sorgularına `tenant_id` filtresi eklemedi — şu an tüm veri hâlâ tek firma (`tenant_id=1`) varsayımıyla çalışıyor, sadece altyapı hazır. **Önemli sınırlama:** bu yüzden ikinci bir gerçek firma şu an oluşturulamaz — `services`/`suppliers` tablolarının `name` unique index'i henüz `tenant_id`'yi içermediğinden (bu, o tabloları kullanan route'larla birlikte değişecek), `provisionTenant()`/`create-tenant.mjs` varsayılan hizmet/tedarikçi listesini eklerken hata verir (güvenle geri alınır, veri bozulmaz). Detaylı aşama planı: proje deposu dışında, Claude'un plan dosyasında (`~/.claude/plans/joyful-kindling-badger.md`).
 
 ---
 
@@ -266,6 +309,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 
 | Tablo | Amaç |
 |---|---|
+| `tenants` | Firmalar (çoklu firma altyapısı, Bölüm 13) — `name`, `slug`, `is_active`, ileride faturalandırma için ayrılmış boş alanlar |
 | `services` | Yapılan İşlem listesi; `price` opsiyonel |
 | `orders` | Siparişler; `status`, `payment_type` (serbest metin), `paid_amount`, `import_ref` (Excel tekilleştirme) |
 | `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, işlem bazlı `payment_type` (yalnızca Excel içe aktarımı doldurur), ve `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`) |
@@ -275,9 +319,11 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
-| `app_settings` | Genel ayarlar — tek satır (`id=1`, `CHECK` ile zorlanır): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 12) |
+| `app_settings` | Genel ayarlar — firma başına bir satır (`PRIMARY KEY(tenant_id)`, bkz. Bölüm 13): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 12) |
 | `expenses` | Masraflar (Bölüm 11) — `expense_date`, `category`, `description`, `amount`, `payment_type`, `recurring_expense_id` (opsiyonel, bkz. `recurring_expenses`) |
 | `recurring_expenses` | Sabit gider şablonları (Bölüm 11) — `category`, `description`, `amount`, `payment_type`, `is_active`; "Sabit Giderleri Ekle" bunlardan `expenses` satırı üretir |
+
+> `tenants` hariç yukarıdaki tüm tablolarda artık bir `tenant_id` kolonu vardır (bkz. Bölüm 13) — şu an tüm mevcut veri tek bir firmaya (`tenant_id=1`) atanmış durumda, route'ların bunu filtrelemesi henüz devam eden bir çalışma.
 
 **İndeksler** (performans): `orders(created_at)`, `orders(status)`, `orders(customer_name)` (Müşteri Detayı/silme kontrolü için), `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `order_payments(order_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `storage(created_at)`, `storage(islem_tarihi)`, `storage(depo_no)` (yalnızca aktif kayıtlarda benzersiz — bkz. `storage_active_depo_no_unique`), `products(code)`, `products(supplier)`, `products(season)`, `products` üzerindeki iki benzersizlik indeksi.
 
@@ -350,6 +396,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 - `middleware.ts`, `/` ve `/admin/*` sayfa isteklerini korur — ama **API rotalarını (`/api/*`) kapsamaz** (middleware `matcher`'ı `/api/*`'i içermez); her API dosyası kendi `getAuthUser()` kontrolünü kendisi yapar (token geçerliliği). Tüm `route.ts` dosyaları bu deseni takip eder.
 - **Rol kontrolü (`role === 'admin'`) artık tüm modüllerde var.** Önce `/api/orders*` denetlendi (bkz. `e7f9022`), ardından aynı denetim `/api/products*`, `/api/storage*`, `/api/customers*`, `/api/suppliers*`, `/api/services*`, `/api/reports`'a da uygulandı: sayfa seviyesinde admin'e kapalı olan uçların (liste, oluştur, düzenle, sil, içe/dışa aktar) **API'den doğrudan çağrıldığında** herhangi bir geçerli (admin olmayan) oturumla erişilebildiği tespit edilip düzeltildi. Karşılama Görevlisi'nin (`/`) sipariş oluşturma ekranı için gerçekten ihtiyaç duyduğu, bilinçli olarak **açık bırakılan** GET uçları: `POST /api/orders`, `GET /api/customers`, `GET /api/suppliers`, `GET /api/services`, `GET /api/products/stock-codes`, `GET /api/products/stock-batches`.
 - Bu ikinci denetimde yol boyunca bulunan fonksiyonel/veri bütünlüğü düzeltmeleri: **Depolama Excel içe aktarma tamamen bozuktu** (`ON CONFLICT (plate, mevsim)` hedefi olmayan bir kısıta atıfta bulunuyordu — şema bilinçli olarak böyle bir kısıt koymuyor, bkz. Veritabanı Şeması) — artık `storage/route.ts` POST'taki aynı uygulama-katmanı (aktif kayıt ara, varsa güncelle) deseniyle çalışıyor. **Ürün/parti birleştirmede** (`PATCH /api/products/:id`) geçmiş satışlar (`order_services.product_id`) hedef partiye taşınmıyordu, birleşme sonrası Malzeme Hareketleri'nden kayboluyorlardı — düzeltildi. **Müşteri ekle/güncelle**, boş telefonla tekrar eklenince mevcut telefonu sessizce siliyordu — orders'taki `COALESCE` deseniyle hizalandı. **Depo no** eşzamanlı iki kayıtta çakışabiliyordu — `storage_active_depo_no_unique` kısmi unique index eklendi. **`/api/reports`**, ayda 5 bağımsız sorguyu sırayla ve sargable olmayan `EXTRACT(...)` filtreleriyle (tam tarama) çalıştırıyordu — `Promise.all` ile paralelleştirildi, filtreler `created_at` aralık karşılaştırmasına çevrildi (Türkiye sabit UTC+3 olduğundan ay sınırları JS'de hesaplanır), gereksiz bir toplam-ciro sorgusu kaldırıldı.
+- **Rol kontrolü artık daha ince taneli:** yukarıdaki "`role === 'admin'`" blok kontrolü, sayfa/aksiyon bazlı izin sistemiyle (bkz. Roller bölümü) `staff` için kaynak bazında yumuşatıldı — ama her API route'ta hâlâ `hasPermission(user, "kaynak.aksiyon")` şeklinde, aynı sıkılıkta bir sunucu-taraflı kontrol var; sadece admin'e-kapalı-blok yerine kaynak-bazlı-izin-listesi kontrolü yapılıyor. `GET /api/customers/:id/orders`'ın yalnızca `customers.view` ile finansal sipariş verisi döndürdüğü bir sızıntı bu denetimde bulunup `orders.view`'ı da zorunlu kılacak şekilde düzeltildi.
+- **İzin butonlarının kısa süre yanlışlıkla görünmesi:** `usePermission` hook'u (`src/app/admin/AuthContext.tsx`), `/api/auth/me` yanıtı gelene kadarki yükleme anında hata ile "fail open" (her zaman `true`) dönüyordu — sayfa her yenilendiğinde izni olmayan bir `staff` kullanıcı, o kısa pencerede Düzenle/Sil/Yeni Ekle gibi butonları görüp tıklayabiliyordu (API zaten 403 döndürürdü, ama buton yine de görünüp kayboluyordu). Artık yüklenirken `false` dönüyor ("fail closed") — buton, izin gerçekten onaylanana kadar hiç görünmüyor.
 - Yönetici şifreleri bcrypt ile hashlenmiştir.
 - JWT token süresi varsayılan 12 saat, `jose` ile imzalanır/doğrulanır. Cookie `maxAge`'i bununla senkron tutulmalıdır (login route'ta elle senkronize edilir, ortak bir kaynaktan gelmez).
 - **Login rate limiting:** `/api/auth/login`'e karşı art arda 5 başarısız denemede hesap 15 dakika kilitlenir (bkz. Bölüm 2). Sayaç/kilit DB'de tutulur (in-memory değil) — birden fazla sunucu örneği (serverless) arasında da tutarlı çalışır.
