@@ -195,6 +195,17 @@ export default function ProductsPage() {
   const canCreate = usePermission("products.create");
   const canEdit = usePermission("products.edit");
   const canDelete = usePermission("products.delete");
+  // İşlemler sütunu genişliği görünen buton sayısına göre daralır (parti
+  // satırında hep "Fiyat Geçmişi" olduğundan bu sütunu belirleyen hep bu
+  // satır tipidir) — aksi halde ör. sadece products.view izni olan bir
+  // kullanıcıda sütun gereksiz boş yer kaplardı (özellikle mobilde).
+  const productActionCount = 1 + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
+  const PRODUCT_ACTIONS_WIDTH: Record<number, string> = {
+    1: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[130px] sm:min-w-[130px] sm:max-w-[130px]",
+    2: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[200px] sm:min-w-[200px] sm:max-w-[200px]",
+    3: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]",
+  };
+  const productActionsWidth = PRODUCT_ACTIONS_WIDTH[productActionCount];
   const [items, setItems] = useState<ProductGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -819,7 +830,7 @@ export default function ProductsPage() {
                     {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
                     {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
                     {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
-                    <th className="sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]"></th>
+                    <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -884,7 +895,7 @@ export default function ProductsPage() {
                                 {group.avg_sale_price != null ? formatCurrency(num(group.avg_sale_price)) : "—"}
                               </td>
                             )}
-                            <td className="sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]">
+                            <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {canCreate && (
                                   <button
@@ -935,7 +946,7 @@ export default function ProductsPage() {
                               {visibleCols.supplier && <td className="px-4 py-3 text-gray-500">{batch.supplier ?? "—"}</td>}
                               {visibleCols.purchase_price && <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(num(batch.avg_purchase_price ?? batch.purchase_price))}</td>}
                               {visibleCols.sale_price && <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatCurrency(num(batch.avg_sale_price ?? batch.sale_price))}</td>}
-                              <td className="sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]">
+                              <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   <button
                                     onClick={() => openHistoryModal(batch)}

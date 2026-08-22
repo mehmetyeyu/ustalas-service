@@ -234,6 +234,17 @@ export default function OrdersPage() {
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canDelete = usePermission("orders.delete");
+  // İşlemler sütunu her zaman Detay içerir, Düzenle/Sil izne göre eklenir —
+  // sütun genişliği görünen buton sayısına göre daralır, aksi halde izni
+  // olmayan kullanıcılarda (ör. sadece orders.view) sütun boş yer kaplardı
+  // (özellikle mobilde fark ediliyordu).
+  const orderActionCount = 1 + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
+  const ORDER_ACTIONS_WIDTH: Record<number, { cell: string; statusOffset: string }> = {
+    1: { cell: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[90px] sm:min-w-[90px] sm:max-w-[90px]", statusOffset: "sm:right-[90px]" },
+    2: { cell: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[155px] sm:min-w-[155px] sm:max-w-[155px]", statusOffset: "sm:right-[155px]" },
+    3: { cell: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]", statusOffset: "sm:right-[220px]" },
+  };
+  const orderActionsWidth = ORDER_ACTIONS_WIDTH[orderActionCount];
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
@@ -259,6 +270,7 @@ export default function OrdersPage() {
     () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
   );
   const [showColPicker, setShowColPicker] = useState(false);
+  const [showMobileActions, setShowMobileActions] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [serviceOptions, setServiceOptions] = useState<string[]>([]);
@@ -500,7 +512,7 @@ export default function OrdersPage() {
   if (!allowed) return null;
 
   return (
-    <div onClick={() => setShowColPicker(false)}>
+    <div onClick={() => { setShowColPicker(false); setShowMobileActions(false); }}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Sipariş Listesi</h1>
         <div className="flex gap-1.5 sm:gap-2">
@@ -511,42 +523,96 @@ export default function OrdersPage() {
             onChange={handleImport}
             className="hidden"
           />
-          {canEdit && (
+
+          {/* Masaüstü: ayrı ayrı butonlar */}
+          <div className="hidden sm:flex gap-2">
+            {canEdit && (
+              <button
+                onClick={() => { window.location.href = "/api/orders/import/template"; }}
+                className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
+              >
+                Şablon İndir
+                <Tooltip text="Tarih, Plaka ve Yapılan İşlem zorunludur, diğer sütunlar isteğe bağlıdır.">
+                  <span className="text-gray-400 hover:text-gray-600 cursor-help">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+                    </svg>
+                  </span>
+                </Tooltip>
+              </button>
+            )}
+            {canEdit && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+              >
+                {importing ? "İçe Aktarılıyor..." : "Excel'den İçe Aktar"}
+              </button>
+            )}
             <button
-              onClick={() => { window.location.href = "/api/orders/import/template"; }}
-              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
+              onClick={handleExport}
+              className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
             >
-              Şablon İndir
-              <Tooltip text="Tarih, Plaka ve Yapılan İşlem zorunludur, diğer sütunlar isteğe bağlıdır.">
-                <span className="hidden sm:inline text-gray-400 hover:text-gray-600 cursor-help">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
-                  </svg>
-                </span>
-              </Tooltip>
+              {activeFilterCount > 0 || search ? "Filtreliyi Dışa Aktar" : "Dışa Aktar"}
             </button>
-          )}
-          {canEdit && (
+            <Link
+              href="/"
+              className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium whitespace-nowrap"
+            >
+              + Sipariş Ekle
+            </Link>
+          </div>
+
+          {/* Mobil: hızlı menü altında toplanmış aksiyonlar */}
+          <div className="relative sm:hidden shrink-0">
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+              onClick={(e) => { e.stopPropagation(); setShowMobileActions((v) => !v); }}
+              className="shrink-0 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
             >
-              {importing ? "İçe Aktarılıyor..." : "Excel'den İçe Aktar"}
+              İşlemler
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-          )}
-          <button
-            onClick={handleExport}
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
-          >
-            {activeFilterCount > 0 || search ? "Filtreliyi Dışa Aktar" : "Dışa Aktar"}
-          </button>
-          <Link
-            href="/"
-            className="shrink-0 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap"
-          >
-            + Sipariş Ekle
-          </Link>
+            {showMobileActions && (
+              <div
+                className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-56"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {canEdit && (
+                  <button
+                    onClick={() => { setShowMobileActions(false); window.location.href = "/api/orders/import/template"; }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Şablon İndir
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    onClick={() => { setShowMobileActions(false); fileInputRef.current?.click(); }}
+                    disabled={importing}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {importing ? "İçe Aktarılıyor..." : "Excel'den İçe Aktar"}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowMobileActions(false); handleExport(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  {activeFilterCount > 0 || search ? "Filtreliyi Dışa Aktar" : "Dışa Aktar"}
+                </button>
+                <Link
+                  href="/"
+                  onClick={() => setShowMobileActions(false)}
+                  className="block px-4 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                >
+                  + Sipariş Ekle
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -584,16 +650,18 @@ export default function OrdersPage() {
             placeholder="Hızlı ara: Plaka, Müşteri, Tedarikçi..."
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 sm:w-96 sm:flex-none"
           />
+
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
+              className="hidden sm:inline text-sm text-gray-400 hover:text-gray-700"
+            >
+              Filtreleri Temizle
+            </button>
+          )}
         </div>
 
-        {activeFilterCount > 0 && (
-          <button
-            onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
-            className="self-start text-sm text-gray-400 hover:text-gray-700"
-          >
-            Filtreleri Temizle
-          </button>
-        )}
+
 
         <div className="flex items-stretch gap-1.5 sm:gap-3 sm:ml-auto">
           <div className="shrink-0 flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
@@ -786,13 +854,13 @@ export default function OrdersPage() {
             <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
               <button
                 onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
-                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+                className="flex-1 border border-gray-300 text-gray-700 text-sm sm:text-base font-medium py-2 sm:py-2.5 rounded-lg hover:bg-gray-50"
               >
                 Filtreleri Temizle
               </button>
               <button
                 onClick={() => setShowFilterModal(false)}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-semibold py-2 sm:py-2.5 rounded-lg transition-colors"
               >
                 Uygula
               </button>
@@ -821,8 +889,8 @@ export default function OrdersPage() {
                 {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
                 {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
                 {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
-                <SortTh sortK="status" label="Statü" align="center" stickyClassName="sm:sticky sm:right-[220px] sm:z-20 sm:bg-gray-50 sm:shadow-[-1px_0_0_0_#e5e7eb]" />
-                <th className="px-1.5 py-3 sticky right-0 z-20 bg-gray-50 w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]"></th>
+                <SortTh sortK="status" label="Statü" align="center" stickyClassName={`sm:sticky ${orderActionsWidth.statusOffset} sm:z-20 sm:bg-gray-50 sm:shadow-[-1px_0_0_0_#e5e7eb]`} />
+                <th className={`px-1.5 py-3 sticky right-0 z-20 bg-gray-50 ${orderActionsWidth.cell}`}></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -895,7 +963,7 @@ export default function OrdersPage() {
                           {r.notes || "-"}
                         </td>
                       )}
-                      <td className="px-1.5 py-3 text-center sm:sticky sm:right-[220px] sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 sm:shadow-[-1px_0_0_0_#f3f4f6]">
+                      <td className={`px-1.5 py-3 text-center sm:sticky ${orderActionsWidth.statusOffset} sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 sm:shadow-[-1px_0_0_0_#f3f4f6]`}>
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
                             r.status === "TAMAMLANDI"
@@ -906,7 +974,7 @@ export default function OrdersPage() {
                           {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-3 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]">
+                      <td className={`px-1 sm:px-3 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 ${orderActionsWidth.cell}`}>
                         <div className="flex items-center justify-center sm:justify-start gap-0.5 sm:gap-3">
                           <Link
                             href={`/admin/orders/${r.id}`}
