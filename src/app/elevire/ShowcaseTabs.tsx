@@ -6,6 +6,7 @@ const TABS = [
   { id: "orders-form", label: "Sipariş Formu", path: "elevire.app/orders/new" },
   { id: "orders-list", label: "Sipariş Listesi", path: "elevire.app/admin/orders" },
   { id: "storage", label: "Depolama", path: "elevire.app/admin/storage" },
+  { id: "expenses", label: "Masraflar", path: "elevire.app/admin/expenses" },
   { id: "reports", label: "Raporlama", path: "elevire.app/admin/reports" },
 ] as const;
 
@@ -51,6 +52,7 @@ export default function ShowcaseTabs() {
           {active === "orders-form" && <OrdersFormMock />}
           {active === "orders-list" && <OrdersListMock />}
           {active === "storage" && <StorageMock />}
+          {active === "expenses" && <ExpensesMock />}
           {active === "reports" && <ReportsMock />}
         </div>
       </div>
@@ -192,6 +194,53 @@ function StorageMock() {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ExpensesMock() {
+  const rows = [
+    { date: "01.08.2026", category: "Kira", desc: "Dükkan kirası", pay: "Havale/EFT", amount: "18.000 ₺", fixed: true },
+    { date: "03.08.2026", category: "Elektrik", desc: "Ağustos faturası", pay: "Havale/EFT", amount: "2.150 ₺", fixed: true },
+    { date: "05.08.2026", category: "Personel Maaşı", desc: "—", pay: "Havale/EFT", amount: "24.000 ₺", fixed: true },
+    { date: "10.08.2026", category: "Araç Yakıtı", desc: "Servis aracı", pay: "Nakit", amount: "850 ₺", fixed: false },
+  ];
+  return (
+    <div className="mock-list">
+      <div className="mock-chips">
+        <span className="mock-chip">Ay: Ağustos 2026</span>
+        <span className="mock-chip">Kategori</span>
+        <span className="mock-chip">Sabit Giderler</span>
+      </div>
+      <table className="mock-table">
+        <thead>
+          <tr>
+            <th>Tarih</th>
+            <th>Kategori</th>
+            <th>Açıklama</th>
+            <th>Ödeme Şekli</th>
+            <th className="num">Tutar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="mono">{r.date}</td>
+              <td>
+                {r.category}
+                {r.fixed && <span className="mock-badge-overdue" style={{ background: "var(--accent-2)" }}>Sabit</span>}
+              </td>
+              <td>{r.desc}</td>
+              <td>{r.pay}</td>
+              <td className="num">{r.amount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="mock-form-footer">
+        <span>Bu Ay Toplam Gider</span>
+        <strong>45.000 ₺</strong>
+      </div>
     </div>
   );
 }

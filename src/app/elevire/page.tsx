@@ -49,12 +49,16 @@ export const metadata: Metadata = {
 const FEATURES = [
   { code: "SİP", title: "Sipariş Yönetimi", text: "Plaka bazlı sipariş kaydı, uygulanan hizmetler ve ödeme takibi tek ekranda." },
   { code: "MUS", title: "Müşteri Yönetimi", text: "Müşteri dizini, iletişim bilgileri ve geçmiş sipariş kayıtları tek tıkla." },
+  { code: "HZM", title: "Hizmet Kataloğu", text: "Kendi hizmet listenizi oluşturun; sipariş formunda tek tıkla ekleyip fiyatlandırın." },
   { code: "STK", title: "Stok & Fiyat Takibi", text: "Ürün stok seviyeleri, parti bazlı alış/satış fiyat geçmişi." },
   { code: "DEPO", title: "Mevsimlik Depolama Takibi", text: "Hangi lastik ne zaman depoya girdi, bekleyen kayıtlar için otomatik uyarı." },
   { code: "TED", title: "Tedarikçi Takibi", text: "Tedarikçi bazlı ürün ve maliyet kayıtları." },
   { code: "RPR", title: "Raporlama", text: "Satış, hizmet ve kâr analizleri; işletmenizin nabzını anlık görün." },
+  { code: "MSR", title: "Masraflar & Sabit Giderler", text: "Kira, fatura, maaş gibi sabit giderleri şablonla otomatik oluşturun; aylık gider tablosu tek ekranda." },
   { code: "XLS", title: "Excel İçe/Dışa Aktarma", text: "Mevcut verilerinizi hazır şablonlarla saniyeler içinde sisteme taşıyın." },
-  { code: "KLN", title: "Çoklu Kullanıcı & Yetkilendirme", text: "Çalışanlarınız için ayrı hesaplar, rol bazlı erişim kontrolü." },
+  { code: "KLN", title: "Sayfa Bazlı Yetkilendirme", text: "Çalışanlarınız için ayrı hesaplar; her personele hangi sayfayı görüp hangi işlemi yapabileceğini tek tek belirleyin." },
+  { code: "MBL", title: "Mobilden de Yönetin", text: "Depoda, tezgahta, elinizde telefon — arayüz her ekranda aynı hızda çalışır, ayrı bir uygulama gerekmez." },
+  { code: "AYR", title: "Firmanıza Özel Ayarlar", text: "İşletme adınızı ve kabul ettiğiniz ödeme şekillerini (nakit, POS, cari, havale) kendiniz düzenleyin." },
 ];
 
 export default function ElevirePage() {
@@ -116,7 +120,7 @@ export default function ElevirePage() {
           <div className="showcase-head">
             <span className="problem-tag">UYGULAMADAN</span>
             <h2>Ekranın arkasında<br />gerçek bir sistem var.</h2>
-            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız dört ekranı: sipariş oluşturma, sipariş listesi, depolama takibi ve raporlama.</p>
+            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız beş ekranı: sipariş oluşturma, sipariş listesi, depolama takibi, masraf takibi ve raporlama.</p>
           </div>
           <ShowcaseTabs />
         </div>
@@ -125,7 +129,7 @@ export default function ElevirePage() {
       <div className="features">
         <div className="wrap">
           <div className="features-head">
-            <h2>Tek Sistem,<br />Sekiz İş.</h2>
+            <h2>Tek Sistem,<br />On İki İş.</h2>
             <p>Sabahtan akşama işletmenizi ayakta tutan her şey Elevire içinde.</p>
           </div>
           <div className="feature-grid">
