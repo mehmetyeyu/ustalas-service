@@ -401,9 +401,16 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 -- Mevcut tek gerçek müşteri (Ustalas prod) için bootstrap satırı — sonraki
 -- geri-dolum UPDATE'lerinin işaret ettiği firma budur. Elevire kendi ayrı
--- veritabanında bu INSERT'i kendi başına çalıştırır (isim orada da "Ustalas"
--- görünür ama bu sadece kozmetik bir etiket, Elevire'ın verisiyle karışmaz —
--- Elevire tamamen ayrı bir veritabanı).
+-- veritabanında bu INSERT'i kendi başına çalıştırır; isim/slug orada da ilk
+-- deploy'da "Ustalas"/"ustalas" olarak oluşuyordu — Elevire'ın verisiyle
+-- karışma riski yok (tamamen ayrı bir veritabanı) ama Online Randevu
+-- eklenince artık Elevire panelindeki embed linkinde ve /randevu/ustalas
+-- URL'inde gerçek müşteri adı görünür oldu (2026-08-25'te fark edildi).
+-- ON CONFLICT DO NOTHING olduğu için burada değer değiştirmek Elevire'nin
+-- zaten var olan satırını düzeltmez — Elevire'nin kendi DB'sinde tek seferlik
+-- `UPDATE tenants SET name='Elevire Demo', slug='elevire-demo' WHERE id=1;`
+-- ile elle düzeltildi (demoSeed.ts'in gecelik reset'i tenants tablosuna hiç
+-- dokunmuyor, bu değişiklik kalıcı).
 -- slug NOT NULL (bkz. "Online Randevu" bölümü) — Postgres, ON CONFLICT DO
 -- NOTHING'in çakışmayı tespit etmesinden ÖNCE önerilen satırın NOT NULL
 -- kısıtlarını doğruluyor; slug verilmezse id=1 zaten var olsa bile bu INSERT
