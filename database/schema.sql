@@ -404,7 +404,11 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- veritabanında bu INSERT'i kendi başına çalıştırır (isim orada da "Ustalas"
 -- görünür ama bu sadece kozmetik bir etiket, Elevire'ın verisiyle karışmaz —
 -- Elevire tamamen ayrı bir veritabanı).
-INSERT INTO tenants (id, name) VALUES (1, 'Ustalas') ON CONFLICT (id) DO NOTHING;
+-- slug NOT NULL (bkz. "Online Randevu" bölümü) — Postgres, ON CONFLICT DO
+-- NOTHING'in çakışmayı tespit etmesinden ÖNCE önerilen satırın NOT NULL
+-- kısıtlarını doğruluyor; slug verilmezse id=1 zaten var olsa bile bu INSERT
+-- her seferinde "null value in column slug" hatasıyla patlardı.
+INSERT INTO tenants (id, name, slug) VALUES (1, 'Ustalas', 'ustalas') ON CONFLICT (id) DO NOTHING;
 -- Yukarıdaki elle-id'li INSERT, "id SERIAL" sütununun kendi sequence'ini
 -- ilerletmez — düzeltilmezse bir sonraki "INSERT INTO tenants (name) ..."
 -- (provisionTenant/create-tenant.mjs) yine id=1 üretmeye çalışıp
@@ -559,3 +563,128 @@ CREATE INDEX IF NOT EXISTS storage_tenant_created_at_idx ON storage(tenant_id, c
 CREATE INDEX IF NOT EXISTS expenses_tenant_expense_date_idx ON expenses(tenant_id, expense_date DESC);
 CREATE INDEX IF NOT EXISTS products_tenant_code_idx ON products(tenant_id, code);
 CREATE INDEX IF NOT EXISTS product_stock_entries_tenant_product_idx ON product_stock_entries(tenant_id, product_id);
+
+-- ============================================================================
+-- ÇOKLU FİRMA — Aşama 3: Online Randevu modülü.
+--
+-- Oturum açmamış bir müşterinin randevu sayfası (/randevu/<slug>) hangi
+-- firmaya ait olduğunu bilmesi gerekiyor — ama mevcut kiracı çözümlemesi
+-- (bkz. src/lib/auth.ts getAuthUserByToken) tamamen oturum açmış kullanıcının
+-- users.tenant_id'sine dayanıyor, public bir sayfada bu yok. tenants.slug
+-- kolonu bunun için zaten vardı ama hiçbir yerde doldurulmuyor/okunmuyordu
+-- (her zaman NULL) — şimdi canlandırılıyor: mevcut firmalar isimlerinden
+-- slugify edilip dolduruluyor, ileride NOT NULL zorunlu kılınıyor.
+DO $$
+DECLARE
+  t RECORD;
+  base_slug TEXT;
+  candidate TEXT;
+  suffix INT;
+BEGIN
+  FOR t IN SELECT id, name FROM tenants WHERE slug IS NULL LOOP
+    base_slug := lower(translate(t.name, 'çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU'));
+    base_slug := regexp_replace(base_slug, '[^a-z0-9]+', '-', 'g');
+    base_slug := trim(both '-' from base_slug);
+    IF base_slug = '' THEN
+      base_slug := 'firma-' || t.id;
+    END IF;
+    candidate := base_slug;
+    suffix := 2;
+    WHILE EXISTS (SELECT 1 FROM tenants WHERE slug = candidate AND id != t.id) LOOP
+      candidate := base_slug || '-' || suffix;
+      suffix := suffix + 1;
+    END LOOP;
+    UPDATE tenants SET slug = candidate WHERE id = t.id;
+  END LOOP;
+END $$;
+ALTER TABLE tenants ALTER COLUMN slug SET NOT NULL;
+
+-- Bir hizmetin online randevuya açık olup olmadığı ve tahmini süresi (kapasite
+-- hesaplamasında slot uzunluğu için kullanılır) — bkz. app_settings.booking_*.
+ALTER TABLE services ADD COLUMN IF NOT EXISTS bookable BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS duration_minutes INT;
+
+-- appointments.service_id'nin (order_services.product_id gibi) firma-güvenli
+-- bir composite FK ile bağlanabilmesi için orders/products'takiyle aynı
+-- desen: (id, tenant_id) üzerinde bir UNIQUE.
+CREATE UNIQUE INDEX IF NOT EXISTS services_id_tenant_unique ON services(id, tenant_id);
+
+-- Randevu ayarları firma başına (app_settings zaten tenant_id PK'lı tek
+-- satır): kapasite (aynı anda kaç randevu kabul edilir), haftalık çalışma
+-- saatleri şablonu, ve otomatik onay anahtarı. booking_auto_approve
+-- varsayılan false — MVP'de onay hep personelde kalıyor (bkz. proje planı,
+-- "Online Randevu Stratejisi"), ama alan şimdiden hazır: güven arttıkça
+-- kod değişikliği gerekmeden açılabilir.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_capacity INT NOT NULL DEFAULT 1;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_working_hours JSONB;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_auto_approve BOOLEAN NOT NULL DEFAULT false;
+-- Public randevu formundan en fazla kaç gün ileriye randevu alınabileceği
+-- (bkz. src/lib/appointmentSlots.ts isWithinBookableWindow) — sınırsız
+-- olursa bir bot IP/telefon limitlerini takvime yayılarak aşabilir, bu
+-- yüzden makul bir üst sınır zorunlu; firma isterse Ayarlar'dan değiştirir.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_max_days_ahead INT NOT NULL DEFAULT 30;
+
+CREATE TABLE IF NOT EXISTS appointments (
+  id             SERIAL PRIMARY KEY,
+  tenant_id      INT NOT NULL REFERENCES tenants(id),
+  plate          VARCHAR(20) NOT NULL,
+  -- Ad Soyad, Plaka, Telefon üçü de randevu formunda zorunlu (bkz.
+  -- /randevu/[slug] ve /api/public/randevu/[slug]) — mevcut satırlar
+  -- (varsa) boş string'e geri doldurulup ardından NOT NULL uygulanıyor.
+  customer_name  VARCHAR(100),
+  customer_phone VARCHAR(20) NOT NULL,
+  service_id     INT REFERENCES services(id),
+  requested_at   TIMESTAMPTZ NOT NULL,
+  -- BEKLEMEDE: müşteri talep gönderdi, onay bekliyor (booking_auto_approve
+  -- kapalıyken varsayılan). ONAYLANDI: personel onayladı VEYA
+  -- booking_auto_approve açık. REDDEDILDI/IPTAL: personel/müşteri iptal etti.
+  -- TAMAMLANDI: siparişe dönüştürüldü (bkz. order_id). GELMEDI: müşteri
+  -- randevuya gelmedi (no-show, elle işaretlenir).
+  status         VARCHAR(20) NOT NULL DEFAULT 'BEKLEMEDE'
+                   CHECK (status IN ('BEKLEMEDE','ONAYLANDI','REDDEDILDI','TAMAMLANDI','IPTAL','GELMEDI')),
+  order_id       INT REFERENCES orders(id),
+  notes          TEXT,
+  created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+DO $$ BEGIN
+  ALTER TABLE appointments ADD CONSTRAINT appointments_service_tenant_fk
+    FOREIGN KEY (service_id, tenant_id) REFERENCES services(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE appointments ADD CONSTRAINT appointments_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS appointments_tenant_status_idx ON appointments(tenant_id, status);
+-- Slot müsaitlik hesaplaması (bkz. src/lib/appointmentSlots.ts) her zaman bir
+-- gün + tenant için mevcut randevuları taradığından tenant_id + requested_at
+-- en sık kullanılan filtre kombinasyonu.
+CREATE INDEX IF NOT EXISTS appointments_tenant_requested_idx ON appointments(tenant_id, requested_at);
+-- information_schema kontrolü olmadan bu UPDATE her `next build`/deploy'da
+-- (migrate.mjs'in çalıştırdığı, tamamen idempotent olması gereken bu dosyada)
+-- appointments tablosunun tam taramasına yol açardı — tenants.slug backfill'i
+-- yukarıda (satır ~570) aynı sebeple WHERE slug IS NULL ile korunuyordu, kolon
+-- zaten NOT NULL olduğunda bu artık hiçbir satıra dokunmadan no-op geçer.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'appointments' AND column_name = 'customer_name' AND is_nullable = 'YES'
+  ) THEN
+    UPDATE appointments SET customer_name = '' WHERE customer_name IS NULL;
+    ALTER TABLE appointments ALTER COLUMN customer_name SET NOT NULL;
+  END IF;
+END $$;
+
+-- Public randevu formu artık firmaların kendi sitelerine gömülebiliyor (bkz.
+-- embed.js) — telefon-bazlı soğuma tek başına yetersiz (bot her seferinde
+-- farklı bir telefon numarası üretebilir). IP bazlı hız sınırı için
+-- (bkz. /api/public/randevu/[slug] POST) her randevuya isteğin geldiği IP
+-- kaydediliyor.
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS ip_address VARCHAR(45);
+CREATE INDEX IF NOT EXISTS appointments_tenant_ip_created_idx ON appointments(tenant_id, ip_address, created_at);
+-- Aynı public POST route'undaki telefon-bazlı soğuma kontrolü (customer_phone
+-- + created_at) IP kontrolüyle aynı desende ama karşılık gelen bir index'i
+-- yoktu — tek tenant/düşük hacimde fark etmiyor ama en yoğun public rota
+-- olduğundan tutarlılık için IP index'iyle aynı şekilde ekleniyor.
+CREATE INDEX IF NOT EXISTS appointments_tenant_phone_created_idx ON appointments(tenant_id, customer_phone, created_at);

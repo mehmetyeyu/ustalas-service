@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   if (!hasPermission(user, "services.create")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { name, price } = await request.json();
+    const { name, price, bookable, duration_minutes } = await request.json();
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
     }
@@ -35,13 +35,17 @@ export async function POST(request: NextRequest) {
     if (priceValue != null && (!Number.isFinite(priceValue) || priceValue < 0)) {
       return NextResponse.json({ error: "Geçersiz fiyat." }, { status: 400 });
     }
+    const durationValue = duration_minutes === "" || duration_minutes == null ? null : Number(duration_minutes);
+    if (durationValue != null && (!Number.isFinite(durationValue) || durationValue <= 0)) {
+      return NextResponse.json({ error: "Geçersiz süre." }, { status: 400 });
+    }
 
     const result = await pool.query(
-      "INSERT INTO services (tenant_id, name, price) VALUES ($1, $2, $3) RETURNING id",
-      [user.tenantId, String(name).trim(), priceValue]
+      "INSERT INTO services (tenant_id, name, price, bookable, duration_minutes) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [user.tenantId, String(name).trim(), priceValue, !!bookable, durationValue]
     );
     return NextResponse.json(
-      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1 },
+      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1, bookable: !!bookable, duration_minutes: durationValue },
       { status: 201 }
     );
   } catch (error: unknown) {

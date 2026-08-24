@@ -16,6 +16,7 @@ const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC_DARK || "/logo.jpg";
 // — bkz. src/lib/permissions.ts (aynı kaynak/aksiyon taksonomisi).
 const navItems = [
   { href: "/admin/orders", label: "Siparişler", resource: "orders" },
+  { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
   { href: "/admin/storage", label: "Depolama", resource: "storage" },
   { href: "/admin/products", label: "Ürünler", resource: "products" },
   { href: "/admin/reports", label: "Raporlar", resource: "reports" },
@@ -32,9 +33,18 @@ const settingsItems = [
   { href: "/admin/profile", label: "Profil", adminOnly: false },
   { href: "/admin/users", label: "Kullanıcılar", adminOnly: true },
   { href: "/admin/settings", label: "Genel Ayarlar", adminOnly: true },
+  { href: "/admin/appointments/ayarlar", label: "Randevu Ayarları", adminOnly: true },
 ] as const;
 
-type NavItem = { href: string; label: string };
+type NavItem = { href: string; label: string; badge?: number };
+
+function NavBadge({ count }: { count: number }) {
+  return (
+    <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+      {count}
+    </span>
+  );
+}
 
 function SettingsMenu({ pathname, items }: { pathname: string; items: readonly NavItem[] }) {
   const [open, setOpen] = useState(false);
@@ -129,13 +139,14 @@ function MobileMenu({
             <Link
               key={item.href}
               href={item.href}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center ${
                 pathname.startsWith(item.href)
                   ? "bg-blue-600 text-white"
                   : "text-gray-300 hover:bg-gray-700"
               }`}
             >
               {item.label}
+              {!!item.badge && <NavBadge count={item.badge} />}
             </Link>
           ))}
 
@@ -174,13 +185,44 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [pendingAppointments, setPendingAppointments] = useState(0);
+
+  // Randevu sayfasına girmeden "bekleyen randevu var mı" görülebilsin diye —
+  // nav'daki rozet, kullanıcı isteği üzerine eklendi. Sayfa açılışında ve
+  // ardından periyodik olarak (60sn) BEKLEMEDE sayısını çeker; appointments.view
+  // izni yoksa hiç denemez.
+  useEffect(() => {
+    if (!user) return;
+    const canView = user.role === "admin" || hasPermission(user, "appointments.view");
+    if (!canView) return;
+    let cancelled = false;
+    async function fetchPending() {
+      try {
+        // Sadece bir sayı gösterilecek — tüm satırları (isim/telefon/not
+        // dahil) çekmek yerine ucuz ?count=1 yolunu kullanır (bkz.
+        // /api/appointments GET, appointments_tenant_status_idx'e dayanır).
+        const res = await fetch("/api/appointments?status=BEKLEMEDE&count=1", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setPendingAppointments(typeof data.count === "number" ? data.count : 0);
+      } catch { /* sessizce yoksay — bu sadece bir rozet, sayfayı bloklamamalı */ }
+    }
+    fetchPending();
+    const interval = setInterval(fetchPending, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [user]);
 
   // Yüklenirken tüm linkler gösterilir (kısa an) — asıl erişim zaten
   // middleware + her sayfanın kendi guard'ı ile korunuyor, bu sadece nav'ın
   // görünürlüğü. admin için filtreleme hiç uygulanmaz (her zaman tam liste).
-  const visibleNavItems = loading || user?.role === "admin"
+  const visibleNavItems: NavItem[] = (loading || user?.role === "admin"
     ? navItems
-    : navItems.filter((item) => user && hasPermission(user, `${item.resource}.view`));
+    : navItems.filter((item) => user && hasPermission(user, `${item.resource}.view`))
+  ).map((item) =>
+    item.href === "/admin/appointments" && pendingAppointments > 0
+      ? { ...item, badge: pendingAppointments }
+      : item
+  );
   const visibleSettingsItems = loading || user?.role === "admin"
     ? settingsItems
     : settingsItems.filter((item) => !item.adminOnly);
@@ -205,13 +247,14 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center ${
                     pathname.startsWith(item.href)
                       ? "bg-blue-600 text-white"
                       : "text-gray-300 hover:bg-gray-700"
                   }`}
                 >
                   {item.label}
+                  {!!item.badge && <NavBadge count={item.badge} />}
                 </Link>
               ))}
             </div>

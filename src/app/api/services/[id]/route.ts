@@ -13,7 +13,7 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { name, price, is_active } = await request.json();
+    const { name, price, is_active, bookable, duration_minutes } = await request.json();
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
     }
@@ -21,9 +21,13 @@ export async function PUT(
     if (priceValue != null && (!Number.isFinite(priceValue) || priceValue < 0)) {
       return NextResponse.json({ error: "Geçersiz fiyat." }, { status: 400 });
     }
+    const durationValue = duration_minutes === "" || duration_minutes == null ? null : Number(duration_minutes);
+    if (durationValue != null && (!Number.isFinite(durationValue) || durationValue <= 0)) {
+      return NextResponse.json({ error: "Geçersiz süre." }, { status: 400 });
+    }
     const result = await pool.query(
-      "UPDATE services SET name = $1, price = $2, is_active = $3 WHERE id = $4 AND tenant_id = $5",
-      [String(name).trim(), priceValue, is_active ? 1 : 0, id, user.tenantId]
+      "UPDATE services SET name = $1, price = $2, is_active = $3, bookable = $4, duration_minutes = $5 WHERE id = $6 AND tenant_id = $7",
+      [String(name).trim(), priceValue, is_active ? 1 : 0, !!bookable, durationValue, id, user.tenantId]
     );
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Hizmet bulunamadı." }, { status: 404 });

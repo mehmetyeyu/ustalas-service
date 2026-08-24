@@ -5,17 +5,27 @@ export interface AppSettings {
   business_name: string;
   storage_overdue_months: number;
   payment_types: string[];
+  booking_capacity: number;
+  booking_working_hours: import("./appointmentSlots").WorkingHours | null;
+  booking_auto_approve: boolean;
+  booking_max_days_ahead: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   business_name: "Lastik Servis Yönetim Sistemi",
   storage_overdue_months: 6,
   payment_types: ["Nakit", "POS", "Cari", "Fatura Edildi.", "Havale/EFT", "Mail Order"],
+  booking_capacity: 1,
+  booking_working_hours: null,
+  booking_auto_approve: false,
+  booking_max_days_ahead: 30,
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
   const result = await pool.query<AppSettings>(
-    "SELECT business_name, storage_overdue_months, payment_types FROM app_settings WHERE tenant_id = $1",
+    `SELECT business_name, storage_overdue_months, payment_types,
+            booking_capacity, booking_working_hours, booking_auto_approve, booking_max_days_ahead
+     FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );
   const settings = result.rows[0] ?? DEFAULT_SETTINGS;

@@ -9,6 +9,10 @@ export default function GeneralSettingsPage() {
   const [overdueMonths, setOverdueMonths] = useState("6");
   const [paymentTypes, setPaymentTypes] = useState<string[]>([]);
   const [newPaymentType, setNewPaymentType] = useState("");
+  const [bookingCapacity, setBookingCapacity] = useState(1);
+  const [workingHours, setWorkingHours] = useState<unknown>(null);
+  const [autoApprove, setAutoApprove] = useState(false);
+  const [maxDaysAhead, setMaxDaysAhead] = useState(30);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -21,6 +25,14 @@ export default function GeneralSettingsPage() {
         setBusinessName(data.business_name ?? "");
         setOverdueMonths(String(data.storage_overdue_months ?? 6));
         setPaymentTypes(Array.isArray(data.payment_types) ? data.payment_types : []);
+        // Randevu Ayarları artık ayrı bir sayfada (/admin/appointments/ayarlar)
+        // düzenleniyor, ama aynı app_settings satırını paylaştığı için PUT
+        // gönderirken bu değerleri olduğu gibi geri yollamamız gerekiyor —
+        // yoksa burada kaydedince Randevu Ayarları sıfırlanırdı.
+        setBookingCapacity(data.booking_capacity ?? 1);
+        setWorkingHours(data.booking_working_hours ?? null);
+        setAutoApprove(!!data.booking_auto_approve);
+        setMaxDaysAhead(data.booking_max_days_ahead ?? 30);
         setLoading(false);
       });
   }, []);
@@ -64,6 +76,10 @@ export default function GeneralSettingsPage() {
           business_name: businessName.trim(),
           storage_overdue_months: months,
           payment_types: paymentTypes,
+          booking_capacity: bookingCapacity,
+          booking_working_hours: workingHours,
+          booking_auto_approve: autoApprove,
+          booking_max_days_ahead: maxDaysAhead,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");

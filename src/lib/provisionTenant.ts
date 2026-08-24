@@ -7,6 +7,37 @@
 import bcrypt from "bcryptjs";
 import pool from "@/lib/db";
 
+interface QueryClient {
+  query<T = unknown>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
+}
+
+const TURKISH_MAP: Record<string, string> = { ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u" };
+
+function slugifyBase(name: string): string {
+  const ascii = name
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[çğıöşü]/g, (ch) => TURKISH_MAP[ch] ?? ch)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return ascii || "firma";
+}
+
+// tenants.slug artık NOT NULL (bkz. database/schema.sql, "Online Randevu"
+// bölümü) — /randevu/<slug> public rotasının kiracıyı çözümleyebilmesi için
+// her firmanın benzersiz bir slug'ı olmak zorunda. database/schema.sql'deki
+// mevcut-firma backfill'iyle aynı çakışma-çözme mantığı (base, base-2, ...).
+async function generateUniqueSlug(client: QueryClient, name: string): Promise<string> {
+  const base = slugifyBase(name);
+  let candidate = base;
+  let suffix = 2;
+  for (;;) {
+    const existing = await client.query("SELECT 1 FROM tenants WHERE slug = $1", [candidate]);
+    if (existing.rows.length === 0) return candidate;
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+}
+
 // database/schema.sql'deki varsayılan hizmet/tedarikçi seed listeleriyle
 // birebir aynı — orası artık yeni firma oluştururken çalışmıyor (o INSERT'ler
 // global/tekil bir kuruluma özeldi), bu yüzden liste burada tekrarlanıyor.
@@ -55,9 +86,10 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   try {
     await client.query("BEGIN");
 
+    const slug = input.slug?.trim() || await generateUniqueSlug(client, tenantName);
     const tenantResult = await client.query(
       `INSERT INTO tenants (name, slug, plan) VALUES ($1, $2, $3) RETURNING id`,
-      [tenantName, input.slug ?? null, input.plan ?? null]
+      [tenantName, slug, input.plan ?? null]
     );
     const tenantId: number = tenantResult.rows[0].id;
 

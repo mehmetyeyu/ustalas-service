@@ -9,6 +9,8 @@ interface Service {
   name: string;
   price: number | null;
   is_active: number;
+  bookable: boolean;
+  duration_minutes: number | null;
 }
 
 export default function ServicesPage() {
@@ -22,6 +24,8 @@ export default function ServicesPage() {
   const [editSvc, setEditSvc] = useState<Service | null>(null);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [bookable, setBookable] = useState(false);
+  const [duration, setDuration] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -43,6 +47,8 @@ export default function ServicesPage() {
     setEditSvc(null);
     setName("");
     setPrice("");
+    setBookable(false);
+    setDuration("");
     setError("");
     setShowForm(true);
   }
@@ -51,6 +57,8 @@ export default function ServicesPage() {
     setEditSvc(svc);
     setName(svc.name);
     setPrice(svc.price != null ? String(svc.price) : "");
+    setBookable(svc.bookable);
+    setDuration(svc.duration_minutes != null ? String(svc.duration_minutes) : "");
     setError("");
     setShowForm(true);
   }
@@ -62,20 +70,21 @@ export default function ServicesPage() {
       return;
     }
     const priceValue = price.trim() ? parseFloat(price) : null;
+    const durationValue = duration.trim() ? parseInt(duration, 10) : null;
     setSaving(true);
     try {
       if (editSvc) {
         const res = await fetch(`/api/services/${editSvc.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active }),
+          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active, bookable, duration_minutes: durationValue }),
         });
         if (!res.ok) throw new Error("Güncelleme başarısız.");
       } else {
         const res = await fetch("/api/services", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue }),
+          body: JSON.stringify({ name: name.trim(), price: priceValue, bookable, duration_minutes: durationValue }),
         });
         if (!res.ok) throw new Error("Ekleme başarısız.");
       }
@@ -120,6 +129,7 @@ export default function ServicesPage() {
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Hizmet Adı</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Fiyat</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Randevu</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -129,6 +139,15 @@ export default function ServicesPage() {
                     <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{svc.name}</td>
                     <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
                       {svc.price != null ? formatCurrency(svc.price) : <span className="text-gray-400">Fiyat girilmemiş</span>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {svc.bookable ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                          Açık{svc.duration_minutes ? ` · ${svc.duration_minutes} dk` : ""}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Kapalı</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
@@ -205,6 +224,31 @@ export default function ServicesPage() {
                   step="0.01"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div className="border-t border-gray-100 pt-4">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bookable}
+                    onChange={(e) => setBookable(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  Online Randevuya Aç
+                </label>
+                {bookable && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Süre (dakika)</label>
+                    <input
+                      type="number"
+                      value={duration}
+                      onChange={(e) => setDuration(e.target.value)}
+                      placeholder="30"
+                      min="1"
+                      step="1"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

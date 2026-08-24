@@ -8,6 +8,7 @@
 
 export const RESOURCE_ACTIONS = {
   orders: ["view", "edit", "delete", "approve"],
+  appointments: ["view", "create", "edit", "delete", "approve"],
   reports: ["view"],
   services: ["view", "create", "edit", "delete"],
   storage: ["view", "create", "edit", "delete"],
@@ -44,6 +45,10 @@ export function hasPermission(user: PermissionUser, key: string): boolean {
 // `resource: "__admin_only__"` → devredilemez, her zaman sadece role==='admin'.
 export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__admin_only__" }[] = [
   { prefix: "/admin/orders", resource: "orders" },
+  // Daha spesifik olan /admin/appointments/ayarlar altta genel appointments
+  // eşleşmesinden ÖNCE gelmeli — canAccessPath ilk eşleşeni kullanıyor (.find).
+  { prefix: "/admin/appointments/ayarlar", resource: "__admin_only__" },
+  { prefix: "/admin/appointments", resource: "appointments" },
   { prefix: "/admin/reports", resource: "reports" },
   { prefix: "/admin/services", resource: "services" },
   { prefix: "/admin/storage", resource: "storage" },
@@ -70,7 +75,7 @@ export function canAccessPath(user: PermissionUser, pathname: string): boolean {
 // sayfayı döner; hiçbir sayfa izni yoksa null (o zaman header'da panel linki
 // gösterilmez, sadece çıkış).
 const LANDING_ORDER: Resource[] = [
-  "orders", "storage", "products", "reports", "expenses", "services", "customers", "suppliers",
+  "orders", "appointments", "storage", "products", "reports", "expenses", "services", "customers", "suppliers",
 ];
 
 export function getDefaultAdminPath(user: PermissionUser): string | null {
