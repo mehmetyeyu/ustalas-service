@@ -10,6 +10,31 @@ function canSubscribe(user: { role: string; permissions?: string[] | null }): bo
   return user.role === "admin" || hasPermission(user, "appointments.view");
 }
 
+// Kaydedilen endpoint daha sonra sunucu tarafından webpush.sendNotification
+// ile doğrudan çağrılıyor (bkz. src/lib/push.ts) — buradaki bir doğrulama
+// olmadan endpoint alanı saldırganın seçtiği herhangi bir URL olabilir ve
+// her yeni randevuda (personel yetkisi olan biri tarafından bir kere
+// kaydedilip) sunucu o adrese istek atmaya devam eder (SSRF). Sadece bilinen
+// push servislerine izin verilir.
+const ALLOWED_PUSH_HOSTS = [
+  "fcm.googleapis.com",
+  "android.googleapis.com",
+  "updates.push.services.mozilla.com",
+];
+
+function isAllowedPushEndpoint(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  return ALLOWED_PUSH_HOSTS.some(
+    (host) => url.hostname === host || url.hostname.endsWith(`.${host}`)
+  );
+}
+
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -24,6 +49,9 @@ export async function POST(request: NextRequest) {
 
     if (!endpoint || !p256dh || !auth) {
       return NextResponse.json({ error: "Geçersiz abonelik verisi." }, { status: 400 });
+    }
+    if (!isAllowedPushEndpoint(endpoint)) {
+      return NextResponse.json({ error: "Desteklenmeyen bildirim servisi." }, { status: 400 });
     }
 
     // endpoint global olarak benzersiz (tarayıcının push servisinin ürettiği

@@ -4,7 +4,7 @@
  * bildirimi gösterir. Offline önbellekleme / PWA manifest YOK — sadece push
  * olayını dinleyip bildirim gösteren minimal bir worker.
  *
- * Kayıt: src/app/admin/PushNotificationButton.tsx (navigator.serviceWorker.register).
+ * Kayıt: src/app/admin/PushNotificationToggle.tsx (navigator.serviceWorker.register).
  * Gönderim: src/lib/push.ts (webpush.sendNotification, sunucu tarafı).
  */
 self.addEventListener("push", (event) => {
