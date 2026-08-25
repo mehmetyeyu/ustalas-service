@@ -695,3 +695,48 @@ CREATE INDEX IF NOT EXISTS appointments_tenant_ip_created_idx ON appointments(te
 -- yoktu — tek tenant/düşük hacimde fark etmiyor ama en yoğun public rota
 -- olduğundan tutarlılık için IP index'iyle aynı şekilde ekleniyor.
 CREATE INDEX IF NOT EXISTS appointments_tenant_phone_created_idx ON appointments(tenant_id, customer_phone, created_at);
+
+-- Randevu formunun (src/app/randevu/[slug]) görsel stili — firma kendi
+-- sitesine gömerken formun "yabancı bir widget" değil, sitenin doğal bir
+-- parçası gibi görünmesini istiyor. preset yapısal görünümü belirler,
+-- accent_color vurgu rengini (buton, seçili saat, odak halkası) markaya
+-- yaklaştırır. Varsayılanlar bugünkü sabit görünümle birebir aynı (card =
+-- mevcut beyaz kart, #2563eb = mevcut blue-600, NULL başlık/açıklama =
+-- mevcut sabit metinler) — mevcut kiracılarda görsel fark yaratmaz,
+-- backfill gerekmiyor.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_preset VARCHAR(20) NOT NULL DEFAULT 'card';
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_booking_widget_preset_check
+    CHECK (booking_widget_preset IN ('card','seamless','outlined'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_accent_color VARCHAR(7) NOT NULL DEFAULT '#2563eb';
+-- İlk sürümde her katman için ikili bir "layout" (single/wide) alanı vardı.
+-- Kullanıcı bunun yerine gerçek bir kolon SAYISI istedi — mobil her zaman
+-- tek kolon (form zaten en dar cihazda tek sütuna sığacak kadar sade),
+-- tablet 1-2 kolon arasında, masaüstü 1-3 kolon arasında seçilebilsin (bkz.
+-- Hizmet/Tarih/Müsait Saatler artık üç bağımsız grid öğesi,
+-- src/app/randevu/[slug]/page.tsx). Hiç yayınlanmamış (henüz commit'lenmemiş)
+-- alanlar olduğundan düz bir DROP+yeni kolonla değiştiriliyor, ayrı bir
+-- geri-dolum migration'ına gerek yok.
+ALTER TABLE app_settings DROP COLUMN IF EXISTS booking_widget_layout_mobile;
+ALTER TABLE app_settings DROP COLUMN IF EXISTS booking_widget_layout_tablet;
+ALTER TABLE app_settings DROP COLUMN IF EXISTS booking_widget_layout_desktop;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_columns_tablet SMALLINT NOT NULL DEFAULT 1;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_columns_desktop SMALLINT NOT NULL DEFAULT 1;
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_booking_widget_columns_tablet_check
+    CHECK (booking_widget_columns_tablet IN (1,2));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_booking_widget_columns_desktop_check
+    CHECK (booking_widget_columns_desktop IN (1,2,3));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_title VARCHAR(120);
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_description VARCHAR(300);
+-- Gömülü (?embed=1) modda başlık/açıklama bugün hiç gösterilmiyor (firmanın
+-- kendi sitesi zaten bir bağlam sağladığı varsayılıyor) — bu varsayılan
+-- korunuyor, isteyen firma açabilir.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_show_heading_embed BOOLEAN NOT NULL DEFAULT false;

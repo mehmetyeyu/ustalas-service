@@ -13,6 +13,16 @@ export default function GeneralSettingsPage() {
   const [workingHours, setWorkingHours] = useState<unknown>(null);
   const [autoApprove, setAutoApprove] = useState(false);
   const [maxDaysAhead, setMaxDaysAhead] = useState(30);
+  // Randevu Görünümü sayfasının (booking_widget_*) düzenlediği alanlar — aynı
+  // sebeple (aşağıdaki useEffect yorumuna bkz.) burada da olduğu gibi
+  // korunması gerekiyor.
+  const [widgetPreset, setWidgetPreset] = useState("card");
+  const [widgetAccentColor, setWidgetAccentColor] = useState("#2563eb");
+  const [widgetColumnsTablet, setWidgetColumnsTablet] = useState(1);
+  const [widgetColumnsDesktop, setWidgetColumnsDesktop] = useState(1);
+  const [widgetTitle, setWidgetTitle] = useState<string | null>(null);
+  const [widgetDescription, setWidgetDescription] = useState<string | null>(null);
+  const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -33,6 +43,13 @@ export default function GeneralSettingsPage() {
         setWorkingHours(data.booking_working_hours ?? null);
         setAutoApprove(!!data.booking_auto_approve);
         setMaxDaysAhead(data.booking_max_days_ahead ?? 30);
+        setWidgetPreset(data.booking_widget_preset ?? "card");
+        setWidgetAccentColor(data.booking_widget_accent_color ?? "#2563eb");
+        setWidgetColumnsTablet(data.booking_widget_columns_tablet ?? 1);
+        setWidgetColumnsDesktop(data.booking_widget_columns_desktop ?? 1);
+        setWidgetTitle(data.booking_widget_title ?? null);
+        setWidgetDescription(data.booking_widget_description ?? null);
+        setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
         setLoading(false);
       });
   }, []);
@@ -80,6 +97,13 @@ export default function GeneralSettingsPage() {
           booking_working_hours: workingHours,
           booking_auto_approve: autoApprove,
           booking_max_days_ahead: maxDaysAhead,
+          booking_widget_preset: widgetPreset,
+          booking_widget_accent_color: widgetAccentColor,
+          booking_widget_columns_tablet: widgetColumnsTablet,
+          booking_widget_columns_desktop: widgetColumnsDesktop,
+          booking_widget_title: widgetTitle,
+          booking_widget_description: widgetDescription,
+          booking_widget_show_heading_embed: widgetShowHeadingEmbed,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");

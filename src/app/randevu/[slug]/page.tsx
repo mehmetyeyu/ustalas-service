@@ -9,11 +9,69 @@ interface Service {
   duration_minutes: number | null;
 }
 
+type ColumnsTablet = 1 | 2;
+type ColumnsDesktop = 1 | 2 | 3;
+
+interface WidgetStyle {
+  preset: "card" | "seamless" | "outlined";
+  accentColor: string;
+  columnsTablet: ColumnsTablet;
+  columnsDesktop: ColumnsDesktop;
+  title: string | null;
+  description: string | null;
+  showHeadingInEmbed: boolean;
+}
+
 interface Meta {
   tenant: { name: string; slug: string };
   services: Service[];
   maxDaysAhead: number;
+  style: WidgetStyle;
 }
+
+// Firmanın kendi sitesine gömdüğünde form "yabancı bir widget" değil, sitenin
+// doğal bir parçası gibi görünsün diye üç hazır görünüm — bkz. Randevu
+// Görünümü ayar sayfası. card = bugüne kadarki tek sabit görünüm (varsayılan).
+const PRESET_CLASSES: Record<WidgetStyle["preset"], string> = {
+  card: "bg-white rounded-xl shadow-sm border border-gray-200 p-5",
+  seamless: "bg-transparent p-5",
+  outlined: "bg-white rounded-md border border-gray-300 p-5",
+};
+
+// Hizmet / Tarih / Müsait Saatler üç bağımsız grid öğesi — mobilde (<640px)
+// her zaman tek kolon (form zaten en dar cihazda tek sütuna sığacak kadar
+// sade, ayarlanamaz), tablette (640-1023px) 1-2, masaüstünde (≥1024px) 1-3
+// kolon arasında bağımsız seçilebilir (bkz. Randevu Görünümü ayar sayfası).
+// Form bir iframe içinde gömülü olduğundan bu "cihaz" değil, gömüldüğü
+// KAPSAYICININ genişliği. Sabit literal haritalar halinde tutuluyor ki
+// Tailwind'in build-zamanı tarayıcısı hepsini görebilsin (şablon
+// interpolasyonuyla üretilen sınıf adları taranamaz).
+const TABLET_COLS: Record<ColumnsTablet, string> = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2" };
+const DESKTOP_COLS: Record<ColumnsDesktop, string> = { 1: "lg:grid-cols-1", 2: "lg:grid-cols-2", 3: "lg:grid-cols-3" };
+
+// Hizmet+Tarih her zaman ilk N hücreyi dolduruyor, Müsait Saatler her zaman
+// ÜÇÜNCÜ öğe. 2 kolonda bu, Saatler'in tek başına yeni bir satıra düşüp
+// sadece 1. sütunun genişliğini kullanması, 2. sütunun ise boş kalması
+// anlamına gelir — bir kullanıcı raporuyla ortaya çıktı. Saatler'in kendi
+// satırında YALNIZ kaldığı durumlarda (kolon sayısı 3'ten az) tüm satırı
+// kaplaması için col-span veriliyor; 3 kolonda ise Hizmet/Tarih ile aynı
+// satırı paylaştığından span verilmiyor (verilirse düzeni bozar).
+const TABLET_SLOTS_SPAN: Record<ColumnsTablet, string> = { 1: "sm:col-span-1", 2: "sm:col-span-2" };
+const DESKTOP_SLOTS_SPAN: Record<ColumnsDesktop, string> = { 1: "lg:col-span-1", 2: "lg:col-span-2", 3: "lg:col-span-1" };
+
+// Kartın kendisi hep max-w-md (448px) ile sabitse geniş bir kapsayıcıya
+// gömülünce (ör. masaüstünde tam genişlik bir bölüm) kart küçük kalıp
+// etrafında anlamsız boş alan bırakır — tek kolon seçili olsa bile. Bu
+// yüzden kart genişliği kolon sayısına göre kademeli büyüyor.
+const TABLET_MAX_W: Record<ColumnsTablet, string> = { 1: "sm:max-w-lg", 2: "sm:max-w-2xl" };
+const DESKTOP_MAX_W: Record<ColumnsDesktop, string> = { 1: "lg:max-w-xl", 2: "lg:max-w-3xl", 3: "lg:max-w-4xl" };
+
+// Vurgu rengi (buton, seçili saat, odak halkası) her yerde aynı CSS
+// değişkeninden okunuyor — Tailwind'in `[var(--accent)]` keyfi değer sözdizimi
+// build zamanında taranabilen sabit bir literal olduğundan, dinamik sınıf
+// üretimi sorunu olmadan çalışır. Hover için renk matematiği yapmak yerine
+// `hover:brightness-90` kullanılıyor, hangi renk seçilirse seçilsin işler.
+const FOCUS_RING = "focus:outline-none focus:ring-2 focus:ring-[var(--accent)]";
 
 // Türkiye sabit UTC+3 — sunucunun/tarayıcının kendi saat dilimine bakmadan
 // bir Date'i Istanbul takvim gününe (YYYY-MM-DD) çevirir.
@@ -46,6 +104,12 @@ export default function RandevuPage() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [metaError, setMetaError] = useState("");
   const [loadingMeta, setLoadingMeta] = useState(true);
+  // Randevu Görünümü admin sayfasındaki canlı önizleme — henüz kaydedilmemiş
+  // taslak stil değerlerini bu iframe'e postMessage ile bildiriyor (bkz.
+  // gorunum/page.tsx). Sadece AYNI origin'den (yani kendi admin panelimizden)
+  // gelen mesajlar kabul edilir — firmanın kendi sitesine gömülü gerçek bir
+  // embed'de parent farklı bir origin olduğundan bu asla tetiklenmez.
+  const [previewStyle, setPreviewStyle] = useState<WidgetStyle | null>(null);
 
   const [serviceId, setServiceId] = useState<number | null>(null);
   const [date, setDate] = useState(todayStr());
@@ -70,6 +134,21 @@ export default function RandevuPage() {
     report();
     return () => observer.disconnect();
   }, [isEmbed]);
+
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "ustalas-randevu-preview-style") {
+        setPreviewStyle(event.data.style as WidgetStyle);
+      }
+    }
+    window.addEventListener("message", handleMessage);
+    // Parent (gorunum/page.tsx) sayfa yüklendiğinde mevcut taslağı hemen
+    // gönderebilsin diye — mesaj bu iframe'in listener'ı kurulmadan ÖNCE
+    // gönderilmiş olabilir, "hazırım" sinyali bu yarışı önler.
+    window.parent.postMessage({ type: "ustalas-randevu-preview-ready" }, "*");
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
 
   useEffect(() => {
     fetch(`/api/public/randevu/${slug}/meta`)
@@ -152,14 +231,20 @@ export default function RandevuPage() {
   }
 
   const noBookableServices = meta.services.length === 0;
+  const style = previewStyle ?? meta.style;
+  const showHeading = !isEmbed || style.showHeadingInEmbed;
 
   return (
-    <div ref={rootRef} className={isEmbed ? "bg-gray-50 py-4 px-4" : "min-h-screen bg-gray-50 py-8 px-4"}>
-      <div className="max-w-md mx-auto">
-        {!isEmbed && (
+    <div
+      ref={rootRef}
+      className={isEmbed ? "bg-gray-50 py-4 px-4" : "min-h-screen bg-gray-50 py-8 px-4"}
+      style={{ "--accent": style.accentColor } as React.CSSProperties}
+    >
+      <div className={`max-w-md mx-auto transition-[max-width] ${TABLET_MAX_W[style.columnsTablet]} ${DESKTOP_MAX_W[style.columnsDesktop]}`}>
+        {showHeading && (
           <>
-            <h1 className="text-xl font-bold text-gray-800 mb-1">{meta.tenant.name}</h1>
-            <p className="text-sm text-gray-500 mb-6">Online Randevu</p>
+            <h1 className="text-xl font-bold text-gray-800 mb-1">{style.title || meta.tenant.name}</h1>
+            <p className="text-sm text-gray-500 mb-6">{style.description || "Online Randevu"}</p>
           </>
         )}
 
@@ -168,7 +253,7 @@ export default function RandevuPage() {
             Şu an online randevu alınamıyor.
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className={`${PRESET_CLASSES[style.preset]} flex flex-col gap-4`}>
             {/* Honeypot — CSS ile gizli, ekran okuyucular için de erişilemez alanda; bot'lar genelde doldurur */}
             <input
               type="text"
@@ -180,62 +265,75 @@ export default function RandevuPage() {
               aria-hidden="true"
             />
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Hizmet <span className="text-red-500">*</span></label>
-              <select
-                value={serviceId ?? ""}
-                onChange={(e) => setServiceId(e.target.value ? Number(e.target.value) : null)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Seçiniz...</option>
-                {meta.services.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Tarih <span className="text-red-500">*</span></label>
-              <input
-                type="date"
-                value={date}
-                min={todayStr()}
-                max={toIstanbulDateStr(new Date(Date.now() + meta.maxDaysAhead * 24 * 60 * 60000))}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {date && <p className="mt-1 text-xs text-gray-400">{formatDateLabel(date)}</p>}
-            </div>
-
-            {serviceId && (
+            <div
+              className={`grid grid-cols-1 gap-4 ${TABLET_COLS[style.columnsTablet]} ${DESKTOP_COLS[style.columnsDesktop]}`}
+            >
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Müsait Saatler <span className="text-red-500">*</span></label>
-                {loadingSlots ? (
-                  <p className="text-sm text-gray-400">Müsaitlik kontrol ediliyor...</p>
-                ) : slots.length === 0 ? (
-                  <p className="text-sm text-gray-400">Bu tarihte müsait saat yok, başka bir tarih deneyin.</p>
-                ) : (
-                  <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto">
-                    {slots.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setSelectedSlot(s)}
-                        className={`text-center px-2 py-2 rounded-lg text-sm border transition-colors ${
-                          selectedSlot === s
-                            ? "bg-blue-600 border-blue-600 text-white font-medium"
-                            : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        {formatSlotTime(s)}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <label className="block text-xs font-medium text-gray-600 mb-1">Hizmet <span className="text-red-500">*</span></label>
+                <select
+                  value={serviceId ?? ""}
+                  onChange={(e) => setServiceId(e.target.value ? Number(e.target.value) : null)}
+                  required
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
+                >
+                  <option value="">Seçiniz...</option>
+                  {meta.services.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
               </div>
-            )}
+
+              <div>
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <label className="block text-xs font-medium text-gray-600">Tarih <span className="text-red-500">*</span></label>
+                  {date && <span className="text-xs text-gray-400 truncate">{formatDateLabel(date)}</span>}
+                </div>
+                <input
+                  type="date"
+                  value={date}
+                  min={todayStr()}
+                  max={toIstanbulDateStr(new Date(Date.now() + meta.maxDaysAhead * 24 * 60 * 60000))}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
+                />
+              </div>
+
+              {serviceId && (
+                <div className={`${TABLET_SLOTS_SPAN[style.columnsTablet]} ${DESKTOP_SLOTS_SPAN[style.columnsDesktop]}`}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Müsait Saatler <span className="text-red-500">*</span></label>
+                  {loadingSlots ? (
+                    <p className="text-sm text-gray-400">Müsaitlik kontrol ediliyor...</p>
+                  ) : slots.length === 0 ? (
+                    <p className="text-sm text-gray-400">Bu tarihte müsait saat yok, başka bir tarih deneyin.</p>
+                  ) : (
+                    /* 3 kolonda Saatler, tek satırlık Hizmet/Tarih alanlarıyla aynı
+                       satırı paylaşıyor — yükseklik sınırı olmadan 5-6 satırlık liste
+                       o iki kısa alanın yanında çok orantısız/çirkin duruyordu (gerçek
+                       kullanıcı geri bildirimi). max-h-48 bu farkı azaltıyor (tam
+                       ortadan kaldırmıyor — 3 kolonda kısa alanlarla aynı satırı
+                       paylaşmanın doğal bir sonucu), overflow-y-auto ile taşan
+                       saatler kaydırılarak görülebiliyor. */
+                    <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                      {slots.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setSelectedSlot(s)}
+                          className={`text-center px-2 py-2 rounded-lg text-sm border transition-colors ${
+                            selectedSlot === s
+                              ? "bg-[var(--accent)] border-[var(--accent)] text-white font-medium"
+                              : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          {formatSlotTime(s)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {selectedSlot && (
               <>
@@ -246,7 +344,7 @@ export default function RandevuPage() {
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
                   />
                 </div>
                 <div>
@@ -257,7 +355,7 @@ export default function RandevuPage() {
                     onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
                     required
                     placeholder="34 ABC 123"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono uppercase ${FOCUS_RING}`}
                   />
                 </div>
                 <div>
@@ -268,7 +366,7 @@ export default function RandevuPage() {
                     onChange={(e) => setCustomerPhone(e.target.value)}
                     required
                     placeholder="05XX XXX XX XX"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
                   />
                 </div>
 
@@ -277,7 +375,7 @@ export default function RandevuPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-4 py-2.5 text-sm"
+                  className="bg-[var(--accent)] hover:brightness-90 disabled:opacity-50 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-[filter]"
                 >
                   {submitting ? "Gönderiliyor..." : "Randevu Talebi Gönder"}
                 </button>

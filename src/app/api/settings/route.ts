@@ -33,6 +33,13 @@ export async function PUT(request: NextRequest) {
     const booking_working_hours = body.booking_working_hours ?? null;
     const booking_auto_approve = !!body.booking_auto_approve;
     const booking_max_days_ahead = Number(body.booking_max_days_ahead ?? 30);
+    const booking_widget_preset = String(body.booking_widget_preset ?? "card");
+    const booking_widget_accent_color = String(body.booking_widget_accent_color ?? "#2563eb");
+    const booking_widget_columns_tablet = Number(body.booking_widget_columns_tablet ?? 1);
+    const booking_widget_columns_desktop = Number(body.booking_widget_columns_desktop ?? 1);
+    const booking_widget_title = body.booking_widget_title ? String(body.booking_widget_title).trim().slice(0, 120) || null : null;
+    const booking_widget_description = body.booking_widget_description ? String(body.booking_widget_description).trim().slice(0, 300) || null : null;
+    const booking_widget_show_heading_embed = !!body.booking_widget_show_heading_embed;
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });
@@ -53,17 +60,44 @@ export async function PUT(request: NextRequest) {
     if (!Number.isInteger(booking_max_days_ahead) || booking_max_days_ahead < 1 || booking_max_days_ahead > 365) {
       return NextResponse.json({ error: "İleri randevu süresi 1-365 gün arasında olmalıdır." }, { status: 400 });
     }
+    if (!["card", "seamless", "outlined"].includes(booking_widget_preset)) {
+      return NextResponse.json({ error: "Geçersiz görünüm stili." }, { status: 400 });
+    }
+    if (!/^#[0-9a-fA-F]{6}$/.test(booking_widget_accent_color)) {
+      return NextResponse.json({ error: "Geçersiz vurgu rengi." }, { status: 400 });
+    }
+    if (![1, 2].includes(booking_widget_columns_tablet)) {
+      return NextResponse.json({ error: "Tablet kolon sayısı 1 veya 2 olmalıdır." }, { status: 400 });
+    }
+    if (![1, 2, 3].includes(booking_widget_columns_desktop)) {
+      return NextResponse.json({ error: "Masaüstü kolon sayısı 1, 2 veya 3 olmalıdır." }, { status: 400 });
+    }
 
     await pool.query(
       `UPDATE app_settings
        SET business_name=$1, storage_overdue_months=$2, payment_types=$3,
            booking_capacity=$4, booking_working_hours=$5, booking_auto_approve=$6,
-           booking_max_days_ahead=$7, updated_at=CURRENT_TIMESTAMP
-       WHERE tenant_id=$8`,
-      [business_name, storage_overdue_months, payment_types, booking_capacity, JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead, user.tenantId]
+           booking_max_days_ahead=$7, booking_widget_preset=$8, booking_widget_accent_color=$9,
+           booking_widget_columns_tablet=$10, booking_widget_columns_desktop=$11,
+           booking_widget_title=$12, booking_widget_description=$13,
+           booking_widget_show_heading_embed=$14, updated_at=CURRENT_TIMESTAMP
+       WHERE tenant_id=$15`,
+      [
+        business_name, storage_overdue_months, payment_types, booking_capacity,
+        JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead,
+        booking_widget_preset, booking_widget_accent_color,
+        booking_widget_columns_tablet, booking_widget_columns_desktop,
+        booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
+        user.tenantId,
+      ]
     );
 
-    return NextResponse.json({ business_name, storage_overdue_months, payment_types, booking_capacity, booking_working_hours, booking_auto_approve, booking_max_days_ahead });
+    return NextResponse.json({
+      business_name, storage_overdue_months, payment_types, booking_capacity, booking_working_hours,
+      booking_auto_approve, booking_max_days_ahead, booking_widget_preset, booking_widget_accent_color,
+      booking_widget_columns_tablet, booking_widget_columns_desktop,
+      booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

@@ -8,6 +8,10 @@
  *   data-height="700"     — iframe yüklenene kadar gösterilecek başlangıç yüksekliği (px)
  *   data-target="my-div"  — belirli bir kapsayıcının içine yerleştir (id); verilmezse
  *                           script etiketinin hemen yanına eklenir
+ *   data-max-width="720"  — iframe'in azami genişliği (px). Randevu Görünümü
+ *                           ayarlarında "İki Kolon" düzeni seçildiyse formun
+ *                           gerçekten iki kolon gösterebilmesi için varsayılan
+ *                           480px'ten daha geniş bir alan gerekir.
  *
  * Nasıl çalışır: script kendi <script> etiketini bulur (document.currentScript),
  * gerçek randevu sayfasına (aynı domain'den /randevu/<slug>) işaret eden bir
@@ -29,11 +33,12 @@
   var origin = new URL(currentScript.src).origin;
   var initialHeight = currentScript.getAttribute("data-height") || "700";
   var targetId = currentScript.getAttribute("data-target");
+  var maxWidth = currentScript.getAttribute("data-max-width") || "480";
 
   var iframe = document.createElement("iframe");
   iframe.src = origin + "/randevu/" + encodeURIComponent(slug) + "?embed=1";
   iframe.style.width = "100%";
-  iframe.style.maxWidth = "480px";
+  iframe.style.maxWidth = maxWidth + "px";
   iframe.style.border = "none";
   iframe.style.display = "block";
   iframe.style.height = initialHeight + "px";

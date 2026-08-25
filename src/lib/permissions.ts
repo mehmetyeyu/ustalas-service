@@ -45,9 +45,11 @@ export function hasPermission(user: PermissionUser, key: string): boolean {
 // `resource: "__admin_only__"` → devredilemez, her zaman sadece role==='admin'.
 export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__admin_only__" }[] = [
   { prefix: "/admin/orders", resource: "orders" },
-  // Daha spesifik olan /admin/appointments/ayarlar altta genel appointments
-  // eşleşmesinden ÖNCE gelmeli — canAccessPath ilk eşleşeni kullanıyor (.find).
+  // Daha spesifik olan /admin/appointments/ayarlar ve /admin/appointments/gorunum
+  // altta genel appointments eşleşmesinden ÖNCE gelmeli — canAccessPath ilk
+  // eşleşeni kullanıyor (.find).
   { prefix: "/admin/appointments/ayarlar", resource: "__admin_only__" },
+  { prefix: "/admin/appointments/gorunum", resource: "__admin_only__" },
   { prefix: "/admin/appointments", resource: "appointments" },
   { prefix: "/admin/reports", resource: "reports" },
   { prefix: "/admin/services", resource: "services" },

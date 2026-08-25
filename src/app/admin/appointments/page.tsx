@@ -116,12 +116,20 @@ export default function AppointmentsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Randevular</h1>
         {user?.role === "admin" && (
-          <Link
-            href="/admin/appointments/ayarlar"
-            className="text-sm font-medium text-blue-600 hover:text-blue-800"
-          >
-            Randevu Ayarları
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/admin/appointments/gorunum"
+              className="text-sm font-medium text-blue-600 hover:text-blue-800"
+            >
+              Görünüm
+            </Link>
+            <Link
+              href="/admin/appointments/ayarlar"
+              className="text-sm font-medium text-blue-600 hover:text-blue-800"
+            >
+              Randevu Ayarları
+            </Link>
+          </div>
         )}
       </div>
 
