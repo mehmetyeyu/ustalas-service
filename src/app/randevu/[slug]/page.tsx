@@ -136,6 +136,19 @@ export default function RandevuPage() {
   }, [isEmbed]);
 
   useEffect(() => {
+    // Kök layout'taki <body className="bg-gray-50"> her sayfaya (admin panel
+    // dahil) uygulanıyor — bu sayfadaki wrapper'dan gri arka planı kaldırmak
+    // tek başına yetmiyor, altındaki body hâlâ gri boyuyor ve iframe yine
+    // "ayrı bir kutu" gibi görünüyordu. Sadece gömülü modda body'yi şeffaf
+    // yapıyoruz — bu tek public/embed sayfası olduğundan diğer hiçbir
+    // sayfayı (admin panel dahil) etkilemez.
+    if (!isEmbed) return;
+    const previousBackground = document.body.style.background;
+    document.body.style.background = "transparent";
+    return () => { document.body.style.background = previousBackground; };
+  }, [isEmbed]);
+
+  useEffect(() => {
     function handleMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === "ustalas-randevu-preview-style") {
@@ -237,7 +250,15 @@ export default function RandevuPage() {
   return (
     <div
       ref={rootRef}
-      className={isEmbed ? "bg-gray-50 py-4 px-4" : "min-h-screen bg-gray-50 py-8 px-4"}
+      // Gömülü modda gri arka plan (bg-gray-50) hep uygulanıyordu — firmanın
+      // kendi sitesinin arka planı ne olursa olsun iframe alanı belirgin gri
+      // bir dikdörtgen olarak görünüp "ayrı bir kutu" gibi duruyordu (gerçek
+      // kullanıcı geri bildirimi). Gömülü modda arka plan tamamen şeffaf —
+      // sitenin kendi arka planı görünür, kart zaten kendi görünümünü
+      // (PRESET_CLASSES) sağlıyor. Sayfa doğrudan ziyaret edildiğinde
+      // (gömülü değilken) hâlâ gri arka plan gerekli (arkasında gösterecek
+      // bir "site" yok).
+      className={isEmbed ? "py-4 px-4" : "min-h-screen bg-gray-50 py-8 px-4"}
       style={{ "--accent": style.accentColor } as React.CSSProperties}
     >
       <div className={`max-w-md mx-auto transition-[max-width] ${TABLET_MAX_W[style.columnsTablet]} ${DESKTOP_MAX_W[style.columnsDesktop]}`}>

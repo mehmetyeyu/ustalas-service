@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { resolveTenantBySlug } from "@/lib/publicTenant";
+import { withCors, corsPreflight } from "@/lib/publicCors";
+
+export const OPTIONS = corsPreflight;
 
 // Kimlik doğrulamasız — bkz. src/lib/publicTenant.ts. Randevu formunun ilk
 // adımını (firma adı + randevuya açık hizmetler) doldurmak için.
@@ -10,7 +13,7 @@ export async function GET(
 ) {
   const { slug } = await params;
   const tenant = await resolveTenantBySlug(slug);
-  if (!tenant) return NextResponse.json({ error: "Bulunamadı." }, { status: 404 });
+  if (!tenant) return withCors(NextResponse.json({ error: "Bulunamadı." }, { status: 404 }));
 
   try {
     const settings = await pool.query<{
@@ -35,7 +38,7 @@ export async function GET(
     );
     const s = settings.rows[0];
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       tenant: { name: tenant.name, slug: tenant.slug },
       workingHours: s?.booking_working_hours ?? null,
       services: services.rows,
@@ -49,9 +52,9 @@ export async function GET(
         description: s?.booking_widget_description ?? null,
         showHeadingInEmbed: s?.booking_widget_show_heading_embed ?? false,
       },
-    });
+    }));
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
+    return withCors(NextResponse.json({ error: "Sunucu hatası." }, { status: 500 }));
   }
 }

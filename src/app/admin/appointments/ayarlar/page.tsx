@@ -68,6 +68,7 @@ export default function AppointmentSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   // Randevu Görünümü sayfasının (booking_widget_*) düzenlediği alanlar —
   // burada hiç gösterilmiyor ama aynı app_settings satırını paylaştığımız
@@ -164,6 +165,30 @@ export default function AppointmentSettingsPage() {
       setError(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRegenerateSlug() {
+    if (
+      !confirm(
+        "Yeni bir bağlantı oluşturulacak. Web sitenize daha önce eklediğiniz " +
+          "eski script/iframe kodu ÇALIŞMAZ HALE GELİR — yeni kodu alıp sitenizde " +
+          "güncellemeniz gerekir. Devam edilsin mi?"
+      )
+    ) {
+      return;
+    }
+    setError("");
+    setRegenerating(true);
+    try {
+      const res = await fetch("/api/settings/regenerate-slug", { method: "POST" });
+      if (!res.ok) throw new Error((await res.json()).error || "Yeni bağlantı oluşturulamadı.");
+      const data = await res.json();
+      setSlug(data.slug);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -276,18 +301,35 @@ export default function AppointmentSettingsPage() {
 
         {slug && origin && (
           <div className="mt-6 pt-5 border-t border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-700 mb-1">Web Sitenize Ekleyin</h3>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-semibold text-gray-700">Web Sitenize Ekleyin</h3>
+              <button
+                type="button"
+                onClick={handleRegenerateSlug}
+                disabled={regenerating}
+                className="text-xs font-medium text-gray-400 hover:text-red-600 disabled:opacity-50"
+              >
+                {regenerating ? "Oluşturuluyor..." : "Bağlantıyı Yenile"}
+              </button>
+            </div>
             <p className="text-xs text-gray-400 mb-3">
               Randevu formunu kendi web sitenize, Google Haritalar gibi gömebilirsiniz —
               aşağıdaki kodlardan birini sitenize yapıştırmanız yeterli.
+              &quot;Bağlantıyı Yenile&quot;, tahmin edilmesi zor rastgele yeni bir bağlantı üretir
+              (eski bağlantı/kod artık çalışmaz — sitenizdeki kodu yenilemeniz gerekir).
             </p>
             <CopyBox label="Doğrudan link" value={`${origin}/randevu/${slug}`} />
             <CopyBox
-              label="Script ile göm (önerilen — otomatik boy ayarlar)"
+              label="Script ile göm (önerilen — sayfanıza doğrudan eklenir, iframe/kutu görünmez)"
               value={`<script src="${origin}/embed.js" data-slug="${slug}"></script>`}
             />
+            <p className="text-xs text-gray-400 -mt-2 mb-3">
+              Sitenizin genel CSS&apos;i forma yanlışlıkla karışmaz; kendi CSS&apos;inizden
+              sadece işaretli noktaları (ör. <code>::part(submit)</code>) hedefleyebilirsiniz.
+              Tam izole bir kutu (iframe) isterseniz aşağıdaki seçeneği kullanın.
+            </p>
             <CopyBox
-              label="veya iframe ile göm"
+              label="veya iframe ile göm (tam izole kutu)"
               value={`<iframe src="${origin}/randevu/${slug}?embed=1" style="width:100%;max-width:480px;height:700px;border:none" title="Online Randevu"></iframe>`}
             />
           </div>

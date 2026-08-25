@@ -4,6 +4,15 @@ import { resolveTenantBySlug } from "@/lib/publicTenant";
 import { isSlotStillAvailable, isWithinBookableWindow, DEFAULT_DURATION_MINUTES, type WorkingHours } from "@/lib/appointmentSlots";
 import { getClientIp } from "@/lib/clientIp";
 import { notifyTenantAdmins } from "@/lib/push";
+import { withCors, corsPreflight } from "@/lib/publicCors";
+
+export const OPTIONS = corsPreflight;
+
+// Bu route'ta çok sayıda dönüş noktası var (doğrulama hataları, rate limit,
+// 409 vb.) — her birine tek tek withCors sarmak yerine yerel bir kısayol.
+function json(body: unknown, init?: ResponseInit) {
+  return withCors(NextResponse.json(body, init));
+}
 
 const PHONE_COOLDOWN_MINUTES = 5;
 // Form artık firmaların kendi sitelerine gömülebiliyor (bkz. embed.js) —
@@ -23,7 +32,7 @@ export async function POST(
 ) {
   const { slug } = await params;
   const tenant = await resolveTenantBySlug(slug);
-  if (!tenant) return NextResponse.json({ error: "Bulunamadı." }, { status: 404 });
+  if (!tenant) return json({ error: "Bulunamadı." }, { status: 404 });
 
   try {
     const body = await request.json();
@@ -31,19 +40,19 @@ export async function POST(
 
     if (website) {
       // Honeypot dolu — bot. Sessizce başarılı gibi davran, hiçbir şey kaydetme.
-      return NextResponse.json({ success: true }, { status: 201 });
+      return json({ success: true }, { status: 201 });
     }
     if (!plate || !String(plate).trim()) {
-      return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
+      return json({ error: "Plaka zorunludur." }, { status: 400 });
     }
     if (!customer_name || !String(customer_name).trim()) {
-      return NextResponse.json({ error: "Ad Soyad zorunludur." }, { status: 400 });
+      return json({ error: "Ad Soyad zorunludur." }, { status: 400 });
     }
     if (!customer_phone || !String(customer_phone).trim()) {
-      return NextResponse.json({ error: "Telefon numarası zorunludur." }, { status: 400 });
+      return json({ error: "Telefon numarası zorunludur." }, { status: 400 });
     }
     if (!requested_at || Number.isNaN(new Date(requested_at).getTime())) {
-      return NextResponse.json({ error: "Geçerli bir randevu zamanı gerekli." }, { status: 400 });
+      return json({ error: "Geçerli bir randevu zamanı gerekli." }, { status: 400 });
     }
 
     const phone = String(customer_phone).trim();
@@ -56,7 +65,7 @@ export async function POST(
       [tenant.id, phone]
     );
     if ((cooldownCheck.rowCount ?? 0) > 0) {
-      return NextResponse.json(
+      return json(
         { error: "Az önce bir randevu talebi gönderdiniz, birkaç dakika sonra tekrar deneyin." },
         { status: 429 }
       );
@@ -68,7 +77,7 @@ export async function POST(
         [tenant.id, ip]
       );
       if ((ipCheck.rows[0]?.cnt ?? 0) >= IP_MAX_REQUESTS_PER_HOUR) {
-        return NextResponse.json(
+        return json(
           { error: "Çok fazla randevu talebi gönderildi, lütfen daha sonra tekrar deneyin." },
           { status: 429 }
         );
@@ -82,7 +91,7 @@ export async function POST(
         "SELECT id, duration_minutes FROM services WHERE id = $1 AND tenant_id = $2 AND bookable = true",
         [Number(service_id), tenant.id]
       );
-      if (!svc.rows[0]) return NextResponse.json({ error: "Geçersiz hizmet." }, { status: 400 });
+      if (!svc.rows[0]) return json({ error: "Geçersiz hizmet." }, { status: 400 });
       serviceIdNum = svc.rows[0].id;
       durationMinutes = svc.rows[0].duration_minutes ?? DEFAULT_DURATION_MINUTES;
     }
@@ -104,7 +113,7 @@ export async function POST(
     const maxDaysAhead = settingsCheck.rows[0]?.booking_max_days_ahead ?? 30;
 
     if (!isWithinBookableWindow(requestedAt, durationMinutes, workingHours, maxDaysAhead)) {
-      return NextResponse.json({ error: "Geçersiz randevu zamanı." }, { status: 400 });
+      return json({ error: "Geçersiz randevu zamanı." }, { status: 400 });
     }
 
     const client = await pool.connect();
@@ -122,7 +131,7 @@ export async function POST(
       const available = await isSlotStillAvailable(client, tenant.id, requestedAt, durationMinutes, capacity);
       if (!available) {
         await client.query("ROLLBACK");
-        return NextResponse.json(
+        return json(
           { error: "Bu saat az önce doldu, lütfen başka bir saat seçin." },
           { status: 409 }
         );
@@ -149,7 +158,7 @@ export async function POST(
         body: `${customer_name ? String(customer_name).trim() : "Müşteri"} — ${String(plate).replace(/\s+/g, "").toUpperCase()}`,
         url: "/admin/appointments",
       });
-      return NextResponse.json({ id: result.rows[0].id, status }, { status: 201 });
+      return json({ id: result.rows[0].id, status }, { status: 201 });
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -158,6 +167,6 @@ export async function POST(
     }
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
+    return json({ error: "Sunucu hatası." }, { status: 500 });
   }
 }
