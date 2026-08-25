@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Tooltip } from "@/components/Tooltip";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+import { PushNotificationToggle } from "../PushNotificationToggle";
 
 export default function GeneralSettingsPage() {
   const [businessName, setBusinessName] = useState("");
@@ -216,6 +217,11 @@ export default function GeneralSettingsPage() {
             Ekle
           </button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Bildirimler</h2>
+        <PushNotificationToggle />
       </div>
 
       <button

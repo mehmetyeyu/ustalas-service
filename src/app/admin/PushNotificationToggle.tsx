@@ -11,16 +11,42 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return Uint8Array.from(Array.from(rawData).map((c) => c.charCodeAt(0)));
 }
 
+// checking: ilk yükleniş, henüz destek/abonelik durumu bilinmiyor.
+// unsupported: tarayıcı Push API'yi desteklemiyor (bileşen hiç gösterilmez).
+// denied: kullanıcı bildirim iznini reddetmiş — tarayıcı bir daha sormaz,
+// yalnızca tarayıcının kendi site ayarlarından elle açılabilir.
 type Status = "checking" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
 
+function Switch({ checked, disabled, onClick }: { checked: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+        checked ? "bg-blue-600" : "bg-gray-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          checked ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
 // Panelde yeni randevu geldiğinde (sekme kapalı/arka plandayken bile) tarayıcı
-// bildirimi — n11/Trendyol'daki kampanya bildirimleriyle aynı mekanizma
-// (Web Push API), PWA/telefon bildirimi DEĞİL. Sadece admin/layout.tsx'te,
-// appointments.view yetkisi olan kullanıcılara gösterilir (bkz. orada aynı
-// koşulla yapılan bekleyen-randevu rozeti sorgusu).
-export function PushNotificationButton() {
+// bildirimi — n11/Trendyol'daki kampanya bildirimleriyle aynı mekanizma (Web
+// Push API), PWA/telefon bildirimi DEĞİL. Genel Ayarlar'a konuldu (bu sayfa
+// zaten admin-only — bkz. src/lib/permissions.ts) — sadece admin kullanıcının
+// KENDİ tarayıcısı/cihazı için abonelik.
+export function PushNotificationToggle() {
   const [status, setStatus] = useState<Status>("checking");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
@@ -39,6 +65,7 @@ export function PushNotificationButton() {
 
   async function handleSubscribe() {
     setBusy(true);
+    setError("");
     try {
       const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!publicKey) throw new Error("Bildirimler bu ortamda yapılandırılmamış.");
@@ -69,6 +96,7 @@ export function PushNotificationButton() {
       setStatus("subscribed");
     } catch (err) {
       console.error(err);
+      setError(err instanceof Error ? err.message : "Hata oluştu.");
       setStatus("unsubscribed");
     } finally {
       setBusy(false);
@@ -77,6 +105,7 @@ export function PushNotificationButton() {
 
   async function handleUnsubscribe() {
     setBusy(true);
+    setError("");
     try {
       const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
       const subscription = await registration?.pushManager.getSubscription();
@@ -98,35 +127,22 @@ export function PushNotificationButton() {
 
   if (status === "checking" || status === "unsupported") return null;
 
-  if (status === "denied") {
-    return (
-      <span className="text-xs text-gray-500" title="Tarayıcı ayarlarından bu site için bildirim izni vermeniz gerekiyor.">
-        Bildirimler engellendi
-      </span>
-    );
-  }
-
-  if (status === "subscribed") {
-    return (
-      <button
-        onClick={handleUnsubscribe}
-        disabled={busy}
-        className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-        title="Yeni randevu bildirimlerini kapat"
-      >
-        🔔 Bildirimler Açık
-      </button>
-    );
-  }
-
   return (
-    <button
-      onClick={handleSubscribe}
-      disabled={busy}
-      className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-      title="Yeni randevu geldiğinde tarayıcı bildirimi al"
-    >
-      🔕 Bildirimleri Aç
-    </button>
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-sm font-medium text-gray-700">Randevu Bildirimleri</div>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {status === "denied"
+            ? "Tarayıcınız bu site için bildirimleri engellemiş — tarayıcı site ayarlarından elle açmanız gerekiyor."
+            : "Yeni randevu geldiğinde bu tarayıcıya bildirim gönderilsin (sadece bu cihaz için geçerli)."}
+        </p>
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      </div>
+      <Switch
+        checked={status === "subscribed"}
+        disabled={busy || status === "denied"}
+        onClick={status === "subscribed" ? handleUnsubscribe : handleSubscribe}
+      />
+    </div>
   );
 }
