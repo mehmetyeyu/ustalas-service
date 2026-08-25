@@ -40,6 +40,9 @@ export async function PUT(request: NextRequest) {
     const booking_widget_title = body.booking_widget_title ? String(body.booking_widget_title).trim().slice(0, 120) || null : null;
     const booking_widget_description = body.booking_widget_description ? String(body.booking_widget_description).trim().slice(0, 300) || null : null;
     const booking_widget_show_heading_embed = !!body.booking_widget_show_heading_embed;
+    const booking_widget_radius = String(body.booking_widget_radius ?? "lg");
+    const booking_widget_density = String(body.booking_widget_density ?? "normal");
+    const booking_widget_heading_size = String(body.booking_widget_heading_size ?? "md");
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });
@@ -72,6 +75,15 @@ export async function PUT(request: NextRequest) {
     if (![1, 2, 3].includes(booking_widget_columns_desktop)) {
       return NextResponse.json({ error: "Masaüstü kolon sayısı 1, 2 veya 3 olmalıdır." }, { status: 400 });
     }
+    if (!["sharp", "md", "lg", "pill"].includes(booking_widget_radius)) {
+      return NextResponse.json({ error: "Geçersiz köşe yuvarlığı." }, { status: 400 });
+    }
+    if (!["compact", "normal", "comfortable"].includes(booking_widget_density)) {
+      return NextResponse.json({ error: "Geçersiz boşluk yoğunluğu." }, { status: 400 });
+    }
+    if (!["sm", "md", "lg"].includes(booking_widget_heading_size)) {
+      return NextResponse.json({ error: "Geçersiz başlık boyutu." }, { status: 400 });
+    }
 
     await pool.query(
       `UPDATE app_settings
@@ -80,14 +92,16 @@ export async function PUT(request: NextRequest) {
            booking_max_days_ahead=$7, booking_widget_preset=$8, booking_widget_accent_color=$9,
            booking_widget_columns_tablet=$10, booking_widget_columns_desktop=$11,
            booking_widget_title=$12, booking_widget_description=$13,
-           booking_widget_show_heading_embed=$14, updated_at=CURRENT_TIMESTAMP
-       WHERE tenant_id=$15`,
+           booking_widget_show_heading_embed=$14, booking_widget_radius=$15,
+           booking_widget_density=$16, booking_widget_heading_size=$17, updated_at=CURRENT_TIMESTAMP
+       WHERE tenant_id=$18`,
       [
         business_name, storage_overdue_months, payment_types, booking_capacity,
         JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead,
         booking_widget_preset, booking_widget_accent_color,
         booking_widget_columns_tablet, booking_widget_columns_desktop,
         booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
+        booking_widget_radius, booking_widget_density, booking_widget_heading_size,
         user.tenantId,
       ]
     );
@@ -97,6 +111,7 @@ export async function PUT(request: NextRequest) {
       booking_auto_approve, booking_max_days_ahead, booking_widget_preset, booking_widget_accent_color,
       booking_widget_columns_tablet, booking_widget_columns_desktop,
       booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
+      booking_widget_radius, booking_widget_density, booking_widget_heading_size,
     });
   } catch (error) {
     console.error(error);

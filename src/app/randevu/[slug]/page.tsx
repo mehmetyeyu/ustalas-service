@@ -11,6 +11,9 @@ interface Service {
 
 type ColumnsTablet = 1 | 2;
 type ColumnsDesktop = 1 | 2 | 3;
+type Radius = "sharp" | "md" | "lg" | "pill";
+type Density = "compact" | "normal" | "comfortable";
+type HeadingSize = "sm" | "md" | "lg";
 
 interface WidgetStyle {
   preset: "card" | "seamless" | "outlined";
@@ -20,6 +23,9 @@ interface WidgetStyle {
   title: string | null;
   description: string | null;
   showHeadingInEmbed: boolean;
+  radius: Radius;
+  density: Density;
+  headingSize: HeadingSize;
 }
 
 interface Meta {
@@ -32,11 +38,31 @@ interface Meta {
 // Firmanın kendi sitesine gömdüğünde form "yabancı bir widget" değil, sitenin
 // doğal bir parçası gibi görünsün diye üç hazır görünüm — bkz. Randevu
 // Görünümü ayar sayfası. card = bugüne kadarki tek sabit görünüm (varsayılan).
+// Köşe yuvarlığı ve iç boşluk artık ayrı token'lar (RADIUS_CARD/DENSITY_*) —
+// burada sadece zemin/kenarlık/gölge gibi yapısal fark kalıyor.
 const PRESET_CLASSES: Record<WidgetStyle["preset"], string> = {
-  card: "bg-white rounded-xl shadow-sm border border-gray-200 p-5",
-  seamless: "bg-transparent p-5",
-  outlined: "bg-white rounded-md border border-gray-300 p-5",
+  card: "bg-white shadow-sm border border-gray-200",
+  seamless: "bg-transparent",
+  outlined: "bg-white border border-gray-300",
 };
+
+// Kart konteyneri ile input/buton/saat-slotu arasında farklı ölçekte
+// (kart hep bir tık daha yuvarlak) ama aynı isimli 4 seviye — "lg" varsayılanı
+// bugünkü sabit görünümle birebir aynı (kart: rounded-xl, kontrol: rounded-lg).
+const RADIUS_CARD: Record<Radius, string> = { sharp: "rounded-none", md: "rounded-lg", lg: "rounded-xl", pill: "rounded-3xl" };
+const RADIUS_CONTROL: Record<Radius, string> = { sharp: "rounded-none", md: "rounded-md", lg: "rounded-lg", pill: "rounded-full" };
+
+// Kart iç boşluğu, grid/flex aralığı ve input iç boşluğunu birlikte
+// ölçekler — "normal" varsayılanı bugünkü sabit değerlerle (p-5/gap-4/
+// px-3 py-2) birebir aynı.
+const DENSITY_CARD_PADDING: Record<Density, string> = { compact: "p-3", normal: "p-5", comfortable: "p-7" };
+const DENSITY_GAP: Record<Density, string> = { compact: "gap-2", normal: "gap-4", comfortable: "gap-6" };
+const DENSITY_INPUT_PADDING: Record<Density, string> = { compact: "px-2.5 py-1.5", normal: "px-3 py-2", comfortable: "px-4 py-3" };
+
+// Başlık+açıklama çifti birlikte büyür/küçülür (ayrı ayrı font-size kontrolü
+// değil) — "md" varsayılanı bugünkü sabit değerlerle (text-xl/text-sm) aynı.
+const HEADING_SIZE_TITLE: Record<HeadingSize, string> = { sm: "text-lg", md: "text-xl", lg: "text-2xl" };
+const HEADING_SIZE_DESC: Record<HeadingSize, string> = { sm: "text-xs", md: "text-sm", lg: "text-base" };
 
 // Hizmet / Tarih / Müsait Saatler üç bağımsız grid öğesi — mobilde (<640px)
 // her zaman tek kolon (form zaten en dar cihazda tek sütuna sığacak kadar
@@ -264,8 +290,8 @@ export default function RandevuPage() {
       <div className={`max-w-md mx-auto transition-[max-width] ${TABLET_MAX_W[style.columnsTablet]} ${DESKTOP_MAX_W[style.columnsDesktop]}`}>
         {showHeading && (
           <>
-            <h1 className="text-xl font-bold text-gray-800 mb-1">{style.title || meta.tenant.name}</h1>
-            <p className="text-sm text-gray-500 mb-6">{style.description || "Online Randevu"}</p>
+            <h1 className={`${HEADING_SIZE_TITLE[style.headingSize]} font-bold text-gray-800 mb-1`}>{style.title || meta.tenant.name}</h1>
+            <p className={`${HEADING_SIZE_DESC[style.headingSize]} text-gray-500 mb-6`}>{style.description || "Online Randevu"}</p>
           </>
         )}
 
@@ -274,7 +300,10 @@ export default function RandevuPage() {
             Şu an online randevu alınamıyor.
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className={`${PRESET_CLASSES[style.preset]} flex flex-col gap-4`}>
+          <form
+            onSubmit={handleSubmit}
+            className={`${PRESET_CLASSES[style.preset]} ${RADIUS_CARD[style.radius]} ${DENSITY_CARD_PADDING[style.density]} flex flex-col ${DENSITY_GAP[style.density]}`}
+          >
             {/* Honeypot — CSS ile gizli, ekran okuyucular için de erişilemez alanda; bot'lar genelde doldurur */}
             <input
               type="text"
@@ -286,8 +315,15 @@ export default function RandevuPage() {
               aria-hidden="true"
             />
 
+            {/* Ad Soyad/Plaka/Telefon da (aşağıda, saat seçilince görünür) bu AYNI
+                grid'in içinde — önceden grid'in dışında, sabit tek-kolon olarak
+                forma ekleniyordu: admin 2-3 kolon seçse bile bu üç alan onu hiç
+                görmüyor, form üstte çok-kolonlu altta tek-kolonlu görünüp görsel
+                ritmi bozuyordu (gerçek kullanıcı geri bildirimi). Kısa metin
+                girişleri (isim/plaka/telefon) span gerektirmeden tek grid-birimi
+                genişliğinde doğal olarak tilelenir. */}
             <div
-              className={`grid grid-cols-1 gap-4 ${TABLET_COLS[style.columnsTablet]} ${DESKTOP_COLS[style.columnsDesktop]}`}
+              className={`grid grid-cols-1 ${DENSITY_GAP[style.density]} ${TABLET_COLS[style.columnsTablet]} ${DESKTOP_COLS[style.columnsDesktop]}`}
             >
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Hizmet <span className="text-red-500">*</span></label>
@@ -295,7 +331,7 @@ export default function RandevuPage() {
                   value={serviceId ?? ""}
                   onChange={(e) => setServiceId(e.target.value ? Number(e.target.value) : null)}
                   required
-                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
+                  className={`w-full border border-gray-300 ${RADIUS_CONTROL[style.radius]} ${DENSITY_INPUT_PADDING[style.density]} text-sm ${FOCUS_RING}`}
                 >
                   <option value="">Seçiniz...</option>
                   {meta.services.map((s) => (
@@ -316,7 +352,7 @@ export default function RandevuPage() {
                   max={toIstanbulDateStr(new Date(Date.now() + meta.maxDaysAhead * 24 * 60 * 60000))}
                   onChange={(e) => setDate(e.target.value)}
                   required
-                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
+                  className={`w-full border border-gray-300 ${RADIUS_CONTROL[style.radius]} ${DENSITY_INPUT_PADDING[style.density]} text-sm ${FOCUS_RING}`}
                 />
               </div>
 
@@ -341,7 +377,7 @@ export default function RandevuPage() {
                           key={s}
                           type="button"
                           onClick={() => setSelectedSlot(s)}
-                          className={`text-center px-2 py-2 rounded-lg text-sm border transition-colors ${
+                          className={`text-center px-2 py-2 ${RADIUS_CONTROL[style.radius]} text-sm border transition-colors ${
                             selectedSlot === s
                               ? "bg-[var(--accent)] border-[var(--accent)] text-white font-medium"
                               : "border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -354,49 +390,53 @@ export default function RandevuPage() {
                   )}
                 </div>
               )}
+
+              {selectedSlot && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Ad Soyad <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      required
+                      className={`w-full border border-gray-300 ${RADIUS_CONTROL[style.radius]} ${DENSITY_INPUT_PADDING[style.density]} text-sm ${FOCUS_RING}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Araç Plakası <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={plate}
+                      onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
+                      required
+                      placeholder="34 ABC 123"
+                      className={`w-full border border-gray-300 ${RADIUS_CONTROL[style.radius]} ${DENSITY_INPUT_PADDING[style.density]} text-sm font-mono uppercase ${FOCUS_RING}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Telefon <span className="text-red-500">*</span></label>
+                    <input
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      required
+                      placeholder="05XX XXX XX XX"
+                      className={`w-full border border-gray-300 ${RADIUS_CONTROL[style.radius]} ${DENSITY_INPUT_PADDING[style.density]} text-sm ${FOCUS_RING}`}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {selectedSlot && (
               <>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Ad Soyad <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    required
-                    className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Araç Plakası <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={plate}
-                    onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
-                    required
-                    placeholder="34 ABC 123"
-                    className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono uppercase ${FOCUS_RING}`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Telefon <span className="text-red-500">*</span></label>
-                  <input
-                    type="tel"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    required
-                    placeholder="05XX XXX XX XX"
-                    className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${FOCUS_RING}`}
-                  />
-                </div>
-
                 {submitError && <p className="text-sm text-red-600">{submitError}</p>}
 
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-[var(--accent)] hover:brightness-90 disabled:opacity-50 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-[filter]"
+                  className={`bg-[var(--accent)] hover:brightness-90 disabled:opacity-50 text-white font-medium ${RADIUS_CONTROL[style.radius]} px-4 py-2.5 text-sm transition-[filter]`}
                 >
                   {submitting ? "Gönderiliyor..." : "Randevu Talebi Gönder"}
                 </button>

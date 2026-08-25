@@ -7,6 +7,9 @@ export type BookingWidgetPreset = "card" | "seamless" | "outlined";
 // öğesi olduğu src/app/randevu/[slug]/page.tsx).
 export type BookingWidgetColumnsTablet = 1 | 2;
 export type BookingWidgetColumnsDesktop = 1 | 2 | 3;
+export type BookingWidgetRadius = "sharp" | "md" | "lg" | "pill";
+export type BookingWidgetDensity = "compact" | "normal" | "comfortable";
+export type BookingWidgetHeadingSize = "sm" | "md" | "lg";
 
 export interface AppSettings {
   business_name: string;
@@ -23,6 +26,9 @@ export interface AppSettings {
   booking_widget_title: string | null;
   booking_widget_description: string | null;
   booking_widget_show_heading_embed: boolean;
+  booking_widget_radius: BookingWidgetRadius;
+  booking_widget_density: BookingWidgetDensity;
+  booking_widget_heading_size: BookingWidgetHeadingSize;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -40,6 +46,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   booking_widget_title: null,
   booking_widget_description: null,
   booking_widget_show_heading_embed: false,
+  booking_widget_radius: "lg",
+  booking_widget_density: "normal",
+  booking_widget_heading_size: "md",
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -48,7 +57,8 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_capacity, booking_working_hours, booking_auto_approve, booking_max_days_ahead,
             booking_widget_preset, booking_widget_accent_color,
             booking_widget_columns_tablet, booking_widget_columns_desktop,
-            booking_widget_title, booking_widget_description, booking_widget_show_heading_embed
+            booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
+            booking_widget_radius, booking_widget_density, booking_widget_heading_size
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );

@@ -4,11 +4,33 @@ import { useEffect, useRef, useState } from "react";
 
 type Preset = "card" | "seamless" | "outlined";
 type PreviewWidth = "mobile" | "tablet" | "desktop";
+type Radius = "sharp" | "md" | "lg" | "pill";
+type Density = "compact" | "normal" | "comfortable";
+type HeadingSize = "sm" | "md" | "lg";
 
 const PRESETS: { value: Preset; label: string; description: string }[] = [
   { value: "card", label: "Kart", description: "Beyaz kart, gölge ve kenarlık — varsayılan." },
   { value: "seamless", label: "Sade", description: "Arka plan/kenarlık yok, sitenize gömülü gibi görünür." },
   { value: "outlined", label: "Çerçeveli", description: "İnce kenarlık, düz köşeler — daha sade bir görünüm." },
+];
+
+const RADIUS_OPTIONS: { value: Radius; label: string }[] = [
+  { value: "sharp", label: "Keskin" },
+  { value: "md", label: "Orta" },
+  { value: "lg", label: "Yuvarlak" },
+  { value: "pill", label: "Hap" },
+];
+
+const DENSITY_OPTIONS: { value: Density; label: string }[] = [
+  { value: "compact", label: "Sıkışık" },
+  { value: "normal", label: "Normal" },
+  { value: "comfortable", label: "Ferah" },
+];
+
+const HEADING_SIZE_OPTIONS: { value: HeadingSize; label: string }[] = [
+  { value: "sm", label: "Küçük" },
+  { value: "md", label: "Orta" },
+  { value: "lg", label: "Büyük" },
 ];
 
 // Form bir iframe içinde gömülü olduğundan bu seviyeler ziyaretçinin GERÇEK
@@ -48,6 +70,9 @@ export default function AppointmentAppearancePage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [showHeadingEmbed, setShowHeadingEmbed] = useState(false);
+  const [radius, setRadius] = useState<Radius>("lg");
+  const [density, setDensity] = useState<Density>("normal");
+  const [headingSize, setHeadingSize] = useState<HeadingSize>("md");
 
   const [slug, setSlug] = useState("");
   const [tenantName, setTenantName] = useState("");
@@ -92,6 +117,9 @@ export default function AppointmentAppearancePage() {
         setTitle(data.booking_widget_title ?? "");
         setDescription(data.booking_widget_description ?? "");
         setShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
+        setRadius(data.booking_widget_radius ?? "lg");
+        setDensity(data.booking_widget_density ?? "normal");
+        setHeadingSize(data.booking_widget_heading_size ?? "md");
         setSlug(data.slug ?? "");
         setTenantName(data.business_name ?? "");
         setLoading(false);
@@ -118,6 +146,9 @@ export default function AppointmentAppearancePage() {
           title: title || null,
           description: description || null,
           showHeadingInEmbed: showHeadingEmbed,
+          radius,
+          density,
+          headingSize,
         },
       },
       window.location.origin
@@ -140,7 +171,7 @@ export default function AppointmentAppearancePage() {
   useEffect(() => {
     sendPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, accentColor, columnsTablet, columnsDesktop, title, description, showHeadingEmbed]);
+  }, [preset, accentColor, columnsTablet, columnsDesktop, title, description, showHeadingEmbed, radius, density, headingSize]);
 
   // Görünür panel, simüle edilen genişlikten (ör. 1200px masaüstü) dar
   // olduğunda iframe'i panele sığacak şekilde küçültür — panel yeniden
@@ -197,6 +228,9 @@ export default function AppointmentAppearancePage() {
           booking_widget_title: title.trim() || null,
           booking_widget_description: description.trim() || null,
           booking_widget_show_heading_embed: showHeadingEmbed,
+          booking_widget_radius: radius,
+          booking_widget_density: density,
+          booking_widget_heading_size: headingSize,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
@@ -310,6 +344,43 @@ export default function AppointmentAppearancePage() {
             </div>
           </div>
 
+          <div className="mb-5 grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Köşe Yuvarlığı</label>
+              <div className="flex flex-col gap-1">
+                {RADIUS_OPTIONS.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => setRadius(r.value)}
+                    className={`px-2 py-1.5 rounded-lg border text-xs font-medium text-left transition-colors ${
+                      radius === r.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Boşluk Yoğunluğu</label>
+              <div className="flex flex-col gap-1">
+                {DENSITY_OPTIONS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => setDensity(d.value)}
+                    className={`px-2 py-1.5 rounded-lg border text-xs font-medium text-left transition-colors ${
+                      density === d.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="mb-5">
             <label className="block text-sm font-medium text-gray-700 mb-1">Başlık</label>
             <input
@@ -333,6 +404,25 @@ export default function AppointmentAppearancePage() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-gray-400 mt-1">Boş bırakılırsa firma adı ve &quot;Online Randevu&quot; kullanılır.</p>
+          </div>
+
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Başlık Boyutu</label>
+            <div className="flex gap-1">
+              {HEADING_SIZE_OPTIONS.map((h) => (
+                <button
+                  key={h.value}
+                  type="button"
+                  onClick={() => setHeadingSize(h.value)}
+                  className={`flex-1 px-2 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                    headingSize === h.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {h.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Başlık ve açıklama metnini birlikte ölçekler.</p>
           </div>
 
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">

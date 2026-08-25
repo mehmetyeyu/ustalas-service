@@ -740,6 +740,28 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_description VAR
 -- kendi sitesi zaten bir bağlam sağladığı varsayılıyor) — bu varsayılan
 -- korunuyor, isteyen firma açabilir.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_show_heading_embed BOOLEAN NOT NULL DEFAULT false;
+-- Üç ek stil boyutu (2026-08-26 stil araştırmasının sonucu) — varsayılanlar
+-- yine bugünkü sabit görünümle birebir aynı (lg = mevcut rounded-xl/rounded-lg
+-- karışımı, normal = mevcut p-5/gap-4/px-3 py-2, md = mevcut text-xl/text-sm
+-- başlık/açıklama) — mevcut kiracılarda görsel fark yaratmaz.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_radius VARCHAR(10) NOT NULL DEFAULT 'lg';
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_booking_widget_radius_check
+    CHECK (booking_widget_radius IN ('sharp','md','lg','pill'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_density VARCHAR(12) NOT NULL DEFAULT 'normal';
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_booking_widget_density_check
+    CHECK (booking_widget_density IN ('compact','normal','comfortable'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_heading_size VARCHAR(6) NOT NULL DEFAULT 'md';
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_booking_widget_heading_size_check
+    CHECK (booking_widget_heading_size IN ('sm','md','lg'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Tarayıcı push bildirimleri (yeni randevu geldiğinde, panel sekmesi kapalı/
 -- arka plandayken bile) — bkz. src/lib/push.ts. Tenant-safe composite FK için

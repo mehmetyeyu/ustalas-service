@@ -22,11 +22,13 @@ export async function GET(
       booking_widget_columns_tablet: number; booking_widget_columns_desktop: number;
       booking_widget_title: string | null; booking_widget_description: string | null;
       booking_widget_show_heading_embed: boolean;
+      booking_widget_radius: string; booking_widget_density: string; booking_widget_heading_size: string;
     }>(
       `SELECT booking_capacity, booking_working_hours, booking_max_days_ahead,
               booking_widget_preset, booking_widget_accent_color,
               booking_widget_columns_tablet, booking_widget_columns_desktop,
-              booking_widget_title, booking_widget_description, booking_widget_show_heading_embed
+              booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
+              booking_widget_radius, booking_widget_density, booking_widget_heading_size
        FROM app_settings WHERE tenant_id = $1`,
       [tenant.id]
     );
@@ -51,6 +53,9 @@ export async function GET(
         title: s?.booking_widget_title ?? null,
         description: s?.booking_widget_description ?? null,
         showHeadingInEmbed: s?.booking_widget_show_heading_embed ?? false,
+        radius: s?.booking_widget_radius ?? "lg",
+        density: s?.booking_widget_density ?? "normal",
+        headingSize: s?.booking_widget_heading_size ?? "md",
       },
     }));
   } catch (error) {
