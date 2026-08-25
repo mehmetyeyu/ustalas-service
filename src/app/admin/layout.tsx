@@ -16,14 +16,14 @@ const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC_DARK || "/logo.jpg";
 // — bkz. src/lib/permissions.ts (aynı kaynak/aksiyon taksonomisi).
 const navItems = [
   { href: "/admin/orders", label: "Siparişler", resource: "orders" },
-  { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
-  { href: "/admin/storage", label: "Depolama", resource: "storage" },
   { href: "/admin/products", label: "Ürünler", resource: "products" },
+  { href: "/admin/storage", label: "Depolama", resource: "storage" },
   { href: "/admin/reports", label: "Raporlar", resource: "reports" },
   { href: "/admin/expenses", label: "Masraflar", resource: "expenses" },
   { href: "/admin/services", label: "Hizmetler", resource: "services" },
   { href: "/admin/customers", label: "Müşteriler", resource: "customers" },
   { href: "/admin/suppliers", label: "Tedarikçiler", resource: "suppliers" },
+  { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
 ] as const;
 
 // Kullanıcılar/Genel Ayarlar hiçbir zaman staff'a devredilemez (bkz. plan) —
