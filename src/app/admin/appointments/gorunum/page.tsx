@@ -158,7 +158,15 @@ export default function AppointmentAppearancePage() {
     const observer = new ResizeObserver(recompute);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [previewWidth]);
+    // `slug` de bağımlılıkta: veri yüklenene kadar (loading=true) bu ref'in
+    // bağlı olduğu önizleme kutusu DOM'da hiç yok (aşağıdaki `{slug ? ... }`
+    // koşuluna bkz.) — sadece `previewWidth`'e bağlı olsaydı, ilk mount'ta
+    // (henüz slug yokken) efekt erken çıkıp hiçbir şey kurmuyor, veri
+    // yüklenip kutu DOM'a eklendiğinde previewWidth DEĞİŞMEDİĞİ için efekt
+    // BİR DAHA HİÇ ÇALIŞMIYORDU — ResizeObserver hiç kurulmuyor, ölçek hep
+    // varsayılan 1'de kalıp dar panellerde (ör. mobil admin ekranı) önizleme
+    // taşıyordu (gerçek kullanıcı raporuyla bulundu).
+  }, [previewWidth, slug]);
 
   async function handleSave() {
     setError("");
