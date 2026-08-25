@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { hasPermission } from "@/lib/permissions";
+import { PushNotificationButton } from "./PushNotificationButton";
 
 // Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
 // NEXT_PUBLIC_LOGO_SRC_DARK ile gösterebilir (bu menü koyu arka planlı) —
@@ -227,6 +228,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const visibleSettingsItems = loading || user?.role === "admin"
     ? settingsItems
     : settingsItems.filter((item) => !item.adminOnly);
+  // Bekleyen-randevu rozetiyle (yukarıdaki useEffect) aynı yetki koşulu —
+  // push bildirimleri sadece randevuları görebilen personele anlamlı.
+  const canReceivePush = !!user && (user.role === "admin" || hasPermission(user, "appointments.view"));
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -261,6 +265,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {canReceivePush && <PushNotificationButton />}
             <SettingsMenu pathname={pathname} items={visibleSettingsItems} />
             <button
               onClick={handleLogout}

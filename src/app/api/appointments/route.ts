@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { notifyTenantAdmins } from "@/lib/push";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -82,6 +83,11 @@ export async function POST(request: NextRequest) {
         notes || null,
       ]
     );
+    await notifyTenantAdmins(user.tenantId!, {
+      title: "Yeni Randevu Eklendi",
+      body: `${String(customer_name).trim()} — ${String(plate).replace(/\s+/g, "").toUpperCase()}`,
+      url: "/admin/appointments",
+    });
     return NextResponse.json({ id: result.rows[0].id }, { status: 201 });
   } catch (error) {
     console.error(error);

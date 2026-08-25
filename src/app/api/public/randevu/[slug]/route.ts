@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { resolveTenantBySlug } from "@/lib/publicTenant";
 import { isSlotStillAvailable, isWithinBookableWindow, DEFAULT_DURATION_MINUTES, type WorkingHours } from "@/lib/appointmentSlots";
 import { getClientIp } from "@/lib/clientIp";
+import { notifyTenantAdmins } from "@/lib/push";
 
 const PHONE_COOLDOWN_MINUTES = 5;
 // Form artık firmaların kendi sitelerine gömülebiliyor (bkz. embed.js) —
@@ -143,6 +144,11 @@ export async function POST(
         ]
       );
       await client.query("COMMIT");
+      await notifyTenantAdmins(tenant.id, {
+        title: "Yeni Randevu Talebi",
+        body: `${customer_name ? String(customer_name).trim() : "Müşteri"} — ${String(plate).replace(/\s+/g, "").toUpperCase()}`,
+        url: "/admin/appointments",
+      });
       return NextResponse.json({ id: result.rows[0].id, status }, { status: 201 });
     } catch (err) {
       await client.query("ROLLBACK");

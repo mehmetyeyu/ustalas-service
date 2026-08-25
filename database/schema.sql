@@ -740,3 +740,32 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_description VAR
 -- kendi sitesi zaten bir bağlam sağladığı varsayılıyor) — bu varsayılan
 -- korunuyor, isteyen firma açabilir.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS booking_widget_show_heading_embed BOOLEAN NOT NULL DEFAULT false;
+
+-- Tarayıcı push bildirimleri (yeni randevu geldiğinde, panel sekmesi kapalı/
+-- arka plandayken bile) — bkz. src/lib/push.ts. Tenant-safe composite FK için
+-- services_id_tenant_unique/orders_id_tenant_unique ile aynı desen; users
+-- tablosunda bu henüz yoktu.
+CREATE UNIQUE INDEX IF NOT EXISTS users_id_tenant_unique ON users(id, tenant_id);
+
+-- Bir kullanıcı birden fazla tarayıcı/cihazda abone olabilir (her biri ayrı
+-- satır) — endpoint tarayıcının push servisinin ürettiği benzersiz URL,
+-- global olarak tekil. p256dh/auth, web-push'un şifreleme için ihtiyaç
+-- duyduğu abonelik anahtarları (PushSubscription.toJSON().keys).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id           SERIAL PRIMARY KEY,
+  tenant_id    INT NOT NULL REFERENCES tenants(id),
+  user_id      INT NOT NULL REFERENCES users(id),
+  endpoint     TEXT NOT NULL,
+  p256dh       TEXT NOT NULL,
+  auth         TEXT NOT NULL,
+  user_agent   VARCHAR(255),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_unique ON push_subscriptions(endpoint);
+CREATE INDEX IF NOT EXISTS push_subscriptions_tenant_idx ON push_subscriptions(tenant_id);
+DO $$ BEGIN
+  ALTER TABLE push_subscriptions ADD CONSTRAINT push_subscriptions_user_tenant_fk
+    FOREIGN KEY (user_id, tenant_id) REFERENCES users(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
