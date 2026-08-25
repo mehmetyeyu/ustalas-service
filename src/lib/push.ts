@@ -5,11 +5,25 @@ import pool from "./db";
 // tenant'ın abone personeline tarayıcı push bildirimi gönderir — bkz.
 // public/push-sw.js (bildirimi gösteren service worker) ve
 // src/app/api/push/subscribe/route.ts (abonelik kaydı).
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || "mailto:destek@ornek.com",
-  process.env.VAPID_PUBLIC_KEY || "",
-  process.env.VAPID_PRIVATE_KEY || ""
-);
+//
+// setVapidDetails, boş/geçersiz bir public key ile SENKRON throw ediyor
+// (web-push'un kendi validatePublicKey'i) — bu modül IMPORT edilir edilmez
+// (yani appointments route'ları yüklenir yüklenmez) çalıştığından, VAPID
+// ortam değişkenleri tanımlı değilse (ör. Vercel'e henüz eklenmediyse) bu
+// çağrı, push'la hiç ilgisi olmayan randevu oluşturma route'unu bile
+// tamamen çökertiyordu (canlıda gerçekten yaşandı). Anahtarlar yoksa hiç
+// çağrılmıyor — notifyTenantAdmins zaten bu durumda no-op.
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(
+      process.env.VAPID_SUBJECT || "mailto:destek@ornek.com",
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+  } catch (err) {
+    console.error("VAPID yapılandırma hatası — push bildirimleri devre dışı:", err);
+  }
+}
 
 interface NotifyPayload {
   title: string;
@@ -21,7 +35,7 @@ interface NotifyPayload {
 // başarısı buna bağlı olmamalı. Süresi dolmuş/geçersiz abonelikler (push
 // servisi 404/410 döndürür) sessizce DB'den siliniyor.
 export async function notifyTenantAdmins(tenantId: number, payload: NotifyPayload): Promise<void> {
-  if (!process.env.VAPID_PRIVATE_KEY) return;
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
 
   try {
     // Abonelik anında değil GÖNDERİM anında yetki kontrolü — bir kullanıcının
