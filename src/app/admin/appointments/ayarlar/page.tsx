@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PushNotificationToggle } from "../../PushNotificationToggle";
 
 interface DayWindow { open: string; close: string; }
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
@@ -298,6 +299,10 @@ export default function AppointmentSettingsPage() {
         <p className="text-xs text-gray-400 mt-1 ml-6">
           Kapalıysa (önerilen) gelen talepler Randevular sayfasında onayınızı bekler.
         </p>
+
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <PushNotificationToggle />
+        </div>
 
         {slug && origin && (
           <div className="mt-6 pt-5 border-t border-gray-100">
