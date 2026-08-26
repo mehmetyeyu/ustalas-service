@@ -763,6 +763,13 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- Sipariş oluşturma/düzenleme/içe aktarma ve randevu→sipariş dönüşümü, sipariş
+-- üzerindeki müşteri adını (varsa telefonuyla) otomatik olarak Müşteriler
+-- listesine kaydediyordu — bazı firmalar bunu istemiyor (ör. tek seferlik/
+-- mail-order müşterileri listede görmek istemiyor). Varsayılan TRUE — mevcut
+-- davranışla birebir aynı, mevcut kiracılarda fark yaratmaz.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS auto_register_customers BOOLEAN NOT NULL DEFAULT true;
+
 -- Tarayıcı push bildirimleri (yeni randevu geldiğinde, panel sekmesi kapalı/
 -- arka plandayken bile) — bkz. src/lib/push.ts. Tenant-safe composite FK için
 -- services_id_tenant_unique/orders_id_tenant_unique ile aynı desen; users

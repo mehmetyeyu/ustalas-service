@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Tooltip } from "@/components/Tooltip";
+import { Switch } from "@/components/Switch";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 
 export default function GeneralSettingsPage() {
@@ -23,6 +24,7 @@ export default function GeneralSettingsPage() {
   const [widgetTitle, setWidgetTitle] = useState<string | null>(null);
   const [widgetDescription, setWidgetDescription] = useState<string | null>(null);
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
+  const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -50,6 +52,7 @@ export default function GeneralSettingsPage() {
         setWidgetTitle(data.booking_widget_title ?? null);
         setWidgetDescription(data.booking_widget_description ?? null);
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
+        setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setLoading(false);
       });
   }, []);
@@ -104,6 +107,7 @@ export default function GeneralSettingsPage() {
           booking_widget_title: widgetTitle,
           booking_widget_description: widgetDescription,
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
+          auto_register_customers: autoRegisterCustomers,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
@@ -215,6 +219,21 @@ export default function GeneralSettingsPage() {
           >
             Ekle
           </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Müşteriler</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-gray-700">Müşterileri Otomatik Kaydet</div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Sipariş oluşturma/düzenleme, Excel içe aktarımı veya randevu onayında girilen müşteri
+              adı (varsa telefonuyla) otomatik olarak Müşteriler listesine eklensin. Kapatırsanız
+              müşteriler yalnızca Müşteriler sayfasından elle eklenmiş olarak listede görünür.
+            </p>
+          </div>
+          <Switch checked={autoRegisterCustomers} onClick={() => setAutoRegisterCustomers((v) => !v)} />
         </div>
       </div>
 

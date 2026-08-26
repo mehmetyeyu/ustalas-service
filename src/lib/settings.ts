@@ -29,6 +29,7 @@ export interface AppSettings {
   booking_widget_radius: BookingWidgetRadius;
   booking_widget_density: BookingWidgetDensity;
   booking_widget_heading_size: BookingWidgetHeadingSize;
+  auto_register_customers: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -49,6 +50,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   booking_widget_radius: "lg",
   booking_widget_density: "normal",
   booking_widget_heading_size: "md",
+  auto_register_customers: true,
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -58,7 +60,8 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_preset, booking_widget_accent_color,
             booking_widget_columns_tablet, booking_widget_columns_desktop,
             booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
-            booking_widget_radius, booking_widget_density, booking_widget_heading_size
+            booking_widget_radius, booking_widget_density, booking_widget_heading_size,
+            auto_register_customers
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -69,4 +72,16 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
     ...settings,
     payment_types: Array.from(new Set([...PROTECTED_PAYMENT_TYPES, ...settings.payment_types])),
   };
+}
+
+// Sipariş oluşturma/düzenleme/içe aktarma ve randevu→sipariş dönüşümü gibi
+// sık çağrılan yollarda, tüm ayarları (payment_types/working_hours dahil)
+// çekmek yerine tek kolonluk ucuz bir sorgu — bkz. app_settings.
+// auto_register_customers şemadaki yorum.
+export async function getAutoRegisterCustomers(tenantId: number): Promise<boolean> {
+  const result = await pool.query<{ auto_register_customers: boolean }>(
+    "SELECT auto_register_customers FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
+  );
+  return result.rows[0]?.auto_register_customers ?? true;
 }

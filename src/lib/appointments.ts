@@ -66,12 +66,21 @@ export async function convertAppointmentToOrder(
   }
 
   if (appt.customer_name) {
-    await upsertDirectoryNames(client, "customers", tenantId, [appt.customer_name]);
-    await client.query(
-      `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
-       ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
-      [tenantId, appt.customer_name, appt.customer_phone]
+    // Genel Ayarlar'daki "Müşterileri Otomatik Kaydet" kapalıysa (bkz.
+    // app_settings.auto_register_customers) sipariş oluşturma/düzenlemedeki
+    // aynı davranışla tutarlı olarak burada da atlanır.
+    const settingsResult = await client.query<{ auto_register_customers: boolean }>(
+      "SELECT auto_register_customers FROM app_settings WHERE tenant_id = $1",
+      [tenantId]
     );
+    if (settingsResult.rows[0]?.auto_register_customers ?? true) {
+      await upsertDirectoryNames(client, "customers", tenantId, [appt.customer_name]);
+      await client.query(
+        `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
+         ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
+        [tenantId, appt.customer_name, appt.customer_phone]
+      );
+    }
   }
 
   const orderResult = await client.query<{ id: number }>(

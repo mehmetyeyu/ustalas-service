@@ -5,6 +5,7 @@ import { ParsedOrder } from "@/lib/ordersExcel";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { hasPermission } from "@/lib/permissions";
+import { getAutoRegisterCustomers } from "@/lib/settings";
 
 const MAX_BATCH_SIZE = 20;
 
@@ -37,10 +38,12 @@ export async function POST(request: NextRequest) {
       const serviceIdByName = await resolveServiceIds(client, user.tenantId!, allLines);
       // "Perakende Müşteri" gerçek bir müşteri değil, anonim satışları temsil
       // eden bir yer tutucudur — Müşteri dizinine eklenmez.
-      const customerNames = orders
-        .map((o) => o.customer_name)
-        .filter((n) => (n ?? "").trim().toLocaleLowerCase("tr-TR") !== "perakende müşteri");
-      await upsertDirectoryNames(client, "customers", user.tenantId!, customerNames);
+      if (await getAutoRegisterCustomers(user.tenantId!)) {
+        const customerNames = orders
+          .map((o) => o.customer_name)
+          .filter((n) => (n ?? "").trim().toLocaleLowerCase("tr-TR") !== "perakende müşteri");
+        await upsertDirectoryNames(client, "customers", user.tenantId!, customerNames);
+      }
       await upsertDirectoryNames(client, "suppliers", user.tenantId!, allLines.map((l) => l.supplier));
 
       // Excel'deki Stok Kodu (Ürün Kodu) Ürün Kataloğu'nda henüz yoksa, en azından

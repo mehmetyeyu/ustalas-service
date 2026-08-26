@@ -43,6 +43,7 @@ export async function PUT(request: NextRequest) {
     const booking_widget_radius = String(body.booking_widget_radius ?? "lg");
     const booking_widget_density = String(body.booking_widget_density ?? "normal");
     const booking_widget_heading_size = String(body.booking_widget_heading_size ?? "md");
+    const auto_register_customers = !!body.auto_register_customers;
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });
@@ -93,8 +94,9 @@ export async function PUT(request: NextRequest) {
            booking_widget_columns_tablet=$10, booking_widget_columns_desktop=$11,
            booking_widget_title=$12, booking_widget_description=$13,
            booking_widget_show_heading_embed=$14, booking_widget_radius=$15,
-           booking_widget_density=$16, booking_widget_heading_size=$17, updated_at=CURRENT_TIMESTAMP
-       WHERE tenant_id=$18`,
+           booking_widget_density=$16, booking_widget_heading_size=$17, auto_register_customers=$18,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE tenant_id=$19`,
       [
         business_name, storage_overdue_months, payment_types, booking_capacity,
         JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead,
@@ -102,6 +104,7 @@ export async function PUT(request: NextRequest) {
         booking_widget_columns_tablet, booking_widget_columns_desktop,
         booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
         booking_widget_radius, booking_widget_density, booking_widget_heading_size,
+        auto_register_customers,
         user.tenantId,
       ]
     );
@@ -112,6 +115,7 @@ export async function PUT(request: NextRequest) {
       booking_widget_columns_tablet, booking_widget_columns_desktop,
       booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
       booking_widget_radius, booking_widget_density, booking_widget_heading_size,
+      auto_register_customers,
     });
   } catch (error) {
     console.error(error);

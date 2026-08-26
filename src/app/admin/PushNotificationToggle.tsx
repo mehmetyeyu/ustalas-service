@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Switch } from "@/components/Switch";
 
 // Push API'nin beklediği Uint8Array formatı — VAPID public key'i base64url
 // string olarak env'den geliyor, pushManager.subscribe bunu byte dizisi ister.
@@ -16,27 +17,6 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 // denied: kullanıcı bildirim iznini reddetmiş — tarayıcı bir daha sormaz,
 // yalnızca tarayıcının kendi site ayarlarından elle açılabilir.
 type Status = "checking" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
-
-function Switch({ checked, disabled, onClick }: { checked: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onClick}
-      disabled={disabled}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-        checked ? "bg-blue-600" : "bg-gray-300"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-          checked ? "translate-x-6" : "translate-x-1"
-        }`}
-      />
-    </button>
-  );
-}
 
 // Panelde yeni randevu geldiğinde (sekme kapalı/arka plandayken bile) tarayıcı
 // bildirimi — n11/Trendyol'daki kampanya bildirimleriyle aynı mekanizma (Web

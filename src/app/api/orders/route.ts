@@ -6,6 +6,7 @@ import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
 import { buildOrderQuery } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
+import { getAutoRegisterCustomers } from "@/lib/settings";
 
 interface OrderLineInput {
   service_name: string;
@@ -96,13 +97,15 @@ export async function POST(request: NextRequest) {
       0
     );
 
+    const autoRegisterCustomers = await getAutoRegisterCustomers(user.tenantId!);
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
       const serviceIdByName = await resolveServiceIds(client, user.tenantId!, lines as OrderLineInput[]);
       await upsertDirectoryNames(client, "suppliers", user.tenantId!, (lines as OrderLineInput[]).map((l) => l.supplier));
-      if (customer_name && String(customer_name).trim()) {
+      if (autoRegisterCustomers && customer_name && String(customer_name).trim()) {
         await client.query(
           `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
            ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(customers.phone, EXCLUDED.phone)`,
