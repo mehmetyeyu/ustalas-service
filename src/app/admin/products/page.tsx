@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/format";
 import { parseProductRows, chunk, type ParsedProductRow } from "@/lib/productsExcel";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -191,6 +192,7 @@ function seasonBadge(season: string | null) {
 }
 
 export default function ProductsPage() {
+  const toast = useToast();
   const allowed = useViewGuard("products");
   const canCreate = usePermission("products.create");
   const canEdit = usePermission("products.edit");
@@ -223,16 +225,13 @@ export default function ProductsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
   const [editItem, setEditItem] = useState<ProductBatch | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
-  const [editError, setEditError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [historyModalProduct, setHistoryModalProduct] = useState<ProductBatch | null>(null);
   const [historyEntries, setHistoryEntries] = useState<StockEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState("");
   const [importStage, setImportStage] = useState<"reading" | "uploading" | "">("");
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
@@ -377,11 +376,10 @@ export default function ProductsPage() {
 
   async function handleSave() {
     if (!form.code.trim()) {
-      setSaveError("Ürün kodu zorunludur.");
+      toast.error("Ürün kodu zorunludur.");
       return;
     }
     setSaving(true);
-    setSaveError("");
     try {
       const res = await fetch("/api/products", {
         method: "POST",
@@ -390,7 +388,7 @@ export default function ProductsPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        setSaveError(data.error ?? "Hata oluştu.");
+        toast.error(data.error ?? "Hata oluştu.");
         return;
       }
       setShowAddModal(false);
@@ -408,13 +406,11 @@ export default function ProductsPage() {
       brand: prefillBrand ?? "",
       size_desc: prefillSize ?? "",
     });
-    setSaveError("");
     setShowAddModal(true);
   }
 
   function openEdit(item: ProductBatch) {
     setEditItem(item);
-    setEditError("");
     setEditForm({
       code: item.code ?? "",
       brand: item.brand ?? "",
@@ -433,7 +429,6 @@ export default function ProductsPage() {
   async function handleUpdate() {
     if (!editItem) return;
     setSaving(true);
-    setEditError("");
     try {
       const res = await fetch(`/api/products/${editItem.id}`, {
         method: "PATCH",
@@ -442,7 +437,7 @@ export default function ProductsPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setEditError(data.error ?? "Hata oluştu.");
+        toast.error(data.error ?? "Hata oluştu.");
         return;
       }
       setEditItem(null);
@@ -472,7 +467,7 @@ export default function ProductsPage() {
       const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Parti silinemedi.");
+        toast.error(data.error ?? "Parti silinemedi.");
         return;
       }
       await fetchItems(page);
@@ -485,7 +480,6 @@ export default function ProductsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
-    setImportMsg("");
     setImportStage("reading");
     setImportProgress({ current: 0, total: 0 });
     try {
@@ -499,12 +493,12 @@ export default function ProductsPage() {
       try {
         parsed = parseProductRows(rawRows);
       } catch (err) {
-        setImportMsg(err instanceof Error ? err.message : "Dosya okunamadı.");
+        toast.error(err instanceof Error ? err.message : "Dosya okunamadı.");
         return;
       }
 
       if (parsed.rows.length === 0) {
-        setImportMsg("Aktarılacak ürün bulunamadı.");
+        toast.error("Aktarılacak ürün bulunamadı.");
         return;
       }
 
@@ -522,7 +516,7 @@ export default function ProductsPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          setImportMsg(
+          toast.error(
             `${imported} parti aktarıldıktan sonra hata oluştu: ${data.error ?? "Bilinmeyen hata."}`
           );
           setPage(1);
@@ -534,14 +528,14 @@ export default function ProductsPage() {
         setImportProgress((prev) => ({ ...prev, current: Math.min(prev.total, prev.current + batch.length) }));
       }
 
-      setImportMsg(
+      toast.success(
         `${imported} parti içe aktarıldı.` +
         (skipped ? ` ${skipped} satır ürün kodu olmadığı için atlandı.` : "")
       );
       setPage(1);
       await fetchItems(1);
     } catch {
-      setImportMsg("Dosya işlenirken hata oluştu.");
+      toast.error("Dosya işlenirken hata oluştu.");
     } finally {
       setImporting(false);
       setImportStage("");
@@ -657,12 +651,6 @@ export default function ProductsPage() {
           </div>
         </div>
       </div>
-
-      {importMsg && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-          {importMsg}
-        </div>
-      )}
 
       {/* Sekmeler: Ürünler (aktif stok) / Malzeme Hareketleri (geçmiş — stoğu
           0'a inip listeden kalkan partiler dahil, geriye dönük bakış). */}
@@ -1145,12 +1133,6 @@ export default function ProductsPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-1">Yeni Ürün / Parti</h2>
             <p className="text-xs text-gray-400 mb-5">Aynı Ürün Kodu zaten varsa, farklı bir Üretim Haftası/Yılı ve/veya Tedarikçi girerek o koda yeni bir parti eklemiş olursunuz. Kod+Hafta/Yılı+Tedarikçi mevcut bir partiyle birebir eşleşirse, girdiğiniz miktar o partinin stoğuna eklenir ve fiyat geçmişine yeni bir satır düşer.</p>
 
-            {saveError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {saveError}
-              </div>
-            )}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu <span className="text-red-500">*</span></label>
@@ -1158,7 +1140,7 @@ export default function ProductsPage() {
                   type="text"
                   value={form.code}
                   onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 ${!form.code && saveError ? "border-red-400" : "border-gray-300"}`}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -1251,12 +1233,6 @@ export default function ProductsPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Partiyi Düzenle</h2>
-
-            {editError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {editError}
-              </div>
-            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>

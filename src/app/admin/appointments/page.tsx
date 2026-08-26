@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface Appointment {
   id: number;
@@ -43,6 +44,7 @@ const FILTERS = [
 ];
 
 export default function AppointmentsPage() {
+  const toast = useToast();
   const allowed = useViewGuard("appointments");
   const canApprove = usePermission("appointments.approve");
   const canDelete = usePermission("appointments.delete");
@@ -52,7 +54,6 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [actionError, setActionError] = useState("");
 
   async function fetchItems() {
     setLoading(true);
@@ -70,7 +71,6 @@ export default function AppointmentsPage() {
   }, [filter]);
 
   async function setStatus(id: number, status: string) {
-    setActionError("");
     setBusyId(id);
     try {
       const res = await fetch(`/api/appointments/${id}`, {
@@ -81,21 +81,20 @@ export default function AppointmentsPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Güncelleme başarısız.");
       await fetchItems();
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setBusyId(null);
     }
   }
 
   async function convertToOrder(id: number) {
-    setActionError("");
     setBusyId(id);
     try {
       const res = await fetch(`/api/appointments/${id}/convert`, { method: "POST" });
       if (!res.ok) throw new Error((await res.json()).error || "Dönüştürme başarısız.");
       await fetchItems();
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setBusyId(null);
     }
@@ -146,10 +145,6 @@ export default function AppointmentsPage() {
           </button>
         ))}
       </div>
-
-      {actionError && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{actionError}</div>
-      )}
 
       {loading ? (
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>

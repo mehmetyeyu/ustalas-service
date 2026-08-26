@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatDate } from "@/lib/format";
 import { RESOURCE_ACTIONS } from "@/lib/permissions";
+import { useToast } from "@/components/ToastProvider";
 
 const MENU_WIDTH = 192; // w-48
 const MENU_MAX_HEIGHT = 260;
@@ -85,6 +86,7 @@ function PermissionMatrix({ value, onChange }: { value: string[]; onChange: (nex
 }
 
 export default function UsersPage() {
+  const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [currentUsername, setCurrentUsername] = useState("");
   const [loading, setLoading] = useState(true);
@@ -95,7 +97,6 @@ export default function UsersPage() {
   const [role, setRole] = useState("staff");
   const [permissions, setPermissions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
   const [permTarget, setPermTarget] = useState<User | null>(null);
   const [permValue, setPermValue] = useState<string[]>([]);
@@ -103,12 +104,10 @@ export default function UsersPage() {
 
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPassword, setResetPassword] = useState("");
-  const [resetError, setResetError] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
 
   const [renameTarget, setRenameTarget] = useState<User | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [renameError, setRenameError] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
 
   const [busyAction, setBusyAction] = useState<number | null>(null);
@@ -167,18 +166,16 @@ export default function UsersPage() {
     setPassword("");
     setRole("staff");
     setPermissions([]);
-    setError("");
     setShowForm(true);
   }
 
   async function handleCreate() {
-    setError("");
     if (!username.trim()) {
-      setError("Kullanıcı adı zorunludur.");
+      toast.error("Kullanıcı adı zorunludur.");
       return;
     }
     if (password.length < 6) {
-      setError("Şifre en az 6 karakter olmalıdır.");
+      toast.error("Şifre en az 6 karakter olmalıdır.");
       return;
     }
     setSaving(true);
@@ -192,7 +189,7 @@ export default function UsersPage() {
       setShowForm(false);
       await fetchUsers();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -209,7 +206,7 @@ export default function UsersPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Güncelleme başarısız.");
       await fetchUsers();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     }
   }
 
@@ -220,7 +217,7 @@ export default function UsersPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Silme başarısız.");
       await fetchUsers();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     }
   }
 
@@ -236,7 +233,7 @@ export default function UsersPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Güncelleme başarısız.");
       await fetchUsers();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setBusyAction(null);
     }
@@ -269,14 +266,12 @@ export default function UsersPage() {
   function openRename(u: User) {
     setRenameTarget(u);
     setRenameValue(u.username);
-    setRenameError("");
   }
 
   async function handleRename() {
     if (!renameTarget) return;
-    setRenameError("");
     if (!renameValue.trim()) {
-      setRenameError("Kullanıcı adı zorunludur.");
+      toast.error("Kullanıcı adı zorunludur.");
       return;
     }
     setRenameSaving(true);
@@ -290,7 +285,7 @@ export default function UsersPage() {
       setRenameTarget(null);
       await fetchUsers();
     } catch (err: unknown) {
-      setRenameError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setRenameSaving(false);
     }
@@ -299,7 +294,6 @@ export default function UsersPage() {
   function openReset(u: User) {
     setResetTarget(u);
     setResetPassword("");
-    setResetError("");
   }
 
   function openPerm(u: User) {
@@ -320,7 +314,7 @@ export default function UsersPage() {
       setPermTarget(null);
       await fetchUsers();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setPermSaving(false);
     }
@@ -328,9 +322,8 @@ export default function UsersPage() {
 
   async function handleResetPassword() {
     if (!resetTarget) return;
-    setResetError("");
     if (resetPassword.length < 6) {
-      setResetError("Şifre en az 6 karakter olmalıdır.");
+      toast.error("Şifre en az 6 karakter olmalıdır.");
       return;
     }
     setResetSaving(true);
@@ -343,7 +336,7 @@ export default function UsersPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Şifre güncellenemedi.");
       setResetTarget(null);
     } catch (err: unknown) {
-      setResetError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setResetSaving(false);
     }
@@ -601,12 +594,6 @@ export default function UsersPage() {
             <div className="p-6 pb-4">
               <h2 className="text-xl font-bold text-gray-800 mb-4">Yeni Kullanıcı Ekle</h2>
 
-              {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                  {error}
-                </div>
-              )}
-
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Kullanıcı Adı</label>
@@ -677,12 +664,6 @@ export default function UsersPage() {
               &quot;{resetTarget.username}&quot; Şifresini Sıfırla
             </h2>
 
-            {resetError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {resetError}
-              </div>
-            )}
-
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-1">Yeni Şifre</label>
               <input
@@ -718,12 +699,6 @@ export default function UsersPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               &quot;{renameTarget.username}&quot; Kullanıcı Adını Değiştir
             </h2>
-
-            {renameError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {renameError}
-              </div>
-            )}
 
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-1">Yeni Kullanıcı Adı</label>

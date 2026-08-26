@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { Tooltip } from "@/components/Tooltip";
 import { Switch } from "@/components/Switch";
+import { useToast } from "@/components/ToastProvider";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 
 export default function GeneralSettingsPage() {
+  const toast = useToast();
   const [businessName, setBusinessName] = useState("");
   const [overdueMonths, setOverdueMonths] = useState("6");
   const [paymentTypes, setPaymentTypes] = useState<string[]>([]);
@@ -27,8 +29,6 @@ export default function GeneralSettingsPage() {
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings", { cache: "no-store" })
@@ -70,20 +70,17 @@ export default function GeneralSettingsPage() {
   }
 
   async function handleSave() {
-    setError("");
-    setSuccess(false);
-
     if (!businessName.trim()) {
-      setError("İşletme adı zorunludur.");
+      toast.error("İşletme adı zorunludur.");
       return;
     }
     const months = Number(overdueMonths);
     if (!Number.isInteger(months) || months < 1 || months > 60) {
-      setError("Depo bekleme uyarı eşiği 1-60 ay arasında olmalıdır.");
+      toast.error("Depo bekleme uyarı eşiği 1-60 ay arasında olmalıdır.");
       return;
     }
     if (paymentTypes.length === 0) {
-      setError("En az bir ödeme şekli tanımlı olmalıdır.");
+      toast.error("En az bir ödeme şekli tanımlı olmalıdır.");
       return;
     }
 
@@ -111,9 +108,9 @@ export default function GeneralSettingsPage() {
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
-      setSuccess(true);
+      toast.success("Ayarlar başarıyla kaydedildi.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -128,17 +125,6 @@ export default function GeneralSettingsPage() {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Genel Ayarlar</h1>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            Ayarlar başarıyla kaydedildi.
-          </div>
-        )}
-
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-1">İşletme Adı</label>
           <input

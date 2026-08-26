@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getDefaultAdminPath } from "@/lib/permissions";
+import { useToast } from "@/components/ToastProvider";
 
 interface Service {
   id: number;
@@ -237,6 +238,7 @@ function TireBatchPicker({
 }
 
 export default function OrderPage() {
+  const toast = useToast();
   const [services, setServices] = useState<Service[]>([]);
   const [lines, setLines] = useState<OrderLine[]>([{ ...EMPTY_LINE }]);
   const [plate, setPlate] = useState("");
@@ -244,8 +246,6 @@ export default function OrderPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState("");
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
   // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
   const [panelPath, setPanelPath] = useState<string | null>(null);
@@ -257,7 +257,7 @@ export default function OrderPage() {
     fetch("/api/services")
       .then((r) => r.json())
       .then(setServices)
-      .catch(() => setError("Hizmetler yüklenemedi."));
+      .catch(() => toast.error("Hizmetler yüklenemedi."));
 
     fetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
@@ -279,7 +279,7 @@ export default function OrderPage() {
         setSupplierOptions(merged);
       })
       .catch(() => { });
-  }, []);
+  }, [toast]);
 
   // "Lastik Satışı" satırında Tedarikçi seçilince, o tedarikçide stoğu olan
   // ürün kodları (henüz önbellekte yoksa) çekilir.
@@ -379,20 +379,19 @@ export default function OrderPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
 
     if (!plate.trim()) {
-      setError("Araç plakası zorunludur.");
+      toast.error("Araç plakası zorunludur.");
       return;
     }
     const validLines = lines.filter((l) => l.service_name.trim());
     if (validLines.length === 0) {
-      setError("En az bir işlem satırı giriniz.");
+      toast.error("En az bir işlem satırı giriniz.");
       return;
     }
     const overStock = validLines.find((l) => l.product_id && l.max_stock != null && Math.round(num(l.quantity)) > l.max_stock);
     if (overStock) {
-      setError(`Yetersiz stok: "${overStock.stock_code}" için sadece ${overStock.max_stock} adet mevcut.`);
+      toast.error(`Yetersiz stok: "${overStock.stock_code}" için sadece ${overStock.max_stock} adet mevcut.`);
       return;
     }
 
@@ -424,16 +423,14 @@ export default function OrderPage() {
         throw new Error(data.error || "Hata oluştu.");
       }
 
-      setSuccess(true);
+      toast.success("Sipariş başarıyla kaydedildi!");
       setPlate("");
       setCustomerName("");
       setCustomerPhone("");
       setNotes("");
       setLines([{ ...EMPTY_LINE }]);
-
-      setTimeout(() => setSuccess(false), 5000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setLoading(false);
     }
@@ -473,18 +470,6 @@ export default function OrderPage() {
               </button>
             </div>
           </div>
-
-          {success && (
-            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-center font-medium">
-              Sipariş başarıyla kaydedildi!
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-center">
-              {error}
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

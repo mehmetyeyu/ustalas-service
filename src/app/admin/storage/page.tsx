@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface StorageItem {
   id: number;
@@ -255,6 +256,7 @@ function printLabel(item: StorageItem) {
 }
 
 export default function StoragePage() {
+  const toast = useToast();
   const allowed = useViewGuard("storage");
   const canCreate = usePermission("storage.create");
   const canEdit = usePermission("storage.edit");
@@ -268,12 +270,10 @@ export default function StoragePage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
   const [editItem, setEditItem] = useState<StorageItem | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState("");
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
     () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
   );
@@ -341,11 +341,10 @@ export default function StoragePage() {
 
   async function handleSave() {
     if (!form.plate.trim()) {
-      setSaveError("Plaka zorunludur.");
+      toast.error("Plaka zorunludur.");
       return;
     }
     setSaving(true);
-    setSaveError("");
     try {
       const res = await fetch("/api/storage", {
         method: "POST",
@@ -358,7 +357,7 @@ export default function StoragePage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        setSaveError(data.error ?? "Hata oluştu.");
+        toast.error(data.error ?? "Hata oluştu.");
         return;
       }
       setShowAddModal(false);
@@ -446,21 +445,20 @@ export default function StoragePage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
-    setImportMsg("");
     try {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/storage/import", { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok) {
-        setImportMsg(
+        toast.success(
           `${data.imported} kayıt içe aktarıldı.` +
           (data.skipped ? ` ${data.skipped} kayıt plaka olmadığı için atlandı.` : "")
         );
         setPage(1);
         await fetchItems(1);
       } else {
-        setImportMsg(data.error ?? "Hata oluştu.");
+        toast.error(data.error ?? "Hata oluştu.");
       }
     } finally {
       setImporting(false);
@@ -529,7 +527,7 @@ export default function StoragePage() {
             )}
             {canCreate && (
               <button
-                onClick={() => { setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
+                onClick={() => { setForm(EMPTY_FORM); setShowAddModal(true); }}
                 className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium whitespace-nowrap"
               >
                 + Yeni Kayıt
@@ -576,7 +574,7 @@ export default function StoragePage() {
                 )}
                 {canCreate && (
                   <button
-                    onClick={() => { setShowMobileActions(false); setForm(EMPTY_FORM); setSaveError(""); setShowAddModal(true); }}
+                    onClick={() => { setShowMobileActions(false); setForm(EMPTY_FORM); setShowAddModal(true); }}
                     className="w-full text-left px-4 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
                   >
                     + Yeni Kayıt
@@ -587,12 +585,6 @@ export default function StoragePage() {
           </div>
         </div>
       </div>
-
-      {importMsg && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-          {importMsg}
-        </div>
-      )}
 
       {overdueTotal > 0 && (
         <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2 text-amber-800 text-sm font-medium">
@@ -897,12 +889,6 @@ export default function StoragePage() {
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Yeni Depolama Kaydı</h2>
 
-            {saveError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {saveError}
-              </div>
-            )}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
@@ -920,7 +906,7 @@ export default function StoragePage() {
                   type="text"
                   value={form.plate}
                   onChange={(e) => setForm({ ...form, plate: e.target.value.toUpperCase() })}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 ${!form.plate && saveError ? "border-red-400" : "border-gray-300"}`}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>

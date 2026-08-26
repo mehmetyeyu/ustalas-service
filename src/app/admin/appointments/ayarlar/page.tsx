@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PushNotificationToggle } from "../../PushNotificationToggle";
+import { useToast } from "@/components/ToastProvider";
 
 interface DayWindow { open: string; close: string; }
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
@@ -56,6 +57,7 @@ function CopyBox({ label, value }: { label: string; value: string }) {
 // değiştirilip PUT'a geri gönderiliyor — böylece bu sayfa Genel Ayarlar'daki
 // alanları etkilemiyor.
 export default function AppointmentSettingsPage() {
+  const toast = useToast();
   const [businessName, setBusinessName] = useState("");
   const [overdueMonths, setOverdueMonths] = useState("6");
   const [paymentTypes, setPaymentTypes] = useState<string[]>([]);
@@ -67,8 +69,6 @@ export default function AppointmentSettingsPage() {
   const [origin, setOrigin] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
   // Randevu Görünümü sayfasının (booking_widget_*) düzenlediği alanlar —
@@ -83,6 +83,7 @@ export default function AppointmentSettingsPage() {
   const [widgetTitle, setWidgetTitle] = useState<string | null>(null);
   const [widgetDescription, setWidgetDescription] = useState<string | null>(null);
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
+  const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -104,6 +105,7 @@ export default function AppointmentSettingsPage() {
         setWidgetTitle(data.booking_widget_title ?? null);
         setWidgetDescription(data.booking_widget_description ?? null);
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
+        setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setLoading(false);
       });
   }, []);
@@ -124,17 +126,14 @@ export default function AppointmentSettingsPage() {
   }
 
   async function handleSave() {
-    setError("");
-    setSuccess(false);
-
     const daysAhead = Number(maxDaysAhead);
     if (!Number.isInteger(daysAhead) || daysAhead < 1 || daysAhead > 365) {
-      setError("İleri randevu süresi 1-365 gün arasında olmalıdır.");
+      toast.error("İleri randevu süresi 1-365 gün arasında olmalıdır.");
       return;
     }
     const capacity = Number(bookingCapacity);
     if (!Number.isInteger(capacity) || capacity < 1) {
-      setError("Kapasite en az 1 olmalıdır.");
+      toast.error("Kapasite en az 1 olmalıdır.");
       return;
     }
 
@@ -158,12 +157,13 @@ export default function AppointmentSettingsPage() {
           booking_widget_title: widgetTitle,
           booking_widget_description: widgetDescription,
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
+          auto_register_customers: autoRegisterCustomers,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
-      setSuccess(true);
+      toast.success("Ayarlar başarıyla kaydedildi.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -179,7 +179,6 @@ export default function AppointmentSettingsPage() {
     ) {
       return;
     }
-    setError("");
     setRegenerating(true);
     try {
       const res = await fetch("/api/settings/regenerate-slug", { method: "POST" });
@@ -187,7 +186,7 @@ export default function AppointmentSettingsPage() {
       const data = await res.json();
       setSlug(data.slug);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setRegenerating(false);
     }
@@ -202,17 +201,6 @@ export default function AppointmentSettingsPage() {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Randevu Ayarları</h1>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            Ayarlar başarıyla kaydedildi.
-          </div>
-        )}
-
         <p className="text-xs text-gray-400 mb-5">
           /randevu sayfasından gelen online randevu taleplerini etkiler. Hangi hizmetlerin
           randevuya açık olduğunu Hizmetler sayfasından ayarlayabilirsiniz.

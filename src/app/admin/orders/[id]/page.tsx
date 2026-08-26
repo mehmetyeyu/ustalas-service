@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface OrderDetail {
   id: number;
@@ -332,6 +333,7 @@ function TireBatchPicker({
 }
 
 function OrderDetailPageInner() {
+  const toast = useToast();
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canApprove = usePermission("orders.approve");
@@ -347,7 +349,6 @@ function OrderDetailPageInner() {
   const [paymentEntries, setPaymentEntries] = useState<{ payment_type: string; amount: string }[]>([]);
   const [closing, setClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [error, setError] = useState("");
 
   // Düzenleme
   const [editing, setEditing] = useState(false);
@@ -364,7 +365,6 @@ function OrderDetailPageInner() {
   // Düzenleme açılırken gelen orijinal parçalı ödeme girişleri — sıfırlama geri
   // alınırsa (bir satır tekrar Karışık'a dönerse) buradan aynen geri yüklenir.
   const [originalEditPayments, setOriginalEditPayments] = useState<{ payment_type: string; amount: string }[]>([]);
-  const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -472,7 +472,6 @@ function OrderDetailPageInner() {
           })
           .catch(() => { });
       });
-    setEditError("");
     setEditing(true);
   }
 
@@ -596,19 +595,18 @@ function OrderDetailPageInner() {
   }
 
   async function handleSaveEdit() {
-    setEditError("");
     if (!editPlate.trim()) {
-      setEditError("Araç plakası zorunludur.");
+      toast.error("Araç plakası zorunludur.");
       return;
     }
     const validLines = editLines.filter((l) => l.service_name.trim());
     if (validLines.length === 0) {
-      setEditError("En az bir işlem satırı giriniz.");
+      toast.error("En az bir işlem satırı giriniz.");
       return;
     }
     const overStock = validLines.find((l) => l.product_id && l.max_stock != null && Math.round(num(l.quantity)) > l.max_stock);
     if (overStock) {
-      setEditError(`Yetersiz stok: "${overStock.stock_code}" için sadece ${overStock.max_stock} adet mevcut.`);
+      toast.error(`Yetersiz stok: "${overStock.stock_code}" için sadece ${overStock.max_stock} adet mevcut.`);
       return;
     }
     const editTotalAmount = validLines.reduce((sum, l) => sum + num(l.unit_price), 0);
@@ -617,12 +615,12 @@ function OrderDetailPageInner() {
     const validEditPayments = editPayments.filter((p) => p.payment_type && Number(p.amount) > 0);
     if (editPayments.length > 0) {
       if (validEditPayments.length === 0) {
-        setEditError("En az bir ödeme girişi (tip + tutar) giriniz.");
+        toast.error("En az bir ödeme girişi (tip + tutar) giriniz.");
         return;
       }
       const validEditPaymentsTotal = validEditPayments.reduce((sum, p) => sum + Number(p.amount), 0);
       if (validEditPaymentsTotal > editTotalAmount + 0.01) {
-        setEditError("Girilen ödeme toplamı sipariş tutarını aşamaz.");
+        toast.error("Girilen ödeme toplamı sipariş tutarını aşamaz.");
         return;
       }
     }
@@ -662,7 +660,7 @@ function OrderDetailPageInner() {
       setEditing(false);
       await fetchOrder();
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSavingEdit(false);
     }
@@ -686,15 +684,14 @@ function OrderDetailPageInner() {
 
   async function handleClose() {
     if (!order) return;
-    setError("");
     const validEntries = paymentEntries.filter((p) => p.payment_type && Number(p.amount) > 0);
     if (validEntries.length === 0) {
-      setError("En az bir ödeme girişi (tip + tutar) giriniz.");
+      toast.error("En az bir ödeme girişi (tip + tutar) giriniz.");
       return;
     }
     const validEntriesTotal = validEntries.reduce((sum, p) => sum + Number(p.amount), 0);
     if (validEntriesTotal > order.total_amount + 0.01) {
-      setError("Girilen ödeme toplamı sipariş tutarını aşamaz.");
+      toast.error("Girilen ödeme toplamı sipariş tutarını aşamaz.");
       return;
     }
     setClosing(true);
@@ -713,7 +710,7 @@ function OrderDetailPageInner() {
       setShowModal(false);
       await fetchOrder();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setClosing(false);
     }
@@ -741,12 +738,6 @@ function OrderDetailPageInner() {
             <div className="flex items-center justify-between mb-6">
               <h1 className="text-xl font-bold text-gray-800">Sipariş #{order.id} — Düzelt</h1>
             </div>
-
-            {editError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {editError}
-              </div>
-            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div>
@@ -1342,12 +1333,6 @@ function OrderDetailPageInner() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Ödeme Al</h2>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {error}
-              </div>
-            )}
 
             <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-500">
               Sistem fiyatı:{" "}

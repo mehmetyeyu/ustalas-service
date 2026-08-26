@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface Customer {
   id: number;
@@ -23,6 +24,7 @@ interface CustomerOrder {
 }
 
 export default function CustomersPage() {
+  const toast = useToast();
   const allowed = useViewGuard("customers");
   const canCreate = usePermission("customers.create");
   const canEdit = usePermission("customers.edit");
@@ -37,7 +39,6 @@ export default function CustomersPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [ordersModalCustomer, setOrdersModalCustomer] = useState<Customer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
@@ -74,7 +75,6 @@ export default function CustomersPage() {
     setEditItem(null);
     setName("");
     setPhone("");
-    setError("");
     setShowForm(true);
   }
 
@@ -82,14 +82,12 @@ export default function CustomersPage() {
     setEditItem(c);
     setName(c.name);
     setPhone(c.phone || "");
-    setError("");
     setShowForm(true);
   }
 
   async function handleSave() {
-    setError("");
     if (!name.trim()) {
-      setError("Müşteri adı zorunludur.");
+      toast.error("Müşteri adı zorunludur.");
       return;
     }
     setSaving(true);
@@ -103,7 +101,7 @@ export default function CustomersPage() {
       setShowForm(false);
       await fetchCustomers();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -114,7 +112,7 @@ export default function CustomersPage() {
     const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error ?? "Müşteri silinemedi.");
+      toast.error(data.error ?? "Müşteri silinemedi.");
       return;
     }
     await fetchCustomers();
@@ -228,12 +226,6 @@ export default function CustomersPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editItem ? "Müşteri Düzenle" : "Yeni Müşteri Ekle"}
             </h2>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {error}
-              </div>
-            )}
 
             <div className="space-y-4 mb-5">
               <div>

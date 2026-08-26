@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface Service {
   id: number;
@@ -14,6 +15,7 @@ interface Service {
 }
 
 export default function ServicesPage() {
+  const toast = useToast();
   const allowed = useViewGuard("services");
   const canCreate = usePermission("services.create");
   const canEdit = usePermission("services.edit");
@@ -27,7 +29,6 @@ export default function ServicesPage() {
   const [bookable, setBookable] = useState(false);
   const [duration, setDuration] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
   async function fetchServices() {
     // GET /api/services tarayıcı önbelleğine izin verir (Cache-Control) — bu
@@ -49,7 +50,6 @@ export default function ServicesPage() {
     setPrice("");
     setBookable(false);
     setDuration("");
-    setError("");
     setShowForm(true);
   }
 
@@ -59,14 +59,12 @@ export default function ServicesPage() {
     setPrice(svc.price != null ? String(svc.price) : "");
     setBookable(svc.bookable);
     setDuration(svc.duration_minutes != null ? String(svc.duration_minutes) : "");
-    setError("");
     setShowForm(true);
   }
 
   async function handleSave() {
-    setError("");
     if (!name.trim()) {
-      setError("Hizmet adı zorunludur.");
+      toast.error("Hizmet adı zorunludur.");
       return;
     }
     const priceValue = price.trim() ? parseFloat(price) : null;
@@ -91,7 +89,7 @@ export default function ServicesPage() {
       setShowForm(false);
       await fetchServices();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -195,12 +193,6 @@ export default function ServicesPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editSvc ? "Hizmet Düzenle" : "Yeni Hizmet Ekle"}
             </h2>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {error}
-              </div>
-            )}
 
             <div className="space-y-4 mb-5">
               <div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useToast } from "@/components/ToastProvider";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Yönetici",
@@ -8,6 +9,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default function ProfilePage() {
+  const toast = useToast();
   const [username, setUsername] = useState("");
   const [role, setRole] = useState("");
   const [loading, setLoading] = useState(true);
@@ -16,13 +18,9 @@ export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
 
   const [newUsername, setNewUsername] = useState("");
   const [usernameSaving, setUsernameSaving] = useState(false);
-  const [usernameError, setUsernameError] = useState("");
-  const [usernameSuccess, setUsernameSuccess] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
@@ -36,15 +34,12 @@ export default function ProfilePage() {
   }, []);
 
   async function handleChangeUsername() {
-    setUsernameError("");
-    setUsernameSuccess(false);
-
     if (!newUsername.trim()) {
-      setUsernameError("Kullanıcı adı zorunludur.");
+      toast.error("Kullanıcı adı zorunludur.");
       return;
     }
     if (newUsername.trim() === username) {
-      setUsernameError("Yeni kullanıcı adı mevcut kullanıcı adıyla aynı.");
+      toast.error("Yeni kullanıcı adı mevcut kullanıcı adıyla aynı.");
       return;
     }
 
@@ -57,28 +52,25 @@ export default function ProfilePage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kullanıcı adı değiştirilemedi.");
       setUsername(newUsername.trim());
-      setUsernameSuccess(true);
+      toast.success("Kullanıcı adınız başarıyla güncellendi.");
     } catch (err: unknown) {
-      setUsernameError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setUsernameSaving(false);
     }
   }
 
   async function handleChangePassword() {
-    setError("");
-    setSuccess(false);
-
     if (!currentPassword || !newPassword || !newPasswordConfirm) {
-      setError("Tüm alanları doldurun.");
+      toast.error("Tüm alanları doldurun.");
       return;
     }
     if (newPassword.length < 6) {
-      setError("Yeni şifre en az 6 karakter olmalıdır.");
+      toast.error("Yeni şifre en az 6 karakter olmalıdır.");
       return;
     }
     if (newPassword !== newPasswordConfirm) {
-      setError("Yeni şifreler eşleşmiyor.");
+      toast.error("Yeni şifreler eşleşmiyor.");
       return;
     }
 
@@ -93,9 +85,9 @@ export default function ProfilePage() {
       setCurrentPassword("");
       setNewPassword("");
       setNewPasswordConfirm("");
-      setSuccess(true);
+      toast.success("Şifreniz başarıyla güncellendi.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -126,17 +118,6 @@ export default function ProfilePage() {
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <h2 className="text-sm font-semibold text-gray-500 mb-4">Kullanıcı Adını Değiştir</h2>
 
-        {usernameError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-            {usernameError}
-          </div>
-        )}
-        {usernameSuccess && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            Kullanıcı adınız başarıyla güncellendi.
-          </div>
-        )}
-
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-1">Yeni Kullanıcı Adı</label>
           <input
@@ -158,17 +139,6 @@ export default function ProfilePage() {
 
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-sm font-semibold text-gray-500 mb-4">Şifre Değiştir</h2>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            Şifreniz başarıyla güncellendi.
-          </div>
-        )}
 
         <div className="space-y-4 mb-5">
           <div>

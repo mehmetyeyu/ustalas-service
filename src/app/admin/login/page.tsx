@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getDefaultAdminPath } from "@/lib/permissions";
+import { useToast } from "@/components/ToastProvider";
 
 // Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
 // NEXT_PUBLIC_LOGO_SRC ile gösterebilir — set edilmezse Ustalas'ın gerçek
@@ -16,14 +17,13 @@ const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC || "/logo.jpg";
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 export default function LoginPage() {
+  const toast = useToast();
   const [username, setUsername] = useState(DEMO_MODE ? "admin" : "");
   const [password, setPassword] = useState(DEMO_MODE ? "admin123" : "");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     setLoading(true);
 
     try {
@@ -38,7 +38,7 @@ export default function LoginPage() {
 
       window.location.href = getDefaultAdminPath(data) ?? "/";
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setLoading(false);
     }
@@ -54,12 +54,6 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold text-gray-800">Yönetici Girişi</h1>
             <p className="text-gray-500 text-sm mt-1">Lastik Servis Paneli</p>
           </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm text-center">
-              {error}
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

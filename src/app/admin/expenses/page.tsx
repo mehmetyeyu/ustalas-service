@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/format";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/expenseCategories";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface Expense {
   id: number;
@@ -63,6 +64,7 @@ function emptyRecurringForm(): { category: string; description: string; amount: 
 }
 
 export default function ExpensesPage() {
+  const toast = useToast();
   const allowed = useViewGuard("expenses");
   const canCreate = usePermission("expenses.create");
   const canEdit = usePermission("expenses.edit");
@@ -81,13 +83,11 @@ export default function ExpensesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [rows, setRows] = useState<ExpenseRow[]>([emptyRow()]);
   const [addSaving, setAddSaving] = useState(false);
-  const [addError, setAddError] = useState("");
 
   // Düzenle: her zaman tek bir kaydı hedefler, ayrı (küçük) bir form.
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [editRow, setEditRow] = useState<ExpenseRow>(emptyRow());
   const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState("");
 
   // Sabit Giderler yönetimi — Masraflar sayfası içine gömülü küçük bir panel
   // (bkz. src/app/api/recurring-expenses). Aynı panel içinde inline
@@ -97,7 +97,6 @@ export default function ExpensesPage() {
   const [recEditingId, setRecEditingId] = useState<number | null>(null);
   const [recForm, setRecForm] = useState(emptyRecurringForm());
   const [recSaving, setRecSaving] = useState(false);
-  const [recError, setRecError] = useState("");
 
   async function fetchExpenses() {
     setLoading(true);
@@ -146,7 +145,6 @@ export default function ExpensesPage() {
 
   function openAdd() {
     setRows([emptyRow()]);
-    setAddError("");
     setShowAddForm(true);
   }
 
@@ -164,7 +162,6 @@ export default function ExpensesPage() {
       payment_type: t.payment_type || "",
       recurring_expense_id: t.id,
     })));
-    setAddError("");
     setShowAddForm(true);
   }
 
@@ -183,13 +180,12 @@ export default function ExpensesPage() {
   const rowsTotal = rows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
 
   async function handleSaveRows() {
-    setAddError("");
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.expense_date) return setAddError(`${i + 1}. satır: Tarih zorunludur.`);
-      if (!r.category.trim()) return setAddError(`${i + 1}. satır: Kategori zorunludur.`);
+      if (!r.expense_date) return toast.error(`${i + 1}. satır: Tarih zorunludur.`);
+      if (!r.category.trim()) return toast.error(`${i + 1}. satır: Kategori zorunludur.`);
       const amountValue = parseFloat(r.amount);
-      if (!Number.isFinite(amountValue) || amountValue <= 0) return setAddError(`${i + 1}. satır: Geçersiz tutar.`);
+      if (!Number.isFinite(amountValue) || amountValue <= 0) return toast.error(`${i + 1}. satır: Geçersiz tutar.`);
     }
     setAddSaving(true);
     try {
@@ -214,7 +210,7 @@ export default function ExpensesPage() {
       setUsedCategories((prev) => Array.from(new Set([...prev, ...items.map((i) => i.category)])));
       await fetchExpenses();
     } catch (err: unknown) {
-      setAddError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setAddSaving(false);
     }
@@ -230,16 +226,14 @@ export default function ExpensesPage() {
       payment_type: exp.payment_type || "",
       recurring_expense_id: exp.recurring_expense_id,
     });
-    setEditError("");
   }
 
   async function handleSaveEdit() {
     if (!editExpense) return;
-    setEditError("");
-    if (!editRow.expense_date) return setEditError("Tarih zorunludur.");
-    if (!editRow.category.trim()) return setEditError("Kategori zorunludur.");
+    if (!editRow.expense_date) return toast.error("Tarih zorunludur.");
+    if (!editRow.category.trim()) return toast.error("Kategori zorunludur.");
     const amountValue = parseFloat(editRow.amount);
-    if (!Number.isFinite(amountValue) || amountValue <= 0) return setEditError("Geçersiz tutar.");
+    if (!Number.isFinite(amountValue) || amountValue <= 0) return toast.error("Geçersiz tutar.");
     setEditSaving(true);
     try {
       const body = {
@@ -259,7 +253,7 @@ export default function ExpensesPage() {
       setUsedCategories((prev) => (prev.includes(body.category) ? prev : [...prev, body.category]));
       await fetchExpenses();
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setEditSaving(false);
     }
@@ -274,7 +268,6 @@ export default function ExpensesPage() {
   function openRecNew() {
     setRecEditingId(null);
     setRecForm(emptyRecurringForm());
-    setRecError("");
     setRecFormOpen(true);
   }
 
@@ -286,15 +279,13 @@ export default function ExpensesPage() {
       amount: String(t.amount),
       payment_type: t.payment_type || "",
     });
-    setRecError("");
     setRecFormOpen(true);
   }
 
   async function handleSaveRecurring() {
-    setRecError("");
-    if (!recForm.category.trim()) return setRecError("Kategori zorunludur.");
+    if (!recForm.category.trim()) return toast.error("Kategori zorunludur.");
     const amountValue = parseFloat(recForm.amount);
-    if (!Number.isFinite(amountValue) || amountValue <= 0) return setRecError("Geçersiz tutar.");
+    if (!Number.isFinite(amountValue) || amountValue <= 0) return toast.error("Geçersiz tutar.");
     setRecSaving(true);
     try {
       const body = {
@@ -316,7 +307,7 @@ export default function ExpensesPage() {
       setRecFormOpen(false);
       await fetchRecurringTemplates();
     } catch (err: unknown) {
-      setRecError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setRecSaving(false);
     }
@@ -485,12 +476,6 @@ export default function ExpensesPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Yeni Masraf Ekle</h2>
-
-            {addError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {addError}
-              </div>
-            )}
 
             <div className="overflow-auto flex-1 -mx-6 px-6">
               {/* Masaüstü: tablo. Mobil: her satır kendi kartı (tabloyu yatay
@@ -678,12 +663,6 @@ export default function ExpensesPage() {
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Masraf Düzenle</h2>
 
-            {editError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {editError}
-              </div>
-            )}
-
             <div className="space-y-4 mb-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tarih</label>
@@ -810,9 +789,6 @@ export default function ExpensesPage() {
 
               {recFormOpen && (
                 <div className="mt-4 border border-gray-200 rounded-lg p-3 space-y-3">
-                  {recError && (
-                    <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs">{recError}</div>
-                  )}
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Kategori</label>
                     <input

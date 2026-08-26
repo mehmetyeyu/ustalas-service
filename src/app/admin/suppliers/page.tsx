@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface Supplier {
   id: number;
@@ -9,6 +10,7 @@ interface Supplier {
 }
 
 export default function SuppliersPage() {
+  const toast = useToast();
   const allowed = useViewGuard("suppliers");
   const canCreate = usePermission("suppliers.create");
   const canEdit = usePermission("suppliers.edit");
@@ -19,7 +21,6 @@ export default function SuppliersPage() {
   const [editItem, setEditItem] = useState<Supplier | null>(null);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
 
   async function fetchSuppliers() {
@@ -39,21 +40,18 @@ export default function SuppliersPage() {
   function openNew() {
     setEditItem(null);
     setName("");
-    setError("");
     setShowForm(true);
   }
 
   function openEdit(s: Supplier) {
     setEditItem(s);
     setName(s.name);
-    setError("");
     setShowForm(true);
   }
 
   async function handleSave() {
-    setError("");
     if (!name.trim()) {
-      setError("Tedarikçi adı zorunludur.");
+      toast.error("Tedarikçi adı zorunludur.");
       return;
     }
     setSaving(true);
@@ -67,7 +65,7 @@ export default function SuppliersPage() {
       setShowForm(false);
       await fetchSuppliers();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -172,12 +170,6 @@ export default function SuppliersPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editItem ? "Tedarikçi Düzenle" : "Yeni Tedarikçi Ekle"}
             </h2>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {error}
-              </div>
-            )}
 
             <div className="space-y-4 mb-5">
               <div>

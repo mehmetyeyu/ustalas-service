@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useToast } from "@/components/ToastProvider";
 
 type Preset = "card" | "seamless" | "outlined";
 type PreviewWidth = "mobile" | "tablet" | "desktop";
@@ -51,6 +52,7 @@ const PREVIEW_WIDTHS: { value: PreviewWidth; label: string; width: number }[] = 
 ];
 
 export default function AppointmentAppearancePage() {
+  const toast = useToast();
   // Genel ayarlarla (business_name, payment_types vb.) aynı app_settings
   // satırını paylaştığımız için — bkz. Randevu Ayarları sayfasındaki aynı
   // desen — GET ile önce tüm ayarlar çekilip sadece görünüm alanları
@@ -73,6 +75,7 @@ export default function AppointmentAppearancePage() {
   const [radius, setRadius] = useState<Radius>("lg");
   const [density, setDensity] = useState<Density>("normal");
   const [headingSize, setHeadingSize] = useState<HeadingSize>("md");
+  const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
 
   const [slug, setSlug] = useState("");
   const [tenantName, setTenantName] = useState("");
@@ -96,8 +99,6 @@ export default function AppointmentAppearancePage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings", { cache: "no-store" })
@@ -120,6 +121,7 @@ export default function AppointmentAppearancePage() {
         setRadius(data.booking_widget_radius ?? "lg");
         setDensity(data.booking_widget_density ?? "normal");
         setHeadingSize(data.booking_widget_heading_size ?? "md");
+        setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setSlug(data.slug ?? "");
         setTenantName(data.business_name ?? "");
         setLoading(false);
@@ -200,11 +202,8 @@ export default function AppointmentAppearancePage() {
   }, [previewWidth, slug]);
 
   async function handleSave() {
-    setError("");
-    setSuccess(false);
-
     if (!/^#[0-9a-fA-F]{6}$/.test(accentColor)) {
-      setError("Geçerli bir renk kodu seçin.");
+      toast.error("Geçerli bir renk kodu seçin.");
       return;
     }
 
@@ -231,12 +230,13 @@ export default function AppointmentAppearancePage() {
           booking_widget_radius: radius,
           booking_widget_density: density,
           booking_widget_heading_size: headingSize,
+          auto_register_customers: autoRegisterCustomers,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
-      setSuccess(true);
+      toast.success("Ayarlar başarıyla kaydedildi.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -259,16 +259,6 @@ export default function AppointmentAppearancePage() {
           ki 768/1200px'lik simülasyon gerçek boyuta yakın/aynı görünsün. */}
       <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6 items-start">
         <div className="bg-white rounded-xl shadow-sm p-6">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              Ayarlar başarıyla kaydedildi.
-            </div>
-          )}
 
           <div className="mb-5">
             <label className="block text-sm font-medium text-gray-700 mb-2">Görünüm Stili</label>

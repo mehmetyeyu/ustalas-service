@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/Switch";
+import { useToast } from "@/components/ToastProvider";
 
 // Push API'nin beklediği Uint8Array formatı — VAPID public key'i base64url
 // string olarak env'den geliyor, pushManager.subscribe bunu byte dizisi ister.
@@ -24,9 +25,9 @@ type Status = "checking" | "unsupported" | "denied" | "subscribed" | "unsubscrib
 // zaten admin-only — bkz. src/lib/permissions.ts) — sadece admin kullanıcının
 // KENDİ tarayıcısı/cihazı için abonelik.
 export function PushNotificationToggle() {
+  const toast = useToast();
   const [status, setStatus] = useState<Status>("checking");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
@@ -45,7 +46,6 @@ export function PushNotificationToggle() {
 
   async function handleSubscribe() {
     setBusy(true);
-    setError("");
     try {
       const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!publicKey) throw new Error("Bildirimler bu ortamda yapılandırılmamış.");
@@ -76,7 +76,7 @@ export function PushNotificationToggle() {
       setStatus("subscribed");
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Hata oluştu.");
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
       setStatus("unsubscribed");
     } finally {
       setBusy(false);
@@ -85,7 +85,6 @@ export function PushNotificationToggle() {
 
   async function handleUnsubscribe() {
     setBusy(true);
-    setError("");
     try {
       const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
       const subscription = await registration?.pushManager.getSubscription();
@@ -116,7 +115,6 @@ export function PushNotificationToggle() {
             ? "Tarayıcınız bu site için bildirimleri engellemiş — tarayıcı site ayarlarından elle açmanız gerekiyor."
             : "Yeni randevu geldiğinde bu tarayıcıya bildirim gönderilsin (sadece bu cihaz için geçerli)."}
         </p>
-        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
       </div>
       <Switch
         checked={status === "subscribed"}
