@@ -8,6 +8,7 @@ const TABS = [
   { id: "storage", label: "Depolama", path: "elevire.app/admin/storage" },
   { id: "expenses", label: "Masraflar", path: "elevire.app/admin/expenses" },
   { id: "reports", label: "Raporlama", path: "elevire.app/admin/reports" },
+  { id: "appointment", label: "Online Randevu", path: "sizin-siteniz.com" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -49,12 +50,47 @@ export default function ShowcaseTabs() {
           <span className="showcase-addr">{activeTab.path}</span>
         </div>
         <div className="showcase-screen">
+          {active === "appointment" && <AppointmentMock />}
           {active === "orders-form" && <OrdersFormMock />}
           {active === "orders-list" && <OrdersListMock />}
           {active === "storage" && <StorageMock />}
           {active === "expenses" && <ExpensesMock />}
           {active === "reports" && <ReportsMock />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AppointmentMock() {
+  const slots = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30"];
+  const selected = "10:30";
+  return (
+    <div className="mock-form">
+      <div className="mock-field-row" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+        <div className="mock-field">
+          <span className="mock-label">Hizmet</span>
+          <span className="mock-input">Lastik Değişimi</span>
+        </div>
+        <div className="mock-field">
+          <span className="mock-label">Tarih</span>
+          <span className="mock-input">14 Eylül 2026, Pazartesi</span>
+        </div>
+      </div>
+
+      <span className="mock-label mock-slots-label">Müsait Saatler</span>
+      <div className="mock-slots">
+        {slots.map((s) => (
+          <span key={s} className={`mock-slot${s === selected ? " is-selected" : ""}`}>{s}</span>
+        ))}
+      </div>
+
+      <span className="mock-btn">Randevu Talebi Gönder</span>
+
+      <div className="mock-confirm-note">
+        <span className="mock-status is-done">
+          <i></i>Onaylanınca müşteriye WhatsApp&apos;tan otomatik bilgilendirme gider
+        </span>
       </div>
     </div>
   );

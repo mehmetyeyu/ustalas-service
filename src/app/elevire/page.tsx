@@ -47,7 +47,7 @@ export const metadata: Metadata = {
 };
 
 const FEATURES = [
-  { code: "SİP", title: "Sipariş Yönetimi", text: "Plaka bazlı sipariş kaydı, uygulanan hizmetler ve ödeme takibi tek ekranda." },
+  { code: "SIP", title: "Sipariş Yönetimi", text: "Plaka bazlı sipariş kaydı, uygulanan hizmetler ve ödeme takibi tek ekranda." },
   { code: "MUS", title: "Müşteri Yönetimi", text: "Müşteri dizini, iletişim bilgileri ve geçmiş sipariş kayıtları tek tıkla." },
   { code: "HZM", title: "Hizmet Kataloğu", text: "Kendi hizmet listenizi oluşturun; sipariş formunda tek tıkla ekleyip fiyatlandırın." },
   { code: "STK", title: "Stok & Fiyat Takibi", text: "Ürün stok seviyeleri, parti bazlı alış/satış fiyat geçmişi." },
@@ -55,6 +55,7 @@ const FEATURES = [
   { code: "TED", title: "Tedarikçi Takibi", text: "Tedarikçi bazlı ürün ve maliyet kayıtları." },
   { code: "RPR", title: "Raporlama", text: "Satış, hizmet ve kâr analizleri; işletmenizin nabzını anlık görün." },
   { code: "MSR", title: "Masraflar & Sabit Giderler", text: "Kira, fatura, maaş gibi sabit giderleri şablonla otomatik oluşturun; aylık gider tablosu tek ekranda." },
+  { code: "RDV", title: "Online Randevu Sistemi", text: "Müşterileriniz kendi web sitenizden gerçek zamanlı müsaitlik görüp randevu alsın; siz onaylayın, WhatsApp'tan otomatik bilgilendirilsinler." },
   { code: "XLS", title: "Excel İçe/Dışa Aktarma", text: "Mevcut verilerinizi hazır şablonlarla saniyeler içinde sisteme taşıyın." },
   { code: "KLN", title: "Sayfa Bazlı Yetkilendirme", text: "Çalışanlarınız için ayrı hesaplar; her personele hangi sayfayı görüp hangi işlemi yapabileceğini tek tek belirleyin." },
   { code: "MBL", title: "Mobilden de Yönetin", text: "Depoda, tezgahta, elinizde telefon — arayüz her ekranda aynı hızda çalışır, ayrı bir uygulama gerekmez." },
@@ -120,7 +121,7 @@ export default function ElevirePage() {
           <div className="showcase-head">
             <span className="problem-tag">UYGULAMADAN</span>
             <h2>Ekranın arkasında<br />gerçek bir sistem var.</h2>
-            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız beş ekranı: sipariş oluşturma, sipariş listesi, depolama takibi, masraf takibi ve raporlama.</p>
+            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız altı ekranı: online randevu, sipariş oluşturma, sipariş listesi, depolama takibi, masraf takibi ve raporlama.</p>
           </div>
           <ShowcaseTabs />
         </div>
@@ -129,7 +130,7 @@ export default function ElevirePage() {
       <div className="features">
         <div className="wrap">
           <div className="features-head">
-            <h2>Tek Sistem,<br />On İki İş.</h2>
+            <h2>Tek Sistem,<br />On Üç İş.</h2>
             <p>Sabahtan akşama işletmenizi ayakta tutan her şey Elevire içinde.</p>
           </div>
           <div className="feature-grid">
@@ -622,6 +623,31 @@ const CSS = `
     padding: 5px 12px;
   }
 
+  .elevire .mock-slots-label { display: block; margin-bottom: 10px; }
+  .elevire .mock-slots {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .elevire .mock-slot {
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: var(--ink);
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 6px;
+  }
+  .elevire .mock-slot.is-selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .elevire .mock-confirm-note { margin-top: 14px; }
+
   .elevire .mock-status {
     display: inline-flex;
     align-items: center;
@@ -730,6 +756,7 @@ const CSS = `
   @media (max-width: 640px) {
     .elevire .mock-field-row { grid-template-columns: 1fr; }
     .elevire .mock-stats { grid-template-columns: 1fr; }
+    .elevire .mock-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .elevire .showcase-screen { padding: 20px 16px 24px; }
     .elevire .mock-table { font-size: 0.8rem; }
   }
@@ -755,12 +782,13 @@ const CSS = `
   .elevire .feature-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-    gap: 1px;
-    background: var(--line);
-    border: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
   }
   .elevire .feature-card {
     background: var(--surface);
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     padding: 26px 24px 28px;
     display: flex;
     flex-direction: column;
