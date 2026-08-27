@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { resolveTenantBySlug } from "@/lib/publicTenant";
+import { getCachedBookingConfigRow } from "@/lib/publicBookingConfigCache";
 import { withCors, corsPreflight } from "@/lib/publicCors";
 
 export const OPTIONS = corsPreflight;
@@ -16,29 +17,15 @@ export async function GET(
   if (!tenant) return withCors(NextResponse.json({ error: "Bulunamadı." }, { status: 404 }));
 
   try {
-    const settings = await pool.query<{
-      booking_capacity: number; booking_working_hours: unknown; booking_max_days_ahead: number;
-      booking_widget_preset: string; booking_widget_accent_color: string;
-      booking_widget_columns_tablet: number; booking_widget_columns_desktop: number;
-      booking_widget_title: string | null; booking_widget_description: string | null;
-      booking_widget_show_heading_embed: boolean;
-      booking_widget_radius: string; booking_widget_density: string; booking_widget_heading_size: string;
-    }>(
-      `SELECT booking_capacity, booking_working_hours, booking_max_days_ahead,
-              booking_widget_preset, booking_widget_accent_color,
-              booking_widget_columns_tablet, booking_widget_columns_desktop,
-              booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
-              booking_widget_radius, booking_widget_density, booking_widget_heading_size
-       FROM app_settings WHERE tenant_id = $1`,
-      [tenant.id]
-    );
-    const services = await pool.query<{ id: number; name: string; duration_minutes: number | null }>(
-      `SELECT id, name, duration_minutes FROM services
-       WHERE tenant_id = $1 AND bookable = true AND is_active = 1
-       ORDER BY name`,
-      [tenant.id]
-    );
-    const s = settings.rows[0];
+    const [s, services] = await Promise.all([
+      getCachedBookingConfigRow(tenant.id),
+      pool.query<{ id: number; name: string; duration_minutes: number | null }>(
+        `SELECT id, name, duration_minutes FROM services
+         WHERE tenant_id = $1 AND bookable = true AND is_active = 1
+         ORDER BY name`,
+        [tenant.id]
+      ),
+    ]);
 
     return withCors(NextResponse.json({
       tenant: { name: tenant.name, slug: tenant.slug },

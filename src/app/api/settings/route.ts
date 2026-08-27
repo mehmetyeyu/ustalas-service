@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { getAppSettings } from "@/lib/settings";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+import { invalidateBookingConfigCache } from "@/lib/publicBookingConfigCache";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -129,6 +130,8 @@ export async function PUT(request: NextRequest) {
         user.tenantId,
       ]
     );
+
+    invalidateBookingConfigCache(user.tenantId!);
 
     return NextResponse.json({
       business_name, storage_overdue_months, payment_types, booking_capacity, booking_working_hours,

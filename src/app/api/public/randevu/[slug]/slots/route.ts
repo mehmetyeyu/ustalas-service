@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { resolveTenantBySlug } from "@/lib/publicTenant";
-import { getAvailableSlots, DEFAULT_DURATION_MINUTES, type WorkingHours } from "@/lib/appointmentSlots";
+import { getAvailableSlots, DEFAULT_DURATION_MINUTES } from "@/lib/appointmentSlots";
+import { getCachedBookingConfigRow } from "@/lib/publicBookingConfigCache";
 import { withCors, corsPreflight } from "@/lib/publicCors";
 
 export const OPTIONS = corsPreflight;
@@ -27,13 +28,10 @@ export async function GET(
   }
 
   try {
-    const settings = await pool.query<{ booking_capacity: number; booking_working_hours: WorkingHours | null; booking_max_days_ahead: number }>(
-      "SELECT booking_capacity, booking_working_hours, booking_max_days_ahead FROM app_settings WHERE tenant_id = $1",
-      [tenant.id]
-    );
-    const capacity = settings.rows[0]?.booking_capacity ?? 1;
-    const workingHours = settings.rows[0]?.booking_working_hours ?? null;
-    const maxDaysAhead = settings.rows[0]?.booking_max_days_ahead ?? 30;
+    const s = await getCachedBookingConfigRow(tenant.id);
+    const capacity = s?.booking_capacity ?? 1;
+    const workingHours = s?.booking_working_hours ?? null;
+    const maxDaysAhead = s?.booking_max_days_ahead ?? 30;
 
     let durationMinutes = DEFAULT_DURATION_MINUTES;
     if (serviceIdParam) {
