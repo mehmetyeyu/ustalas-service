@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { notifyCustomerAppointmentConfirmed } from "@/lib/whatsapp";
 
 const APPROVAL_STATUSES = new Set(["ONAYLANDI", "REDDEDILDI", "GELMEDI", "IPTAL"]);
 
@@ -29,11 +30,39 @@ export async function PATCH(
       if (!hasPermission(user, "appointments.approve")) {
         return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
       }
-      const result = await pool.query(
-        "UPDATE appointments SET status = $1 WHERE id = $2 AND tenant_id = $3",
+      // WhatsApp bildirimi sadece GERÇEK bir BEKLEMEDE/diğer→ONAYLANDI geçişinde
+      // gitmeli — ve bu tek bir atomik UPDATE...RETURNING ile yapılıyor (önce
+      // ayrı bir SELECT ile "eski durumu" okuyup sonra ayrı bir UPDATE yapmak,
+      // aynı randevuya çift tıklama/eşzamanlı iki PATCH isteğinde her ikisinin
+      // de eski durumu "değişmemiş" görüp mükerrer mesaj göndermesine yol
+      // açabilirdi — WHERE status IS DISTINCT FROM $1 satırı, ikinci isteğin
+      // artık güncellenmiş satırla eşleşmemesini ve RETURNING'in boş
+      // dönmesini garanti eder, Postgres'in satır kilidi bunu atomik yapar).
+      const result = await pool.query<{
+        plate: string; customer_name: string | null; customer_phone: string | null;
+        requested_at: string; service_name: string | null;
+      }>(
+        `UPDATE appointments a SET status = $1
+         WHERE a.id = $2 AND a.tenant_id = $3 AND a.status IS DISTINCT FROM $1
+         RETURNING a.plate, a.customer_name, a.customer_phone, a.requested_at,
+           (SELECT s.name FROM services s WHERE s.id = a.service_id) AS service_name`,
         [status, id, user.tenantId]
       );
-      if (result.rowCount === 0) return NextResponse.json({ error: "Randevu bulunamadı." }, { status: 404 });
+
+      if (result.rowCount === 0) {
+        // Ya randevu hiç yok, ya da zaten bu statüdeydi (no-op) — ikisini
+        // ayırt etmek için ayrı bir varlık kontrolü.
+        const exists = await pool.query("SELECT 1 FROM appointments WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+        if (!exists.rows[0]) return NextResponse.json({ error: "Randevu bulunamadı." }, { status: 404 });
+      } else if (status === "ONAYLANDI") {
+        await notifyCustomerAppointmentConfirmed(user.tenantId!, {
+          customerName: result.rows[0].customer_name,
+          customerPhone: result.rows[0].customer_phone,
+          plate: result.rows[0].plate,
+          serviceName: result.rows[0].service_name,
+          requestedAt: new Date(result.rows[0].requested_at),
+        });
+      }
     }
 
     const hasFieldEdits = plate !== undefined || customer_name !== undefined || customer_phone !== undefined

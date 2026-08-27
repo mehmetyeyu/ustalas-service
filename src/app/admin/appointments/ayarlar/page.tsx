@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PushNotificationToggle } from "../../PushNotificationToggle";
 import { useToast } from "@/components/ToastProvider";
+import { Switch } from "@/components/Switch";
 
 interface DayWindow { open: string; close: string; }
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
@@ -85,6 +86,19 @@ export default function AppointmentSettingsPage() {
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
 
+  // WhatsApp bildirimi — her firma kendi Meta WhatsApp Business hesabını
+  // (kendi telefon numarası, kendi onaylı şablonu) buraya bağlar, bkz.
+  // src/lib/whatsapp.ts. whatsappAccessToken input'u KASITLI olarak boş
+  // başlar — GET /api/settings ham token'ı hiç döndürmüyor (bkz. o route'un
+  // yorumu), sadece whatsappAccessTokenSet ile "kayıtlı mı" bilgisi gelir.
+  // Boş bırakılıp kaydedilirse mevcut token DB'de korunur.
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [whatsappAccessToken, setWhatsappAccessToken] = useState("");
+  const [whatsappAccessTokenSet, setWhatsappAccessTokenSet] = useState(false);
+  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState("");
+  const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState("");
+  const [whatsappTemplateName, setWhatsappTemplateName] = useState("");
+
   useEffect(() => {
     setOrigin(window.location.origin);
     fetch("/api/settings", { cache: "no-store" })
@@ -106,6 +120,11 @@ export default function AppointmentSettingsPage() {
         setWidgetDescription(data.booking_widget_description ?? null);
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
+        setWhatsappEnabled(!!data.whatsapp_enabled);
+        setWhatsappAccessTokenSet(!!data.whatsapp_access_token_set);
+        setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? "");
+        setWhatsappBusinessAccountId(data.whatsapp_business_account_id ?? "");
+        setWhatsappTemplateName(data.whatsapp_template_name ?? "");
         setLoading(false);
       });
   }, []);
@@ -158,9 +177,22 @@ export default function AppointmentSettingsPage() {
           booking_widget_description: widgetDescription,
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
           auto_register_customers: autoRegisterCustomers,
+          whatsapp_enabled: whatsappEnabled,
+          whatsapp_access_token: whatsappAccessToken,
+          whatsapp_phone_number_id: whatsappPhoneNumberId,
+          whatsapp_business_account_id: whatsappBusinessAccountId,
+          whatsapp_template_name: whatsappTemplateName,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
+      // Token kaydedildiyse input'u boşalt (bir daha ham haliyle geri gelmiyor,
+      // sadece "kayıtlı" göstergesi güncellenir) — bir daha kaydedince yanlışlıkla
+      // boş string gönderilip mevcut token silinmesin diye zaten CASE korunuyordu,
+      // ama input'ta eski değeri tutmak yanıltıcı olurdu.
+      if (whatsappAccessToken) {
+        setWhatsappAccessTokenSet(true);
+        setWhatsappAccessToken("");
+      }
       toast.success("Ayarlar başarıyla kaydedildi.");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -290,6 +322,61 @@ export default function AppointmentSettingsPage() {
 
         <div className="mt-6 pt-5 border-t border-gray-100">
           <PushNotificationToggle />
+        </div>
+
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-sm font-medium text-gray-700">WhatsApp Bildirimi</div>
+            <Switch checked={whatsappEnabled} onClick={() => setWhatsappEnabled((v) => !v)} />
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Randevu onaylandığında müşterinin telefonuna WhatsApp üzerinden bilgilendirme mesajı
+            gönderilsin. Kendi Meta WhatsApp Business hesabınızı kurup aşağıdaki bilgileri
+            girmeniz gerekiyor — hiçbiri girilmemişse bildirim gönderilmez.
+          </p>
+
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Erişim Token&apos;ı</label>
+            <input
+              type="password"
+              value={whatsappAccessToken}
+              onChange={(e) => setWhatsappAccessToken(e.target.value)}
+              placeholder={whatsappAccessTokenSet ? "•••••••••••••••• (kayıtlı — değiştirmek için yeni bir tane girin)" : "Meta'dan aldığınız kalıcı erişim token'ı"}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Telefon Numarası ID&apos;si (Phone Number ID)</label>
+            <input
+              type="text"
+              value={whatsappPhoneNumberId}
+              onChange={(e) => setWhatsappPhoneNumberId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">WhatsApp Business Hesap ID&apos;si (WABA ID)</label>
+            <input
+              type="text"
+              value={whatsappBusinessAccountId}
+              onChange={(e) => setWhatsappBusinessAccountId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Onaylı Şablon Adı</label>
+            <input
+              type="text"
+              value={whatsappTemplateName}
+              onChange={(e) => setWhatsappTemplateName(e.target.value)}
+              placeholder="ör. randevu_onay"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Meta WhatsApp Manager&apos;da UTILITY kategorisinde onaylattığınız, sırasıyla ad-soyad/
+              plaka/tarih/saat/hizmet değişkenli şablonun adı.
+            </p>
+          </div>
         </div>
 
         {slug && origin && (

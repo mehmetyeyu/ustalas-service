@@ -798,3 +798,31 @@ DO $$ BEGIN
     FOREIGN KEY (user_id, tenant_id) REFERENCES users(id, tenant_id);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Randevu ONAYLANDI olduğunda müşteriye WhatsApp bildirimi (bkz. src/lib/whatsapp.ts)
+-- — her firma KENDİ Meta WhatsApp Business hesabını (kendi telefon numarası,
+-- kendi doğrulanmış işletme adı) bağlar; tek bir paylaşımlı hesap/ortam
+-- değişkeni DEĞİL — aksi halde tüm firmaların mesajları aynı isimden giderdi.
+-- access_token DB'de düz metin olarak tutuluyor (bu tabloda şu an başka bir
+-- şifreleme katmanı yok, JWT_SECRET gibi diğer sırlar da .env'de düz metin) —
+-- ileride bir kasa/şifreleme katmanı eklenirse buraya da uygulanmalı.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(50);
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS whatsapp_business_account_id VARCHAR(50);
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS whatsapp_template_name VARCHAR(100);
+
+-- Tenant başına saatlik gönderim sayacı (bkz. src/lib/whatsapp.ts) — personelin
+-- telefonla gelen talebi elle girdiği POST /api/appointments hiçbir hız
+-- sınırına tabi değil (public randevu formunun aksine, appointments.create
+-- izni olan herhangi bir personel çağırabilir) ve her çağrı doğrudan
+-- ONAYLANDI ile açılıp gerçek/ücretli bir WhatsApp mesajı tetikliyor —
+-- kötüye kullanımda (art arda sahte randevu girme) tenant'ın Meta faturasını
+-- şişirmemesi için burada ayrı bir kayıt tutuluyor, sadece BAŞARILI
+-- gönderimler (Meta 2xx döndüğünde) satır ekliyor.
+CREATE TABLE IF NOT EXISTS whatsapp_message_log (
+  id        SERIAL PRIMARY KEY,
+  tenant_id INT NOT NULL REFERENCES tenants(id),
+  sent_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS whatsapp_message_log_tenant_sent_idx ON whatsapp_message_log(tenant_id, sent_at);

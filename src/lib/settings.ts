@@ -30,6 +30,11 @@ export interface AppSettings {
   booking_widget_density: BookingWidgetDensity;
   booking_widget_heading_size: BookingWidgetHeadingSize;
   auto_register_customers: boolean;
+  whatsapp_enabled: boolean;
+  whatsapp_access_token: string | null;
+  whatsapp_phone_number_id: string | null;
+  whatsapp_business_account_id: string | null;
+  whatsapp_template_name: string | null;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -51,6 +56,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   booking_widget_density: "normal",
   booking_widget_heading_size: "md",
   auto_register_customers: true,
+  whatsapp_enabled: false,
+  whatsapp_access_token: null,
+  whatsapp_phone_number_id: null,
+  whatsapp_business_account_id: null,
+  whatsapp_template_name: null,
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -61,7 +71,8 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_columns_tablet, booking_widget_columns_desktop,
             booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
             booking_widget_radius, booking_widget_density, booking_widget_heading_size,
-            auto_register_customers
+            auto_register_customers, whatsapp_enabled, whatsapp_access_token,
+            whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );

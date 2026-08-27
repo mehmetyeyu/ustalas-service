@@ -27,6 +27,14 @@ export default function GeneralSettingsPage() {
   const [widgetDescription, setWidgetDescription] = useState<string | null>(null);
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
+  // Randevu Ayarları sayfasının düzenlediği WhatsApp alanları — aynı sebeple
+  // (yukarıdaki widget yorumuna bkz.) burada da olduğu gibi korunması
+  // gerekiyor. Token burada hiç tutulmuyor/gönderilmiyor — boş string PUT'ta
+  // mevcut token'ın korunmasını sağlıyor (bkz. /api/settings PUT).
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState<string | null>(null);
+  const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState<string | null>(null);
+  const [whatsappTemplateName, setWhatsappTemplateName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -53,6 +61,10 @@ export default function GeneralSettingsPage() {
         setWidgetDescription(data.booking_widget_description ?? null);
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
+        setWhatsappEnabled(!!data.whatsapp_enabled);
+        setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
+        setWhatsappBusinessAccountId(data.whatsapp_business_account_id ?? null);
+        setWhatsappTemplateName(data.whatsapp_template_name ?? null);
         setLoading(false);
       });
   }, []);
@@ -105,6 +117,10 @@ export default function GeneralSettingsPage() {
           booking_widget_description: widgetDescription,
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
           auto_register_customers: autoRegisterCustomers,
+          whatsapp_enabled: whatsappEnabled,
+          whatsapp_phone_number_id: whatsappPhoneNumberId,
+          whatsapp_business_account_id: whatsappBusinessAccountId,
+          whatsapp_template_name: whatsappTemplateName,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");

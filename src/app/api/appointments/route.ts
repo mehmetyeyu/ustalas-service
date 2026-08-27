@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { notifyTenantAdmins } from "@/lib/push";
+import { notifyCustomerAppointmentConfirmed } from "@/lib/whatsapp";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -87,6 +88,24 @@ export async function POST(request: NextRequest) {
       title: "Yeni Randevu Eklendi",
       body: `${String(customer_name).trim()} — ${String(plate).replace(/\s+/g, "").toUpperCase()}`,
       url: "/admin/appointments",
+    });
+    // Bu route her zaman doğrudan ONAYLANDI statüsüyle ekliyor (telefonla gelen
+    // bir talebin personel tarafından girilmesi) — bu da PATCH'teki onaylama
+    // kadar gerçek bir "ONAYLANDI" anı, müşteri aynı şekilde bilgilendirilir.
+    let serviceName: string | null = null;
+    if (service_id) {
+      const svc = await pool.query<{ name: string }>(
+        "SELECT name FROM services WHERE id = $1 AND tenant_id = $2",
+        [service_id, user.tenantId]
+      );
+      serviceName = svc.rows[0]?.name ?? null;
+    }
+    await notifyCustomerAppointmentConfirmed(user.tenantId!, {
+      customerName: String(customer_name).trim(),
+      customerPhone: customer_phone || null,
+      plate: String(plate).replace(/\s+/g, "").toUpperCase(),
+      serviceName,
+      requestedAt: new Date(requested_at),
     });
     return NextResponse.json({ id: result.rows[0].id }, { status: 201 });
   } catch (error) {

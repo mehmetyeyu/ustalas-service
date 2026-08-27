@@ -14,7 +14,15 @@ export async function GET() {
   // Kodu" bölümünün doğru /randevu/<slug> URL'ini gösterebilmesi için burada
   // ayrıca ekleniyor.
   const tenantResult = await pool.query<{ slug: string }>("SELECT slug FROM tenants WHERE id = $1", [user.tenantId]);
-  return NextResponse.json({ ...settings, slug: tenantResult.rows[0]?.slug ?? null });
+  // whatsapp_access_token asla ham haliyle client'a dönmez — sadece kayıtlı
+  // olup olmadığı gösterilir (bkz. PUT: boş gönderilirse mevcut token korunur,
+  // sadece admin gerçekten yeni bir değer girdiğinde değişir).
+  return NextResponse.json({
+    ...settings,
+    whatsapp_access_token: undefined,
+    whatsapp_access_token_set: !!settings.whatsapp_access_token,
+    slug: tenantResult.rows[0]?.slug ?? null,
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -44,6 +52,15 @@ export async function PUT(request: NextRequest) {
     const booking_widget_density = String(body.booking_widget_density ?? "normal");
     const booking_widget_heading_size = String(body.booking_widget_heading_size ?? "md");
     const auto_register_customers = !!body.auto_register_customers;
+    const whatsapp_enabled = !!body.whatsapp_enabled;
+    // Boş/gönderilmemiş bırakılırsa mevcut token DB'de korunur (aşağıdaki
+    // UPDATE'teki CASE'e bkz.) — GET /api/settings ham token'ı hiç döndürmüyor,
+    // bu yüzden "değişmedi" ile "kasten silindi" ayrımı yapılamaz; admin
+    // token'ı silmek isterse yeni bir tane girip üzerine yazmalı.
+    const whatsapp_access_token_input = typeof body.whatsapp_access_token === "string" ? body.whatsapp_access_token.trim().slice(0, 2000) : "";
+    const whatsapp_phone_number_id = body.whatsapp_phone_number_id ? String(body.whatsapp_phone_number_id).trim().slice(0, 50) : null;
+    const whatsapp_business_account_id = body.whatsapp_business_account_id ? String(body.whatsapp_business_account_id).trim().slice(0, 50) : null;
+    const whatsapp_template_name = body.whatsapp_template_name ? String(body.whatsapp_template_name).trim().slice(0, 100) : null;
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });
@@ -95,8 +112,10 @@ export async function PUT(request: NextRequest) {
            booking_widget_title=$12, booking_widget_description=$13,
            booking_widget_show_heading_embed=$14, booking_widget_radius=$15,
            booking_widget_density=$16, booking_widget_heading_size=$17, auto_register_customers=$18,
+           whatsapp_enabled=$19, whatsapp_access_token=CASE WHEN $20 = '' THEN whatsapp_access_token ELSE $20 END,
+           whatsapp_phone_number_id=$21, whatsapp_business_account_id=$22, whatsapp_template_name=$23,
            updated_at=CURRENT_TIMESTAMP
-       WHERE tenant_id=$19`,
+       WHERE tenant_id=$24`,
       [
         business_name, storage_overdue_months, payment_types, booking_capacity,
         JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead,
@@ -105,6 +124,8 @@ export async function PUT(request: NextRequest) {
         booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
         booking_widget_radius, booking_widget_density, booking_widget_heading_size,
         auto_register_customers,
+        whatsapp_enabled, whatsapp_access_token_input,
+        whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
         user.tenantId,
       ]
     );
@@ -116,6 +137,7 @@ export async function PUT(request: NextRequest) {
       booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
       booking_widget_radius, booking_widget_density, booking_widget_heading_size,
       auto_register_customers,
+      whatsapp_enabled, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
     });
   } catch (error) {
     console.error(error);

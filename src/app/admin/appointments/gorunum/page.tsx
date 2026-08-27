@@ -76,6 +76,13 @@ export default function AppointmentAppearancePage() {
   const [density, setDensity] = useState<Density>("normal");
   const [headingSize, setHeadingSize] = useState<HeadingSize>("md");
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
+  // Randevu Ayarları sayfasının düzenlediği WhatsApp alanları — aynı desende
+  // (yukarıdaki auto_register_customers yorumuna bkz.) burada da olduğu gibi
+  // korunuyor.
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState<string | null>(null);
+  const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState<string | null>(null);
+  const [whatsappTemplateName, setWhatsappTemplateName] = useState<string | null>(null);
 
   const [slug, setSlug] = useState("");
   const [tenantName, setTenantName] = useState("");
@@ -122,6 +129,10 @@ export default function AppointmentAppearancePage() {
         setDensity(data.booking_widget_density ?? "normal");
         setHeadingSize(data.booking_widget_heading_size ?? "md");
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
+        setWhatsappEnabled(!!data.whatsapp_enabled);
+        setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
+        setWhatsappBusinessAccountId(data.whatsapp_business_account_id ?? null);
+        setWhatsappTemplateName(data.whatsapp_template_name ?? null);
         setSlug(data.slug ?? "");
         setTenantName(data.business_name ?? "");
         setLoading(false);
@@ -231,6 +242,10 @@ export default function AppointmentAppearancePage() {
           booking_widget_density: density,
           booking_widget_heading_size: headingSize,
           auto_register_customers: autoRegisterCustomers,
+          whatsapp_enabled: whatsappEnabled,
+          whatsapp_phone_number_id: whatsappPhoneNumberId,
+          whatsapp_business_account_id: whatsappBusinessAccountId,
+          whatsapp_template_name: whatsappTemplateName,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
