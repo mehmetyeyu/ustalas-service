@@ -4,7 +4,6 @@ import { resolveTenantBySlug } from "@/lib/publicTenant";
 import { isSlotStillAvailable, isWithinBookableWindow, DEFAULT_DURATION_MINUTES, type WorkingHours } from "@/lib/appointmentSlots";
 import { getClientIp } from "@/lib/clientIp";
 import { notifyTenantAdmins } from "@/lib/push";
-import { notifyCustomerAppointmentConfirmed } from "@/lib/whatsapp";
 import { withCors, corsPreflight } from "@/lib/publicCors";
 
 export const OPTIONS = corsPreflight;
@@ -87,15 +86,13 @@ export async function POST(
 
     let durationMinutes = DEFAULT_DURATION_MINUTES;
     let serviceIdNum: number | null = null;
-    let serviceName: string | null = null;
     if (service_id != null) {
-      const svc = await pool.query<{ id: number; name: string; duration_minutes: number | null }>(
-        "SELECT id, name, duration_minutes FROM services WHERE id = $1 AND tenant_id = $2 AND bookable = true",
+      const svc = await pool.query<{ id: number; duration_minutes: number | null }>(
+        "SELECT id, duration_minutes FROM services WHERE id = $1 AND tenant_id = $2 AND bookable = true",
         [Number(service_id), tenant.id]
       );
       if (!svc.rows[0]) return json({ error: "Geçersiz hizmet." }, { status: 400 });
       serviceIdNum = svc.rows[0].id;
-      serviceName = svc.rows[0].name;
       durationMinutes = svc.rows[0].duration_minutes ?? DEFAULT_DURATION_MINUTES;
     }
 
@@ -120,6 +117,7 @@ export async function POST(
     }
 
     const client = await pool.connect();
+    let clientReleased = false;
     try {
       await client.query("BEGIN");
       // isSlotStillAvailable'daki "FOR UPDATE" sadece VAR OLAN randevu
@@ -156,26 +154,26 @@ export async function POST(
         ]
       );
       await client.query("COMMIT");
+      client.release();
+      clientReleased = true;
+      // WhatsApp bildirimi burada KASITLI olarak gönderilmiyor: bu route
+      // kimlik doğrulamasız, isim/plaka tamamen çağıranın kontrolünde serbest
+      // metin. Otomatik onay açıksa bile WhatsApp bildirimi yalnızca personel
+      // PATCH /api/appointments/:id ile elle onayladığında gönderiliyor —
+      // aksi halde dükkanın gerçek WhatsApp Business hesabı, saldırganın
+      // seçtiği bir numaraya saldırganın yazdığı serbest metinle mesaj
+      // göndertmek için bir araç haline gelebilirdi.
       await notifyTenantAdmins(tenant.id, {
         title: "Yeni Randevu Talebi",
         body: `${customer_name ? String(customer_name).trim() : "Müşteri"} — ${String(plate).replace(/\s+/g, "").toUpperCase()}`,
         url: "/admin/appointments",
       });
-      if (status === "ONAYLANDI") {
-        await notifyCustomerAppointmentConfirmed(tenant.id, {
-          customerName: customer_name ? String(customer_name).trim() : null,
-          customerPhone: phone,
-          plate: String(plate).replace(/\s+/g, "").toUpperCase(),
-          serviceName,
-          requestedAt,
-        });
-      }
       return json({ id: result.rows[0].id, status }, { status: 201 });
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
     } finally {
-      client.release();
+      if (!clientReleased) client.release();
     }
   } catch (error) {
     console.error(error);

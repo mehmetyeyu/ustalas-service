@@ -2,6 +2,7 @@ import pool from "./db";
 import { getAppSettings } from "./settings";
 
 const GRAPH_API_VERSION = "v21.0";
+const GRAPH_API_TIMEOUT_MS = 10_000;
 
 // Personelin telefonla gelen talebi elle girdiği POST /api/appointments hiçbir
 // hız sınırına tabi değil (public randevu formunun aksine) ve her çağrı
@@ -96,6 +97,7 @@ export async function notifyCustomerAppointmentConfirmed(
             ],
           },
         }),
+        signal: AbortSignal.timeout(GRAPH_API_TIMEOUT_MS),
       }
     );
 

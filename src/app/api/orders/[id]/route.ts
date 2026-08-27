@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
-import { getAppSettings, getAutoRegisterCustomers } from "@/lib/settings";
+import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 
 interface EditLineInput {
@@ -246,7 +246,7 @@ export async function PUT(
 
     // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
     // tenant_id atadığından burada her zaman dolu olur.
-    const { payment_types } = await getAppSettings(user.tenantId!);
+    const { payment_types, auto_register_customers: autoRegisterCustomers } = await getAppSettings(user.tenantId!);
     // Genel Ayarlar'dan sonradan kaldırılmış bir ödeme tipi, o değeri zaten
     // taşıyan eski bir siparişin düzenlenmesini (alakasız bir alan değişse
     // bile) engellemesin diye bu siparişte hâlâ kayıtlı olan değerler de bu
@@ -312,8 +312,6 @@ export async function PUT(
         }
       }
     }
-
-    const autoRegisterCustomers = await getAutoRegisterCustomers(user.tenantId!);
 
     const client = await pool.connect();
     try {
