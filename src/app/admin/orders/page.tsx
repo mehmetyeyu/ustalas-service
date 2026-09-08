@@ -6,6 +6,7 @@ import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { parseOrderRows, chunk, type ParsedOrder } from "@/lib/ordersExcel";
 import { Tooltip } from "@/components/Tooltip";
+import { useToast } from "@/components/ToastProvider";
 import { useViewGuard, usePermission } from "../AuthContext";
 
 const IMPORT_BATCH_SIZE = 20;
@@ -231,6 +232,7 @@ const EMPTY_FIELD_FILTERS: FieldFilters = {
 };
 
 export default function OrdersPage() {
+  const toast = useToast();
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canDelete = usePermission("orders.delete");
@@ -284,6 +286,13 @@ export default function OrdersPage() {
   // ilk fetchOrders çağrısını erteler — yoksa sayfa açılışında önce "Tümü" ile
   // bir istek atılıp hemen ardından doğru filtreyle ikinci bir istek atılırdı.
   const [filtersReady, setFiltersReady] = useState(false);
+  // Toplu Ödeme Şekli değiştirme (bkz. bulk-payment-type API) — satır bazlı
+  // (order_services.id/line_id) seçim, çünkü liste tek sipariş için birden
+  // fazla satır (line) döndürebilir ve Ödeme Şekli aslında satır seviyesinde
+  // tutulur (bkz. r.payment_type = COALESCE(os.payment_type, o.payment_type)).
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<number>>(new Set());
+  const [bulkPaymentType, setBulkPaymentType] = useState("");
+  const [bulkApplying, setBulkApplying] = useState(false);
 
   // Filtrele modalındaki Yapılan İşlem/Tedarikçi/Ödeme Şekli çoklu seçim
   // listeleri — Yapılan İşlem/Tedarikçi katalogdan (Hizmetler/Tedarikçiler),
@@ -408,6 +417,62 @@ export default function OrdersPage() {
     setTotalAmount(data.totalAmount ?? 0);
     setTotalKar(data.totalKar ?? 0);
     setLoading(false);
+    // Gösterilen satırlar değiştiğinden (filtre/sayfa değişikliği veya toplu
+    // işlem sonrası yenileme) önceki seçim artık geçerli satırlara karşılık
+    // gelmeyebilir.
+    setSelectedLineIds(new Set());
+  }
+
+  function toggleLineSelected(lineId: number) {
+    setSelectedLineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId); else next.add(lineId);
+      return next;
+    });
+  }
+
+  // visibleSelectableIds (null line_id'li anomalik satırlar hariç tüm görünen
+  // satırlar) component gövdesinin altında hesaplanır — bu fonksiyon yalnızca
+  // tıklamayla (render tamamlandıktan sonra) çağrıldığından güncel değeri kapar.
+  function toggleSelectAllVisible() {
+    setSelectedLineIds((prev) => {
+      const allSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => prev.has(id));
+      if (allSelected) {
+        const next = new Set(prev);
+        visibleSelectableIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      return new Set([...Array.from(prev), ...visibleSelectableIds]);
+    });
+  }
+
+  async function applyBulkPaymentType() {
+    if (!bulkPaymentType || selectedLineIds.size === 0) return;
+    const count = selectedLineIds.size;
+    if (!confirm(`${count} satırın ödeme şeklini "${bulkPaymentType}" olarak değiştirmek istediğinize emin misiniz?`)) return;
+    setBulkApplying(true);
+    try {
+      const res = await fetch("/api/orders/bulk-payment-type", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line_ids: Array.from(selectedLineIds), payment_type: bulkPaymentType }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Güncellenemedi.");
+      if (data.skipped > 0) {
+        toast.success(
+          `${data.updated} satırın ödeme şekli güncellendi. ${data.skipped} satır, parçalı ödemesi olduğu için atlandı — bu siparişleri Düzelt ekranından değiştirebilirsiniz.`
+        );
+      } else {
+        toast.success(`${data.updated} satırın ödeme şekli güncellendi.`);
+      }
+      setBulkPaymentType("");
+      await fetchOrders(page);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setBulkApplying(false);
+    }
   }
 
   useEffect(() => {
@@ -524,7 +589,10 @@ export default function OrdersPage() {
     Object.values(fieldFilters).filter((v) => Array.isArray(v) ? v.length > 0 : v.trim()).length;
 
   // + 2: her zaman görünen Statü ve İşlemler sütunları.
-  const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 2;
+  const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 2 + (canEdit ? 1 : 0);
+
+  const visibleSelectableIds = rows.map((r) => r.line_id).filter((v): v is number => v != null);
+  const allVisibleSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selectedLineIds.has(id));
 
   if (!allowed) return null;
 
@@ -886,12 +954,52 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {canEdit && selectedLineIds.size > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-blue-900">{selectedLineIds.size} satır seçili</span>
+          <select
+            value={bulkPaymentType}
+            onChange={(e) => setBulkPaymentType(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Ödeme şekli seçin...</option>
+            {settingsPaymentTypes.filter((t) => t !== "Mail Order").map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <button
+            onClick={applyBulkPaymentType}
+            disabled={!bulkPaymentType || bulkApplying}
+            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {bulkApplying ? "Uygulanıyor..." : "Ödeme Şeklini Değiştir"}
+          </button>
+          <button
+            onClick={() => setSelectedLineIds(new Set())}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            Seçimi Temizle
+          </button>
+        </div>
+      )}
+
       {/* Tablo */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs sm:text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                {canEdit && (
+                  <th className="w-8 px-2 py-3">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 accent-blue-500 cursor-pointer"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Tümünü seç"
+                    />
+                  </th>
+                )}
                 {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" narrow />}
                 {visibleCols.date && <SortTh sortK="date" label="Tarih" />}
                 {visibleCols.customer_name && <SortTh sortK="customer_name" label="Müşteri" />}
@@ -914,6 +1022,11 @@ export default function OrdersPage() {
               {loading ? (
                 Array.from({ length: SKELETON_ROWS }).map((_, i) => (
                   <tr key={`skeleton-${i}`}>
+                    {canEdit && (
+                      <td className="px-2 py-3">
+                        <div className="h-4 w-4 bg-gray-100 rounded animate-pulse" />
+                      </td>
+                    )}
                     {COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
                       <td key={c.key} className="px-4 py-3">
                         <div className={`h-4 ${SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
@@ -940,6 +1053,19 @@ export default function OrdersPage() {
                   const kar = unitPrice - costPrice;
                   return (
                     <tr key={`${r.id}-${r.line_id ?? "none"}`} className="group hover:bg-gray-50 transition-colors">
+                      {canEdit && (
+                        <td className="px-2 py-3">
+                          {r.line_id != null && (
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 accent-blue-500 cursor-pointer"
+                              checked={selectedLineIds.has(r.line_id)}
+                              onChange={() => toggleLineSelected(r.line_id!)}
+                              aria-label={`#${r.id} satırını seç`}
+                            />
+                          )}
+                        </td>
+                      )}
                       {visibleCols.order_no && (
                         <td className="px-2 py-3 whitespace-nowrap">
                           <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">

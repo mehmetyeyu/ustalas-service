@@ -6,6 +6,7 @@ import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
 import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
+import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 
 interface EditLineInput {
   id?: number;
@@ -18,17 +19,6 @@ interface EditLineInput {
   cost_price?: number | null;
   payment_type?: string | null;
   product_id?: number | null;
-}
-
-// "Mail Order" tek başına geçersizdir — bir tedarikçiyle birleşip
-// "<Tedarikçi> Mail Order" olmalıdır (bkz. admin/orders/[id]/page.tsx).
-// Hem PATCH (ödeme kapatma) hem PUT (düzenleme) bu kontrolü kullanır —
-// PUT'ta boş/null bir değer de geçerlidir (henüz kapanmamış sipariş satırı).
-// flatOptions Genel Ayarlar'daki ödeme şekilleri listesidir ("Mail Order" hariç).
-const MAIL_ORDER_SUFFIX = " Mail Order";
-function isValidPaymentType(v: string, flatOptions: string[]): boolean {
-  if (flatOptions.includes(v)) return true;
-  return v.endsWith(MAIL_ORDER_SUFFIX) && v.length > MAIL_ORDER_SUFFIX.length;
 }
 
 export async function GET(
@@ -140,9 +130,9 @@ export async function PATCH(
     // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
     // tenant_id atadığından burada her zaman dolu olur.
     const { payment_types } = await getAppSettings(user.tenantId!);
-    const flatPaymentOptions = payment_types.filter((t) => t !== "Mail Order");
+    const paymentOptions = flatPaymentOptions(payment_types);
     for (const p of payments as { payment_type: string; amount: number }[]) {
-      if (!p.payment_type || !isValidPaymentType(p.payment_type, flatPaymentOptions)) {
+      if (!p.payment_type || !isValidPaymentType(p.payment_type, paymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
       const amt = Number(p.amount);
@@ -258,8 +248,8 @@ export async function PUT(
        SELECT payment_type FROM order_payments WHERE order_id = $1 AND tenant_id = $2`,
       [id, user.tenantId]
     );
-    const flatPaymentOptions = Array.from(new Set([
-      ...payment_types.filter((t) => t !== "Mail Order"),
+    const orderPaymentOptions = Array.from(new Set([
+      ...flatPaymentOptions(payment_types),
       ...existingPaymentTypes.rows.map((r) => r.payment_type),
     ]));
     for (const l of lines as EditLineInput[]) {
@@ -268,7 +258,7 @@ export async function PUT(
       }
       // Boş/null geçerlidir (henüz ödeme tipi girilmemiş satır) — ama doluysa
       // PATCH ile aynı kurala uymalı (ör. tek başına "Mail Order" geçersiz).
-      if (l.payment_type && !isValidPaymentType(l.payment_type, flatPaymentOptions)) {
+      if (l.payment_type && !isValidPaymentType(l.payment_type, orderPaymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
     }
@@ -291,7 +281,7 @@ export async function PUT(
         clearPayments = true;
       } else {
         for (const p of payments as { payment_type: string; amount: number }[]) {
-          if (!p.payment_type || !isValidPaymentType(p.payment_type, flatPaymentOptions)) {
+          if (!p.payment_type || !isValidPaymentType(p.payment_type, orderPaymentOptions)) {
             return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
           }
           const amt = Number(p.amount);
