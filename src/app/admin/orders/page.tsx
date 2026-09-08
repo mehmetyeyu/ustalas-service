@@ -280,6 +280,10 @@ export default function OrdersPage() {
   // paymentTypeOptions'tan farklı (o gerçekten kullanılmış değerlerdir),
   // bu Excel içe aktarma normalizasyonu için kullanılır (bkz. handleImport).
   const [settingsPaymentTypes, setSettingsPaymentTypes] = useState<string[]>(DEFAULT_PAYMENT_TYPES);
+  // Genel Ayarlar'daki varsayılan tarih filtresi /api/settings'ten gelene kadar
+  // ilk fetchOrders çağrısını erteler — yoksa sayfa açılışında önce "Tümü" ile
+  // bir istek atılıp hemen ardından doğru filtreyle ikinci bir istek atılırdı.
+  const [filtersReady, setFiltersReady] = useState(false);
 
   // Filtrele modalındaki Yapılan İşlem/Tedarikçi/Ödeme Şekli çoklu seçim
   // listeleri — Yapılan İşlem/Tedarikçi katalogdan (Hizmetler/Tedarikçiler),
@@ -307,8 +311,12 @@ export default function OrdersPage() {
       .catch(() => { });
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d.payment_types)) setSettingsPaymentTypes(d.payment_types); })
-      .catch(() => { });
+      .then((d) => {
+        if (Array.isArray(d.payment_types)) setSettingsPaymentTypes(d.payment_types);
+        if (typeof d.orders_default_date_filter === "string") setDateFilter(d.orders_default_date_filter);
+      })
+      .catch(() => { })
+      .finally(() => setFiltersReady(true));
   }, []);
 
   function toggleSort(key: SortKey) {
@@ -403,12 +411,21 @@ export default function OrdersPage() {
   }
 
   useEffect(() => {
+    if (!filtersReady) return;
     setPage(1);
     fetchOrders(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, dateFilter, customFrom, customTo, search, fieldFilters, sortKey, sortDir, limit]);
+  }, [filtersReady, statusFilter, dateFilter, customFrom, customTo, search, fieldFilters, sortKey, sortDir, limit]);
 
+  // Sayfa değişince (pagination) fetch eder — ama filtre efekti de her
+  // tetiklendiğinde page'i 1'e resetliyor ve kendi fetchOrders(1)'ini
+  // çağırıyor; page burada gerçekten değişmediyse (ör. ayarlar yüklenip
+  // filtersReady true olduğunda) tekrar aynı isteği atmamak için önceki
+  // page değeriyle karşılaştırılıyor.
+  const prevPageRef = useRef(page);
   useEffect(() => {
+    if (prevPageRef.current === page) return;
+    prevPageRef.current = page;
     fetchOrders(page);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);

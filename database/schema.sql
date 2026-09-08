@@ -826,3 +826,13 @@ CREATE TABLE IF NOT EXISTS whatsapp_message_log (
   sent_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS whatsapp_message_log_tenant_sent_idx ON whatsapp_message_log(tenant_id, sent_at);
+
+-- Sipariş Listesi sayfası açıldığında hangi tarih filtresinin varsayılan
+-- olarak uygulanacağı (Genel Ayarlar'dan seçilir) — '' Tümü demektir, "ozel"
+-- (Özel Aralık) burada seçilemez çünkü kalıcı bir varsayılan olarak anlamsız.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS orders_default_date_filter VARCHAR(10) NOT NULL DEFAULT '';
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_orders_default_date_filter_check
+    CHECK (orders_default_date_filter IN ('','bugun','bu_hafta','bu_ay'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

@@ -27,6 +27,7 @@ export default function GeneralSettingsPage() {
   const [widgetDescription, setWidgetDescription] = useState<string | null>(null);
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
+  const [ordersDefaultDateFilter, setOrdersDefaultDateFilter] = useState("");
   // Randevu Ayarları sayfasının düzenlediği WhatsApp alanları — aynı sebeple
   // (yukarıdaki widget yorumuna bkz.) burada da olduğu gibi korunması
   // gerekiyor. Token burada hiç tutulmuyor/gönderilmiyor — boş string PUT'ta
@@ -61,6 +62,7 @@ export default function GeneralSettingsPage() {
         setWidgetDescription(data.booking_widget_description ?? null);
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
+        setOrdersDefaultDateFilter(data.orders_default_date_filter ?? "");
         setWhatsappEnabled(!!data.whatsapp_enabled);
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
         setWhatsappBusinessAccountId(data.whatsapp_business_account_id ?? null);
@@ -117,6 +119,7 @@ export default function GeneralSettingsPage() {
           booking_widget_description: widgetDescription,
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
           auto_register_customers: autoRegisterCustomers,
+          orders_default_date_filter: ordersDefaultDateFilter,
           whatsapp_enabled: whatsappEnabled,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
           whatsapp_business_account_id: whatsappBusinessAccountId,
@@ -237,6 +240,24 @@ export default function GeneralSettingsPage() {
           </div>
           <Switch checked={autoRegisterCustomers} onClick={() => setAutoRegisterCustomers((v) => !v)} />
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Sipariş Listesi</h2>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Varsayılan Tarih Filtresi</label>
+        <select
+          value={ordersDefaultDateFilter}
+          onChange={(e) => setOrdersDefaultDateFilter(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Tümü</option>
+          <option value="bugun">Bugün</option>
+          <option value="bu_hafta">Bu Hafta</option>
+          <option value="bu_ay">Bu Ay</option>
+        </select>
+        <p className="text-xs text-gray-400 mt-1">
+          Sipariş Listesi sayfası açıldığında bu tarih aralığı varsayılan olarak uygulanır.
+        </p>
       </div>
 
       <button

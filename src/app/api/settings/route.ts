@@ -53,6 +53,7 @@ export async function PUT(request: NextRequest) {
     const booking_widget_density = String(body.booking_widget_density ?? "normal");
     const booking_widget_heading_size = String(body.booking_widget_heading_size ?? "md");
     const auto_register_customers = !!body.auto_register_customers;
+    const orders_default_date_filter = String(body.orders_default_date_filter ?? "");
     const whatsapp_enabled = !!body.whatsapp_enabled;
     // Boş/gönderilmemiş bırakılırsa mevcut token DB'de korunur (aşağıdaki
     // UPDATE'teki CASE'e bkz.) — GET /api/settings ham token'ı hiç döndürmüyor,
@@ -103,6 +104,9 @@ export async function PUT(request: NextRequest) {
     if (!["sm", "md", "lg"].includes(booking_widget_heading_size)) {
       return NextResponse.json({ error: "Geçersiz başlık boyutu." }, { status: 400 });
     }
+    if (!["", "bugun", "bu_hafta", "bu_ay"].includes(orders_default_date_filter)) {
+      return NextResponse.json({ error: "Geçersiz varsayılan tarih filtresi." }, { status: 400 });
+    }
 
     await pool.query(
       `UPDATE app_settings
@@ -113,10 +117,11 @@ export async function PUT(request: NextRequest) {
            booking_widget_title=$12, booking_widget_description=$13,
            booking_widget_show_heading_embed=$14, booking_widget_radius=$15,
            booking_widget_density=$16, booking_widget_heading_size=$17, auto_register_customers=$18,
-           whatsapp_enabled=$19, whatsapp_access_token=CASE WHEN $20 = '' THEN whatsapp_access_token ELSE $20 END,
-           whatsapp_phone_number_id=$21, whatsapp_business_account_id=$22, whatsapp_template_name=$23,
+           orders_default_date_filter=$19,
+           whatsapp_enabled=$20, whatsapp_access_token=CASE WHEN $21 = '' THEN whatsapp_access_token ELSE $21 END,
+           whatsapp_phone_number_id=$22, whatsapp_business_account_id=$23, whatsapp_template_name=$24,
            updated_at=CURRENT_TIMESTAMP
-       WHERE tenant_id=$24`,
+       WHERE tenant_id=$25`,
       [
         business_name, storage_overdue_months, payment_types, booking_capacity,
         JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead,
@@ -124,7 +129,7 @@ export async function PUT(request: NextRequest) {
         booking_widget_columns_tablet, booking_widget_columns_desktop,
         booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
         booking_widget_radius, booking_widget_density, booking_widget_heading_size,
-        auto_register_customers,
+        auto_register_customers, orders_default_date_filter,
         whatsapp_enabled, whatsapp_access_token_input,
         whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
         user.tenantId,
@@ -139,7 +144,7 @@ export async function PUT(request: NextRequest) {
       booking_widget_columns_tablet, booking_widget_columns_desktop,
       booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
       booking_widget_radius, booking_widget_density, booking_widget_heading_size,
-      auto_register_customers,
+      auto_register_customers, orders_default_date_filter,
       whatsapp_enabled, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
     });
   } catch (error) {
