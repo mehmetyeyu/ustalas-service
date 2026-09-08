@@ -7,6 +7,7 @@ import { formatDate, formatCurrency } from "@/lib/format";
 import { parseOrderRows, chunk, type ParsedOrder } from "@/lib/ordersExcel";
 import { Tooltip } from "@/components/Tooltip";
 import { useToast } from "@/components/ToastProvider";
+import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { useViewGuard, usePermission } from "../AuthContext";
 
 const IMPORT_BATCH_SIZE = 20;
@@ -318,14 +319,27 @@ export default function OrdersPage() {
         if (Array.isArray(data)) setPaymentTypeOptions(data.sort((a, b) => a.localeCompare(b, "tr-TR")));
       })
       .catch(() => { });
-    fetch("/api/settings")
+    // Bu istek yavaş bir ağda hiç sonuçlanmazsa (ne başarı ne hata) filtersReady
+    // hiç true olmaz ve liste sonsuza dek yükleniyor görünür kalırdı — 5sn'lik
+    // bir üst sınır bunu garanti altına alır.
+    const settingsController = new AbortController();
+    const settingsTimeout = setTimeout(() => settingsController.abort(), 5000);
+    fetch("/api/settings", { signal: settingsController.signal })
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.payment_types)) setSettingsPaymentTypes(d.payment_types);
-        if (typeof d.orders_default_date_filter === "string") setDateFilter(d.orders_default_date_filter);
+        // Kullanıcı bu istek sonuçlanmadan önce Filtrele modalından kendi
+        // tarih filtresini zaten seçmişse (dateFilter artık başlangıç
+        // değeri "" değildir), ayarlardaki varsayılan onun üzerine yazmaz.
+        if (typeof d.orders_default_date_filter === "string") {
+          setDateFilter((current) => (current === "" ? d.orders_default_date_filter : current));
+        }
       })
       .catch(() => { })
-      .finally(() => setFiltersReady(true));
+      .finally(() => {
+        clearTimeout(settingsTimeout);
+        setFiltersReady(true);
+      });
   }, []);
 
   function toggleSort(key: SortKey) {
@@ -963,7 +977,7 @@ export default function OrdersPage() {
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Ödeme şekli seçin...</option>
-            {settingsPaymentTypes.filter((t) => t !== "Mail Order").map((t) => (
+            {flatPaymentOptions(settingsPaymentTypes).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
