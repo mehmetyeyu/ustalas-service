@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 
-// Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
-// NEXT_PUBLIC_LOGO_SRC ile gösterebilir — set edilmezse Ustalas'ın gerçek
-// logosu (public/logo.jpg) kullanılmaya devam eder.
-const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC || "/logo.jpg";
+// Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
+// giriyor — sabit kodlanmış tek bir logo yerine, kullanıcı adı yazıldıkça
+// (henüz kimlik doğrulanmadan) o firmanın işletme adı canlı gösterilir
+// (bkz. /api/auth/branding).
+const DEFAULT_BUSINESS_NAME = "Lastik Servis Paneli";
 
 // Sadece Elevire'de (NEXT_PUBLIC_DEMO_MODE=true) — paylaşılan demo hesabının
 // bilgileri zaten landing sayfasında ve schema.sql'de açıkça public, o yüzden
@@ -21,6 +22,25 @@ export default function LoginPage() {
   const [username, setUsername] = useState(DEMO_MODE ? "admin" : "");
   const [password, setPassword] = useState(DEMO_MODE ? "admin123" : "");
   const [loading, setLoading] = useState(false);
+  const [businessName, setBusinessName] = useState(DEFAULT_BUSINESS_NAME);
+
+  // Kullanıcı adı yazıldıkça (debounce'lu) hangi firmaya ait olduğunu gösterir
+  // — henüz kimlik doğrulanmadığından bu genel bir uca gider (bkz.
+  // /api/auth/branding). Boş/eşleşmeyen kullanıcı adında jenerik isme döner.
+  useEffect(() => {
+    if (!username.trim()) {
+      setBusinessName(DEFAULT_BUSINESS_NAME);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetch(`/api/auth/branding?username=${encodeURIComponent(username.trim())}`)
+        .then((r) => r.json())
+        .then((d) => { if (!cancelled) setBusinessName(d.business_name || DEFAULT_BUSINESS_NAME); })
+        .catch(() => { if (!cancelled) setBusinessName(DEFAULT_BUSINESS_NAME); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [username]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,10 +69,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
-            {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
-            <img src={LOGO_SRC} alt="Logo" width={150} height={51} className="mx-auto mb-4 object-contain" />
-            <h1 className="text-2xl font-bold text-gray-800">Yönetici Girişi</h1>
-            <p className="text-gray-500 text-sm mt-1">Lastik Servis Paneli</p>
+            <h1 className="text-2xl font-bold text-gray-800 mb-1">{businessName}</h1>
+            <p className="text-gray-500 text-sm">Yönetici Girişi</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

@@ -6,10 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { hasPermission } from "@/lib/permissions";
 
-// Farklı dağıtımlar (ör. Elevire demo/pazarlama sitesi) kendi logolarını
-// NEXT_PUBLIC_LOGO_SRC_DARK ile gösterebilir (bu menü koyu arka planlı) —
-// set edilmezse Ustalas'ın gerçek logosu (public/logo.jpg) kullanılmaya devam eder.
-const LOGO_SRC = process.env.NEXT_PUBLIC_LOGO_SRC_DARK || "/logo.jpg";
+// Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
+// giriyor — sabit kodlanmış tek bir logo yerine, giriş yapan kullanıcının
+// firmasının işletme adı gösterilir (bkz. /api/auth/me, AuthContext).
+const DEFAULT_BUSINESS_NAME = "Lastik Servis Paneli";
 
 // `resource: null` → her authenticated kullanıcıya (admin da staff da) her
 // zaman görünür. staff için görünürlük ilgili "<resource>.view" iznine bağlı
@@ -99,11 +99,13 @@ function MobileMenu({
   onLogout,
   navItems,
   settingsItems,
+  businessName,
 }: {
   pathname: string;
   onLogout: () => void;
   navItems: readonly NavItem[];
   settingsItems: readonly NavItem[];
+  businessName: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -114,8 +116,7 @@ function MobileMenu({
   return (
     <div className="sm:hidden">
       <div className="flex items-center justify-between">
-        {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
-        <img src={LOGO_SRC} alt="Logo" width={120} height={41} className="object-contain" />
+        <span className="text-lg font-bold text-white truncate">{businessName || DEFAULT_BUSINESS_NAME}</span>
         <button
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Menüyü kapat" : "Menüyü aç"}
@@ -236,13 +237,12 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gray-900 text-white px-4 py-3">
-        <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} />
+        <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} businessName={user?.businessName ?? ""} />
 
         {/* Desktop: tek satır */}
         <div className="hidden sm:flex items-center justify-between">
           <div className="flex items-center gap-6">
-            {/* eslint-disable-next-line @next/next/no-img-element -- küçük, sabit boyutlu logo; next/image yerel SVG'leri ek yapılandırma olmadan optimize etmiyor */}
-            <img src={LOGO_SRC} alt="Logo" width={150} height={51} className="object-contain" />
+            <span className="text-xl font-bold text-white whitespace-nowrap">{user?.businessName || DEFAULT_BUSINESS_NAME}</span>
             <div className="flex gap-1">
               {visibleNavItems.map((item) => (
                 <Link

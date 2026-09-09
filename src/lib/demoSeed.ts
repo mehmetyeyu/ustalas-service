@@ -68,8 +68,11 @@ export async function resetDemoData(): Promise<void> {
   await pool.query("DELETE FROM customers WHERE tenant_id = $1", [DEMO_TENANT_ID]);
   await pool.query("DELETE FROM suppliers WHERE tenant_id = $1", [DEMO_TENANT_ID]);
 
+  // "Elevire" — admin panelinin header'ı ve login ekranı artık sabit bir logo
+  // yerine bu işletme adını gösteriyor (bkz. admin/layout.tsx, admin/login/page.tsx);
+  // demo ortamı kendi markasını göstermeli, jenerik bir isim değil.
   await pool.query(
-    "UPDATE app_settings SET business_name = 'Lastik Servis Yönetim Sistemi', storage_overdue_months = 6, payment_types = $1 WHERE tenant_id = $2",
+    "UPDATE app_settings SET business_name = 'Elevire', storage_overdue_months = 6, payment_types = $1 WHERE tenant_id = $2",
     [GENERIC_PAYMENT_TYPES, DEMO_TENANT_ID]
   );
 

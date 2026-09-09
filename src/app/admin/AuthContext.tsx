@@ -8,6 +8,7 @@ interface AuthUser {
   username: string;
   role: string;
   permissions: string[];
+  businessName: string;
 }
 
 interface AuthState {
@@ -30,7 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((data) => {
         if (cancelled) return;
         setState({
-          user: data ? { username: data.username, role: data.role, permissions: data.permissions ?? [] } : null,
+          user: data
+            ? { username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "" }
+            : null,
           loading: false,
         });
       })
