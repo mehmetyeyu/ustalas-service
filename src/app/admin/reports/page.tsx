@@ -226,7 +226,7 @@ export default function ReportsPage() {
               aşağıdaki ay bazlı kartlardan ayrı, kendi başlığıyla gösterilir. */}
           {data.cashRegister && (
             <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-0.5">
                 <p className="text-sm font-semibold text-gray-700">Kasa (Nakit) — Tüm Zamanlar</p>
                 <span className="text-[10px] text-gray-400">Seçili aydan bağımsız, kuruluştan bugüne</span>
               </div>
