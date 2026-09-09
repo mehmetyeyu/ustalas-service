@@ -230,7 +230,7 @@ export default function ReportsPage() {
                 <p className="text-sm font-semibold text-gray-700">Kasa (Nakit) — Tüm Zamanlar</p>
                 <span className="text-[10px] text-gray-400">Seçili aydan bağımsız, kuruluştan bugüne</span>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 mb-1">Nakit Gelir</p>
                   <p className="text-lg sm:text-xl font-bold text-green-600 truncate">
