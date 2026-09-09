@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
+import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
 
 const MAX_LINES = 500;
 
@@ -119,6 +120,19 @@ export async function PATCH(request: NextRequest) {
            WHERE o.id = v.order_id AND o.tenant_id = $${summaryParams.length + 1}`,
           [...summaryParams, user.tenantId]
         );
+
+        // Etkilenen her sipariş için Cari bakiyesi yeniden hesaplanır — bkz.
+        // src/lib/customerLedger.ts. Satır bazında Cari'ye girilen/çıkarılan
+        // tutar, siparişin geri kalanı "Karışık" kalsa bile bu sync'e yansır
+        // (SIPARIS satırının SUM() mantığı satır uyumluluğundan bağımsızdır).
+        const orderCustomers = await client.query<{ id: number; customer_name: string | null }>(
+          `SELECT id, customer_name FROM orders WHERE id = ANY($1) AND tenant_id = $2`,
+          [affectedOrderIds, user.tenantId]
+        );
+        const customerNameByOrderId = new Map(orderCustomers.rows.map((r) => [r.id, r.customer_name]));
+        for (const orderId of affectedOrderIds) {
+          await syncOrderLedger(client, user.tenantId!, orderId, customerNameByOrderId.get(orderId), user.userId);
+        }
       }
 
       await client.query("COMMIT");
@@ -126,6 +140,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true, updated: updatedCount, skipped: lineIds.length - updatedCount });
     } catch (err) {
       await client.query("ROLLBACK");
+      if (err instanceof LedgerCustomerRequiredError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
       throw err;
     } finally {
       client.release();

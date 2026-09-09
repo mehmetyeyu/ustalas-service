@@ -900,3 +900,56 @@ END $$;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
 ALTER TABLE users ALTER COLUMN tenant_id SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_username_unique ON users(tenant_id, username);
+
+-- Cari Bakiye / Tahsilat Takibi (FB Lastik geri bildirimi + piyasa araştırması:
+-- Paraşüt/Mikro/Logo — KOBİ ölçeğinde tahsilat belirli bir faturaya bağlanmaz,
+-- müşterinin GENEL bakiyesine karşı bağımsız bir fiş olarak düşer, bakiye her
+-- zaman hareketlerin CANLI toplamıdır, cache kolonu yok).
+--
+-- entry_type='SIPARIS': bir siparişin Cari'ye düşen kısmı — src/lib/customerLedger.ts
+--   syncOrderLedger() tarafından TAMAMEN otomatik yönetilir (elle eklenip
+--   silinmez), her zaman direction=1 (borç). order_id dolu.
+-- entry_type='MANUEL': "Tahsilat Al" (direction=-1, gerçek nakit/POS/havale
+--   girişi — payment_type ZORUNLU, Kasa raporuna yansır) veya "Borç Ekle"
+--   (direction=1, salt bakiye düzeltmesi/açılış bakiyesi — payment_type NULL).
+--   order_id NULL (bağımsız fiş). Ayrı bir "ACILIS" tipi yok — açılış bakiyesi
+--   de MANUEL+direction=1'dir, tek esnek "Tahsilat Al / Borç Ekle" modalıyla
+--   hem tahsilat hem açılış/düzeltme ihtiyacı tek UI'dan karşılanır.
+CREATE TABLE IF NOT EXISTS customer_ledger_entries (
+  id           SERIAL PRIMARY KEY,
+  tenant_id    INT NOT NULL REFERENCES tenants(id),
+  customer_id  INT NOT NULL REFERENCES customers(id),
+  order_id     INT REFERENCES orders(id) ON DELETE CASCADE,
+  entry_type   VARCHAR(10) NOT NULL CHECK (entry_type IN ('SIPARIS', 'MANUEL')),
+  direction    SMALLINT NOT NULL CHECK (direction IN (1, -1)),
+  amount       DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+  payment_type TEXT,
+  entry_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+  note         TEXT,
+  created_by   INT REFERENCES users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (entry_type <> 'SIPARIS' OR direction = 1)
+);
+
+-- customers, composite FK ile referans alınabilsin diye (id, tenant_id) üzerinde
+-- de bir UNIQUE'e ihtiyaç duyar — orders_id_tenant_unique ile aynı desen.
+CREATE UNIQUE INDEX IF NOT EXISTS customers_id_tenant_unique ON customers(id, tenant_id);
+
+DO $$ BEGIN
+  ALTER TABLE customer_ledger_entries ADD CONSTRAINT customer_ledger_entries_customer_tenant_fk
+    FOREIGN KEY (customer_id, tenant_id) REFERENCES customers(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE customer_ledger_entries ADD CONSTRAINT customer_ledger_entries_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Her sipariş için en fazla bir SIPARIS satırı olabilir — syncOrderLedger()
+-- zaten "sil + yeniden ekle" ile bunu garanti eder, bu ikinci bir savunma katmanı.
+CREATE UNIQUE INDEX IF NOT EXISTS customer_ledger_entries_order_siparis_unique
+  ON customer_ledger_entries(order_id) WHERE entry_type = 'SIPARIS';
+
+CREATE INDEX IF NOT EXISTS customer_ledger_entries_customer_idx
+  ON customer_ledger_entries(tenant_id, customer_id, entry_date, id);

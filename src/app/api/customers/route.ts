@@ -17,13 +17,33 @@ export async function GET(request: NextRequest) {
     // varsayılan olarak ucuz sorgu (sadece customers tablosu) dönüyor, sayım
     // yalnızca ?withCounts=1 istendiğinde hesaplanıyor.
     const withCounts = request.nextUrl.searchParams.get("withCounts") === "1";
+    // Cari bakiye de aynı şekilde sadece Müşteriler sayfasında gerekiyor —
+    // ayrı bir LATERAL alt sorgu, customer_ledger_entries'in canlı SUM()'ı.
+    // order_count'un aksine bu finansal veridir (borç/alacak tutarı) — sadece
+    // sipariş oluşturmak için customers.view'ı olmayan bir personelin bunu
+    // görmesini engellemek için ayrıca izin kontrolü gerekir.
+    const withBalance = request.nextUrl.searchParams.get("withBalance") === "1";
+    if (withBalance && !hasPermission(user, "customers.view")) {
+      return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+    }
     const result = await pool.query(
       withCounts
-        ? `SELECT c.id, c.name, c.phone, COUNT(o.id)::int AS order_count
+        ? `SELECT c.id, c.name, c.phone, COUNT(DISTINCT o.id)::int AS order_count${
+            withBalance ? ", COALESCE(bal.balance, 0)::float AS balance" : ""
+          }
            FROM customers c
-           LEFT JOIN orders o ON o.customer_name = c.name AND o.tenant_id = c.tenant_id
+           LEFT JOIN orders o ON o.customer_name = c.name AND o.tenant_id = c.tenant_id${
+             withBalance
+               ? `
+           LEFT JOIN LATERAL (
+             SELECT SUM(cle.amount * cle.direction) AS balance
+             FROM customer_ledger_entries cle
+             WHERE cle.customer_id = c.id AND cle.tenant_id = c.tenant_id
+           ) bal ON true`
+               : ""
+           }
            WHERE c.tenant_id = $1
-           GROUP BY c.id, c.name, c.phone
+           GROUP BY c.id, c.name, c.phone${withBalance ? ", bal.balance" : ""}
            ORDER BY c.name`
         : `SELECT id, name, phone FROM customers WHERE tenant_id = $1 ORDER BY name`,
       [user.tenantId]

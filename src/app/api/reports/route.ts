@@ -181,6 +181,18 @@ export async function GET(request: NextRequest) {
              WHERE os.payment_type = 'Nakit'
                AND NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id)
                AND o.tenant_id = $1
+
+             UNION ALL
+
+             -- Cari bakiyeden sonradan Nakit tahsil edilen tutarlar (bkz.
+             -- src/lib/customerLedger.ts) — hiçbir siparişe bağlı olmadığından
+             -- yukarıdaki iki kaynakta hiç görünmez, ama kasaya giren gerçek
+             -- nakittir. Gelir raporlarına (tahakkuk esası) KASITLI olarak
+             -- eklenmez, sadece bu Kasa özetine eklenir.
+             SELECT cle.amount AS total
+             FROM customer_ledger_entries cle
+             WHERE cle.entry_type = 'MANUEL' AND cle.direction = -1
+               AND cle.payment_type = 'Nakit' AND cle.tenant_id = $1
            ) combined)::float AS income,
            (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE payment_type = 'Nakit' AND tenant_id = $1)::float AS expense`,
         [user.tenantId]

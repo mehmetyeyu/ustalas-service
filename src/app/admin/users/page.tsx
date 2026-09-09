@@ -44,6 +44,7 @@ const ACTION_LABELS: Record<string, string> = {
   edit: "Düzenle",
   delete: "Sil",
   approve: "Onayla",
+  manage_balance: "Cari Bakiye Yönetimi",
 };
 
 function isLocked(u: User): boolean {

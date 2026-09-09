@@ -13,7 +13,7 @@ export const RESOURCE_ACTIONS = {
   services: ["view", "create", "edit", "delete"],
   storage: ["view", "create", "edit", "delete"],
   products: ["view", "create", "edit", "delete"],
-  customers: ["view", "create", "edit", "delete"],
+  customers: ["view", "create", "edit", "delete", "manage_balance"],
   suppliers: ["view", "create", "edit", "delete"],
   expenses: ["view", "create", "edit", "delete"],
 } as const;

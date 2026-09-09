@@ -5,12 +5,22 @@ import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { flatPaymentOptions, PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+
+// /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
+// aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
+// personel için 403 döner ve gerçek liste hiç yüklenmez. Diğer sayfalar kendi
+// firmaya özel hesaplarını içeren bir varsayılan kullanıyor; burada onun yerine
+// her tenant'ta garanti var olan PROTECTED_PAYMENT_TYPES kullanılır (Cari hariç,
+// Mail Order tek başına geçersiz olduğundan flatPaymentOptions ile elenir).
+const DEFAULT_PAYMENT_OPTIONS = flatPaymentOptions(PROTECTED_PAYMENT_TYPES).filter((t) => t !== "Cari");
 
 interface Customer {
   id: number;
   name: string;
   phone: string | null;
   order_count: number;
+  balance: number;
 }
 
 interface CustomerOrder {
@@ -23,6 +33,18 @@ interface CustomerOrder {
   created_at: string;
 }
 
+interface LedgerEntry {
+  id: number;
+  entry_type: "SIPARIS" | "MANUEL";
+  direction: 1 | -1;
+  amount: number;
+  payment_type: string | null;
+  entry_date: string;
+  note: string | null;
+  order_id: number | null;
+  running_balance: number;
+}
+
 export default function CustomersPage() {
   const toast = useToast();
   const allowed = useViewGuard("customers");
@@ -32,6 +54,7 @@ export default function CustomersPage() {
   // Siparişler popup'ı tutar/ödeme tipi gibi finansal veri gösteriyor —
   // orders.view de gerekli (bkz. /api/customers/:id/orders).
   const canViewOrders = usePermission("orders.view");
+  const canManageBalance = usePermission("customers.manage_balance");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -43,12 +66,24 @@ export default function CustomersPage() {
   const [ordersModalCustomer, setOrdersModalCustomer] = useState<Customer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ledgerModalCustomer, setLedgerModalCustomer] = useState<Customer | null>(null);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [ledgerBalance, setLedgerBalance] = useState(0);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [paymentModalCustomer, setPaymentModalCustomer] = useState<Customer | null>(null);
+  const [paymentDirection, setPaymentDirection] = useState<1 | -1>(-1);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentType, setPaymentType] = useState("");
+  const [paymentDate, setPaymentDate] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
+  const [savingPayment, setSavingPayment] = useState(false);
 
   async function fetchCustomers() {
     // GET /api/customers tarayıcı önbelleğine izin verir (Cache-Control) — bu
     // yönetim ekranı bir ekleme/düzenleme/silmeden hemen sonra her zaman güncel
     // veriyi göstermeli, o yüzden önbellek burada devre dışı bırakılır.
-    const res = await fetch("/api/customers?withCounts=1", { cache: "no-store" });
+    const res = await fetch("/api/customers?withCounts=1&withBalance=1", { cache: "no-store" });
     const data = await res.json();
     setCustomers(Array.isArray(data) ? data : []);
     setLoading(false);
@@ -56,6 +91,10 @@ export default function CustomersPage() {
 
   useEffect(() => {
     fetchCustomers();
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(flatPaymentOptions(d.payment_types).filter((t: string) => t !== "Cari")); })
+      .catch(() => { });
   }, []);
 
   async function openOrders(c: Customer) {
@@ -68,6 +107,65 @@ export default function CustomersPage() {
       setCustomerOrders(Array.isArray(data) ? data : []);
     } finally {
       setOrdersLoading(false);
+    }
+  }
+
+  async function openLedger(c: Customer) {
+    setLedgerModalCustomer(c);
+    setLedgerEntries([]);
+    setLedgerBalance(0);
+    setLedgerLoading(true);
+    try {
+      const res = await fetch(`/api/customers/${c.id}/ledger`, { cache: "no-store" });
+      const data = await res.json();
+      setLedgerEntries(Array.isArray(data.entries) ? data.entries : []);
+      setLedgerBalance(Number(data.balance) || 0);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
+
+  function openPaymentModal(c: Customer) {
+    setPaymentModalCustomer(c);
+    setPaymentDirection(-1);
+    setPaymentAmount("");
+    setPaymentType("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentNote("");
+  }
+
+  async function submitPayment() {
+    if (!paymentModalCustomer) return;
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Geçerli bir tutar girin.");
+      return;
+    }
+    if (paymentDirection === -1 && !paymentType) {
+      toast.error("Ödeme şekli zorunludur.");
+      return;
+    }
+    setSavingPayment(true);
+    try {
+      const res = await fetch(`/api/customers/${paymentModalCustomer.id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          direction: paymentDirection,
+          amount,
+          payment_type: paymentDirection === -1 ? paymentType : null,
+          entry_date: paymentDate || null,
+          note: paymentNote.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
+      setPaymentModalCustomer(null);
+      await fetchCustomers();
+      if (ledgerModalCustomer?.id === paymentModalCustomer.id) await openLedger(paymentModalCustomer);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setSavingPayment(false);
     }
   }
 
@@ -160,6 +258,7 @@ export default function CustomersPage() {
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri Adı</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Telefon</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Bakiye</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -168,8 +267,30 @@ export default function CustomersPage() {
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{c.name}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{c.phone || "-"}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {c.balance > 0.009 ? (
+                        <span className="text-red-600 font-medium">{formatCurrency(c.balance)} (Borçlu)</span>
+                      ) : c.balance < -0.009 ? (
+                        <span className="text-green-600 font-medium">{formatCurrency(Math.abs(c.balance))} (Alacaklı)</span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
+                        {canViewOrders && (
+                          <button
+                            onClick={() => openLedger(c)}
+                            title="Cari Hareketleri"
+                            aria-label="Cari Hareketleri"
+                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-600 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-900 text-xs font-medium"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3M3.375 19.5h17.25c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v12.75c0 .621.504 1.125 1.125 1.125z" />
+                            </svg>
+                            <span className="hidden sm:inline">Cari</span>
+                          </button>
+                        )}
                         {c.order_count > 0 && canViewOrders && (
                           <button
                             onClick={() => openOrders(c)}
@@ -332,6 +453,161 @@ export default function CustomersPage() {
               className="w-full mt-5 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50">
               Kapat
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cari Hareketleri Modal */}
+      {ledgerModalCustomer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">{ledgerModalCustomer.name} — Cari Hareketleri</h2>
+                <p className={`text-sm font-medium mt-0.5 ${ledgerBalance > 0.009 ? "text-red-600" : ledgerBalance < -0.009 ? "text-green-600" : "text-gray-500"}`}>
+                  Bakiye: {formatCurrency(Math.abs(ledgerBalance))} {ledgerBalance > 0.009 ? "(Borçlu)" : ledgerBalance < -0.009 ? "(Alacaklı)" : ""}
+                </p>
+              </div>
+              <button onClick={() => setLedgerModalCustomer(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {canManageBalance && (
+              <button
+                onClick={() => openPaymentModal(ledgerModalCustomer)}
+                className="mb-4 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                Tahsilat Al / Borç Ekle
+              </button>
+            )}
+
+            {ledgerLoading ? (
+              <div className="py-8 text-center text-gray-400 text-sm">Yükleniyor...</div>
+            ) : ledgerEntries.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">Cari hareket bulunamadı.</div>
+            ) : (
+              <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bakiye</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {ledgerEntries.map((e) => (
+                      <tr key={e.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(e.entry_date)}</td>
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                          {e.entry_type === "SIPARIS"
+                            ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">#{e.order_id} Sipariş</Link>
+                            : (e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç"))}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-medium whitespace-nowrap ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
+                          {e.direction === 1 ? "+" : "-"}{formatCurrency(e.amount)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">{formatCurrency(e.running_balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <button onClick={() => setLedgerModalCustomer(null)}
+              className="w-full mt-5 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50">
+              Kapat
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tahsilat Al / Borç Ekle Modal */}
+      {paymentModalCustomer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">{paymentModalCustomer.name}</h2>
+
+            <div className="space-y-4 mb-5">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPaymentDirection(-1)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${paymentDirection === -1 ? "bg-green-600 text-white border-green-600" : "border-gray-300 text-gray-700"}`}
+                >
+                  Tahsilat Al
+                </button>
+                <button
+                  onClick={() => setPaymentDirection(1)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${paymentDirection === 1 ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-700"}`}
+                >
+                  Borç Ekle
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tutar</label>
+                <input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {paymentDirection === -1 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ödeme Şekli</label>
+                  <select
+                    value={paymentType}
+                    onChange={(e) => setPaymentType(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Seçiniz</option>
+                    {paymentOptions.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tarih</label>
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Açıklama (opsiyonel)</label>
+                <input
+                  type="text"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPaymentModalCustomer(null)}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+              >
+                İptal
+              </button>
+              <button
+                onClick={submitPayment}
+                disabled={savingPayment}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                {savingPayment ? "Kaydediliyor..." : "Kaydet"}
+              </button>
+            </div>
           </div>
         </div>
       )}

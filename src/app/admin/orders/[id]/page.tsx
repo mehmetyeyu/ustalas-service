@@ -669,6 +669,16 @@ function OrderDetailPageInner() {
   const paymentEntriesTotal = paymentEntries.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const editPaymentsTotal = editPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const editLinesTotalAmount = editLines.reduce((sum, l) => sum + num(l.unit_price), 0);
+  // Cari seçilen kısım kaydedince otomatik olarak müşterinin cari bakiyesine
+  // borç olarak yansır (bkz. src/lib/customerLedger.ts) — burada sadece bilgi
+  // amaçlı gösteriliyor, yeni bir input alanı yok.
+  const cariAmount = paymentEntries.filter((p) => p.payment_type === "Cari").reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  // syncOrderLedger de aynı önceliği kullanır: parçalı ödeme (editPayments)
+  // girilmişse sadece o dikkate alınır, yoksa satır bazlı payment_type'a
+  // düşülür (bkz. src/lib/customerLedger.ts) — ikisi asla toplanmaz.
+  const editCariAmount = editPayments.length > 0
+    ? editPayments.filter((p) => p.payment_type === "Cari").reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    : editLines.filter((l) => l.payment_type === "Cari").reduce((sum, l) => sum + num(l.unit_price), 0);
 
   function addPaymentEntry() {
     setPaymentEntries((prev) => [...prev, { payment_type: "Nakit", amount: "" }]);
@@ -1139,6 +1149,11 @@ function OrderDetailPageInner() {
                     Sipariş tutarını {formatCurrency(editPaymentsTotal - editLinesTotalAmount)} aşıyor.
                   </p>
                 )}
+                {editCariAmount > 0 && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    {formatCurrency(editCariAmount)} tutarı {editCustomerName.trim() || "müşterinin"} cari hesabına borç olarak eklenecek.
+                  </p>
+                )}
               </div>
             )}
 
@@ -1398,6 +1413,11 @@ function OrderDetailPageInner() {
               {paymentEntriesTotal > order.total_amount && (
                 <p className="text-xs text-red-500 mt-1">
                   Sipariş tutarını {formatCurrency(paymentEntriesTotal - order.total_amount)} aşıyor.
+                </p>
+              )}
+              {cariAmount > 0 && (
+                <p className="text-xs text-blue-600 mt-1">
+                  {formatCurrency(cariAmount)} tutarı {order.customer_name || "müşterinin"} cari hesabına borç olarak eklenecek.
                 </p>
               )}
             </div>

@@ -7,6 +7,7 @@ import { deductStock, restoreStock, InsufficientStockError } from "@/lib/product
 import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
+import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
 
 interface EditLineInput {
   id?: number;
@@ -153,8 +154,8 @@ export async function PATCH(
       // edilir — zaten TAMAMLANDI bir sipariş tekrar kapatılamaz (aksi hâlde
       // API'ye doğrudan istek atılarak mevcut ödeme kaydı sessizce ezilebilirdi;
       // arayüzdeki "Ödeme Al & Kapat" butonu da zaten yalnızca BEKLEMEDE'de görünür).
-      const orderCheck = await client.query<{ status: string; total_amount: string }>(
-        "SELECT status, total_amount FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      const orderCheck = await client.query<{ status: string; total_amount: string; customer_name: string | null }>(
+        "SELECT status, total_amount, customer_name FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
         [id, user.tenantId]
       );
       if (orderCheck.rows.length === 0) {
@@ -189,9 +190,16 @@ export async function PATCH(
         [summaryType, id, totalPaid, user.tenantId]
       );
 
+      // Girilen kırılımda "Cari" tutar varsa müşterinin cari bakiyesine borç
+      // olarak yansır — bkz. src/lib/customerLedger.ts.
+      await syncOrderLedger(client, user.tenantId!, Number(id), orderCheck.rows[0].customer_name, user.userId);
+
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
+      if (err instanceof LedgerCustomerRequiredError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
       throw err;
     } finally {
       client.release();
@@ -435,10 +443,20 @@ export async function PUT(
         }
       }
 
+      // Girilen kırılımda "Cari" tutar varsa müşterinin cari bakiyesine borç
+      // olarak yansır — bkz. src/lib/customerLedger.ts. editedPayments'tan mı
+      // yoksa satır bazlı payment_type'lardan mı geldiğine bakılmaksızın,
+      // her iki durumda da order_services/order_payments artık güncel
+      // olduğundan senkron tek bir yerden (COMMIT'ten hemen önce) yapılır.
+      await syncOrderLedger(client, user.tenantId!, Number(id), customer_name, user.userId);
+
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
       if (err instanceof InsufficientStockError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      if (err instanceof LedgerCustomerRequiredError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
       }
       throw err;
