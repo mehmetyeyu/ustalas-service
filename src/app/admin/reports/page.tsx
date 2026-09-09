@@ -42,6 +42,11 @@ interface UnaddedRecurring {
   id: number;
   category: string;
 }
+interface CashRegister {
+  income: number;
+  expense: number;
+  balance: number;
+}
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
 
@@ -139,7 +144,8 @@ export default function ReportsPage() {
     summary: Summary | null;
     paymentBreakdown: PaymentBreakdown[];
     unaddedRecurring: UnaddedRecurring[];
-  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [], unaddedRecurring: [] });
+    cashRegister: CashRegister | null;
+  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [], unaddedRecurring: [], cashRegister: null });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -215,6 +221,38 @@ export default function ReportsPage() {
         <div className="text-center text-gray-400 py-20">Yükleniyor...</div>
       ) : (
         <>
+          {/* Kasa (Nakit) — ay seçiciden BAĞIMSIZ, kuruluştan bugüne tüm zamanların
+              toplamı. Fiziksel kasadaki nakit ay sınırında sıfırlanmadığından
+              aşağıdaki ay bazlı kartlardan ayrı, kendi başlığıyla gösterilir. */}
+          {data.cashRegister && (
+            <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-700">Kasa (Nakit) — Tüm Zamanlar</p>
+                <span className="text-[10px] text-gray-400">Seçili aydan bağımsız, kuruluştan bugüne</span>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-500 mb-1">Nakit Gelir</p>
+                  <p className="text-lg sm:text-xl font-bold text-green-600 truncate">
+                    {formatCurrency(data.cashRegister.income)}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-500 mb-1">Nakit Masraf</p>
+                  <p className="text-lg sm:text-xl font-bold text-red-500 truncate">
+                    {formatCurrency(data.cashRegister.expense)}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-500 mb-1">Kasada Kalan</p>
+                  <p className={`text-lg sm:text-xl font-bold truncate ${data.cashRegister.balance >= 0 ? "text-gray-800" : "text-red-500"}`}>
+                    {formatCurrency(data.cashRegister.balance)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Özet Kartlar */}
           {s && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">

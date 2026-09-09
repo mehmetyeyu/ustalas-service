@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
       summaryResult,
       paymentBreakdownResult,
       unaddedRecurringResult,
+      cashRegisterResult,
     ] = await Promise.all([
       pool.query(
         `SELECT
@@ -157,6 +158,33 @@ export async function GET(request: NextRequest) {
          ORDER BY re.category`,
         [expenseStart, expenseEnd, user.tenantId]
       ),
+      // Kasa (Nakit) Özeti — seçili aydan BAĞIMSIZ, kuruluştan bugüne tüm zamanların
+      // toplamı: fiziksel kasadaki nakit hiçbir ay sınırında sıfırlanmaz, o yüzden
+      // aylık rapor gibi tarih filtreli olması anlamsız (FB Lastik geri bildirimi:
+      // "2 aylık toplam nakiti göremiyorum" + "kasadan çıkan masrafları görmüyorum").
+      // Gelir tarafı, aylık Ödeme Tipi Kırılımı'yla aynı order_payments/order_services
+      // ayrıştırma mantığını (bkz. paymentBreakdownResult) tarih filtresiz tekrarlar;
+      // gider tarafı expenses.payment_type='Nakit' olan tüm masrafların toplamıdır.
+      pool.query(
+        `SELECT
+           (SELECT COALESCE(SUM(total), 0) FROM (
+             SELECT op.amount AS total
+             FROM order_payments op
+             JOIN orders o ON o.id = op.order_id
+             WHERE op.payment_type = 'Nakit' AND o.tenant_id = $1
+
+             UNION ALL
+
+             SELECT os.unit_price AS total
+             FROM order_services os
+             JOIN orders o ON os.order_id = o.id
+             WHERE os.payment_type = 'Nakit'
+               AND NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id)
+               AND o.tenant_id = $1
+           ) combined)::float AS income,
+           (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE payment_type = 'Nakit' AND tenant_id = $1)::float AS expense`,
+        [user.tenantId]
+      ),
     ]);
 
     // Her siparişin en az bir order_services satırı olduğundan, maliyet
@@ -189,12 +217,16 @@ export async function GET(request: NextRequest) {
     const totalRevenue = dailyData.reduce((sum, r) => sum + r.ciro, 0);
     const totalExpenses = dailyData.reduce((sum, r) => sum + r.masraf, 0);
 
+    const cashIncome = cashRegisterResult.rows[0]?.income ?? 0;
+    const cashExpense = cashRegisterResult.rows[0]?.expense ?? 0;
+
     return NextResponse.json({
       dailyData,
       serviceStats: serviceStatsResult.rows,
       summary: { ...summaryResult.rows[0], total_revenue: totalRevenue, total_expenses: totalExpenses },
       paymentBreakdown: paymentBreakdownResult.rows,
       unaddedRecurring: unaddedRecurringResult.rows,
+      cashRegister: { income: cashIncome, expense: cashExpense, balance: cashIncome - cashExpense },
     });
   } catch (error) {
     console.error(error);
