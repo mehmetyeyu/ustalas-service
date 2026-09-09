@@ -182,6 +182,7 @@ interface OrderRow {
   quantity: number | null;
   unit_price: number | null;
   cost_price: number | null;
+  has_split_payment: boolean;
 }
 
 function toLocalDate(d: Date): string {
@@ -257,6 +258,15 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  // "" hem "henüz seçim yapılmadı" hem de kullanıcının bilinçli seçtiği "Tümü"
+  // anlamına gelebildiğinden, ayarlardaki varsayılan filtrenin kullanıcının
+  // (Tümü dahil) kendi seçimini ezmemesi için ayrı bir "dokunuldu mu" bayrağı
+  // gerekir — updateDateFilter üzerinden değiştirilen her yerde true olur.
+  const dateFilterTouchedRef = useRef(false);
+  function updateDateFilter(v: string) {
+    dateFilterTouchedRef.current = true;
+    setDateFilter(v);
+  }
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
@@ -320,24 +330,30 @@ export default function OrdersPage() {
       })
       .catch(() => { });
     // Bu istek yavaş bir ağda hiç sonuçlanmazsa (ne başarı ne hata) filtersReady
-    // hiç true olmaz ve liste sonsuza dek yükleniyor görünür kalırdı — 5sn'lik
-    // bir üst sınır bunu garanti altına alır.
-    const settingsController = new AbortController();
-    const settingsTimeout = setTimeout(() => settingsController.abort(), 5000);
-    fetch("/api/settings", { signal: settingsController.signal })
+    // hiç true olmaz ve liste sonsuza dek yükleniyor görünür kalırdı — isteği
+    // iptal etmeden (aksi halde 5sn'den yavaş bir ağda varsayılan tarih filtresi
+    // kalıcı olarak hiç uygulanmazdı), 5sn sonra listeyi yine de açan ayrı bir
+    // "en kötü ihtimalde" zamanlayıcı kullanılır; istek daha sonra sonuçlanırsa
+    // varsayılan (kullanıcı henüz dokunmadıysa) o zaman uygulanır.
+    let settingsSettled = false;
+    const readyFallback = setTimeout(() => {
+      if (!settingsSettled) setFiltersReady(true);
+    }, 5000);
+    fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.payment_types)) setSettingsPaymentTypes(d.payment_types);
-        // Kullanıcı bu istek sonuçlanmadan önce Filtrele modalından kendi
-        // tarih filtresini zaten seçmişse (dateFilter artık başlangıç
-        // değeri "" değildir), ayarlardaki varsayılan onun üzerine yazmaz.
-        if (typeof d.orders_default_date_filter === "string") {
-          setDateFilter((current) => (current === "" ? d.orders_default_date_filter : current));
+        // Kullanıcı bu istek sonuçlanmadan önce Filtrele modalından kendi tarih
+        // filtresini (Tümü dahil) zaten seçmişse dateFilterTouchedRef true olur —
+        // ayarlardaki varsayılan o durumda kullanıcının seçimini ezmez.
+        if (typeof d.orders_default_date_filter === "string" && !dateFilterTouchedRef.current) {
+          setDateFilter(d.orders_default_date_filter);
         }
       })
       .catch(() => { })
       .finally(() => {
-        clearTimeout(settingsTimeout);
+        settingsSettled = true;
+        clearTimeout(readyFallback);
         setFiltersReady(true);
       });
   }, []);
@@ -450,8 +466,7 @@ export default function OrdersPage() {
   // tıklamayla (render tamamlandıktan sonra) çağrıldığından güncel değeri kapar.
   function toggleSelectAllVisible() {
     setSelectedLineIds((prev) => {
-      const allSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => prev.has(id));
-      if (allSelected) {
+      if (allVisibleSelected) {
         const next = new Set(prev);
         visibleSelectableIds.forEach((id) => next.delete(id));
         return next;
@@ -475,7 +490,7 @@ export default function OrdersPage() {
       if (!res.ok) throw new Error(data.error || "Güncellenemedi.");
       if (data.skipped > 0) {
         toast.success(
-          `${data.updated} satırın ödeme şekli güncellendi. ${data.skipped} satır, parçalı ödemesi olduğu için atlandı — bu siparişleri Düzelt ekranından değiştirebilirsiniz.`
+          `${data.updated} satırın ödeme şekli güncellendi. ${data.skipped} satır, siparişin ödemesi birden fazla farklı tipe bölünmüş olduğu için atlandı — bu siparişleri Düzelt ekranından değiştirebilirsiniz.`
         );
       } else {
         toast.success(`${data.updated} satırın ödeme şekli güncellendi.`);
@@ -605,7 +620,13 @@ export default function OrdersPage() {
   // + 2: her zaman görünen Statü ve İşlemler sütunları.
   const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 2 + (canEdit ? 1 : 0);
 
-  const visibleSelectableIds = rows.map((r) => r.line_id).filter((v): v is number => v != null);
+  // Parçalı ödemesi olan (order_payments'ta kaydı olan) siparişlerin satırları
+  // toplu ödeme şekli değiştirmeye dahil edilemez (bkz. bulk-payment-type
+  // route'undaki NOT EXISTS filtresi) — seçilemeyeceklerini kullanıcı işaretlemeyi
+  // denemeden önce görsün diye burada da hariç tutulur.
+  const visibleSelectableIds = rows
+    .filter((r) => r.line_id != null && !r.has_split_payment)
+    .map((r) => r.line_id as number);
   const allVisibleSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selectedLineIds.has(id));
 
   if (!allowed) return null;
@@ -752,7 +773,7 @@ export default function OrdersPage() {
 
           {activeFilterCount > 0 && (
             <button
-              onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
+              onClick={() => { setStatusFilter(""); updateDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
               className="hidden sm:inline text-sm text-gray-400 hover:text-gray-700"
             >
               Filtreleri Temizle
@@ -834,7 +855,7 @@ export default function OrdersPage() {
                 <label className="block text-xs font-medium text-gray-500 mb-1">Tarih</label>
                 <select
                   value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
+                  onChange={(e) => updateDateFilter(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Tümü</option>
@@ -952,7 +973,7 @@ export default function OrdersPage() {
 
             <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
               <button
-                onClick={() => { setStatusFilter(""); setDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
+                onClick={() => { setStatusFilter(""); updateDateFilter(""); setCustomFrom(""); setCustomTo(""); setFieldFilters(EMPTY_FIELD_FILTERS); }}
                 className="flex-1 border border-gray-300 text-gray-700 text-sm sm:text-base font-medium py-2 sm:py-2.5 rounded-lg hover:bg-gray-50"
               >
                 Filtreleri Temizle
@@ -1070,13 +1091,24 @@ export default function OrdersPage() {
                       {canEdit && (
                         <td className="px-2 py-3">
                           {r.line_id != null && (
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 accent-blue-500 cursor-pointer"
-                              checked={selectedLineIds.has(r.line_id)}
-                              onChange={() => toggleLineSelected(r.line_id!)}
-                              aria-label={`#${r.id} satırını seç`}
-                            />
+                            r.has_split_payment ? (
+                              <Tooltip text="Ödemesi birden fazla farklı tipe bölünmüş sipariş toplu ödeme şekli değişikliğine dahil edilemez — Düzelt ekranından değiştirin.">
+                                <input
+                                  type="checkbox"
+                                  disabled
+                                  className="w-4 h-4 accent-gray-300 cursor-not-allowed"
+                                  aria-label={`#${r.id} parçalı ödemeli, seçilemez`}
+                                />
+                              </Tooltip>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 accent-blue-500 cursor-pointer"
+                                checked={selectedLineIds.has(r.line_id)}
+                                onChange={() => toggleLineSelected(r.line_id!)}
+                                aria-label={`#${r.id} satırını seç`}
+                              />
+                            )
                           )}
                         </td>
                       )}

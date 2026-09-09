@@ -10,12 +10,20 @@ const MAX_LINES = 500;
 // Sipariş Listesi'ndeki toplu seçim ile birden fazla satırın (order_services)
 // Ödeme Şekli'ni tek seferde değiştirir — ör. bir müşterinin "Cari" olarak
 // girilmiş 10-15 siparişini toplu olarak "Fatura Edildi."ye çekmek.
-// "Ödeme Al & Kapat" ile parçalı ödeme girilmiş (order_payments'ta kaydı olan)
-// siparişler bilinçli olarak dışarıda bırakılır — bu tabloda gerçek ödeme
-// dağılımı (ör. 7.000 POS + 15.000 Garanti Hesap) tutulur ve toplu işlem
-// bunu güncellemez; satır/sipariş özetini buradan değiştirmek gerçek ödeme
-// kaydıyla çelişen yanlış bir görünüm yaratırdı. Bu siparişler PUT /api/orders/[id]
-// (Düzelt ekranı) üzerinden, ödeme kırılımı da birlikte düzenlenerek değiştirilmeli.
+//
+// "Ödeme Al & Kapat" ile kapatılan HER sipariş order_payments'a en az bir satır
+// yazar (bkz. PATCH /api/orders/[id]) — tek bir ödeme tipiyle kapatılmış olması
+// (ki gerçek verinin ezici çoğunluğu budur) bunu "parçalı ödeme" yapmaz. Gerçekten
+// birden fazla FARKLI ödeme tipine bölünmüş (ör. 7.000 POS + 15.000 Garanti Hesap,
+// bkz. mixed_orders CTE) siparişler hariç, sipariş satırları güncellendikten sonra
+// TÜMÜYLE tekdüze yeni tipte kalan siparişlerin order_payments'ı da aynı tipe
+// çekilir — aksi halde sipariş özeti değişirken gerçek ödeme kaydı eski tipte
+// kalıp birbirleriyle çelişirdi. Kısmi seçim yüzünden "Karışık" kalan siparişlerin
+// order_payments'ına dokunulmaz (bkz. uniformOrderIds). Gerçekten karma olanlar bu
+// işlemin dışında bırakılır; onlar PUT /api/orders/[id] (Düzelt ekranı) üzerinden,
+// ödeme kırılımı elle gözden geçirilerek değiştirilmeli. Bu tanım GET /api/orders'daki
+// has_split_payment ile birebir aynı olmalı (bkz. src/app/api/orders/route.ts) —
+// aksi halde liste ekranındaki devre dışı checkbox'lar burasıyla tutarsız olur.
 export async function PATCH(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -45,15 +53,24 @@ export async function PATCH(request: NextRequest) {
       await client.query("BEGIN");
 
       // tenant_id koşulu, client'tan gelen id'lerle başka bir firmanın
-      // satırlarına dokunulmasını engeller. NOT EXISTS ile order_payments'ta
-      // kaydı olan siparişlerin satırları güncellemenin dışında bırakılır
-      // (yukarıdaki dosya yorumuna bkz.).
+      // satırlarına dokunulmasını engeller. mixed_orders: seçilen satırların
+      // ait olduğu siparişlerden, order_payments'ta gerçekten BİRDEN FAZLA
+      // FARKLI ödeme tipi kayıtlı olanlar — bunlar güncellemenin dışında
+      // bırakılır (yukarıdaki dosya yorumuna bkz.).
       const updated = await client.query<{ order_id: number }>(
-        `UPDATE order_services os SET payment_type = $1
+        `WITH mixed_orders AS (
+           SELECT op.order_id
+           FROM order_payments op
+           WHERE op.tenant_id = $3
+             AND op.order_id IN (
+               SELECT DISTINCT order_id FROM order_services WHERE id = ANY($2) AND tenant_id = $3
+             )
+           GROUP BY op.order_id
+           HAVING COUNT(DISTINCT op.payment_type) > 1
+         )
+         UPDATE order_services os SET payment_type = $1
          WHERE os.id = ANY($2) AND os.tenant_id = $3
-           AND NOT EXISTS (
-             SELECT 1 FROM order_payments op WHERE op.order_id = os.order_id AND op.tenant_id = os.tenant_id
-           )
+           AND os.order_id NOT IN (SELECT order_id FROM mixed_orders)
          RETURNING os.order_id`,
         [paymentType, lineIds, user.tenantId]
       );
@@ -61,23 +78,46 @@ export async function PATCH(request: NextRequest) {
       const affectedOrderIds = Array.from(new Set(updated.rows.map((r) => r.order_id)));
       if (affectedOrderIds.length > 0) {
         // Sipariş seviyesindeki payment_type özet değeri (bkz. PUT /api/orders/[id]) —
-        // etkilenmeyen diğer satırlar farklı bir ödeme tipinde kalmış olabileceğinden
-        // doğrudan yeni değer atanmaz, aynı distinct-count mantığıyla yeniden hesaplanır.
-        await client.query(
-          `UPDATE orders o SET payment_type = sub.summary
-           FROM (
-             SELECT order_id,
-               CASE
-                 WHEN COUNT(payment_type) = 0 THEN NULL
-                 WHEN COUNT(DISTINCT payment_type) = 1 THEN MIN(payment_type)
-                 ELSE 'Karışık'
-               END AS summary
-             FROM order_services
-             WHERE order_id = ANY($1) AND tenant_id = $2
-             GROUP BY order_id
-           ) sub
-           WHERE o.id = sub.order_id AND o.tenant_id = $2`,
+        // seçilmeyen kardeş satırlar farklı bir ödeme tipinde kalmış olabileceğinden
+        // (ör. çok satırlı bir siparişin sadece bir satırı seçilmişse) doğrudan yeni
+        // değer atanmaz, tüm satırlar üzerinden aynı distinct-count mantığıyla
+        // yeniden hesaplanır.
+        const summaries = await client.query<{ order_id: number; summary: string | null }>(
+          `SELECT order_id,
+             CASE
+               WHEN COUNT(payment_type) = 0 THEN NULL
+               WHEN COUNT(DISTINCT payment_type) = 1 THEN MIN(payment_type)
+               ELSE 'Karışık'
+             END AS summary
+           FROM order_services
+           WHERE order_id = ANY($1) AND tenant_id = $2
+           GROUP BY order_id`,
           [affectedOrderIds, user.tenantId]
+        );
+
+        // order_payments (gerçek ödeme kaydı) yalnızca siparişin TÜM satırları artık
+        // tekdüze biçimde yeni tipteyse (summary === paymentType) güncellenir. Kısmi
+        // seçim yüzünden sipariş "Karışık" kaldıysa dokunulmaz — aksi halde, mesela
+        // 2 satırlı bir siparişin sadece 1 satırı seçilmişken order_payments'ı
+        // tamamen yeni tipe çevirmek, hâlâ eski tipte kalan diğer satırın parasını
+        // da yanlışlıkla yeni tipe aitmiş gibi gösterirdi.
+        const uniformOrderIds = summaries.rows.filter((r) => r.summary === paymentType).map((r) => r.order_id);
+        if (uniformOrderIds.length > 0) {
+          await client.query(
+            `UPDATE order_payments SET payment_type = $1 WHERE order_id = ANY($2) AND tenant_id = $3`,
+            [paymentType, uniformOrderIds, user.tenantId]
+          );
+        }
+
+        // orders.payment_type, yukarıda zaten hesaplanmış summaries satırlarından
+        // (VALUES ile) yazılır — aynı GROUP BY'ı ikinci kez çalıştırmaya gerek yok.
+        const summaryValues = summaries.rows.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::text)`).join(", ");
+        const summaryParams = summaries.rows.flatMap((r) => [r.order_id, r.summary]);
+        await client.query(
+          `UPDATE orders o SET payment_type = v.summary
+           FROM (VALUES ${summaryValues}) AS v(order_id, summary)
+           WHERE o.id = v.order_id AND o.tenant_id = $${summaryParams.length + 1}`,
+          [...summaryParams, user.tenantId]
         );
       }
 

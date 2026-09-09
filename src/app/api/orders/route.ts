@@ -47,7 +47,16 @@ export async function GET(request: NextRequest) {
          o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
          os.id AS line_id, s.name AS service_name,
          os.supplier, os.stock_code, os.size_desc, os.quantity, os.unit_price, os.cost_price,
-         COALESCE(os.payment_type, o.payment_type) AS payment_type
+         COALESCE(os.payment_type, o.payment_type) AS payment_type,
+         -- "Ödeme Al & Kapat" ile kapatılan HER sipariş order_payments'a en az
+         -- bir satır yazar (bkz. PATCH /api/orders/[id]) — tek tipli kapatma
+         -- bunu "parçalı ödeme" yapmaz. Bu bayrak yalnızca gerçekten BİRDEN
+         -- FAZLA FARKLI ödeme tipine bölünmüş siparişleri işaretler; tanım
+         -- bulk-payment-type route'undaki mixed_orders ile birebir aynı olmalı.
+         EXISTS (
+           SELECT 1 FROM order_payments op WHERE op.order_id = o.id AND op.tenant_id = o.tenant_id
+           GROUP BY op.order_id HAVING COUNT(DISTINCT op.payment_type) > 1
+         ) AS has_split_payment
        ${fromClause}
        ORDER BY ${orderBy}
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
