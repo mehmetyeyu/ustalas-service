@@ -179,6 +179,19 @@ export default function ExpensesPage() {
 
   const rowsTotal = rows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
 
+  // Ödeme Şekline Göre Masraf — Raporlar'daki "Ödeme Tipine Göre Gelir"
+  // kırılımıyla aynı fikir, sadece burada zaten çekilmiş olan seçili ayın
+  // items listesinden istemci tarafında hesaplanır (ekstra bir sorguya gerek yok).
+  const paymentBreakdown = Object.entries(
+    items.reduce<Record<string, number>>((acc, item) => {
+      const key = item.payment_type?.trim() || "Belirtilmemiş";
+      acc[key] = (acc[key] || 0) + Number(item.amount || 0);
+      return acc;
+    }, {})
+  )
+    .map(([payment_type, total]) => ({ payment_type, total }))
+    .sort((a, b) => b.total - a.total);
+
   async function handleSaveRows() {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -386,9 +399,21 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex items-center justify-between">
-        <p className="text-sm text-gray-500">Seçili ay toplam masraf</p>
-        <p className="text-xl font-bold text-red-500">{formatCurrency(total)}</p>
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">Seçili ay toplam masraf</p>
+          <p className="text-xl font-bold text-red-500">{formatCurrency(total)}</p>
+        </div>
+        {paymentBreakdown.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-gray-100">
+            {paymentBreakdown.map((p) => (
+              <div key={p.payment_type} className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1 truncate">{p.payment_type} Masraf Toplamı</p>
+                <p className="text-sm font-bold text-gray-800">{formatCurrency(p.total)}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading ? (
