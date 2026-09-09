@@ -417,16 +417,28 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- `UPDATE tenants SET name='Elevire Demo', slug='elevire-demo' WHERE id=1;`
 -- ile elle düzeltildi (demoSeed.ts'in gecelik reset'i tenants tablosuna hiç
 -- dokunmuyor, bu değişiklik kalıcı).
--- slug ve code NOT NULL (bkz. "Online Randevu" bölümü ve Firma Kodu bloğu) —
+-- code kolonu (Firma Kodu, bkz. dosyanın sonundaki blok) BURADA, bootstrap
+-- INSERT'inden ÖNCE eklenir — üç farklı DB durumunun HEPSİNDE aynı anda
+-- doğru çalışması gerekiyor: (a) sıfırdan boş bir veritabanında bu ALTER
+-- kolonu ilk kez ekler (nullable), (b) code'u daha önce hiç görmemiş eski
+-- bir veritabanında (ör. Elevire, henüz bu migration'ı hiç almamış) da aynı
+-- şekilde ilk kez ekler, (c) code'u zaten NOT NULL olarak uygulamış bir
+-- veritabanında (ör. Ustalas prod, bu özelliğin ilk halinde) IF NOT EXISTS
+-- sayesinde no-op'tur. Kolon HER ÜÇ durumda da bu noktadan itibaren var
+-- olduğundan, aşağıdaki INSERT artık code'u güvenle referans alabilir.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS code VARCHAR(6);
+-- slug ve code NOT NULL olabilir (code, (c) durumunda zaten NOT NULL'dır) —
 -- Postgres, ON CONFLICT DO NOTHING'in çakışmayı tespit etmesinden ÖNCE
 -- önerilen satırın NOT NULL kısıtlarını doğruluyor; ikisinden biri
 -- verilmezse id=1 zaten var olsa bile bu INSERT her seferinde "null value"
 -- hatasıyla patlardı (code eklendiğinde 2026-09-09'da tam olarak bu şekilde
--- fark edildi). code='000000' salt bir yer tutucu — gerçek ortamlarda bu
--- INSERT zaten hiç çalışmıyor (id=1 hep var), yalnızca sıfırdan boş bir
--- veritabanında devreye girer, o durumda da aşağıdaki backfill bloğu bu
--- satırı hiç düzeltmez ('000000' aralık dışı bırakıldığından hiçbir gerçek
--- rastgele kodla çakışmaz) — istenirse elle değiştirilebilir.
+-- fark edildi, iki kez: önce code hiç verilmeden, sonra code'un henüz
+-- eklenmediği bir DB'de code verilerek — ikisi de farklı DB durumlarında
+-- patlıyordu). code='000000' salt bir yer tutucu, (a) ve (b) durumlarında
+-- dosyanın sonundaki backfill bloğu bunu hiç düzeltmez ('000000' aralık
+-- dışı bırakıldığından hiçbir gerçek rastgele kodla çakışmaz) — istenirse
+-- elle değiştirilebilir; (c) durumunda zaten hiç kullanılmaz (id=1 hep var,
+-- ON CONFLICT devreye girer).
 INSERT INTO tenants (id, name, slug, code) VALUES (1, 'Ustalas', 'ustalas', '000000') ON CONFLICT (id) DO NOTHING;
 -- Yukarıdaki elle-id'li INSERT, "id SERIAL" sütununun kendi sequence'ini
 -- ilerletmez — düzeltilmezse bir sonraki "INSERT INTO tenants (name) ..."
@@ -859,8 +871,10 @@ END $$;
 -- Bu, users.username'in artık TENANT BAZINDA benzersiz olabilmesinin ön
 -- koşulu — global benzersizlik, iki firmanın aynı kullanıcı adını (ör.
 -- "admin") kullanamamasına yol açıyordu (~100 firma hedefiyle operasyonel
--- bir kısıt haline geldi).
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS code VARCHAR(6);
+-- bir kısıt haline geldi). `code` kolonunun kendisini ekleyen ALTER TABLE
+-- ADD COLUMN ARTIK BURADA DEĞİL — tenants bootstrap satırının (yukarıda,
+-- CREATE TABLE tenants'ın hemen ardından, id=1 INSERT'inden önce) bu kolonu
+-- güvenle referans alabilmesi için oraya taşındı, bkz. oradaki not.
 DO $$
 DECLARE
   t RECORD;
