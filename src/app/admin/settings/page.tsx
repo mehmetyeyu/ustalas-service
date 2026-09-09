@@ -157,7 +157,7 @@ export default function GeneralSettingsPage() {
           />
         </div>
 
-        <CopyBox label="Firma Kodu (giriş için)" value={code} />
+        <CopyBox compact label="Firma Kodu (giriş için)" value={code} />
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Depoda Bekleme Uyarı Eşiği (ay)</label>
