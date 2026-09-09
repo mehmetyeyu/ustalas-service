@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
       pool.query(
         `SELECT
            s.name,
-           COUNT(os.service_id)::int AS count,
+           COALESCE(SUM(os.quantity), 0)::int AS count,
            COALESCE(SUM(os.unit_price), 0)::float AS ciro,
            COALESCE(SUM(os.cost_price), 0)::float AS maliyet
          FROM order_services os
