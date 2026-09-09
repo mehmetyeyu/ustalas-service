@@ -1092,7 +1092,7 @@ export default function OrdersPage() {
                         <td className="px-2 py-3">
                           {r.line_id != null && (
                             r.has_split_payment ? (
-                              <Tooltip text="Ödemesi birden fazla farklı tipe bölünmüş sipariş toplu ödeme şekli değişikliğine dahil edilemez — Düzelt ekranından değiştirin.">
+                              <Tooltip align="left" text="Ödemesi birden fazla farklı tipe bölünmüş sipariş toplu ödeme şekli değişikliğine dahil edilemez — Düzelt ekranından değiştirin.">
                                 <input
                                   type="checkbox"
                                   disabled
