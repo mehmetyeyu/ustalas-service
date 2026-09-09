@@ -76,12 +76,28 @@ export async function resetDemoData(): Promise<void> {
     [GENERIC_PAYMENT_TYPES, DEMO_TENANT_ID]
   );
 
+  // Login sayfasındaki "Firma Kodu" alanı artık zorunlu (bkz.
+  // admin/login/page.tsx DEMO_CODE) — demo hesabının kodu her resette bu
+  // sabit değere döner, aksi halde ziyaretçi landing sayfasında reklamı
+  // yapılan admin/admin123 ile bile giremezdi (kodu bilmeden giriş yapılamaz).
+  // "000001" bilinçli olarak gerçek rastgele kod aralığının (100000-999999)
+  // dışında — generateRandomCode() hiçbir zaman baştan sıfırla bir değer
+  // üretmediğinden, ileride Elevire'nin kendi DB'sinde başka bir tenant
+  // oluşturulursa bile bu sabit değerle asla çakışmaz.
+  await pool.query("UPDATE tenants SET code = '000001' WHERE id = $1", [DEMO_TENANT_ID]);
+
   // Paylaşılan tek demo hesabı: bir ziyaretçi şifreyi değiştirirse veya art
   // arda başarısız denemeyle hesabı kilitlerse, bu olmadan sonraki ziyaretçiler
   // landing sayfasında reklamı yapılan admin/admin123 ile hiç giremezdi.
+  // tenant_id filtresi bilinçli eklendi: username artık GLOBAL değil TENANT
+  // BAZINDA benzersiz (bkz. database/schema.sql users_tenant_username_unique)
+  // — bu filtre olmadan, Elevire'nin kendi DB'sinde ileride "admin" adında
+  // başka bir tenant kullanıcısı oluşursa (Elevire şu an tek-kiracılı olsa
+  // da bu varsayım koda değil yoruma dayanıyordu), gecelik reset o kullanıcının
+  // GERÇEK şifresini bu paylaşılan demo hash'iyle sessizce ezerdi.
   await pool.query(
-    "UPDATE users SET password_hash = $1, failed_attempts = 0, locked_until = NULL, is_active = true WHERE username = 'admin'",
-    ["$2a$10$OpYuNAPfyj4RT4OootiFKu2yfYfPKVOrmMk3GyvAiFIUf4dCZvQ5y"]
+    "UPDATE users SET password_hash = $1, failed_attempts = 0, locked_until = NULL, is_active = true WHERE username = 'admin' AND tenant_id = $2",
+    ["$2a$10$OpYuNAPfyj4RT4OootiFKu2yfYfPKVOrmMk3GyvAiFIUf4dCZvQ5y", DEMO_TENANT_ID]
   );
 
   for (const name of GENERIC_SUPPLIERS) {

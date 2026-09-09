@@ -357,14 +357,20 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_primary_admin BOOLEAN NOT NULL DEF
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_primary_admin ON users(is_primary_admin) WHERE is_primary_admin = true;
 UPDATE users SET is_primary_admin = true WHERE username = 'admin';
 
--- Varsayılan admin kullanıcısı
--- Şifre: admin123  (bcrypt hash — uygulamayı başlatmadan önce değiştiriniz!)
--- Yeni hash oluşturmak için: node -e "const b=require('bcryptjs'); b.hash('YeniSifre',10).then(h=>console.log(h))"
--- Not: buradaki hash önceden "admin123" ile eşleşmiyordu (2026-08-14'te fark edildi,
--- Elevire demo girişini kalıcı olarak kilitliyordu) — düzeltildi ve doğrulandı.
-INSERT INTO users (username, password_hash, role) VALUES
-  ('admin', '$2a$10$OpYuNAPfyj4RT4OootiFKu2yfYfPKVOrmMk3GyvAiFIUf4dCZvQ5y', 'admin')
-ON CONFLICT DO NOTHING;
+-- (KALDIRILDI 2026-09-09) Burada multi-tenant öncesinden kalma bir varsayılan
+-- "admin" kullanıcısı INSERT'i vardı (`ON CONFLICT DO NOTHING`, hedef kolon
+-- belirtilmeden — herhangi bir unique/exclusion constraint ihlaliyle eşleşen
+-- "bare" biçim). users.username üzerindeki GLOBAL unique constraint
+-- (`users_username_key`) Firma Kodu eklenmesiyle `(tenant_id, username)`
+-- composite'e dönüşünce, tenant_id'siz (NULL) bu satır artık HİÇBİR
+-- constraint'e çarpmıyordu (composite unique'te NULL hiçbir şeye "eşit"
+-- sayılmaz) — bu yüzden `ON CONFLICT DO NOTHING` her schema.sql çalışmasında
+-- sessizce atlanmak yerine gerçekten INSERT denemeye başladı, ve
+-- tenant_id NOT NULL constraint'ine çarpıp migration'ı kırdı. Services/suppliers
+-- tablolarında daha önce yaşanan AYNI sınıf hataya bkz. (bu dosyanın "ÇOKLU
+-- FİRMA" bloklarındaki not) — gerçek kullanıcılar artık yalnızca
+-- provisionTenant()/create-tenant.mjs ile oluşturulduğundan bu legacy seed'e
+-- hiç gerek yoktu, tamamen kaldırıldı.
 
 -- ============================================================================
 -- ÇOKLU FİRMA (MULTI-TENANT) — Aşama 1: temel altyapı.
@@ -411,11 +417,17 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- `UPDATE tenants SET name='Elevire Demo', slug='elevire-demo' WHERE id=1;`
 -- ile elle düzeltildi (demoSeed.ts'in gecelik reset'i tenants tablosuna hiç
 -- dokunmuyor, bu değişiklik kalıcı).
--- slug NOT NULL (bkz. "Online Randevu" bölümü) — Postgres, ON CONFLICT DO
--- NOTHING'in çakışmayı tespit etmesinden ÖNCE önerilen satırın NOT NULL
--- kısıtlarını doğruluyor; slug verilmezse id=1 zaten var olsa bile bu INSERT
--- her seferinde "null value in column slug" hatasıyla patlardı.
-INSERT INTO tenants (id, name, slug) VALUES (1, 'Ustalas', 'ustalas') ON CONFLICT (id) DO NOTHING;
+-- slug ve code NOT NULL (bkz. "Online Randevu" bölümü ve Firma Kodu bloğu) —
+-- Postgres, ON CONFLICT DO NOTHING'in çakışmayı tespit etmesinden ÖNCE
+-- önerilen satırın NOT NULL kısıtlarını doğruluyor; ikisinden biri
+-- verilmezse id=1 zaten var olsa bile bu INSERT her seferinde "null value"
+-- hatasıyla patlardı (code eklendiğinde 2026-09-09'da tam olarak bu şekilde
+-- fark edildi). code='000000' salt bir yer tutucu — gerçek ortamlarda bu
+-- INSERT zaten hiç çalışmıyor (id=1 hep var), yalnızca sıfırdan boş bir
+-- veritabanında devreye girer, o durumda da aşağıdaki backfill bloğu bu
+-- satırı hiç düzeltmez ('000000' aralık dışı bırakıldığından hiçbir gerçek
+-- rastgele kodla çakışmaz) — istenirse elle değiştirilebilir.
+INSERT INTO tenants (id, name, slug, code) VALUES (1, 'Ustalas', 'ustalas', '000000') ON CONFLICT (id) DO NOTHING;
 -- Yukarıdaki elle-id'li INSERT, "id SERIAL" sütununun kendi sequence'ini
 -- ilerletmez — düzeltilmezse bir sonraki "INSERT INTO tenants (name) ..."
 -- (provisionTenant/create-tenant.mjs) yine id=1 üretmeye çalışıp
@@ -429,8 +441,10 @@ ALTER TABLE order_services ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES ten
 ALTER TABLE order_payments ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
--- users.username kasıtlı olarak GLOBAL unique kalıyor (bkz. plan) — girişte
--- firma seçimi yok, tenant_id kullanıcının kendi satırından okunuyor.
+-- (ESKİ, artık geçersiz) users.username kasıtlı olarak GLOBAL unique
+-- kalıyordu, girişte firma seçimi yoktu — bu karar 2026-09-09'da Firma Kodu
+-- eklenmesiyle tersine çevrildi, bkz. dosyanın sonundaki
+-- users_tenant_username_unique bloğu.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES tenants(id);
@@ -836,3 +850,39 @@ DO $$ BEGIN
     CHECK (orders_default_date_filter IN ('','bugun','bu_hafta','bu_ay'));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Girişe "Firma Kodu" ekleniyor (bkz. src/app/api/auth/login/route.ts) —
+-- Natro vb. hosting panellerindeki "hesap kodu" mantığı: kısa, akılda kalıcı,
+-- rastgele 6 haneli sayısal kod. tenants.slug BUNUN İÇİN KULLANILMIYOR —
+-- ayrı bir kavram (public /randevu/<slug> URL'i, "Yeniden Oluştur" ile
+-- rastgele değişebilir, kullanıcı dostu/hatırlanabilir olması gerekmiyor).
+-- Bu, users.username'in artık TENANT BAZINDA benzersiz olabilmesinin ön
+-- koşulu — global benzersizlik, iki firmanın aynı kullanıcı adını (ör.
+-- "admin") kullanamamasına yol açıyordu (~100 firma hedefiyle operasyonel
+-- bir kısıt haline geldi).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS code VARCHAR(6);
+DO $$
+DECLARE
+  t RECORD;
+  candidate TEXT;
+BEGIN
+  FOR t IN SELECT id FROM tenants WHERE code IS NULL LOOP
+    LOOP
+      candidate := (100000 + floor(random() * 900000))::INT::TEXT;
+      EXIT WHEN NOT EXISTS (SELECT 1 FROM tenants WHERE code = candidate);
+    END LOOP;
+    UPDATE tenants SET code = candidate WHERE id = t.id;
+  END LOOP;
+END $$;
+ALTER TABLE tenants ALTER COLUMN code SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS tenants_code_unique ON tenants(code);
+DO $$ BEGIN
+  ALTER TABLE tenants ADD CONSTRAINT tenants_code_format_check CHECK (code ~ '^[0-9]{6}$');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- users.username artık GLOBAL değil, TENANT BAZINDA benzersiz — yukarıdaki
+-- Firma Kodu sayesinde login artık hangi firma olduğunu bilerek arama yapıyor.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
+ALTER TABLE users ALTER COLUMN tenant_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_username_unique ON users(tenant_id, username);

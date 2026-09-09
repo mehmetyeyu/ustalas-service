@@ -38,6 +38,22 @@ async function generateUniqueSlug(client: QueryClient, name: string): Promise<st
   }
 }
 
+// tenants.code — girişteki "Firma Kodu" (bkz. src/app/api/auth/login/route.ts).
+// slug'dan kasıtlı olarak ayrı: slug public randevu URL'i içindir ve firma
+// adından türetilir/rastgele değişebilir, code ise Natro tarzı kısa/hatırlanabilir
+// bir hesap numarasıdır. database/schema.sql'deki mevcut-firma backfill'iyle
+// aynı çakışma-çözme mantığı.
+function generateRandomCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+async function generateUniqueCode(client: QueryClient): Promise<string> {
+  for (;;) {
+    const candidate = generateRandomCode();
+    const existing = await client.query("SELECT 1 FROM tenants WHERE code = $1", [candidate]);
+    if (existing.rows.length === 0) return candidate;
+  }
+}
+
 // database/schema.sql'deki varsayılan hizmet/tedarikçi seed listeleriyle
 // birebir aynı — orası artık yeni firma oluştururken çalışmıyor (o INSERT'ler
 // global/tekil bir kuruluma özeldi), bu yüzden liste burada tekrarlanıyor.
@@ -73,6 +89,7 @@ export interface ProvisionTenantInput {
 export interface ProvisionTenantResult {
   tenantId: number;
   adminUserId: number;
+  code: string;
 }
 
 export async function provisionTenant(input: ProvisionTenantInput): Promise<ProvisionTenantResult> {
@@ -87,9 +104,10 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     await client.query("BEGIN");
 
     const slug = input.slug?.trim() || await generateUniqueSlug(client, tenantName);
+    const code = await generateUniqueCode(client);
     const tenantResult = await client.query(
-      `INSERT INTO tenants (name, slug, plan) VALUES ($1, $2, $3) RETURNING id`,
-      [tenantName, slug, input.plan ?? null]
+      `INSERT INTO tenants (name, slug, code, plan) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [tenantName, slug, code, input.plan ?? null]
     );
     const tenantId: number = tenantResult.rows[0].id;
 
@@ -120,7 +138,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     const adminUserId: number = userResult.rows[0].id;
 
     await client.query("COMMIT");
-    return { tenantId, adminUserId };
+    return { tenantId, adminUserId, code };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

@@ -61,6 +61,19 @@ async function generateUniqueSlug(client, name) {
   }
 }
 
+// tenants.code — girişteki "Firma Kodu" — bkz. src/lib/provisionTenant.ts'teki
+// aynı mantık, bu script @/ alias'ını çözemediği için burada da tekrarlanıyor.
+function generateRandomCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+async function generateUniqueCode(client) {
+  for (;;) {
+    const candidate = generateRandomCode();
+    const existing = await client.query("SELECT 1 FROM tenants WHERE code = $1", [candidate]);
+    if (existing.rows.length === 0) return candidate;
+  }
+}
+
 async function main() {
   const [tenantNameRaw, adminUsernameRaw, adminPassword] = process.argv.slice(2);
   const tenantName = (tenantNameRaw ?? "").trim();
@@ -86,9 +99,10 @@ async function main() {
     await client.query("BEGIN");
 
     const slug = await generateUniqueSlug(client, tenantName);
+    const code = await generateUniqueCode(client);
     const tenantResult = await client.query(
-      "INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
-      [tenantName, slug]
+      "INSERT INTO tenants (name, slug, code) VALUES ($1, $2, $3) RETURNING id",
+      [tenantName, slug, code]
     );
     const tenantId = tenantResult.rows[0].id;
 
@@ -109,7 +123,7 @@ async function main() {
     );
 
     await client.query("COMMIT");
-    console.log(`Firma oluşturuldu: tenant_id=${tenantId}, admin user_id=${userResult.rows[0].id}, kullanıcı adı=${adminUsername}, randevu sayfası=/randevu/${slug}`);
+    console.log(`Firma oluşturuldu: tenant_id=${tenantId}, admin user_id=${userResult.rows[0].id}, kullanıcı adı=${adminUsername}, firma kodu=${code}, randevu sayfası=/randevu/${slug}`);
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

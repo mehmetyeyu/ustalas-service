@@ -11,10 +11,11 @@ export async function GET() {
   if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const settings = await getAppSettings(user.tenantId!);
-  // slug bir "ayar" değil, kiracı kimliği — Randevu Ayarları'ndaki "Embed
-  // Kodu" bölümünün doğru /randevu/<slug> URL'ini gösterebilmesi için burada
-  // ayrıca ekleniyor.
-  const tenantResult = await pool.query<{ slug: string }>("SELECT slug FROM tenants WHERE id = $1", [user.tenantId]);
+  // slug/code birer "ayar" değil, kiracı kimliği — slug Randevu Ayarları'ndaki
+  // "Embed Kodu" bölümünün doğru /randevu/<slug> URL'ini gösterebilmesi,
+  // code ise Genel Ayarlar'ın girişte kullanılan Firma Kodu'nu gösterebilmesi
+  // için burada ayrıca ekleniyor.
+  const tenantResult = await pool.query<{ slug: string; code: string }>("SELECT slug, code FROM tenants WHERE id = $1", [user.tenantId]);
   // whatsapp_access_token asla ham haliyle client'a dönmez — sadece kayıtlı
   // olup olmadığı gösterilir (bkz. PUT: boş gönderilirse mevcut token korunur,
   // sadece admin gerçekten yeni bir değer girdiğinde değişir).
@@ -23,6 +24,7 @@ export async function GET() {
     whatsapp_access_token: undefined,
     whatsapp_access_token_set: !!settings.whatsapp_access_token,
     slug: tenantResult.rows[0]?.slug ?? null,
+    code: tenantResult.rows[0]?.code ?? null,
   });
 }
 

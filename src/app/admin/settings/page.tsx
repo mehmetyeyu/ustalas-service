@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { Tooltip } from "@/components/Tooltip";
 import { Switch } from "@/components/Switch";
+import { CopyBox } from "@/components/CopyBox";
 import { useToast } from "@/components/ToastProvider";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 
 export default function GeneralSettingsPage() {
   const toast = useToast();
   const [businessName, setBusinessName] = useState("");
+  const [code, setCode] = useState("");
   const [overdueMonths, setOverdueMonths] = useState("6");
   const [paymentTypes, setPaymentTypes] = useState<string[]>([]);
   const [newPaymentType, setNewPaymentType] = useState("");
@@ -44,6 +46,7 @@ export default function GeneralSettingsPage() {
       .then((res) => res.json())
       .then((data) => {
         setBusinessName(data.business_name ?? "");
+        setCode(data.code ?? "");
         setOverdueMonths(String(data.storage_overdue_months ?? 6));
         setPaymentTypes(Array.isArray(data.payment_types) ? data.payment_types : []);
         // Randevu Ayarları artık ayrı bir sayfada (/admin/appointments/ayarlar)
@@ -153,6 +156,8 @@ export default function GeneralSettingsPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+
+        <CopyBox label="Firma Kodu (giriş için)" value={code} />
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Depoda Bekleme Uyarı Eşiği (ay)</label>

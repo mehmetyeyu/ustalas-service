@@ -99,3 +99,14 @@ export async function getAutoRegisterCustomers(tenantId: number): Promise<boolea
   );
   return result.rows[0]?.auto_register_customers ?? true;
 }
+
+// /api/auth/me gibi çok sık çağrılan yollarda (her admin sayfası mount'unda,
+// bkz. src/app/admin/AuthContext.tsx) header/login'deki firma adı için 22
+// kolonlu getAppSettings() yerine tek kolonluk ucuz bir sorgu.
+export async function getBusinessName(tenantId: number): Promise<string> {
+  const result = await pool.query<{ business_name: string }>(
+    "SELECT business_name FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
+  );
+  return result.rows[0]?.business_name ?? DEFAULT_SETTINGS.business_name;
+}

@@ -8,18 +8,26 @@ const LOCK_MINUTES = 15;
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    const { code, username, password } = await request.json();
 
-    if (!username || !password) {
+    if (!code || !username || !password) {
       return NextResponse.json(
-        { error: "Kullanıcı adı ve şifre zorunludur." },
+        { error: "Firma kodu, kullanıcı adı ve şifre zorunludur." },
         { status: 400 }
       );
     }
 
+    // username artık tenant bazında benzersiz (bkz. database/schema.sql
+    // users_tenant_username_unique) — Firma Kodu, hangi tenant'ta arandığını
+    // belirler. Kod bulunamazsa da, o firmada kullanıcı yoksa da aynı generic
+    // hataya düşer (mevcut enumeration-gizleme felsefesiyle tutarlı).
     const result = await pool.query(
-      "SELECT * FROM users WHERE username = $1 LIMIT 1",
-      [username]
+      `SELECT u.*, t.is_active AS tenant_is_active
+       FROM tenants t
+       JOIN users u ON u.tenant_id = t.id
+       WHERE t.code = $1 AND u.username = $2
+       LIMIT 1`,
+      [String(code).trim(), String(username)]
     );
 
     const user = result.rows[0];
@@ -30,7 +38,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!user.is_active) {
+    // Firma askıya alınmışsa da aynı dala düşer — daha önce bu kontrol
+    // yalnızca src/lib/auth.ts:getAuthUserByToken'da (her API isteğinde)
+    // vardı, login'in kendisinde hiç yoktu.
+    if (!user.is_active || user.tenant_is_active === false) {
       return NextResponse.json(
         { error: "Bu hesap devre dışı bırakılmış. Yöneticinizle iletişime geçin." },
         { status: 403 }
