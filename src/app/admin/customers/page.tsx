@@ -220,20 +220,45 @@ export default function CustomersPage() {
     ? customers.filter((c) => c.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
     : customers;
 
+  // Çalışana "git şu müşterilerden tahsil et" diye verilebilecek somut bir
+  // özet — customers.view zaten sayfa girişinde şart koşulduğundan (bkz.
+  // useViewGuard) burada ayrıca izin kontrolüne gerek yok.
+  const totalDebt = customers.reduce((sum, c) => sum + (c.balance > 0.009 ? c.balance : 0), 0);
+  const totalCredit = customers.reduce((sum, c) => sum + (c.balance < -0.009 ? -c.balance : 0), 0);
+
   if (!allowed) return null;
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Müşteriler</h1>
-        {canCreate && (
+        <div className="flex gap-2 self-start sm:self-auto">
           <button
-            onClick={openNew}
-            className="self-start sm:self-auto bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+            onClick={() => { window.location.href = "/api/customers/export"; }}
+            className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg text-sm transition-colors"
           >
-            + Yeni Müşteri
+            Borç/Alacak Listesini İndir
           </button>
-        )}
+          {canCreate && (
+            <button
+              onClick={openNew}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              + Yeni Müşteri
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="bg-white rounded-xl shadow-sm p-4 min-w-0">
+          <p className="text-xs text-gray-500 mb-1">Toplam Borç (bize)</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-600 truncate">{formatCurrency(totalDebt)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-4 min-w-0">
+          <p className="text-xs text-gray-500 mb-1">Toplam Alacak (onlarda)</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(totalCredit)}</p>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
