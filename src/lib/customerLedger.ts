@@ -1,3 +1,6 @@
+import { getAppSettings } from "@/lib/settings";
+import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
+
 interface QueryClient {
   query<T = unknown>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
@@ -10,6 +13,61 @@ export class LedgerCustomerRequiredError extends Error {
     super("Cari seçmek için müşteri adı girilmelidir.");
     this.name = "LedgerCustomerRequiredError";
   }
+}
+
+export class InvalidLedgerInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidLedgerInputError";
+  }
+}
+
+export interface ManualLedgerInput {
+  direction: 1 | -1;
+  amount: number;
+  paymentType: string | null;
+  entryDate: string | null;
+  note: string | null;
+}
+
+// POST ve PUT /api/customers/[id]/payments'ın TEK ortak doğrulama noktası —
+// "Tahsilat Al" (direction=-1) için ödeme şekli ZORUNLU ve "Cari" HARİÇ (bir
+// Cari borcunu yine Cari ile "tahsil etmek" döngüsel olurdu); "Borç Ekle"
+// (direction=1) için payment_type=null. Düzenlemede (`currentPaymentType`
+// verilmişse) gönderilen değer o kayıtta ZATEN kayıtlı olanla AYNIYSA yeniden
+// doğrulanmaz — aksi halde Genel Ayarlar'dan sonradan kaldırılmış/yeniden
+// adlandırılmış bir ödeme tipiyle oluşturulmuş eski bir kaydın notunu/tutarını
+// düzeltmek bile "Geçersiz ödeme şekli" hatasına takılırdı.
+export async function validateManualLedgerInput(
+  body: { direction?: unknown; amount?: unknown; payment_type?: unknown; entry_date?: unknown; note?: unknown },
+  tenantId: number,
+  currentPaymentType?: string | null
+): Promise<ManualLedgerInput> {
+  const direction = Number(body.direction);
+  const amount = Number(body.amount);
+  const paymentType = body.payment_type ? String(body.payment_type).trim() : null;
+  const entryDate = body.entry_date ? String(body.entry_date).trim() : null;
+  const note = body.note ? String(body.note).trim() : null;
+
+  if (direction !== 1 && direction !== -1) {
+    throw new InvalidLedgerInputError("Geçersiz yön.");
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new InvalidLedgerInputError("Geçersiz tutar.");
+  }
+
+  if (direction === -1) {
+    if (!paymentType) throw new InvalidLedgerInputError("Geçersiz ödeme şekli.");
+    if (paymentType !== currentPaymentType) {
+      const { payment_types } = await getAppSettings(tenantId);
+      const options = flatPaymentOptions(payment_types).filter((t) => t !== "Cari");
+      if (!isValidPaymentType(paymentType, options)) {
+        throw new InvalidLedgerInputError("Geçersiz ödeme şekli.");
+      }
+    }
+  }
+
+  return { direction: direction as 1 | -1, amount, paymentType: direction === -1 ? paymentType : null, entryDate, note };
 }
 
 // Bir siparişin Cari'ye düşen kısmını customer_ledger_entries ile senkron

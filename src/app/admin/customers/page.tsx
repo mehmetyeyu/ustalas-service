@@ -71,6 +71,8 @@ export default function CustomersPage() {
   const [ledgerBalance, setLedgerBalance] = useState(0);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [paymentModalCustomer, setPaymentModalCustomer] = useState<Customer | null>(null);
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
+  const [deletingEntryId, setDeletingEntryId] = useState<number | null>(null);
   const [paymentDirection, setPaymentDirection] = useState<1 | -1>(-1);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentType, setPaymentType] = useState("");
@@ -127,11 +129,44 @@ export default function CustomersPage() {
 
   function openPaymentModal(c: Customer) {
     setPaymentModalCustomer(c);
+    setEditingEntryId(null);
     setPaymentDirection(-1);
     setPaymentAmount("");
     setPaymentType("");
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentNote("");
+  }
+
+  function openEditEntry(c: Customer, entry: LedgerEntry) {
+    setPaymentModalCustomer(c);
+    setEditingEntryId(entry.id);
+    setPaymentDirection(entry.direction);
+    setPaymentAmount(String(entry.amount));
+    setPaymentType(entry.payment_type || "");
+    setPaymentDate(entry.entry_date);
+    setPaymentNote(entry.note || "");
+  }
+
+  async function refreshAfterLedgerChange(customerId: number) {
+    await Promise.all([
+      fetchCustomers(),
+      ledgerModalCustomer?.id === customerId ? openLedger(ledgerModalCustomer) : Promise.resolve(),
+    ]);
+  }
+
+  async function handleDeleteEntry(customerId: number, entryId: number) {
+    if (!confirm("Bu cari hareketi silmek istediğinize emin misiniz?")) return;
+    if (deletingEntryId !== null) return;
+    setDeletingEntryId(entryId);
+    try {
+      const res = await fetch(`/api/customers/${customerId}/payments/${entryId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error || "Silinemedi.");
+      await refreshAfterLedgerChange(customerId);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setDeletingEntryId(null);
+    }
   }
 
   async function submitPayment() {
@@ -147,8 +182,11 @@ export default function CustomersPage() {
     }
     setSavingPayment(true);
     try {
-      const res = await fetch(`/api/customers/${paymentModalCustomer.id}/payments`, {
-        method: "POST",
+      const url = editingEntryId !== null
+        ? `/api/customers/${paymentModalCustomer.id}/payments/${editingEntryId}`
+        : `/api/customers/${paymentModalCustomer.id}/payments`;
+      const res = await fetch(url, {
+        method: editingEntryId !== null ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           direction: paymentDirection,
@@ -160,8 +198,7 @@ export default function CustomersPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setPaymentModalCustomer(null);
-      await fetchCustomers();
-      if (ledgerModalCustomer?.id === paymentModalCustomer.id) await openLedger(paymentModalCustomer);
+      await refreshAfterLedgerChange(paymentModalCustomer.id);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
@@ -522,6 +559,7 @@ export default function CustomersPage() {
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bakiye</th>
+                      {canManageBalance && <th className="px-3 py-2"></th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -537,6 +575,32 @@ export default function CustomersPage() {
                           {e.direction === 1 ? "+" : "-"}{formatCurrency(e.amount)}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">{formatCurrency(e.running_balance)}</td>
+                        {canManageBalance && (
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            {e.entry_type === "MANUEL" && (
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => openEditEntry(ledgerModalCustomer, e)}
+                                  disabled={deletingEntryId === e.id}
+                                  title="Düzenle"
+                                  aria-label="Düzenle"
+                                  className="text-blue-600 hover:text-blue-800 disabled:opacity-40 text-xs font-medium"
+                                >
+                                  Düzenle
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteEntry(ledgerModalCustomer.id, e.id)}
+                                  disabled={deletingEntryId === e.id}
+                                  title="Sil"
+                                  aria-label="Sil"
+                                  className="text-red-500 hover:text-red-700 disabled:opacity-40 text-xs font-medium"
+                                >
+                                  {deletingEntryId === e.id ? "Siliniyor..." : "Sil"}
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -556,7 +620,9 @@ export default function CustomersPage() {
       {paymentModalCustomer && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">{paymentModalCustomer.name}</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4">
+              {paymentModalCustomer.name}{editingEntryId !== null ? " — Hareketi Düzenle" : ""}
+            </h2>
 
             <div className="space-y-4 mb-5">
               <div className="flex gap-2">
@@ -592,6 +658,14 @@ export default function CustomersPage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Seçiniz</option>
+                    {/* Düzenlenen kayıt, Genel Ayarlar'dan sonradan kaldırılmış/
+                        yeniden adlandırılmış bir ödeme şekliyle oluşturulmuş
+                        olabilir — mevcut listede yoksa seçili değer görünmez
+                        olmasın diye (ve yanlışlıkla başka bir tipe değiştirilip
+                        kaydedilmesin diye) en üste eklenir. */}
+                    {paymentType && !paymentOptions.includes(paymentType) && (
+                      <option value={paymentType}>{paymentType} (artık listede yok)</option>
+                    )}
                     {paymentOptions.map((opt) => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
