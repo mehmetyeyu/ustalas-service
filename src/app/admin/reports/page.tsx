@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
-import { useViewGuard } from "../AuthContext";
+import { useViewGuard, usePermission } from "../AuthContext";
 
 interface DailyDatum {
   date: string;
@@ -133,6 +133,7 @@ function useIsMobile(): boolean {
 
 export default function ReportsPage() {
   const allowed = useViewGuard("reports");
+  const canViewKasa = usePermission("kasa.view");
   const isMobile = useIsMobile();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -228,7 +229,14 @@ export default function ReportsPage() {
             <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-0.5">
                 <p className="text-sm font-semibold text-gray-700">Kasa (Nakit) — Tüm Zamanlar</p>
-                <span className="text-[10px] text-gray-400">Seçili aydan bağımsız, kuruluştan bugüne</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-gray-400">Seçili aydan bağımsız, kuruluştan bugüne</span>
+                  {canViewKasa && (
+                    <Link href="/admin/kasa" className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap">
+                      Detaylı Görüntüle →
+                    </Link>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="min-w-0">

@@ -19,6 +19,7 @@ const navItems = [
   { href: "/admin/products", label: "Ürünler", resource: "products" },
   { href: "/admin/storage", label: "Depolama", resource: "storage" },
   { href: "/admin/reports", label: "Raporlar", resource: "reports" },
+  { href: "/admin/kasa", label: "Kasa", resource: "kasa" },
   { href: "/admin/expenses", label: "Masraflar", resource: "expenses" },
   { href: "/admin/services", label: "Hizmetler", resource: "services" },
   { href: "/admin/customers", label: "Müşteriler", resource: "customers" },

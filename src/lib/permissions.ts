@@ -16,6 +16,7 @@ export const RESOURCE_ACTIONS = {
   customers: ["view", "create", "edit", "delete", "manage_balance"],
   suppliers: ["view", "create", "edit", "delete"],
   expenses: ["view", "create", "edit", "delete"],
+  kasa: ["view", "manage"],
 } as const;
 
 export type Resource = keyof typeof RESOURCE_ACTIONS;
@@ -58,6 +59,7 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/customers", resource: "customers" },
   { prefix: "/admin/suppliers", resource: "suppliers" },
   { prefix: "/admin/expenses", resource: "expenses" },
+  { prefix: "/admin/kasa", resource: "kasa" },
   { prefix: "/admin/profile", resource: null },
   { prefix: "/admin/users", resource: "__admin_only__" },
   { prefix: "/admin/settings", resource: "__admin_only__" },
@@ -77,7 +79,7 @@ export function canAccessPath(user: PermissionUser, pathname: string): boolean {
 // sayfayı döner; hiçbir sayfa izni yoksa null (o zaman header'da panel linki
 // gösterilmez, sadece çıkış).
 const LANDING_ORDER: Resource[] = [
-  "orders", "appointments", "storage", "products", "reports", "expenses", "services", "customers", "suppliers",
+  "orders", "appointments", "storage", "products", "reports", "kasa", "expenses", "services", "customers", "suppliers",
 ];
 
 export function getDefaultAdminPath(user: PermissionUser): string | null {

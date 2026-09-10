@@ -953,3 +953,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS customer_ledger_entries_order_siparis_unique
 
 CREATE INDEX IF NOT EXISTS customer_ledger_entries_customer_idx
   ON customer_ledger_entries(tenant_id, customer_id, entry_date, id);
+
+-- Kasa (Fiziksel Nakit Kasa) — Serbest Manuel Hareketler ("Yavuz Abiye
+-- Gönderildi", "Çalışana Ödeme" gibi hiçbir siparişe/masrafa bağlı olmayan
+-- nakit giriş-çıkışları). Kasa'nın OTOMATİK türeyen tarafı (nakit sipariş
+-- tahsilatı, nakit masraf, Cari'den nakit tahsilat) zaten kendi kaynak
+-- tablolarında tam olarak var — customer_ledger_entries'in aksine burada
+-- YENİ bir sync mekanizmasına gerek yok, sadece bu tablo + CRUD, hem
+-- /api/kasa GET'inde hem reports/route.ts'teki Kasa (Nakit) agregatında
+-- diğer kaynaklarla UNION ALL edilir. Bakiye canlı hesaplanır, cache
+-- kolonu yok (customer_ledger_entries ile aynı desen).
+CREATE TABLE IF NOT EXISTS cash_ledger_entries (
+  id           SERIAL PRIMARY KEY,
+  tenant_id    INT NOT NULL REFERENCES tenants(id),
+  direction    SMALLINT NOT NULL CHECK (direction IN (1, -1)),
+  amount       DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+  entry_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+  description  TEXT,
+  created_by   INT REFERENCES users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS cash_ledger_entries_tenant_idx
+  ON cash_ledger_entries(tenant_id, entry_date, id);

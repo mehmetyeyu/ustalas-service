@@ -165,6 +165,11 @@ export async function GET(request: NextRequest) {
       // Gelir tarafı, aylık Ödeme Tipi Kırılımı'yla aynı order_payments/order_services
       // ayrıştırma mantığını (bkz. paymentBreakdownResult) tarih filtresiz tekrarlar;
       // gider tarafı expenses.payment_type='Nakit' olan tüm masrafların toplamıdır.
+      // UYARI: bu order_payments/order_services Nakit ayrıştırma mantığı
+      // src/app/api/kasa/route.ts'te SATIR BAZINDA tekrar yazılıdır (Kasa
+      // sayfası aynı kaynağı toplam yerine tek tek listeler) — burada bir
+      // değişiklik yapılırsa orası da güncellenmeli, aksi halde Kasa sayfası
+      // ile bu özet kart sessizce birbirinden sapar.
       pool.query(
         `SELECT
            (SELECT COALESCE(SUM(total), 0) FROM (
@@ -193,8 +198,24 @@ export async function GET(request: NextRequest) {
              FROM customer_ledger_entries cle
              WHERE cle.entry_type = 'MANUEL' AND cle.direction = -1
                AND cle.payment_type = 'Nakit' AND cle.tenant_id = $1
+
+             UNION ALL
+
+             -- Kasa sayfasındaki serbest manuel nakit girişleri (bkz.
+             -- src/app/api/kasa/route.ts) — Para Girişi (direction=1).
+             SELECT amount AS total FROM cash_ledger_entries
+             WHERE tenant_id = $1 AND direction = 1
            ) combined)::float AS income,
-           (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE payment_type = 'Nakit' AND tenant_id = $1)::float AS expense`,
+           (SELECT COALESCE(SUM(total), 0) FROM (
+             SELECT amount AS total FROM expenses WHERE payment_type = 'Nakit' AND tenant_id = $1
+
+             UNION ALL
+
+             -- Kasa sayfasındaki serbest manuel nakit çıkışları — Para
+             -- Çıkışı (direction=-1).
+             SELECT amount AS total FROM cash_ledger_entries
+             WHERE tenant_id = $1 AND direction = -1
+           ) combined2)::float AS expense`,
         [user.tenantId]
       ),
     ]);
