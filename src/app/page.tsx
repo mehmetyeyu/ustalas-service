@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
+import { formatCurrency } from "@/lib/format";
 
 interface Service {
   id: number;
@@ -645,7 +646,7 @@ export default function OrderPage() {
                             />
                           </td>
                           <td className="px-2 py-2 align-top text-right font-medium text-gray-500 whitespace-nowrap pt-4">
-                            {kar.toLocaleString("tr-TR")}
+                            {formatCurrency(kar)}
                           </td>
                           <td className="px-2 py-2 align-top text-center pt-4">
                             {lines.length > 1 && (
@@ -799,7 +800,7 @@ export default function OrderPage() {
 
                       <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
                         <span className="text-xs font-medium text-gray-500">Kar</span>
-                        <span className="font-medium text-gray-700">{kar.toLocaleString("tr-TR")} ₺</span>
+                        <span className="font-medium text-gray-700">{formatCurrency(kar)}</span>
                       </div>
                     </div>
                   );
@@ -833,7 +834,7 @@ export default function OrderPage() {
               <div className="flex sm:hidden items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Toplam Tutar</div>
-                  <div className="text-base font-bold text-green-600 truncate">{total.toLocaleString("tr-TR")} ₺</div>
+                  <div className="text-base font-bold text-green-600 truncate">{formatCurrency(total)}</div>
                 </div>
                 <button
                   type="submit"
@@ -849,7 +850,7 @@ export default function OrderPage() {
                 <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
                   <span className="text-gray-600 font-medium">Toplam Tutar:</span>
                   <span className="text-xl font-bold text-green-600">
-                    {total.toLocaleString("tr-TR")} ₺
+                    {formatCurrency(total)}
                   </span>
                 </div>
 

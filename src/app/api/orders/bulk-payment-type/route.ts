@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
-import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
+import { syncOrderLedgerBatch, LedgerCustomerRequiredError } from "@/lib/customerLedger";
 
 const MAX_LINES = 500;
 
@@ -130,9 +130,7 @@ export async function PATCH(request: NextRequest) {
           [affectedOrderIds, user.tenantId]
         );
         const customerNameByOrderId = new Map(orderCustomers.rows.map((r) => [r.id, r.customer_name]));
-        for (const orderId of affectedOrderIds) {
-          await syncOrderLedger(client, user.tenantId!, orderId, customerNameByOrderId.get(orderId), user.userId);
-        }
+        await syncOrderLedgerBatch(client, user.tenantId!, customerNameByOrderId, user.userId);
       }
 
       await client.query("COMMIT");
