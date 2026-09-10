@@ -6,6 +6,7 @@ import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { flatPaymentOptions, PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+import { KasaSelect } from "@/components/KasaSelect";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
@@ -42,6 +43,7 @@ interface LedgerEntry {
   entry_date: string;
   note: string | null;
   order_id: number | null;
+  kasa_id: number | null;
   running_balance: number;
 }
 
@@ -79,6 +81,8 @@ export default function CustomersPage() {
   const [paymentDate, setPaymentDate] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
+  const [paymentKasaId, setPaymentKasaId] = useState<number | null>(null);
+  const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
   const [savingPayment, setSavingPayment] = useState(false);
 
   async function fetchCustomers() {
@@ -97,6 +101,7 @@ export default function CustomersPage() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(flatPaymentOptions(d.payment_types).filter((t: string) => t !== "Cari")); })
       .catch(() => { });
+    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d); }).catch(() => { });
   }, []);
 
   async function openOrders(c: Customer) {
@@ -133,6 +138,7 @@ export default function CustomersPage() {
     setPaymentDirection(-1);
     setPaymentAmount("");
     setPaymentType("");
+    setPaymentKasaId(null);
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentNote("");
   }
@@ -143,6 +149,7 @@ export default function CustomersPage() {
     setPaymentDirection(entry.direction);
     setPaymentAmount(String(entry.amount));
     setPaymentType(entry.payment_type || "");
+    setPaymentKasaId(entry.kasa_id);
     setPaymentDate(entry.entry_date);
     setPaymentNote(entry.note || "");
   }
@@ -192,6 +199,7 @@ export default function CustomersPage() {
           direction: paymentDirection,
           amount,
           payment_type: paymentDirection === -1 ? paymentType : null,
+          kasa_id: paymentDirection === -1 && paymentType === "Nakit" ? paymentKasaId : null,
           entry_date: paymentDate || null,
           note: paymentNote.trim() || null,
         }),
@@ -670,6 +678,17 @@ export default function CustomersPage() {
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>
+                </div>
+              )}
+              {paymentDirection === -1 && paymentType === "Nakit" && kasaOptions.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Kasa</label>
+                  <KasaSelect
+                    value={paymentKasaId}
+                    onChange={setPaymentKasaId}
+                    kasaOptions={kasaOptions}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
               )}
               <div>

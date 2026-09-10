@@ -28,6 +28,7 @@ export interface ManualLedgerInput {
   paymentType: string | null;
   entryDate: string | null;
   note: string | null;
+  kasaId: number | null;
 }
 
 // POST ve PUT /api/customers/[id]/payments'ın TEK ortak doğrulama noktası —
@@ -37,9 +38,12 @@ export interface ManualLedgerInput {
 // verilmişse) gönderilen değer o kayıtta ZATEN kayıtlı olanla AYNIYSA yeniden
 // doğrulanmaz — aksi halde Genel Ayarlar'dan sonradan kaldırılmış/yeniden
 // adlandırılmış bir ödeme tipiyle oluşturulmuş eski bir kaydın notunu/tutarını
-// düzeltmek bile "Geçersiz ödeme şekli" hatasına takılırdı.
+// düzeltmek bile "Geçersiz ödeme şekli" hatasına takılırdı. kasa_id sadece
+// Nakit tahsilatlarda anlamlıdır (hangi fiziksel kasaya girdiği, bkz.
+// src/lib/kasalar.ts) — format olarak doğrulanır, tenant sahiplik kontrolü
+// çağıran route'ta assertKasaBelongsToTenant ile yapılır.
 export async function validateManualLedgerInput(
-  body: { direction?: unknown; amount?: unknown; payment_type?: unknown; entry_date?: unknown; note?: unknown },
+  body: { direction?: unknown; amount?: unknown; payment_type?: unknown; entry_date?: unknown; note?: unknown; kasa_id?: unknown },
   tenantId: number,
   currentPaymentType?: string | null
 ): Promise<ManualLedgerInput> {
@@ -48,12 +52,16 @@ export async function validateManualLedgerInput(
   const paymentType = body.payment_type ? String(body.payment_type).trim() : null;
   const entryDate = body.entry_date ? String(body.entry_date).trim() : null;
   const note = body.note ? String(body.note).trim() : null;
+  const kasaId = body.kasa_id != null && body.kasa_id !== "" ? Number(body.kasa_id) : null;
 
   if (direction !== 1 && direction !== -1) {
     throw new InvalidLedgerInputError("Geçersiz yön.");
   }
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new InvalidLedgerInputError("Geçersiz tutar.");
+  }
+  if (kasaId !== null && !Number.isFinite(kasaId)) {
+    throw new InvalidLedgerInputError("Geçersiz kasa.");
   }
 
   if (direction === -1) {
@@ -67,7 +75,12 @@ export async function validateManualLedgerInput(
     }
   }
 
-  return { direction: direction as 1 | -1, amount, paymentType: direction === -1 ? paymentType : null, entryDate, note };
+  return {
+    direction: direction as 1 | -1, amount,
+    paymentType: direction === -1 ? paymentType : null,
+    entryDate, note,
+    kasaId: direction === -1 && paymentType === "Nakit" ? kasaId : null,
+  };
 }
 
 // Bir siparişin Cari'ye düşen kısmını customer_ledger_entries ile senkron

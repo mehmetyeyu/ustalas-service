@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { KasaSelect } from "@/components/KasaSelect";
 
 interface OrderDetail {
   id: number;
@@ -31,11 +32,13 @@ interface OrderDetail {
     size_desc: string | null;
     payment_type: string | null;
     product_id: number | null;
+    kasa_id: number | null;
   }[];
   payments: {
     id: number;
     payment_type: string;
     amount: number;
+    kasa_id: number | null;
   }[];
 }
 
@@ -63,6 +66,7 @@ interface EditLine {
   unit_price: string;
   cost_price: string;
   payment_type: string;
+  kasa_id: number | null;
   // "Lastik Satışı" işleminde belirli bir parti seçildiyse doldurulur — o
   // partinin stoğundan Adet kadar düşülür. max_stock, unit_sale_price ve
   // unit_purchase_price sadece istemcide tutulur (API'ye gönderilmez);
@@ -118,7 +122,7 @@ const TEDARIKCI_SEED = ["Servis İşçiliği"];
 
 const EMPTY_EDIT_LINE: EditLine = {
   id: null, service_name: "", supplier: "Servis İşçiliği", stock_code: "", size_desc: "",
-  quantity: "1", unit_price: "", cost_price: "0", payment_type: "", product_id: null, max_stock: null,
+  quantity: "1", unit_price: "", cost_price: "0", payment_type: "", kasa_id: null, product_id: null, max_stock: null,
   unit_sale_price: null, unit_purchase_price: null,
 };
 
@@ -225,12 +229,16 @@ function SearchableCombobox({
 // bağlamlarında farklı boyut uygulanabilir.
 function PaymentTypeSelect({
   value, onChange, supplierOptions, paymentOptions, selectClassName,
+  kasaId, onKasaChange, kasaOptions,
 }: {
   value: string;
   onChange: (val: string) => void;
   supplierOptions: string[];
   paymentOptions: string[];
   selectClassName: string;
+  kasaId?: number | null;
+  onKasaChange?: (kasaId: number | null) => void;
+  kasaOptions?: { id: number; name: string }[];
 }) {
   const isMailOrder = value === "Mail Order" || value.endsWith(MAIL_ORDER_SUFFIX);
   const baseValue = isMailOrder ? "Mail Order" : value;
@@ -268,6 +276,14 @@ function PaymentTypeSelect({
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+      )}
+      {baseValue === "Nakit" && onKasaChange && (
+        <KasaSelect
+          value={kasaId ?? null}
+          onChange={onKasaChange}
+          kasaOptions={kasaOptions ?? []}
+          className={selectClassName}
+        />
       )}
     </div>
   );
@@ -346,7 +362,7 @@ function OrderDetailPageInner() {
   // Parçalı ödeme: "Ödeme Al & Kapat" birden fazla (ödeme tipi, tutar) girişi
   // kabul eder (ör. 7.000 POS + 15.000 Garanti Hesap) — tek bir "Alınan
   // Tutar" yerine.
-  const [paymentEntries, setPaymentEntries] = useState<{ payment_type: string; amount: string }[]>([]);
+  const [paymentEntries, setPaymentEntries] = useState<{ payment_type: string; amount: string; kasa_id: number | null }[]>([]);
   const [closing, setClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
@@ -357,19 +373,20 @@ function OrderDetailPageInner() {
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editLines, setEditLines] = useState<EditLine[]>([]);
-  const [editPayments, setEditPayments] = useState<{ payment_type: string; amount: string }[]>([]);
+  const [editPayments, setEditPayments] = useState<{ payment_type: string; amount: string; kasa_id: number | null }[]>([]);
   // Bir satıra tek bir ödeme tipi seçilip parçalı ödeme bilinçli sıfırlandığında
   // true olur — kaydederken backend'e "payments: []" gönderilip mevcut parçalı
   // ödeme kayıtlarının silinmesi sağlanır (aksi hâlde payments hiç gönderilmez).
   const [paymentsCleared, setPaymentsCleared] = useState(false);
   // Düzenleme açılırken gelen orijinal parçalı ödeme girişleri — sıfırlama geri
   // alınırsa (bir satır tekrar Karışık'a dönerse) buradan aynen geri yüklenir.
-  const [originalEditPayments, setOriginalEditPayments] = useState<{ payment_type: string; amount: string }[]>([]);
+  const [originalEditPayments, setOriginalEditPayments] = useState<{ payment_type: string; amount: string; kasa_id: number | null }[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
   const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
+  const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
   async function fetchOrder() {
@@ -393,6 +410,7 @@ function OrderDetailPageInner() {
         setSupplierOptions(merged);
       })
       .catch(() => { });
+    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d); }).catch(() => { });
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types); })
@@ -441,12 +459,13 @@ function OrderDetailPageInner() {
       unit_price: String(svc.unit_price),
       cost_price: svc.cost_price != null ? String(svc.cost_price) : "0",
       payment_type: svc.payment_type || "",
+      kasa_id: svc.kasa_id ?? null,
       product_id: svc.product_id ?? null,
       max_stock: null,
       unit_sale_price: null,
       unit_purchase_price: null,
     })));
-    const initialPayments = order.payments.map((p) => ({ payment_type: p.payment_type, amount: String(p.amount) }));
+    const initialPayments = order.payments.map((p) => ({ payment_type: p.payment_type, amount: String(p.amount), kasa_id: p.kasa_id ?? null }));
     setEditPayments(initialPayments);
     setOriginalEditPayments(initialPayments);
     setPaymentsCleared(false);
@@ -516,14 +535,14 @@ function OrderDetailPageInner() {
   }
 
   function addEditPayment() {
-    setEditPayments((prev) => [...prev, { payment_type: "Nakit", amount: "" }]);
+    setEditPayments((prev) => [...prev, { payment_type: "Nakit", amount: "", kasa_id: null }]);
   }
 
   function removeEditPayment(index: number) {
     setEditPayments((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
   }
 
-  function updateEditPayment(index: number, patch: Partial<{ payment_type: string; amount: string }>) {
+  function updateEditPayment(index: number, patch: Partial<{ payment_type: string; amount: string; kasa_id: number | null }>) {
     setEditPayments((prev) => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
   }
 
@@ -586,7 +605,7 @@ function OrderDetailPageInner() {
         setEditPayments(
           originalEditPayments.length > 0
             ? originalEditPayments
-            : [{ payment_type: "Nakit", amount: "" }]
+            : [{ payment_type: "Nakit", amount: "", kasa_id: null }]
         );
       }
       setPaymentsCleared(false);
@@ -644,10 +663,11 @@ function OrderDetailPageInner() {
             unit_price: num(l.unit_price),
             cost_price: num(l.cost_price),
             payment_type: l.payment_type || null,
+            kasa_id: l.kasa_id,
             product_id: l.product_id,
           })),
           ...(editPayments.length > 0
-            ? { payments: validEditPayments.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount) })) }
+            ? { payments: validEditPayments.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount), kasa_id: p.kasa_id })) }
             : paymentsCleared
             ? { payments: [] }
             : {}),
@@ -679,16 +699,29 @@ function OrderDetailPageInner() {
   const editCariAmount = editPayments.length > 0
     ? editPayments.filter((p) => p.payment_type === "Cari").reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
     : editLines.filter((l) => l.payment_type === "Cari").reduce((sum, l) => sum + num(l.unit_price), 0);
+  // Tek satırlı, tek ödemeli bir sipariş "Ödeme Al & Kapat" ile kapatıldığında
+  // satırın kendi payment_type'ı hiç set edilmez (gerçek kayıt sadece
+  // order_payments'tadır) — satırda "Karışık" (boş) görünüp altta ayrıca
+  // "Ödemeler" bölümü de göstermek kafa karıştırıyordu. Bu durumda satırın
+  // Ödeme/Kasa seçicisi doğrudan tek ödeme girişini (editPayments[0]) yansıtır
+  // ve düzenler, ayrı "Ödemeler" bölümü (tutar dahil) gizlenir — "+ Başka
+  // Ödeme Ekle" ile ikinci bir ödeme eklenince otomatik olarak normal (çok
+  // satırlı) görünüme döner. Tutar alanı SADECE ödeme tutarı satır toplamına
+  // EŞİTKEN gizlenir (indirim yoksa) — bir indirim varsa (editPaymentsTotal
+  // farklıysa) tutar elle görülüp düzeltilebilsin diye otomatik olarak tam
+  // "Ödemeler" görünümüne düşülür, hiçbir tutar sessizce ezilmez/gizlenmez.
+  const useUnifiedEditPayment = editLines.length === 1 && editPayments.length === 1
+    && Math.abs(editPaymentsTotal - editLinesTotalAmount) < 0.01;
 
   function addPaymentEntry() {
-    setPaymentEntries((prev) => [...prev, { payment_type: "Nakit", amount: "" }]);
+    setPaymentEntries((prev) => [...prev, { payment_type: "Nakit", amount: "", kasa_id: null }]);
   }
 
   function removePaymentEntry(index: number) {
     setPaymentEntries((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
   }
 
-  function updatePaymentEntry(index: number, patch: Partial<{ payment_type: string; amount: string }>) {
+  function updatePaymentEntry(index: number, patch: Partial<{ payment_type: string; amount: string; kasa_id: number | null }>) {
     setPaymentEntries((prev) => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
   }
 
@@ -710,7 +743,7 @@ function OrderDetailPageInner() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          payments: validEntries.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount) })),
+          payments: validEntries.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount), kasa_id: p.kasa_id })),
         }),
       });
       if (!res.ok) {
@@ -918,11 +951,14 @@ function OrderDetailPageInner() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <PaymentTypeSelect
-                            value={line.payment_type}
-                            onChange={(val) => handleEditLinePaymentChange(i, line, val)}
+                            value={useUnifiedEditPayment ? editPayments[0].payment_type : line.payment_type}
+                            onChange={(val) => useUnifiedEditPayment ? updateEditPayment(0, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
                             supplierOptions={supplierOptions}
                             paymentOptions={paymentOptions}
                             selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            kasaId={useUnifiedEditPayment ? editPayments[0].kasa_id : line.kasa_id}
+                            onKasaChange={(kasaId) => useUnifiedEditPayment ? updateEditPayment(0, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
+                            kasaOptions={kasaOptions}
                           />
                         </td>
                         <td className="px-2 py-2 align-top text-center pt-4">
@@ -1076,11 +1112,14 @@ function OrderDetailPageInner() {
                       <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1">Ödeme</label>
                         <PaymentTypeSelect
-                          value={line.payment_type}
-                          onChange={(val) => handleEditLinePaymentChange(i, line, val)}
+                          value={useUnifiedEditPayment ? editPayments[0].payment_type : line.payment_type}
+                          onChange={(val) => useUnifiedEditPayment ? updateEditPayment(0, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
                           supplierOptions={supplierOptions}
                           paymentOptions={paymentOptions}
                           selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          kasaId={useUnifiedEditPayment ? editPayments[0].kasa_id : line.kasa_id}
+                          onKasaChange={(kasaId) => useUnifiedEditPayment ? updateEditPayment(0, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
+                          kasaOptions={kasaOptions}
                         />
                       </div>
                     </div>
@@ -1097,7 +1136,17 @@ function OrderDetailPageInner() {
               </button>
             </div>
 
-            {editPayments.length > 0 && (
+            {useUnifiedEditPayment && (
+              <button
+                type="button"
+                onClick={addEditPayment}
+                className="mb-5 -mt-3 block text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                + Başka Ödeme Ekle
+              </button>
+            )}
+
+            {editPayments.length > 0 && !useUnifiedEditPayment && (
               <div className="mb-5">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ödemeler</label>
                 <div className="space-y-2">
@@ -1109,6 +1158,9 @@ function OrderDetailPageInner() {
                         supplierOptions={supplierOptions}
                         paymentOptions={paymentOptions}
                         selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        kasaId={entry.kasa_id}
+                        onKasaChange={(kasaId) => updateEditPayment(i, { kasa_id: kasaId })}
+                        kasaOptions={kasaOptions}
                       />
                       <input
                         type="number"
@@ -1333,7 +1385,7 @@ function OrderDetailPageInner() {
             {order.status === "BEKLEMEDE" && canApprove && (
               <button
                 onClick={() => {
-                  setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount) }]);
+                  setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount), kasa_id: null }]);
                   setShowModal(true);
                 }}
                 className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors"
@@ -1368,6 +1420,9 @@ function OrderDetailPageInner() {
                       onChange={(val) => updatePaymentEntry(i, { payment_type: val })}
                       supplierOptions={supplierOptions}
                       paymentOptions={paymentOptions}
+                      kasaId={entry.kasa_id}
+                      onKasaChange={(kasaId) => updatePaymentEntry(i, { kasa_id: kasaId })}
+                      kasaOptions={kasaOptions}
                       selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     <input

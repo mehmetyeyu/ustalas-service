@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/format";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/expenseCategories";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { KasaSelect } from "@/components/KasaSelect";
 
 interface Expense {
   id: number;
@@ -14,6 +15,7 @@ interface Expense {
   amount: number;
   payment_type: string | null;
   recurring_expense_id: number | null;
+  kasa_id: number | null;
 }
 
 interface ExpenseRow {
@@ -23,6 +25,7 @@ interface ExpenseRow {
   amount: string;
   payment_type: string;
   recurring_expense_id: number | null;
+  kasa_id: number | null;
 }
 
 interface RecurringExpense {
@@ -32,6 +35,7 @@ interface RecurringExpense {
   amount: number;
   payment_type: string | null;
   is_active: boolean;
+  kasa_id: number | null;
 }
 
 const now = new Date();
@@ -56,11 +60,12 @@ function emptyRow(prev?: ExpenseRow): ExpenseRow {
     amount: "",
     payment_type: prev?.payment_type || "",
     recurring_expense_id: null,
+    kasa_id: prev?.kasa_id ?? null,
   };
 }
 
-function emptyRecurringForm(): { category: string; description: string; amount: string; payment_type: string } {
-  return { category: "", description: "", amount: "", payment_type: "" };
+function emptyRecurringForm(): { category: string; description: string; amount: string; payment_type: string; kasa_id: number | null } {
+  return { category: "", description: "", amount: "", payment_type: "", kasa_id: null };
 }
 
 export default function ExpensesPage() {
@@ -75,6 +80,7 @@ export default function ExpensesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [paymentOptions, setPaymentOptions] = useState<string[]>([]);
+  const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
   const [usedCategories, setUsedCategories] = useState<string[]>([]);
   const [recurringTemplates, setRecurringTemplates] = useState<RecurringExpense[]>([]);
 
@@ -127,6 +133,7 @@ export default function ExpensesPage() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setUsedCategories(d); })
       .catch(() => {});
+    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d); }).catch(() => {});
     fetchRecurringTemplates();
   }, []);
 
@@ -161,6 +168,7 @@ export default function ExpensesPage() {
       amount: String(t.amount),
       payment_type: t.payment_type || "",
       recurring_expense_id: t.id,
+      kasa_id: t.kasa_id ?? null,
     })));
     setShowAddForm(true);
   }
@@ -209,6 +217,7 @@ export default function ExpensesPage() {
         amount: parseFloat(r.amount),
         payment_type: r.payment_type || null,
         recurring_expense_id: r.recurring_expense_id,
+        kasa_id: r.payment_type === "Nakit" ? r.kasa_id : null,
       }));
       const res = await fetch("/api/expenses", {
         method: "POST",
@@ -238,6 +247,7 @@ export default function ExpensesPage() {
       amount: String(exp.amount),
       payment_type: exp.payment_type || "",
       recurring_expense_id: exp.recurring_expense_id,
+      kasa_id: exp.kasa_id,
     });
   }
 
@@ -255,6 +265,7 @@ export default function ExpensesPage() {
         description: editRow.description.trim() || null,
         amount: amountValue,
         payment_type: editRow.payment_type || null,
+        kasa_id: editRow.payment_type === "Nakit" ? editRow.kasa_id : null,
       };
       const res = await fetch(`/api/expenses/${editExpense.id}`, {
         method: "PUT",
@@ -291,6 +302,7 @@ export default function ExpensesPage() {
       description: t.description || "",
       amount: String(t.amount),
       payment_type: t.payment_type || "",
+      kasa_id: t.kasa_id,
     });
     setRecFormOpen(true);
   }
@@ -306,6 +318,7 @@ export default function ExpensesPage() {
         description: recForm.description.trim() || null,
         amount: amountValue,
         payment_type: recForm.payment_type || null,
+        kasa_id: recForm.payment_type === "Nakit" ? recForm.kasa_id : null,
         is_active: true,
       };
       const res = await fetch(
@@ -335,6 +348,7 @@ export default function ExpensesPage() {
         description: t.description,
         amount: t.amount,
         payment_type: t.payment_type,
+        kasa_id: t.kasa_id,
         is_active: !t.is_active,
       }),
     });
@@ -557,6 +571,14 @@ export default function ExpensesPage() {
                               <option key={p} value={p}>{p}</option>
                             ))}
                           </select>
+                          {row.payment_type === "Nakit" && (
+                            <KasaSelect
+                              value={row.kasa_id}
+                              onChange={(kasaId) => updateRow(i, { kasa_id: kasaId })}
+                              kasaOptions={kasaOptions}
+                              className="w-full mt-1 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          )}
                         </td>
                         <td className="pb-2 pr-2">
                           <input
@@ -645,6 +667,14 @@ export default function ExpensesPage() {
                         className="w-32 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
+                    {row.payment_type === "Nakit" && (
+                      <KasaSelect
+                        value={row.kasa_id}
+                        onChange={(kasaId) => updateRow(i, { kasa_id: kasaId })}
+                        kasaOptions={kasaOptions}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -742,6 +772,17 @@ export default function ExpensesPage() {
                   ))}
                 </select>
               </div>
+              {editRow.payment_type === "Nakit" && kasaOptions.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Kasa</label>
+                  <KasaSelect
+                    value={editRow.kasa_id}
+                    onChange={(kasaId) => setEditRow((r) => ({ ...r, kasa_id: kasaId }))}
+                    kasaOptions={kasaOptions}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -860,6 +901,17 @@ export default function ExpensesPage() {
                       </select>
                     </div>
                   </div>
+                  {recForm.payment_type === "Nakit" && kasaOptions.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Kasa</label>
+                      <KasaSelect
+                        value={recForm.kasa_id}
+                        onChange={(kasaId) => setRecForm((f) => ({ ...f, kasa_id: kasaId }))}
+                        kasaOptions={kasaOptions}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={() => setRecFormOpen(false)}

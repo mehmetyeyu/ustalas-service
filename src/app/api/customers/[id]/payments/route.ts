@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { validateManualLedgerInput, InvalidLedgerInputError } from "@/lib/customerLedger";
+import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
 
 // Müşteriler ekranındaki "Tahsilat Al / Borç Ekle" — bağımsız bir cari
 // hareketi (herhangi bir siparişe bağlı DEĞİL, bkz. src/lib/customerLedger.ts
@@ -27,8 +28,9 @@ export async function POST(
     let input;
     try {
       input = await validateManualLedgerInput(body, user.tenantId!);
+      await assertKasaBelongsToTenant(pool, input.kasaId, user.tenantId!);
     } catch (err) {
-      if (err instanceof InvalidLedgerInputError) {
+      if (err instanceof InvalidLedgerInputError || err instanceof InvalidKasaError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
       }
       throw err;
@@ -44,12 +46,12 @@ export async function POST(
 
     const result = await pool.query<{ id: number }>(
       `INSERT INTO customer_ledger_entries
-         (tenant_id, customer_id, entry_type, direction, amount, payment_type, entry_date, note, created_by)
-       VALUES ($1, $2, 'MANUEL', $3, $4, $5, COALESCE($6::date, CURRENT_DATE), $7, $8)
+         (tenant_id, customer_id, entry_type, direction, amount, payment_type, entry_date, note, created_by, kasa_id)
+       VALUES ($1, $2, 'MANUEL', $3, $4, $5, COALESCE($6::date, CURRENT_DATE), $7, $8, $9)
        RETURNING id`,
       [
         user.tenantId, id, input.direction, input.amount,
-        input.paymentType, input.entryDate, input.note, user.userId,
+        input.paymentType, input.entryDate, input.note, user.userId, input.kasaId,
       ]
     );
 

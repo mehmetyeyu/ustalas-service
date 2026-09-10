@@ -8,6 +8,7 @@ import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
+import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
 
 interface EditLineInput {
   id?: number;
@@ -20,6 +21,7 @@ interface EditLineInput {
   cost_price?: number | null;
   payment_type?: string | null;
   product_id?: number | null;
+  kasa_id?: number | null;
 }
 
 export async function GET(
@@ -42,7 +44,7 @@ export async function GET(
 
     const servicesResult = await pool.query(
       `SELECT s.id, os.id AS line_id, s.name, os.unit_price, os.quantity, os.cost_price,
-              os.supplier, os.stock_code, os.size_desc, os.payment_type, os.product_id
+              os.supplier, os.stock_code, os.size_desc, os.payment_type, os.product_id, os.kasa_id
        FROM order_services os
        JOIN services s ON os.service_id = s.id
        WHERE os.order_id = $1 AND os.tenant_id = $2
@@ -54,7 +56,7 @@ export async function GET(
     // siparişlerde boş olabilir, o durumda ödeme kırılımı satır bazlı
     // payment_type üzerinden (yukarıdaki services[].payment_type) okunur.
     const paymentsResult = await pool.query(
-      "SELECT id, payment_type, amount FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY id",
+      "SELECT id, payment_type, amount, kasa_id FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY id",
       [id, user.tenantId]
     );
 
@@ -132,13 +134,24 @@ export async function PATCH(
     // tenant_id atadığından burada her zaman dolu olur.
     const { payment_types } = await getAppSettings(user.tenantId!);
     const paymentOptions = flatPaymentOptions(payment_types);
-    for (const p of payments as { payment_type: string; amount: number }[]) {
+    for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
       if (!p.payment_type || !isValidPaymentType(p.payment_type, paymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
       const amt = Number(p.amount);
       if (!Number.isFinite(amt) || amt <= 0) {
         return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
+      }
+      // kasa_id yalnızca Nakit'te anlamlıdır (bkz. INSERT'teki aynı koşul) —
+      // başka bir ödeme tipi seçiliyken istemcide unutulmuş/silinmiş bir
+      // kasa_id save'i gereksiz yere reddetmesin diye sadece Nakit'te doğrulanır.
+      if (p.payment_type === "Nakit") {
+        try {
+          await assertKasaBelongsToTenant(pool, p.kasa_id, user.tenantId!);
+        } catch (err) {
+          if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+          throw err;
+        }
       }
     }
 
@@ -176,10 +189,10 @@ export async function PATCH(
         );
       }
 
-      for (const p of payments as { payment_type: string; amount: number }[]) {
+      for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
         await client.query(
-          "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount) VALUES ($1, $2, $3, $4)",
-          [user.tenantId, id, p.payment_type, Number(p.amount)]
+          "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount, kasa_id) VALUES ($1, $2, $3, $4, $5)",
+          [user.tenantId, id, p.payment_type, Number(p.amount), p.payment_type === "Nakit" ? (p.kasa_id ?? null) : null]
         );
       }
 
@@ -269,6 +282,14 @@ export async function PUT(
       if (l.payment_type && !isValidPaymentType(l.payment_type, orderPaymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
+      if (l.payment_type === "Nakit") {
+        try {
+          await assertKasaBelongsToTenant(pool, l.kasa_id, user.tenantId!);
+        } catch (err) {
+          if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+          throw err;
+        }
+      }
     }
 
     const totalAmount = (lines as EditLineInput[]).reduce((sum, l) => sum + Number(l.unit_price || 0), 0);
@@ -279,7 +300,7 @@ export async function PUT(
     // Boş dizi ([]) ise, kullanıcı bir satıra tek bir ödeme tipi seçerek parçalı
     // ödemeyi bilinçli olarak sıfırlamış demektir — mevcut order_payments kayıtları
     // silinir, özet satır bazlı payment_type'lardan yeniden hesaplanır.
-    let editedPayments: { payment_type: string; amount: number }[] | null = null;
+    let editedPayments: { payment_type: string; amount: number; kasa_id: number | null }[] | null = null;
     let clearPayments = false;
     if (payments !== undefined) {
       if (!Array.isArray(payments)) {
@@ -288,7 +309,7 @@ export async function PUT(
       if (payments.length === 0) {
         clearPayments = true;
       } else {
-        for (const p of payments as { payment_type: string; amount: number }[]) {
+        for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
           if (!p.payment_type || !isValidPaymentType(p.payment_type, orderPaymentOptions)) {
             return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
           }
@@ -296,10 +317,19 @@ export async function PUT(
           if (!Number.isFinite(amt) || amt <= 0) {
             return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
           }
+          if (p.payment_type === "Nakit") {
+            try {
+              await assertKasaBelongsToTenant(pool, p.kasa_id, user.tenantId!);
+            } catch (err) {
+              if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+              throw err;
+            }
+          }
         }
-        editedPayments = (payments as { payment_type: string; amount: number }[]).map((p) => ({
+        editedPayments = (payments as { payment_type: string; amount: number; kasa_id?: number | null }[]).map((p) => ({
           payment_type: p.payment_type,
           amount: Number(p.amount),
+          kasa_id: p.payment_type === "Nakit" ? (p.kasa_id ?? null) : null,
         }));
         const totalPaid = editedPayments.reduce((sum, p) => sum + p.amount, 0);
         if (totalPaid > totalAmount + 0.01) {
@@ -397,17 +427,17 @@ export async function PUT(
           await client.query(
             `UPDATE order_services
              SET service_id = $1, unit_price = $2, quantity = $3, cost_price = $4,
-                 supplier = $5, stock_code = $6, size_desc = $7, payment_type = $8, product_id = $9
-             WHERE id = $10 AND order_id = $11 AND tenant_id = $12`,
-            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.id, id, user.tenantId]
+                 supplier = $5, stock_code = $6, size_desc = $7, payment_type = $8, product_id = $9, kasa_id = $10
+             WHERE id = $11 AND order_id = $12 AND tenant_id = $13`,
+            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.payment_type === "Nakit" ? (l.kasa_id ?? null) : null, l.id, id, user.tenantId]
           );
         } else {
           if (productId) await deductStock(client, user.tenantId!, productId, quantity);
           await client.query(
             `INSERT INTO order_services
-               (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId]
+               (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id, kasa_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.payment_type === "Nakit" ? (l.kasa_id ?? null) : null]
           );
         }
       }
@@ -418,8 +448,8 @@ export async function PUT(
         await client.query("DELETE FROM order_payments WHERE order_id = $1 AND tenant_id = $2", [id, user.tenantId]);
         for (const p of editedPayments) {
           await client.query(
-            "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount) VALUES ($1, $2, $3, $4)",
-            [user.tenantId, id, p.payment_type, p.amount]
+            "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount, kasa_id) VALUES ($1, $2, $3, $4, $5)",
+            [user.tenantId, id, p.payment_type, p.amount, p.kasa_id]
           );
         }
         const distinct = Array.from(new Set(editedPayments.map((p) => p.payment_type)));

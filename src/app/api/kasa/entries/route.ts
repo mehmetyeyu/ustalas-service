@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { validateManualCashLedgerInput, InvalidCashLedgerInputError } from "@/lib/cashLedger";
+import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
 
 // Kasa sayfasındaki "Para Girişi/Çıkışı Ekle" — hiçbir siparişe/masrafa
 // bağlı olmayan bağımsız bir nakit hareketi (bkz. src/app/api/kasa/route.ts
@@ -21,18 +22,19 @@ export async function POST(request: NextRequest) {
     let input;
     try {
       input = validateManualCashLedgerInput(body);
+      await assertKasaBelongsToTenant(pool, input.kasaId, user.tenantId!);
     } catch (err) {
-      if (err instanceof InvalidCashLedgerInputError) {
+      if (err instanceof InvalidCashLedgerInputError || err instanceof InvalidKasaError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
       }
       throw err;
     }
 
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO cash_ledger_entries (tenant_id, direction, amount, entry_date, description, created_by)
-       VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE), $5, $6)
+      `INSERT INTO cash_ledger_entries (tenant_id, direction, amount, entry_date, description, created_by, kasa_id)
+       VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE), $5, $6, $7)
        RETURNING id`,
-      [user.tenantId, input.direction, input.amount, input.entryDate, input.description, user.userId]
+      [user.tenantId, input.direction, input.amount, input.entryDate, input.description, user.userId, input.kasaId]
     );
 
     return NextResponse.json({ id: result.rows[0].id }, { status: 201 });

@@ -976,3 +976,68 @@ CREATE TABLE IF NOT EXISTS cash_ledger_entries (
 
 CREATE INDEX IF NOT EXISTS cash_ledger_entries_tenant_idx
   ON cash_ledger_entries(tenant_id, entry_date, id);
+
+-- Kasalar (fiziksel nakit kasa dizini) — suppliers'daki gibi serbest metin
+-- upsert değil, gerçek FK'li bir seçim listesi (bkz. aşağıdaki composite
+-- FK'lar). kasa_id HER YERDE nullable: hiç kasa tanımlamamış firmalar için
+-- davranış birebir eskisiyle aynı kalır (bkz. src/app/api/kasa/route.ts).
+CREATE TABLE IF NOT EXISTS kasalar (
+  id         SERIAL PRIMARY KEY,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  name       VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS kasalar_tenant_name_unique ON kasalar(tenant_id, name);
+CREATE UNIQUE INDEX IF NOT EXISTS kasalar_id_tenant_unique ON kasalar(id, tenant_id);
+
+ALTER TABLE order_payments          ADD COLUMN IF NOT EXISTS kasa_id INT;
+ALTER TABLE order_services          ADD COLUMN IF NOT EXISTS kasa_id INT;
+ALTER TABLE expenses                ADD COLUMN IF NOT EXISTS kasa_id INT;
+ALTER TABLE recurring_expenses      ADD COLUMN IF NOT EXISTS kasa_id INT;
+ALTER TABLE customer_ledger_entries ADD COLUMN IF NOT EXISTS kasa_id INT;
+ALTER TABLE cash_ledger_entries     ADD COLUMN IF NOT EXISTS kasa_id INT;
+
+-- Kasalar Arası Transfer — bir transferin iki bacağını (kaynak kasadan -1,
+-- hedef kasaya +1) birbirine bağlar. Kendi kendine referans veren nullable
+-- bir FK: her iki satır da diğerinin id'sini taşır. NULL ise normal
+-- (transfer olmayan) bir manuel harekettir (bkz. src/app/api/kasa/transfers/route.ts).
+ALTER TABLE cash_ledger_entries ADD COLUMN IF NOT EXISTS transfer_pair_id INT;
+
+-- Composite (kasa_id, tenant_id) FK — yanlış firmanın kasasına referans DB
+-- seviyesinde imkansız; kasa_id NULL olan satırlarda standart FK NULL
+-- semantiğiyle otomatik atlanır. ON DELETE belirtilmez (RESTRICT/NO ACTION,
+-- varsayılan) — bir kasaya bağlı hareket varsa silme reddedilsin diye.
+DO $$ BEGIN
+  ALTER TABLE order_payments ADD CONSTRAINT order_payments_kasa_tenant_fk
+    FOREIGN KEY (kasa_id, tenant_id) REFERENCES kasalar(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE order_services ADD CONSTRAINT order_services_kasa_tenant_fk
+    FOREIGN KEY (kasa_id, tenant_id) REFERENCES kasalar(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE expenses ADD CONSTRAINT expenses_kasa_tenant_fk
+    FOREIGN KEY (kasa_id, tenant_id) REFERENCES kasalar(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE recurring_expenses ADD CONSTRAINT recurring_expenses_kasa_tenant_fk
+    FOREIGN KEY (kasa_id, tenant_id) REFERENCES kasalar(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE customer_ledger_entries ADD CONSTRAINT customer_ledger_entries_kasa_tenant_fk
+    FOREIGN KEY (kasa_id, tenant_id) REFERENCES kasalar(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE cash_ledger_entries ADD CONSTRAINT cash_ledger_entries_kasa_tenant_fk
+    FOREIGN KEY (kasa_id, tenant_id) REFERENCES kasalar(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE cash_ledger_entries ADD CONSTRAINT cash_ledger_entries_transfer_pair_fk
+    FOREIGN KEY (transfer_pair_id) REFERENCES cash_ledger_entries(id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE INDEX IF NOT EXISTS order_payments_kasa_idx ON order_payments(kasa_id);
+CREATE INDEX IF NOT EXISTS order_services_kasa_idx ON order_services(kasa_id);
+CREATE INDEX IF NOT EXISTS expenses_kasa_idx ON expenses(kasa_id);
+CREATE INDEX IF NOT EXISTS customer_ledger_entries_kasa_idx ON customer_ledger_entries(kasa_id);
+CREATE INDEX IF NOT EXISTS cash_ledger_entries_kasa_idx ON cash_ledger_entries(kasa_id);

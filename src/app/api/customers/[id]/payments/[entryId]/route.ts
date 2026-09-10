@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { validateManualLedgerInput, InvalidLedgerInputError } from "@/lib/customerLedger";
+import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
 
 // Bir "Tahsilat Al / Borç Ekle" (MANUEL) kaydını düzeltir/siler — SIPARIS
 // tipi kayıtlar buradan asla elle değiştirilemez, onlar syncOrderLedger
@@ -37,8 +38,9 @@ export async function PUT(
     let input;
     try {
       input = await validateManualLedgerInput(body, user.tenantId!, entryCheck.rows[0].payment_type);
+      await assertKasaBelongsToTenant(pool, input.kasaId, user.tenantId!);
     } catch (err) {
-      if (err instanceof InvalidLedgerInputError) {
+      if (err instanceof InvalidLedgerInputError || err instanceof InvalidKasaError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
       }
       throw err;
@@ -46,9 +48,9 @@ export async function PUT(
 
     await pool.query(
       `UPDATE customer_ledger_entries
-       SET direction = $1, amount = $2, payment_type = $3, entry_date = COALESCE($4::date, entry_date), note = $5
-       WHERE id = $6 AND customer_id = $7 AND tenant_id = $8`,
-      [input.direction, input.amount, input.paymentType, input.entryDate, input.note, entryId, id, user.tenantId]
+       SET direction = $1, amount = $2, payment_type = $3, entry_date = COALESCE($4::date, entry_date), note = $5, kasa_id = $6
+       WHERE id = $7 AND customer_id = $8 AND tenant_id = $9`,
+      [input.direction, input.amount, input.paymentType, input.entryDate, input.note, input.kasaId, entryId, id, user.tenantId]
     );
 
     return NextResponse.json({ success: true });

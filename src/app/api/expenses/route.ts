@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await pool.query(
-      `SELECT id, expense_date::text AS expense_date, category, description, amount::float AS amount, payment_type, recurring_expense_id
+      `SELECT id, expense_date::text AS expense_date, category, description, amount::float AS amount, payment_type, recurring_expense_id, kasa_id
        FROM expenses
        WHERE tenant_id = $1 AND expense_date >= $2 AND expense_date < $3
        ORDER BY expense_date DESC, id DESC`,
@@ -43,6 +44,7 @@ interface ExpenseInput {
   amount: number | string;
   payment_type?: string | null;
   recurring_expense_id?: number | null;
+  kasa_id?: number | null;
 }
 
 function validateExpenseInput(e: ExpenseInput, index: number): string | null {
@@ -94,14 +96,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    for (const e of items as ExpenseInput[]) {
+      try {
+        await assertKasaBelongsToTenant(pool, e.kasa_id, user.tenantId!);
+      } catch (err) {
+        if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+        throw err;
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const ids: number[] = [];
       for (const e of items as ExpenseInput[]) {
+        const paymentType = e.payment_type ? String(e.payment_type).trim() : null;
         const result = await client.query(
-          `INSERT INTO expenses (tenant_id, expense_date, category, description, amount, payment_type, recurring_expense_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO expenses (tenant_id, expense_date, category, description, amount, payment_type, recurring_expense_id, kasa_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id`,
           [
             user.tenantId,
@@ -109,8 +121,9 @@ export async function POST(request: NextRequest) {
             String(e.category).trim(),
             e.description ? String(e.description).trim() : null,
             Number(e.amount),
-            e.payment_type ? String(e.payment_type).trim() : null,
+            paymentType,
             e.recurring_expense_id || null,
+            paymentType === "Nakit" ? (e.kasa_id ?? null) : null,
           ]
         );
         ids.push(result.rows[0].id);

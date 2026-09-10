@@ -30,7 +30,7 @@ export async function GET(
 
     const entriesResult = await pool.query(
       `SELECT cle.id, cle.entry_type, cle.direction, cle.amount::float AS amount, cle.payment_type,
-              cle.entry_date::text AS entry_date, cle.note, cle.order_id,
+              cle.entry_date::text AS entry_date, cle.note, cle.order_id, cle.kasa_id,
               SUM(cle.amount * cle.direction) OVER (ORDER BY cle.entry_date, cle.id)::float AS running_balance
        FROM customer_ledger_entries cle
        WHERE cle.customer_id = $1 AND cle.tenant_id = $2

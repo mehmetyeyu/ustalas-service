@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
 
 export async function PUT(
   request: NextRequest,
@@ -13,7 +14,7 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { category, description, amount, payment_type, is_active } = await request.json();
+    const { category, description, amount, payment_type, is_active, kasa_id } = await request.json();
     if (!category || !String(category).trim()) {
       return NextResponse.json({ error: "Kategori zorunludur." }, { status: 400 });
     }
@@ -21,16 +22,24 @@ export async function PUT(
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
       return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
     }
+    try {
+      await assertKasaBelongsToTenant(pool, kasa_id, user.tenantId!);
+    } catch (err) {
+      if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+      throw err;
+    }
 
+    const trimmedPaymentType = payment_type ? String(payment_type).trim() : null;
     const result = await pool.query(
-      `UPDATE recurring_expenses SET category = $1, description = $2, amount = $3, payment_type = $4, is_active = $5
-       WHERE id = $6 AND tenant_id = $7`,
+      `UPDATE recurring_expenses SET category = $1, description = $2, amount = $3, payment_type = $4, is_active = $5, kasa_id = $6
+       WHERE id = $7 AND tenant_id = $8`,
       [
         String(category).trim(),
         description ? String(description).trim() : null,
         amountValue,
-        payment_type ? String(payment_type).trim() : null,
+        trimmedPaymentType,
         is_active ?? true,
+        trimmedPaymentType === "Nakit" ? (kasa_id ?? null) : null,
         id,
         user.tenantId,
       ]

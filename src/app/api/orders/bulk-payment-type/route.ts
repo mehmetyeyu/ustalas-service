@@ -58,6 +58,11 @@ export async function PATCH(request: NextRequest) {
       // ait olduğu siparişlerden, order_payments'ta gerçekten BİRDEN FAZLA
       // FARKLI ödeme tipi kayıtlı olanlar — bunlar güncellemenin dışında
       // bırakılır (yukarıdaki dosya yorumuna bkz.).
+      // kasa_id de NULL'a çekilir — bu toplu işlem hangi kasadan/kasaya
+      // olduğunu hiç bilmez (bkz. src/lib/kasalar.ts: "kasa_id sadece
+      // Nakit'te anlamlıdır"), aksi halde ör. Nakit'ten POS'a toplu
+      // çevrilen bir satır eski kasa_id'yi taşımaya devam eder ve sonradan
+      // tekrar Nakit'e çevrilince o kasaya sessizce yeniden atanmış olurdu.
       const updated = await client.query<{ order_id: number }>(
         `WITH mixed_orders AS (
            SELECT op.order_id
@@ -69,7 +74,7 @@ export async function PATCH(request: NextRequest) {
            GROUP BY op.order_id
            HAVING COUNT(DISTINCT op.payment_type) > 1
          )
-         UPDATE order_services os SET payment_type = $1
+         UPDATE order_services os SET payment_type = $1, kasa_id = NULL
          WHERE os.id = ANY($2) AND os.tenant_id = $3
            AND os.order_id NOT IN (SELECT order_id FROM mixed_orders)
          RETURNING os.order_id`,
@@ -105,7 +110,7 @@ export async function PATCH(request: NextRequest) {
         const uniformOrderIds = summaries.rows.filter((r) => r.summary === paymentType).map((r) => r.order_id);
         if (uniformOrderIds.length > 0) {
           await client.query(
-            `UPDATE order_payments SET payment_type = $1 WHERE order_id = ANY($2) AND tenant_id = $3`,
+            `UPDATE order_payments SET payment_type = $1, kasa_id = NULL WHERE order_id = ANY($2) AND tenant_id = $3`,
             [paymentType, uniformOrderIds, user.tenantId]
           );
         }
