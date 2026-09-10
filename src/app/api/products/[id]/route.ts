@@ -50,6 +50,16 @@ export async function PATCH(
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
     }
 
+    if (purchase_price != null && purchase_price !== "" && (!Number.isFinite(Number(purchase_price)) || Number(purchase_price) < 0)) {
+      return NextResponse.json({ error: "Geçersiz alış fiyatı." }, { status: 400 });
+    }
+    if (sale_price != null && sale_price !== "" && (!Number.isFinite(Number(sale_price)) || Number(sale_price) < 0)) {
+      return NextResponse.json({ error: "Geçersiz satış fiyatı." }, { status: 400 });
+    }
+    if (stock_qty != null && stock_qty !== "" && (!Number.isFinite(Number(stock_qty)) || Number(stock_qty) < 0)) {
+      return NextResponse.json({ error: "Geçersiz stok miktarı." }, { status: 400 });
+    }
+
     if (supplier) await upsertDirectoryNames(pool, "suppliers", user.tenantId!, [supplier]);
 
     // Düzenlenmek istenen parti gerçekten bu firmaya mı ait — bir sonraki

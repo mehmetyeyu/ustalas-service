@@ -4,10 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { normalizeYear } from "@/lib/productsExcel";
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
+import { escapeLike } from "@/lib/sqlSafety";
 
 // Liste Kod bazında GRUPLANIR: her Ürün Kodu tek bir kart/satır, altında farklı
 // Üretim Tarihli partiler (batches) yer alır. Sayfalama grup (distinct kod)
@@ -164,6 +161,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (supplier) await upsertDirectoryNames(pool, "suppliers", user.tenantId!, [supplier]);
+
+    if (purchase_price != null && purchase_price !== "" && (!Number.isFinite(Number(purchase_price)) || Number(purchase_price) < 0)) {
+      return NextResponse.json({ error: "Geçersiz alış fiyatı." }, { status: 400 });
+    }
+    if (sale_price != null && sale_price !== "" && (!Number.isFinite(Number(sale_price)) || Number(sale_price) < 0)) {
+      return NextResponse.json({ error: "Geçersiz satış fiyatı." }, { status: 400 });
+    }
+    if (stock_qty != null && stock_qty !== "" && (!Number.isFinite(Number(stock_qty)) || Number(stock_qty) < 0)) {
+      return NextResponse.json({ error: "Geçersiz stok miktarı." }, { status: 400 });
+    }
 
     const qty = Number(stock_qty) || 0;
     const isDated = production_week != null && production_week !== "" && production_year != null && production_year !== "";

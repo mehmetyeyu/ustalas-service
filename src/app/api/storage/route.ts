@@ -3,10 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { getAppSettings } from "@/lib/settings";
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
+import { escapeLike } from "@/lib/sqlSafety";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -70,6 +67,9 @@ export async function POST(request: NextRequest) {
 
     if (!plate) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
+    }
+    if (adet != null && adet !== "" && (!Number.isFinite(Number(adet)) || Number(adet) < 0)) {
+      return NextResponse.json({ error: "Geçersiz adet." }, { status: 400 });
     }
 
     if (plate && mevsim) {

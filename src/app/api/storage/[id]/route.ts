@@ -16,6 +16,10 @@ export async function PATCH(
     const body = await request.json();
     const { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, teslim_edildi, teslim_tarihi } = body;
 
+    if (adet != null && adet !== "" && (!Number.isFinite(Number(adet)) || Number(adet) < 0)) {
+      return NextResponse.json({ error: "Geçersiz adet." }, { status: 400 });
+    }
+
     const result = await pool.query(
       `UPDATE storage SET
         depo_no=$1, plate=$2, customer_name=$3, phone=$4, ebat=$5,

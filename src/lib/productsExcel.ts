@@ -1,3 +1,6 @@
+import { normalizeHeader, toNumber } from "@/lib/excelParsing";
+export { chunk } from "@/lib/excelParsing";
+
 export interface ParsedProductRow {
   code: string;
   brand: string | null;
@@ -30,19 +33,6 @@ const HEADER_MAP: Record<string, string> = {
   "satış fiyatı": "sale_price",
   "stok miktarı": "stock_qty",
 };
-
-function normalizeHeader(h: unknown): string {
-  return String(h ?? "")
-    .trim()
-    .toLocaleLowerCase("tr-TR")
-    .replace(/\s+/g, " ");
-}
-
-function toNumber(val: unknown): number {
-  if (val == null || val === "") return 0;
-  const n = Number(val);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function toNullableNumber(val: unknown): number | null {
   if (val == null || val === "") return null;
@@ -144,10 +134,4 @@ export function parseProductRows(
   }
 
   return { rows: parsed, skipped };
-}
-
-export function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }

@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
+import { escapeLike } from "@/lib/sqlSafety";
 
 // "Malzeme Hareketleri": stoğu 0'a inince ana listeden (ve parti seçicilerden)
 // kalkan partilerin geçmişini kaybetmemek için ayrı bir görünüm — hem Stok

@@ -2,9 +2,7 @@
 // filtreleri aynı şekilde uygulamalı — bu yüzden WHERE/ORDER BY inşası burada
 // tek bir yerde toplanır, iki route de aynı fonksiyonu çağırır.
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
+import { escapeLike } from "@/lib/sqlSafety";
 
 // Türkiye sabit UTC+3 kullanır (2016'dan beri yaz saati yok), bu yüzden
 // "YYYY-MM-DD" filtre değerinin Europe/Istanbul gece yarısı sınırı burada

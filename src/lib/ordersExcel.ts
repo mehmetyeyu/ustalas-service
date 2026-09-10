@@ -1,3 +1,6 @@
+import { normalizeHeader, toNumber } from "@/lib/excelParsing";
+export { chunk } from "@/lib/excelParsing";
+
 export interface ParsedOrderLine {
   service_name: string;
   quantity: number;
@@ -43,19 +46,6 @@ const HEADER_MAP: Record<string, string> = {
   "ödeme şekli": "payment_type",
   "açıklama": "note",
 };
-
-function normalizeHeader(h: unknown): string {
-  return String(h ?? "")
-    .trim()
-    .toLocaleLowerCase("tr-TR")
-    .replace(/\s+/g, " ");
-}
-
-function toNumber(val: unknown): number {
-  if (val == null || val === "") return 0;
-  const n = Number(val);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function toText(val: unknown): string {
   return val == null ? "" : String(val).trim();
@@ -164,10 +154,4 @@ export function parseOrderRows(
   }
 
   return { orders: Array.from(groups.values()), skipped };
-}
-
-export function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }

@@ -2,7 +2,7 @@ interface QueryClient {
   query<T = unknown>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
-export interface DayWindow {
+interface DayWindow {
   open: string;  // "HH:MM"
   close: string; // "HH:MM"
 }
@@ -30,7 +30,7 @@ function dayKeyForDate(dateStr: string): (typeof DAY_KEYS)[number] {
   return DAY_KEYS[noonUTC.getUTCDay()];
 }
 
-export function getDayWindow(workingHours: WorkingHours | null | undefined, dateStr: string): DayWindow | null {
+function getDayWindow(workingHours: WorkingHours | null | undefined, dateStr: string): DayWindow | null {
   if (!workingHours) return null;
   return workingHours[dayKeyForDate(dateStr)] ?? null;
 }
