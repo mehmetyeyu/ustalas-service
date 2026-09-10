@@ -73,15 +73,38 @@ function weekRange(dateStr: string): { start: string; end: string } {
   return { start: toStr(monday), end: toStr(sunday) };
 }
 
+function addDaysToDateStr(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Hizmet Dağılımı, Özel Tarih seçilmediği sürece (varsayılan) her zaman seçili
+// AYIN TAMAMINI gösterir — Dönemsel'in "en güncel gün" gibi bir varsayılan
+// daraltması YOKTUR. Kullanıcı bilinçli olarak bir Özel Tarih seçtiğinde,
+// Dönemsel'deki Günlük/Haftalık seçimiyle (Aylık için ek parametreye gerek
+// yok, zaten seçili ayın tamamıyla aynı) aynı aralık backend'e gönderilir.
+function resolveCustomPeriodRange(
+  view: PeriodView, customDate: string
+): { from: string; to: string } | null {
+  if (!customDate || view === "month") return null;
+  if (view === "day") return { from: customDate, to: addDaysToDateStr(customDate, 1) };
+  const { start, end } = weekRange(customDate);
+  return { from: start, to: addDaysToDateStr(end, 1) };
+}
+
 // "Dönemsel Ciro / Maliyet / Kâr" widget'ı, üstteki Ay/Yıl seçiciyle gelen veriye
 // (data.dailyData, zaten o aya sabitli) göre çalışır — seçili ayda veri olan EN
 // GÜNCEL günü referans alır. Günlük sadece o referans günü gösterir (dünkü bir
 // sipariş Günlük'te görünmez); Haftalık o günü içeren haftanın (seçili ay içindeki
 // kısmının) toplamını, Aylık ise seçili ayın tamamının toplamını gösterir.
 function computePeriodRow(
-  dailyData: DailyDatum[], view: PeriodView, year: number, month: number
+  dailyData: DailyDatum[], view: PeriodView, year: number, month: number, customRefDate?: string
 ): { label: string; ciro: number; maliyet: number; masraf: number } {
-  if (dailyData.length === 0) {
+  // customRefDate verilmişse (kullanıcı "Özel Tarih" ile kendi referans gününü
+  // seçmişse) o gün kullanılır — o günün dailyData'da hiç kaydı olmayabilir
+  // (hiç işlem yapılmamış bir gün), aşağıdaki dallar bunu 0 olarak ele alır.
+  if (!customRefDate && dailyData.length === 0) {
     const lastDay = new Date(year, month, 0).getDate();
     const refDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
     if (view === "day") return { label: formatDayLabel(refDate), ciro: 0, maliyet: 0, masraf: 0 };
@@ -92,11 +115,16 @@ function computePeriodRow(
     return { label: formatMonthLabel(year, month), ciro: 0, maliyet: 0, masraf: 0 };
   }
 
-  const refDate = [...dailyData].sort((a, b) => b.date.localeCompare(a.date))[0].date;
+  const refDate = customRefDate || [...dailyData].sort((a, b) => b.date.localeCompare(a.date))[0].date;
 
   if (view === "day") {
-    const d = dailyData.find((x) => x.date === refDate)!;
-    return { label: formatDayLabel(refDate), ciro: Number(d.ciro), maliyet: Number(d.maliyet), masraf: Number(d.masraf) };
+    const d = dailyData.find((x) => x.date === refDate);
+    return {
+      label: formatDayLabel(refDate),
+      ciro: d ? Number(d.ciro) : 0,
+      maliyet: d ? Number(d.maliyet) : 0,
+      masraf: d ? Number(d.masraf) : 0,
+    };
   }
   if (view === "week") {
     const { start, end } = weekRange(refDate);
@@ -138,6 +166,7 @@ export default function ReportsPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [periodView, setPeriodView] = useState<PeriodView>("day");
+  const [customDate, setCustomDate] = useState("");
   const [mailOrderOpen, setMailOrderOpen] = useState(false);
   const [data, setData] = useState<{
     dailyData: DailyDatum[];
@@ -149,16 +178,40 @@ export default function ReportsPage() {
   }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [], unaddedRecurring: [], cashRegister: null });
   const [loading, setLoading] = useState(true);
 
+  // Hizmet Dağılımı'nın Özel Tarih seçiliyken (bkz. resolveCustomPeriodRange)
+  // aynı Günlük/Haftalık aralığı kullanabilmesi için — boşken (varsayılan
+  // davranış) ekstra parametre gönderilmez, backend her zamanki gibi seçili
+  // ayın tamamını döner.
+  const customPeriodRange = resolveCustomPeriodRange(periodView, customDate);
+  const periodFromParam = customPeriodRange?.from ?? "";
+  const periodToParam = customPeriodRange?.to ?? "";
+
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/reports?year=${year}&month=${month}`)
+    const extra = periodFromParam && periodToParam
+      ? `&periodFrom=${periodFromParam}&periodTo=${periodToParam}`
+      : "";
+    fetch(`/api/reports?year=${year}&month=${month}${extra}`)
       .then((r) => r.json())
       .then((d) => {
         setData(d);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [year, month]);
+  }, [year, month, periodFromParam, periodToParam]);
+
+  // "Özel Tarih" seçili aydan farklı bir aya düşerse, Günlük grafik de o ayı
+  // gösterebilsin diye Ay/Yıl seçiciler otomatik senkronlanır (üstteki fetch
+  // effect'i [year, month] değişince zaten yeniden veri çeker).
+  useEffect(() => {
+    if (!customDate) return;
+    const [y, m] = customDate.split("-").map(Number);
+    if (y !== year || m !== month) {
+      setYear(y);
+      setMonth(m);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customDate]);
 
   const months = [
     "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -180,7 +233,7 @@ export default function ReportsPage() {
     return { day, ciro, maliyet, masraf, kar: ciro - maliyet - masraf };
   });
 
-  const activePeriodRow = computePeriodRow(data.dailyData, periodView, year, month);
+  const activePeriodRow = computePeriodRow(data.dailyData, periodView, year, month, customDate || undefined);
 
   // "<Tedarikçi> Mail Order" etiketleri tek bir "Mail Order" kutusunda toplanır;
   // tıklanınca tedarikçi bazlı dökümü açılır.
@@ -393,22 +446,38 @@ export default function ReportsPage() {
           <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h2 className="font-semibold text-gray-700">Dönemsel Ciro / Maliyet / Masraf / Kâr</h2>
-              <div className="flex gap-1">
-                {([
-                  { v: "day", label: "Günlük" },
-                  { v: "week", label: "Haftalık" },
-                  { v: "month", label: "Aylık" },
-                ] as { v: PeriodView; label: string }[]).map(({ v, label }) => (
-                  <button
-                    key={v}
-                    onClick={() => setPeriodView(v)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      periodView === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500">Özel Tarih:</label>
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {customDate && (
+                    <button onClick={() => setCustomDate("")} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                      Temizle
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  {([
+                    { v: "day", label: "Günlük" },
+                    { v: "week", label: "Haftalık" },
+                    { v: "month", label: "Aylık" },
+                  ] as { v: PeriodView; label: string }[]).map(({ v, label }) => (
+                    <button
+                      key={v}
+                      onClick={() => setPeriodView(v)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        periodView === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -445,10 +514,15 @@ export default function ReportsPage() {
 
           {/* Hizmet Dağılımı */}
           <div className="bg-white rounded-xl shadow-sm p-5">
-            <h2 className="font-semibold text-gray-700 mb-4">Hizmet Dağılımı</h2>
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <h2 className="font-semibold text-gray-700">Hizmet Dağılımı</h2>
+              {customPeriodRange && (
+                <span className="text-[10px] text-gray-400">({activePeriodRow.label} — Özel Tarih)</span>
+              )}
+            </div>
             {data.serviceStats.length === 0 ? (
               <div className="h-40 flex items-center justify-center text-gray-400">
-                Bu ay için veri yok.
+                {customPeriodRange ? "Bu dönem için veri yok." : "Bu ay için veri yok."}
               </div>
             ) : (
               <div className="flex flex-col gap-6">

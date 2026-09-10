@@ -22,6 +22,20 @@ export async function GET(request: NextRequest) {
   const startDate = new Date(Date.UTC(year, month - 1, 1, -3, 0, 0));
   const endDate = new Date(Date.UTC(year, month, 1, -3, 0, 0));
 
+  // Hizmet Dağılımı'ndaki "Özel Tarih" (Günlük/Haftalık) — Raporlar sayfasının
+  // Dönemsel bölümüyle aynı gün/hafta aralığı, sadece bu tek sorguya uygulanır.
+  // Verilmezse (varsayılan) davranış değişmez: seçili ayın tamamı kullanılır.
+  const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const periodFromRaw = searchParams.get("periodFrom");
+  const periodToRaw = searchParams.get("periodTo");
+  const hasCustomPeriod = !!periodFromRaw && !!periodToRaw && ISO_DATE_RE.test(periodFromRaw) && ISO_DATE_RE.test(periodToRaw);
+  function istanbulMidnightUTC(dateStr: string): Date {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, -3, 0, 0));
+  }
+  const serviceStatsStart = hasCustomPeriod ? istanbulMidnightUTC(periodFromRaw) : startDate;
+  const serviceStatsEnd = hasCustomPeriod ? istanbulMidnightUTC(periodToRaw) : endDate;
+
   // expenses.expense_date bir DATE kolonu (saat/saat dilimi yok) — timestamp
   // aralık dönüşümüne gerek yok, ayın ilk günü ile bir sonraki ayın ilk günü
   // arasındaki düz tarih string aralığı yeterli.
@@ -99,7 +113,7 @@ export async function GET(request: NextRequest) {
          WHERE o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3
          GROUP BY s.name
          ORDER BY count DESC`,
-        [startDate, endDate, user.tenantId]
+        [serviceStatsStart, serviceStatsEnd, user.tenantId]
       ),
       // total_orders/completed/pending artık created_at'e göre sayılır — önceden
       // payment_date'e göre filtrelendiği için BEKLEMEDE siparişler (payment_date
