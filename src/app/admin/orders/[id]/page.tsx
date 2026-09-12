@@ -449,7 +449,7 @@ function OrderDetailPageInner() {
     setEditCustomerName(order.customer_name || "");
     setEditCustomerPhone(order.customer_phone || "");
     setEditNotes(order.notes || "");
-    setEditLines(order.services.map((svc) => ({
+    const initialLines = order.services.map((svc) => ({
       id: svc.line_id,
       service_name: svc.name,
       supplier: svc.supplier || "",
@@ -464,8 +464,20 @@ function OrderDetailPageInner() {
       max_stock: null,
       unit_sale_price: null,
       unit_purchase_price: null,
-    })));
+    }));
     const initialPayments = order.payments.map((p) => ({ payment_type: p.payment_type, amount: String(p.amount), kasa_id: p.kasa_id ?? null }));
+    // Tek satır + tek ödeme + tutar eşleşiyorsa ekran unified moda girer (bkz.
+    // useUnifiedEditPayment) ve Ödeme/Kasa seçicisi editPayments[0]'ı gösterir.
+    // Satırın kendi payment_type/kasa_id'si ("Ödeme Al & Kapat" hiç yazmaz, ya
+    // da geçmişte farklı bir tipteyken sonradan sadece Ödemeler'den değiştirilmiş
+    // olabilir) burada gösterileneden farklı kalırsa, dokunulmadan kaydedilse
+    // bile order_services sessizce eski tipte kalırdı — ekranla aynı görünsün
+    // diye satır burada, yükleme anında, gerçek ödeme kaydıyla hizalanır.
+    if (initialLines.length === 1 && initialPayments.length === 1
+      && Math.abs((Number(initialLines[0].unit_price) || 0) - (Number(initialPayments[0].amount) || 0)) < 0.01) {
+      initialLines[0] = { ...initialLines[0], payment_type: initialPayments[0].payment_type, kasa_id: initialPayments[0].kasa_id };
+    }
+    setEditLines(initialLines);
     setEditPayments(initialPayments);
     setOriginalEditPayments(initialPayments);
     setPaymentsCleared(false);
@@ -544,6 +556,18 @@ function OrderDetailPageInner() {
 
   function updateEditPayment(index: number, patch: Partial<{ payment_type: string; amount: string; kasa_id: number | null }>) {
     setEditPayments((prev) => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
+  }
+
+  // Unified görünümde (bkz. useUnifiedEditPayment) Ödeme/Kasa seçicisi hem
+  // editPayments[0] hem de editLines[0]'ı aynı anda günceller — sadece
+  // editPayments'ı değiştirmek, kaydederken order_services.payment_type'ın
+  // (satırdan gönderilen, artık eski) order_payments/orders.payment_type'tan
+  // (payments'tan gönderilen, güncel) farklı kalıp sessizce çelişmesine yol
+  // açardı (ör. "Cari"den "Nakit"e çevrilen bir satırın listede hâlâ "Cari"
+  // görünmesi).
+  function updateUnifiedEditPayment(lineIndex: number, patch: Partial<{ payment_type: string; kasa_id: number | null }>) {
+    updateEditPayment(0, patch);
+    updateEditLine(lineIndex, patch);
   }
 
   function addEditLine() {
@@ -952,12 +976,12 @@ function OrderDetailPageInner() {
                         <td className="px-2 py-2 align-top">
                           <PaymentTypeSelect
                             value={useUnifiedEditPayment ? editPayments[0].payment_type : line.payment_type}
-                            onChange={(val) => useUnifiedEditPayment ? updateEditPayment(0, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
+                            onChange={(val) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
                             supplierOptions={supplierOptions}
                             paymentOptions={paymentOptions}
                             selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             kasaId={useUnifiedEditPayment ? editPayments[0].kasa_id : line.kasa_id}
-                            onKasaChange={(kasaId) => useUnifiedEditPayment ? updateEditPayment(0, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
+                            onKasaChange={(kasaId) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
                             kasaOptions={kasaOptions}
                           />
                         </td>
@@ -1113,12 +1137,12 @@ function OrderDetailPageInner() {
                         <label className="block text-xs font-medium text-gray-500 mb-1">Ödeme</label>
                         <PaymentTypeSelect
                           value={useUnifiedEditPayment ? editPayments[0].payment_type : line.payment_type}
-                          onChange={(val) => useUnifiedEditPayment ? updateEditPayment(0, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
+                          onChange={(val) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
                           supplierOptions={supplierOptions}
                           paymentOptions={paymentOptions}
                           selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           kasaId={useUnifiedEditPayment ? editPayments[0].kasa_id : line.kasa_id}
-                          onKasaChange={(kasaId) => useUnifiedEditPayment ? updateEditPayment(0, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
+                          onKasaChange={(kasaId) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
                           kasaOptions={kasaOptions}
                         />
                       </div>
