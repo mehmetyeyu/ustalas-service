@@ -410,7 +410,9 @@ function OrderDetailPageInner() {
         setSupplierOptions(merged);
       })
       .catch(() => { });
-    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d); }).catch(() => { });
+    // Nakit ödeme her zaman TL'dir — döviz kasaları (ör. "Dolar Kasa") bu
+    // seçicide hiç görünmez (bkz. plan: "Kasalara Para Birimi Desteği").
+    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types); })

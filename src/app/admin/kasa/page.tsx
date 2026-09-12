@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { formatDate, formatCurrency } from "@/lib/format";
+import { formatDate, formatCurrency, formatMoney } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
+import { CURRENCY_OPTIONS } from "@/lib/kasalar";
 
 interface KasaEntry {
   entry_type: "SIPARIS" | "CARI_TAHSILAT" | "MASRAF" | "MANUEL";
@@ -28,6 +29,7 @@ interface Kasa {
   id: number;
   name: string;
   linked_payment_type: string | null;
+  currency: string;
 }
 
 const ENTRY_TYPE_LABELS: Record<KasaEntry["entry_type"], string> = {
@@ -76,14 +78,21 @@ export default function KasaPage() {
   const [showManageModal, setShowManageModal] = useState(false);
   const [newKasaName, setNewKasaName] = useState("");
   const [newKasaLinkedType, setNewKasaLinkedType] = useState("");
+  const [newKasaCurrency, setNewKasaCurrency] = useState("TRY");
   const [renamingKasaId, setRenamingKasaId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameLinkedType, setRenameLinkedType] = useState("");
+  const [renameCurrency, setRenameCurrency] = useState("TRY");
   const [kasaActionSaving, setKasaActionSaving] = useState(false);
   // "Nazım Hesap" gibi Nakit-dışı bir ödeme tipi bir kasaya bağlanabilir (bkz.
   // src/lib/kasalar.ts: resolveKasaId) — o tipteki işlemler otomatik bu kasaya
   // sayılır. Nakit/Cari hariç, tenant'ın gerçek ödeme tipi listesi.
   const [linkableTypes, setLinkableTypes] = useState<string[]>([]);
+  // Para birimi -> TL kuru (bkz. src/app/api/currency-rates/route.ts) —
+  // sadece canlı gösterim için, kullanıcı Kasaları Yönet'ten günceller.
+  const [rates, setRates] = useState<Record<string, number>>({});
+  const [rateInputs, setRateInputs] = useState<Record<string, string>>({});
+  const [rateSaving, setRateSaving] = useState<string | null>(null);
 
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferFrom, setTransferFrom] = useState<number | null>(null);
@@ -100,6 +109,51 @@ export default function KasaPage() {
       setKasaList(Array.isArray(data) ? data : []);
     } catch {
       // sessizce yut — kasa.view yoksa (403) özellik hiç görünmez kalır
+    }
+  }
+
+  async function fetchRates() {
+    try {
+      const res = await fetch("/api/currency-rates");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const map: Record<string, number> = {};
+        const inputs: Record<string, string> = {};
+        for (const r of data as { currency: string; rate_to_try: number }[]) {
+          map[r.currency] = Number(r.rate_to_try);
+          inputs[r.currency] = String(r.rate_to_try);
+        }
+        setRates(map);
+        setRateInputs((prev) => ({ ...inputs, ...prev }));
+      }
+    } catch {
+      // sessizce yut
+    }
+  }
+
+  // Kasaları Yönet'teki "Döviz Kurları" bölümünden bir para biriminin
+  // güncel TL kurunu günceller — geçmiş işlemleri etkilemez, sadece bundan
+  // sonraki CANLI gösterim/toplamı (bkz. GET /api/kasa: effective_amount).
+  async function handleSaveRate(currency: string) {
+    const rate = Number(rateInputs[currency]);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      toast.error("Geçerli bir kur girin.");
+      return;
+    }
+    setRateSaving(currency);
+    try {
+      const res = await fetch("/api/currency-rates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currency, rate_to_try: rate }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
+      setRates((prev) => ({ ...prev, [currency]: rate }));
+      await refreshAll();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setRateSaving(null);
     }
   }
 
@@ -130,6 +184,7 @@ export default function KasaPage() {
 
   useEffect(() => {
     fetchKasaList();
+    fetchRates();
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => {
@@ -220,6 +275,7 @@ export default function KasaPage() {
   function openManage() {
     setNewKasaName("");
     setNewKasaLinkedType("");
+    setNewKasaCurrency("TRY");
     setRenamingKasaId(null);
     setShowManageModal(true);
   }
@@ -242,11 +298,12 @@ export default function KasaPage() {
       const res = await fetch("/api/kasalar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKasaName.trim(), linked_payment_type: newKasaLinkedType || null }),
+        body: JSON.stringify({ name: newKasaName.trim(), linked_payment_type: newKasaLinkedType || null, currency: newKasaCurrency }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setNewKasaName("");
       setNewKasaLinkedType("");
+      setNewKasaCurrency("TRY");
       await fetchKasaList();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -262,7 +319,7 @@ export default function KasaPage() {
       const res = await fetch(`/api/kasalar/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: renameValue.trim(), linked_payment_type: renameLinkedType || null }),
+        body: JSON.stringify({ name: renameValue.trim(), linked_payment_type: renameLinkedType || null, currency: renameCurrency }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setRenamingKasaId(null);
@@ -342,11 +399,28 @@ export default function KasaPage() {
 
   if (!allowed) return null;
 
+  const isSpecificKasa = selectedKasa !== "all" && selectedKasa !== "unassigned";
+  const selectedKasaObj = isSpecificKasa ? kasaList.find((k) => k.id === Number(selectedKasa)) : undefined;
+  // Belirli bir kasa seçiliyken tutar/bakiye o kasanın KENDİ para biriminde
+  // (native, bkz. GET /api/kasa: isSpecificKasa) — "Tüm Kasalar"/"Kasa"
+  // (atanmamış) her zaman TL'dir (backend zaten TL karşılığına çevirir).
+  const balanceCurrency = selectedKasaObj?.currency || "TRY";
   const balanceLabel = selectedKasa === "all"
     ? "Tüm Kasalar Bakiyesi"
     : selectedKasa === "unassigned"
     ? "Kasa Bakiyesi"
-    : `${kasaList.find((k) => k.id === Number(selectedKasa))?.name || ""} Bakiyesi`;
+    : `${selectedKasaObj?.name || ""} Bakiyesi`;
+  // Döviz kasası seçiliyken güncel kurla TL karşılığı — kur girilmemişse
+  // null (uyarı gösterilir, hiçbir şey uydurulmaz).
+  const tlEquivalent = balanceCurrency !== "TRY" && rates[balanceCurrency] != null
+    ? balance * rates[balanceCurrency]
+    : null;
+  // "Tüm Kasalar" toplamına, kuru hiç girilmemiş bir döviz kasası varsa
+  // dahil edilemez (bkz. backend: effective_amount NULL kalır) — kullanıcıya
+  // bunun neden/hangi kasa için olduğunu açıkça göstermek için.
+  const missingRateKasalar = selectedKasa === "all"
+    ? kasaList.filter((k) => k.currency !== "TRY" && rates[k.currency] == null)
+    : [];
 
   return (
     <div>
@@ -440,8 +514,20 @@ export default function KasaPage() {
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 min-w-0">
         <p className="text-xs text-gray-500 mb-1">{balanceLabel}</p>
         <p className={`text-xl sm:text-2xl font-bold truncate ${balance >= 0 ? "text-gray-800" : "text-red-500"}`}>
-          {formatCurrency(balance)}
+          {formatMoney(balance, balanceCurrency)}
         </p>
+        {balanceCurrency !== "TRY" && (
+          tlEquivalent != null ? (
+            <p className="text-xs text-gray-400 mt-1">≈ {formatCurrency(tlEquivalent)} (kur: {rates[balanceCurrency]})</p>
+          ) : (
+            <p className="text-xs text-amber-600 mt-1">Kur girilmemiş, TL karşılığı hesaplanamıyor.</p>
+          )
+        )}
+        {missingRateKasalar.length > 0 && (
+          <p className="text-xs text-amber-600 mt-1">
+            {missingRateKasalar.map((k) => k.name).join(", ")} kuru girilmediği için bu toplama dahil edilmedi.
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -485,9 +571,9 @@ export default function KasaPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{e.description || "-"}</td>
                     <td className={`px-4 py-3 text-right font-medium whitespace-nowrap ${e.kasa_direction === 1 ? "text-green-600" : "text-red-600"}`}>
-                      {e.kasa_direction === 1 ? "+" : "-"}{formatCurrency(e.amount)}
+                      {e.kasa_direction === 1 ? "+" : "-"}{formatMoney(e.amount, e.kasa_id != null ? (kasaList.find((k) => k.id === e.kasa_id)?.currency || "TRY") : "TRY")}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">{formatCurrency(e.running_balance)}</td>
+                    <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">{formatMoney(e.running_balance, balanceCurrency)}</td>
                     {canManage && (
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         {e.entry_type === "MANUEL" && (
@@ -554,7 +640,11 @@ export default function KasaPage() {
                 </button>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tutar</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tutar {entryKasaId != null && (kasaList.find((k) => k.id === entryKasaId)?.currency ?? "TRY") !== "TRY" && (
+                    <span className="text-gray-400 font-normal">({kasaList.find((k) => k.id === entryKasaId)?.currency})</span>
+                  )}
+                </label>
                 <input
                   type="number"
                   value={amount}
@@ -649,26 +739,40 @@ export default function KasaPage() {
                           </button>
                         </div>
                         <select
-                          value={renameLinkedType}
-                          onChange={(e) => setRenameLinkedType(e.target.value)}
+                          value={renameCurrency}
+                          onChange={(e) => { setRenameCurrency(e.target.value); if (e.target.value !== "TRY") setRenameLinkedType(""); }}
                           className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          <option value="">Bağlı ödeme tipi yok</option>
-                          {linkTypeOptions(k.id).map((t) => (
-                            <option key={t} value={t}>{t}</option>
+                          {CURRENCY_OPTIONS.map((c) => (
+                            <option key={c} value={c}>{c === "TRY" ? "TL (TRY)" : c}</option>
                           ))}
                         </select>
+                        {renameCurrency === "TRY" && (
+                          <select
+                            value={renameLinkedType}
+                            onChange={(e) => setRenameLinkedType(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Bağlı ödeme tipi yok</option>
+                            {linkTypeOptions(k.id).map((t) => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
                         <span className="flex-1 text-sm text-gray-800">
                           {k.name}
+                          {k.currency !== "TRY" && (
+                            <span className="text-gray-400"> · {k.currency}</span>
+                          )}
                           {k.linked_payment_type && (
                             <span className="text-gray-400"> · {k.linked_payment_type}</span>
                           )}
                         </span>
                         <button
-                          onClick={() => { setRenamingKasaId(k.id); setRenameValue(k.name); setRenameLinkedType(k.linked_payment_type || ""); }}
+                          onClick={() => { setRenamingKasaId(k.id); setRenameValue(k.name); setRenameLinkedType(k.linked_payment_type || ""); setRenameCurrency(k.currency || "TRY"); }}
                           className="text-blue-600 hover:text-blue-800 text-xs font-medium shrink-0"
                         >
                           Düzenle
@@ -705,16 +809,55 @@ export default function KasaPage() {
                 </button>
               </div>
               <select
-                value={newKasaLinkedType}
-                onChange={(e) => setNewKasaLinkedType(e.target.value)}
+                value={newKasaCurrency}
+                onChange={(e) => { setNewKasaCurrency(e.target.value); if (e.target.value !== "TRY") setNewKasaLinkedType(""); }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Bağlı ödeme tipi yok (Nakit kasası)</option>
-                {linkTypeOptions(null).map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {CURRENCY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c === "TRY" ? "TL (TRY)" : c}</option>
                 ))}
               </select>
+              {newKasaCurrency === "TRY" && (
+                <select
+                  value={newKasaLinkedType}
+                  onChange={(e) => setNewKasaLinkedType(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Bağlı ödeme tipi yok (Nakit kasası)</option>
+                  {linkTypeOptions(null).map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              )}
             </div>
+
+            {kasaList.some((k) => k.currency !== "TRY") && (
+              <div className="border-t border-gray-100 pt-4 mb-5">
+                <p className="text-sm font-medium text-gray-700 mb-2">Döviz Kurları</p>
+                <div className="space-y-2">
+                  {Array.from(new Set(kasaList.filter((k) => k.currency !== "TRY").map((k) => k.currency))).map((c) => (
+                    <div key={c} className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-24 shrink-0">1 {c} =</span>
+                      <input
+                        type="number" step="0.0001"
+                        value={rateInputs[c] ?? ""}
+                        onChange={(e) => setRateInputs((prev) => ({ ...prev, [c]: e.target.value }))}
+                        placeholder="Kur girilmedi"
+                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-gray-500 shrink-0">₺</span>
+                      <button
+                        onClick={() => handleSaveRate(c)}
+                        disabled={rateSaving === c}
+                        className="text-blue-600 hover:text-blue-800 text-xs font-medium shrink-0"
+                      >
+                        Kaydet
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <button
               onClick={() => setShowManageModal(false)}
@@ -740,9 +883,11 @@ export default function KasaPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Kasa seç...</option>
-                  {kasaList.filter((k) => k.id !== transferTo).map((k) => (
-                    <option key={k.id} value={k.id}>{k.name}</option>
-                  ))}
+                  {kasaList
+                    .filter((k) => k.id !== transferTo && (transferTo == null || k.currency === kasaList.find((k2) => k2.id === transferTo)?.currency))
+                    .map((k) => (
+                      <option key={k.id} value={k.id}>{k.name}{k.currency !== "TRY" ? ` (${k.currency})` : ""}</option>
+                    ))}
                 </select>
               </div>
               <div>
@@ -753,10 +898,15 @@ export default function KasaPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Kasa seç...</option>
-                  {kasaList.filter((k) => k.id !== transferFrom).map((k) => (
-                    <option key={k.id} value={k.id}>{k.name}</option>
-                  ))}
+                  {kasaList
+                    .filter((k) => k.id !== transferFrom && (transferFrom == null || k.currency === kasaList.find((k2) => k2.id === transferFrom)?.currency))
+                    .map((k) => (
+                      <option key={k.id} value={k.id}>{k.name}{k.currency !== "TRY" ? ` (${k.currency})` : ""}</option>
+                    ))}
                 </select>
+                {/* Farklı para birimindeki kasalar arası transfer sunucuda da
+                    reddedilir (bkz. POST /api/kasa/transfers) — burası sadece
+                    geçersiz bir seçeneği baştan göstermemek için. */}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tutar</label>

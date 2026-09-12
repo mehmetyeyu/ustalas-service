@@ -7,12 +7,16 @@ import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { applyKasaLinkChange } from "@/lib/kasalar";
 
 class InvalidLinkedPaymentTypeError extends Error {}
+class InvalidCurrencyError extends Error {}
 
 // Bkz. src/app/api/kasalar/route.ts (POST) — aynı doğrulama, iki dosyada
 // ayrı tutulan küçük bir yardımcı (paylaşılan bir lib'e taşımayı gerektirecek
 // kadar büyük değil).
-async function validateLinkedPaymentType(tenantId: number, linkedPaymentType: unknown): Promise<string | null> {
+async function validateLinkedPaymentType(tenantId: number, linkedPaymentType: unknown, currency: string): Promise<string | null> {
   if (linkedPaymentType == null || linkedPaymentType === "") return null;
+  if (currency !== "TRY") {
+    throw new InvalidLinkedPaymentTypeError("Döviz kasası bir ödeme tipine bağlanamaz.");
+  }
   const trimmed = String(linkedPaymentType).trim();
   if (trimmed === "Nakit" || trimmed === "Cari") {
     throw new InvalidLinkedPaymentTypeError("Bu ödeme tipi bir kasaya bağlanamaz.");
@@ -20,6 +24,15 @@ async function validateLinkedPaymentType(tenantId: number, linkedPaymentType: un
   const { payment_types } = await getAppSettings(tenantId);
   if (!isValidPaymentType(trimmed, flatPaymentOptions(payment_types))) {
     throw new InvalidLinkedPaymentTypeError("Geçersiz ödeme tipi.");
+  }
+  return trimmed;
+}
+
+function validateCurrency(currency: unknown): string {
+  if (currency == null || currency === "") return "TRY";
+  const trimmed = String(currency).trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(trimmed)) {
+    throw new InvalidCurrencyError("Geçersiz para birimi kodu (3 harf olmalı, ör. USD).");
   }
   return trimmed;
 }
@@ -34,16 +47,20 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { name, linked_payment_type } = await request.json();
+    const { name, linked_payment_type, currency } = await request.json();
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Kasa adı zorunludur." }, { status: 400 });
     }
 
+    let currencyValue: string;
     let linkedPaymentType: string | null;
     try {
-      linkedPaymentType = await validateLinkedPaymentType(user.tenantId!, linked_payment_type);
+      currencyValue = validateCurrency(currency);
+      linkedPaymentType = await validateLinkedPaymentType(user.tenantId!, linked_payment_type, currencyValue);
     } catch (err) {
-      if (err instanceof InvalidLinkedPaymentTypeError) return NextResponse.json({ error: err.message }, { status: 400 });
+      if (err instanceof InvalidLinkedPaymentTypeError || err instanceof InvalidCurrencyError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
       throw err;
     }
 
@@ -61,8 +78,8 @@ export async function PATCH(
       const oldLinkedType = existing.rows[0].linked_payment_type;
 
       await client.query(
-        "UPDATE kasalar SET name = $1, linked_payment_type = $2 WHERE id = $3 AND tenant_id = $4",
-        [String(name).trim(), linkedPaymentType, id, user.tenantId]
+        "UPDATE kasalar SET name = $1, linked_payment_type = $2, currency = $3 WHERE id = $4 AND tenant_id = $5",
+        [String(name).trim(), linkedPaymentType, currencyValue, id, user.tenantId]
       );
       await applyKasaLinkChange(client, user.tenantId!, Number(id), oldLinkedType, linkedPaymentType);
       await client.query("COMMIT");

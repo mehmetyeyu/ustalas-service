@@ -990,6 +990,24 @@ CREATE TABLE IF NOT EXISTS kasalar (
 CREATE UNIQUE INDEX IF NOT EXISTS kasalar_tenant_name_unique ON kasalar(tenant_id, name);
 CREATE UNIQUE INDEX IF NOT EXISTS kasalar_id_tenant_unique ON kasalar(id, tenant_id);
 
+-- Bir kasa TL dışında bir para birimi tutabilir (ör. "Dolar Kasa", "Euro
+-- Kasa") — varsayılan TL, mevcut tüm kasalar geriye dönük TL sayılır,
+-- davranış değişmez (bkz. src/app/api/kasa/route.ts: try_amount mantığı).
+ALTER TABLE kasalar ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'TRY';
+
+-- Tenant başına, para birimi başına GÜNCEL kur (TL karşılığı) — geçmiş
+-- işlemleri yeniden hesaplamaz, sadece "şu an bu kasada duran döviz kaç TL
+-- eder" sorusuna cevap verir (canlı gösterim, muhasebe geçmişi değil).
+-- Kullanıcı Kasaları Yönet'ten ne zaman isterse günceller, dış bir kur
+-- API'sinden otomatik çekilmez.
+CREATE TABLE IF NOT EXISTS currency_rates (
+  tenant_id   INT NOT NULL REFERENCES tenants(id),
+  currency    VARCHAR(3) NOT NULL,
+  rate_to_try DECIMAL(14,4) NOT NULL,
+  updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, currency)
+);
+
 -- Bir kasa, "Nazım Hesap" gibi Nakit-dışı bir ödeme tipine bağlanabilir (bkz.
 -- src/lib/kasalar.ts: resolveKasaId) — o ödeme tipiyle yapılan işlemler
 -- otomatik olarak bu kasaya sayılır, ayrı bir kasa seçimi gerekmez. Bir ödeme

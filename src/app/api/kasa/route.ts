@@ -30,6 +30,17 @@ const MAX_LIMIT = 200;
 // halde tek bir kasanın kümülatif bakiyesi tüm kasaların toplamı üzerinden
 // yanlış hesaplanırdı.
 //
+// PARA BİRİMİ: bir kasa TL dışında bir para birimi tutabilir (ör. "Dolar
+// Kasa"). BELİRLİ bir kasa seçiliyken tutar/bakiye hep o kasanın KENDİ para
+// biriminde (native, çevrilmemiş) döner — istemci (kasaList üzerinden)
+// zaten hangi para birimi olduğunu biliyor. "Tüm Kasalar"/"Kasa" (atanmamış)
+// gibi BİRDEN FAZLA kasayı birleştiren görünümlerde ise ham `amount` yerine
+// `effective_amount` (= amount * güncel_kur, TL için 1) kullanılır — aksi
+// hâlde farklı para birimlerindeki ham sayılar birbirine karışırdı. Kuru
+// girilmemiş bir para biriminin satırları toplama dahil EDİLMEZ (SUM NULL'ı
+// atlar) — istemci, kasaList + /api/currency-rates'i karşılaştırarak hangi
+// kasaların bu yüzden dışarıda kaldığını kendi hesaplar (missingRates).
+//
 // ?from=&to= (ikisi de YYYY-MM-DD, ikisi de verilmeli) — opsiyonel tarih
 // aralığı. Verilmezse (varsayılan) tüm geçmiş taranır, bugüne kadar birebir
 // eski davranış. Aralık verildiğinde SADECE o aralıktaki satırlar
@@ -58,6 +69,11 @@ export async function GET(request: NextRequest) {
     const kasaIdParam = rawKasaId === "unassigned" || (rawKasaId != null && /^\d+$/.test(rawKasaId))
       ? rawKasaId
       : null;
+    // Sadece BELİRLİ bir kasa (sayısal id) seçiliyken tutar/bakiye native
+    // (çevrilmemiş) kalır — "unassigned" zaten her zaman TL'dir (kasa_id
+    // hiç yoksa), "Tüm Kasalar" ile aynı (para birimi karışmayan) mantığı
+    // paylaşır.
+    const isSpecificKasa = rawKasaId != null && /^\d+$/.test(rawKasaId);
 
     const fromRaw = request.nextUrl.searchParams.get("from");
     const toRaw = request.nextUrl.searchParams.get("to");
@@ -68,7 +84,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(request.nextUrl.searchParams.get("limit") ?? "") || DEFAULT_LIMIT));
     const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "") || 0);
 
-    const baseCte = `
+    const combinedCte = `
       WITH combined AS (
         SELECT
           'SIPARIS'::text AS entry_type, 1 AS source_rank, op.id AS source_id,
@@ -132,28 +148,42 @@ export async function GET(request: NextRequest) {
           m.kasa_id, m.transfer_pair_id
         FROM cash_ledger_entries m
         WHERE m.tenant_id = $1
-      ),
+      )
+    `;
+
+    // filtered: kasaId filtresi + para birimi dönüşümü. effective_amount,
+    // isSpecificKasa true'ysa (tek bir kasa görüntüleniyor) her zaman ham
+    // `amount`; değilse (Tüm Kasalar/Kasa) TL karşılığı (kur yoksa NULL —
+    // SUM() bunu atlar, o satır toplama girmez).
+    const filteredCte = `${combinedCte},
       filtered AS (
-        SELECT * FROM combined
+        SELECT combined.*,
+          COALESCE(k.currency, 'TRY') AS currency,
+          CASE WHEN $3::boolean THEN combined.amount
+               ELSE combined.amount * (CASE WHEN COALESCE(k.currency, 'TRY') = 'TRY' THEN 1 ELSE cr.rate_to_try END)
+          END AS effective_amount
+        FROM combined
+        LEFT JOIN kasalar k ON k.id = combined.kasa_id AND k.tenant_id = $1
+        LEFT JOIN currency_rates cr ON cr.tenant_id = $1 AND cr.currency = k.currency
         WHERE $2::text IS NULL
-           OR ($2::text = 'unassigned' AND kasa_id IS NULL)
-           OR (kasa_id = NULLIF($2, 'unassigned')::int)
+           OR ($2::text = 'unassigned' AND combined.kasa_id IS NULL)
+           OR (combined.kasa_id = NULLIF($2, 'unassigned')::int)
       )
     `;
 
     const [entriesResult, totalResult, countResult, unassignedResult] = await Promise.all([
       pool.query(
-        `${baseCte},
+        `${filteredCte},
          opening AS (
-           SELECT COALESCE(SUM(amount * kasa_direction), 0)::float AS balance
-           FROM filtered WHERE $3::date IS NOT NULL AND entry_date < $3
+           SELECT COALESCE(SUM(effective_amount * kasa_direction), 0)::float AS balance
+           FROM filtered WHERE $4::date IS NOT NULL AND entry_date < $4
          ),
          windowed AS (
            SELECT * FROM filtered
-           WHERE ($3::date IS NULL OR entry_date >= $3) AND ($4::date IS NULL OR entry_date <= $4)
+           WHERE ($4::date IS NULL OR entry_date >= $4) AND ($5::date IS NULL OR entry_date <= $5)
          )
          SELECT windowed.*, k.name AS kasa_name, pk.name AS transfer_pair_kasa_name,
-           ((SELECT balance FROM opening) + SUM(windowed.amount * windowed.kasa_direction) OVER (
+           ((SELECT balance FROM opening) + SUM(windowed.effective_amount * windowed.kasa_direction) OVER (
              ORDER BY windowed.entry_date, windowed.sort_ts, windowed.source_rank, windowed.source_id
            ))::float AS running_balance
          FROM windowed
@@ -161,37 +191,37 @@ export async function GET(request: NextRequest) {
          LEFT JOIN cash_ledger_entries pair_entry ON pair_entry.id = windowed.transfer_pair_id AND pair_entry.tenant_id = $1
          LEFT JOIN kasalar pk ON pk.id = pair_entry.kasa_id AND pk.tenant_id = $1
          ORDER BY windowed.entry_date DESC, windowed.sort_ts DESC, windowed.source_rank DESC, windowed.source_id DESC
-         LIMIT $5 OFFSET $6`,
-        [user.tenantId, kasaIdParam, fromParam, toParam, limit, offset]
+         LIMIT $6 OFFSET $7`,
+        [user.tenantId, kasaIdParam, isSpecificKasa, fromParam, toParam, limit, offset]
       ),
       // Toplam bakiye entries listesinden (ve sayfalamadan) bağımsız
       // hesaplanır — aralık içinde hiç hareket olmasa bile (ör. boş bir ay)
       // ya da görüntülenen sayfa boş kalsa bile doğru kalması için.
       pool.query<{ balance: number }>(
-        `${baseCte}
-         SELECT COALESCE(SUM(amount * kasa_direction), 0)::float AS balance
-         FROM filtered WHERE $3::date IS NULL OR entry_date <= $3`,
-        [user.tenantId, kasaIdParam, toParam]
+        `${filteredCte}
+         SELECT COALESCE(SUM(effective_amount * kasa_direction), 0)::float AS balance
+         FROM filtered WHERE $4::date IS NULL OR entry_date <= $4`,
+        [user.tenantId, kasaIdParam, isSpecificKasa, toParam]
       ),
       // Aynı filtrelerle eşleşen TOPLAM satır sayısı — istemci "Daha Fazla
       // Yükle" gösterilsin mi diye bunu kullanır.
       pool.query<{ total: number }>(
-        `${baseCte}
+        `${filteredCte}
          SELECT COUNT(*)::int AS total FROM filtered
-         WHERE ($3::date IS NULL OR entry_date >= $3) AND ($4::date IS NULL OR entry_date <= $4)`,
-        [user.tenantId, kasaIdParam, fromParam, toParam]
+         WHERE ($4::date IS NULL OR entry_date >= $4) AND ($5::date IS NULL OR entry_date <= $5)`,
+        [user.tenantId, kasaIdParam, isSpecificKasa, fromParam, toParam]
       ),
-      // "Kasa" (atanmamış) sekmesinin görünürlüğü sayfalamadan bağımsız
-      // olmalı — ilk sayfada hiç atanmamış satır çıkmasa bile, geçmişte
-      // (görüntülenen tarih aralığında) varsa sekme yine de gösterilmeli.
+      // "Kasa" (atanmamış) sekmesinin görünürlüğü — kasaId filtresinden VE
+      // para birimi dönüşümünden bağımsız (atanmamış hareketler her zaman
+      // TL'dir), bu yüzden sadece `combined` üzerinden, ayrı ve daha ucuz.
       pool.query<{ has_unassigned: boolean }>(
-        `${baseCte}
+        `${combinedCte}
          SELECT EXISTS (
            SELECT 1 FROM combined
            WHERE kasa_id IS NULL
-             AND ($3::date IS NULL OR entry_date >= $3) AND ($4::date IS NULL OR entry_date <= $4)
+             AND ($2::date IS NULL OR entry_date >= $2) AND ($3::date IS NULL OR entry_date <= $3)
          ) AS has_unassigned`,
-        [user.tenantId, kasaIdParam, fromParam, toParam]
+        [user.tenantId, fromParam, toParam]
       ),
     ]);
 

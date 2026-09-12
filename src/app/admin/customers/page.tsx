@@ -101,7 +101,8 @@ export default function CustomersPage() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(flatPaymentOptions(d.payment_types).filter((t: string) => t !== "Cari")); })
       .catch(() => { });
-    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d); }).catch(() => { });
+    // Nakit tahsilat her zaman TL'dir — döviz kasaları bu seçicide görünmez.
+    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
   }, []);
 
   async function openOrders(c: Customer) {

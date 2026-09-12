@@ -133,7 +133,8 @@ export default function ExpensesPage() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setUsedCategories(d); })
       .catch(() => {});
-    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d); }).catch(() => {});
+    // Nakit ödeme her zaman TL'dir — döviz kasaları bu seçicide görünmez.
+    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => {});
     fetchRecurringTemplates();
   }, []);
 

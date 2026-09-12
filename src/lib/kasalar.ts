@@ -9,6 +9,29 @@ export class InvalidKasaError extends Error {
   }
 }
 
+// Kasaları Yönet'teki Para Birimi seçicisinin hazır seçenekleri — liste
+// büyürse (ör. GBP) buraya bir satır eklemek yeterli; şema/validasyon
+// zaten serbest 3 harfli kod kabul ediyor (bkz. kasalar/route.ts), bu
+// sadece UI'da tek tıkla seçilebilecek yaygın seçenekler.
+export const CURRENCY_OPTIONS = ["TRY", "USD", "EUR", "GBP"];
+
+// Bir para biriminin şu anki TL karşılığı — TL için her zaman 1, başka bir
+// para birimi için tenant'ın Kasaları Yönet'ten girdiği (ya da hiç
+// girmediği, o zaman null) güncel kur. Geçmiş işlemlerin kaydında hiç
+// kullanılmaz, sadece CANLI gösterim/toplam için (bkz. GET /api/kasa).
+export async function getRateToTry(
+  client: QueryClient,
+  tenantId: number,
+  currency: string
+): Promise<number | null> {
+  if (currency === "TRY") return 1;
+  const result = await client.query<{ rate_to_try: string }>(
+    "SELECT rate_to_try FROM currency_rates WHERE tenant_id = $1 AND currency = $2",
+    [tenantId, currency]
+  );
+  return result.rows[0] ? Number(result.rows[0].rate_to_try) : null;
+}
+
 // Sipariş/masraf/Cari/manuel kasa hareketi route'larının ortak kasa_id
 // doğrulaması — kasa_id verilmemişse (null/undefined) hiçbir sorgu bile
 // çalıştırmadan geçer (özellik hiç kullanılmayan firmalarda maliyetsiz).

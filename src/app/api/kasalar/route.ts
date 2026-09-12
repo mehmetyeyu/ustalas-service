@@ -17,7 +17,7 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      "SELECT id, name, linked_payment_type FROM kasalar WHERE tenant_id = $1 ORDER BY name",
+      "SELECT id, name, linked_payment_type, currency FROM kasalar WHERE tenant_id = $1 ORDER BY name",
       [user.tenantId]
     );
     return NextResponse.json(result.rows);
@@ -27,12 +27,21 @@ export async function GET() {
   }
 }
 
+class InvalidLinkedPaymentTypeError extends Error {}
+class InvalidCurrencyError extends Error {}
+
 // Bir ödeme tipinin bir kasaya bağlanabilmesi için: tenant'ın Genel
 // Ayarlar'daki gerçek listesinde bulunmalı, "Nakit" (kendi çoklu-kasa/manuel
 // seçim mekanizması var) ve "Cari" (nakit hareketi temsil etmiyor, bkz.
-// src/lib/customerLedger.ts'teki aynı hariç tutma) OLAMAZ.
-async function validateLinkedPaymentType(tenantId: number, linkedPaymentType: unknown): Promise<string | null> {
+// src/lib/customerLedger.ts'teki aynı hariç tutma) OLAMAZ. Sipariş/masraf
+// tutarları her zaman TL olduğundan, döviz kasasına (currency !== 'TRY')
+// bağlama da reddedilir — aksi hâlde TL tutarlar sessizce döviz kasasına
+// yazılmış gibi görünürdü.
+async function validateLinkedPaymentType(tenantId: number, linkedPaymentType: unknown, currency: string): Promise<string | null> {
   if (linkedPaymentType == null || linkedPaymentType === "") return null;
+  if (currency !== "TRY") {
+    throw new InvalidLinkedPaymentTypeError("Döviz kasası bir ödeme tipine bağlanamaz.");
+  }
   const trimmed = String(linkedPaymentType).trim();
   if (trimmed === "Nakit" || trimmed === "Cari") {
     throw new InvalidLinkedPaymentTypeError("Bu ödeme tipi bir kasaya bağlanamaz.");
@@ -44,7 +53,17 @@ async function validateLinkedPaymentType(tenantId: number, linkedPaymentType: un
   return trimmed;
 }
 
-class InvalidLinkedPaymentTypeError extends Error {}
+// Serbest 3 harfli büyük harf kodu (TRY/USD/EUR/GBP hazır seçenekler, bkz.
+// src/lib/kasalar.ts: CURRENCY_OPTIONS — ama sabit bir listeye ZORLANMAZ,
+// ileride yeni bir para birimi kod değişikliği gerektirmeden eklenebilsin).
+function validateCurrency(currency: unknown): string {
+  if (currency == null || currency === "") return "TRY";
+  const trimmed = String(currency).trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(trimmed)) {
+    throw new InvalidCurrencyError("Geçersiz para birimi kodu (3 harf olmalı, ör. USD).");
+  }
+  return trimmed;
+}
 
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
@@ -52,16 +71,20 @@ export async function POST(request: NextRequest) {
   if (!hasPermission(user, "kasa.manage")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { name, linked_payment_type } = await request.json();
+    const { name, linked_payment_type, currency } = await request.json();
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Kasa adı zorunludur." }, { status: 400 });
     }
 
+    let currencyValue: string;
     let linkedPaymentType: string | null;
     try {
-      linkedPaymentType = await validateLinkedPaymentType(user.tenantId!, linked_payment_type);
+      currencyValue = validateCurrency(currency);
+      linkedPaymentType = await validateLinkedPaymentType(user.tenantId!, linked_payment_type, currencyValue);
     } catch (err) {
-      if (err instanceof InvalidLinkedPaymentTypeError) return NextResponse.json({ error: err.message }, { status: 400 });
+      if (err instanceof InvalidLinkedPaymentTypeError || err instanceof InvalidCurrencyError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
       throw err;
     }
 
@@ -76,11 +99,11 @@ export async function POST(request: NextRequest) {
       );
       const oldLinkedType = existing.rows[0]?.linked_payment_type ?? null;
 
-      const result = await client.query<{ id: number; name: string; linked_payment_type: string | null }>(
-        `INSERT INTO kasalar (tenant_id, name, linked_payment_type) VALUES ($1, $2, $3)
-         ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name, linked_payment_type = EXCLUDED.linked_payment_type
-         RETURNING id, name, linked_payment_type`,
-        [user.tenantId, String(name).trim(), linkedPaymentType]
+      const result = await client.query<{ id: number; name: string; linked_payment_type: string | null; currency: string }>(
+        `INSERT INTO kasalar (tenant_id, name, linked_payment_type, currency) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name, linked_payment_type = EXCLUDED.linked_payment_type, currency = EXCLUDED.currency
+         RETURNING id, name, linked_payment_type, currency`,
+        [user.tenantId, String(name).trim(), linkedPaymentType, currencyValue]
       );
       const kasa = result.rows[0];
       await applyKasaLinkChange(client, user.tenantId!, kasa.id, oldLinkedType, linkedPaymentType);

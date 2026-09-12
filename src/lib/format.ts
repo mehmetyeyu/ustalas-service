@@ -1,9 +1,16 @@
-export function formatCurrency(amount: number): string {
+// Kasalar döviz de tutabilir (ör. "Dolar Kasa") — bkz.
+// src/app/admin/kasa/page.tsx. formatCurrency (TL) en sık kullanılan yol
+// olarak, imzası değişmeden, aşağıdaki genel formatMoney'e sarılı kalır.
+export function formatMoney(amount: number, currency: string = "TRY"): string {
   return new Intl.NumberFormat("tr-TR", {
     style: "currency",
-    currency: "TRY",
+    currency,
     minimumFractionDigits: 2,
   }).format(amount);
+}
+
+export function formatCurrency(amount: number): string {
+  return formatMoney(amount, "TRY");
 }
 
 export function formatDate(date: string | Date): string {

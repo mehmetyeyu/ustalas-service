@@ -44,6 +44,18 @@ export async function POST(request: NextRequest) {
       throw err;
     }
 
+    // Farklı para birimindeki kasalar arası transfer, döviz bozdurma
+    // anlamına gelirdi (ör. 500 TL'nin 500 USD'ye eşit sayılması) — kapsam
+    // dışı, tamamen engellenir (bkz. plan: "Kasalara Para Birimi Desteği").
+    const currencies = await pool.query<{ id: number; currency: string }>(
+      "SELECT id, currency FROM kasalar WHERE id = ANY($1) AND tenant_id = $2",
+      [[fromKasaId, toKasaId], user.tenantId]
+    );
+    const currencyById = new Map(currencies.rows.map((r) => [r.id, r.currency]));
+    if (currencyById.get(fromKasaId) !== currencyById.get(toKasaId)) {
+      return NextResponse.json({ error: "Farklı para birimindeki kasalar arasında transfer yapılamaz." }, { status: 400 });
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
