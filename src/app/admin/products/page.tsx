@@ -231,6 +231,10 @@ export default function ProductsPage() {
   const [historyModalProduct, setHistoryModalProduct] = useState<ProductBatch | null>(null);
   const [historyEntries, setHistoryEntries] = useState<StockEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [editingHistoryEntryId, setEditingHistoryEntryId] = useState<number | null>(null);
+  const [historyEditPurchase, setHistoryEditPurchase] = useState("");
+  const [historyEditSale, setHistoryEditSale] = useState("");
+  const [historyEntrySaving, setHistoryEntrySaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importStage, setImportStage] = useState<"reading" | "uploading" | "">("");
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
@@ -450,6 +454,7 @@ export default function ProductsPage() {
   async function openHistoryModal(item: ProductBatch) {
     setHistoryModalProduct(item);
     setHistoryEntries([]);
+    setEditingHistoryEntryId(null);
     setHistoryLoading(true);
     try {
       const res = await fetch(`/api/products/${item.id}/history`);
@@ -457,6 +462,40 @@ export default function ProductsPage() {
       setHistoryEntries(data.items ?? []);
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  function startEditHistoryEntry(entry: StockEntry) {
+    setEditingHistoryEntryId(entry.id);
+    setHistoryEditPurchase(entry.purchase_price != null ? String(entry.purchase_price) : "");
+    setHistoryEditSale(entry.sale_price != null ? String(entry.sale_price) : "");
+  }
+
+  // "Stok Girişi" sırasında birim fiyat yerine yanlışlıkla toplam tutar
+  // girilmiş bir kaydı sonradan düzeltebilmek için — sadece bu geçmiş
+  // satırının fiyatını değiştirir, ürünün güncel fiyatına dokunmaz (bkz.
+  // src/app/api/products/[id]/history/[entryId]/route.ts).
+  async function handleSaveHistoryEntry(entryId: number) {
+    if (!historyModalProduct) return;
+    setHistoryEntrySaving(true);
+    try {
+      const res = await fetch(`/api/products/${historyModalProduct.id}/history/${entryId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          purchase_price: historyEditPurchase.trim() ? Number(historyEditPurchase) : null,
+          sale_price: historyEditSale.trim() ? Number(historyEditSale) : null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
+      setHistoryEntries((prev) => prev.map((e) => e.id === entryId
+        ? { ...e, purchase_price: historyEditPurchase.trim() ? Number(historyEditPurchase) : null, sale_price: historyEditSale.trim() ? Number(historyEditSale) : null }
+        : e));
+      setEditingHistoryEntryId(null);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setHistoryEntrySaving(false);
     }
   }
 
@@ -1347,8 +1386,9 @@ export default function ProductsPage() {
                     <tr>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
                       <th className="text-center px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Miktar</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Alış Fiyatı</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Satış Fiyatı</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Alış Fiyatı (Birim)</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Satış Fiyatı (Birim)</th>
+                      {canEdit && <th className="px-3 py-2 whitespace-nowrap" />}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1359,6 +1399,7 @@ export default function ProductsPage() {
                           <td className="px-3 py-2 text-center"><div className="h-4 w-6 bg-gray-100 rounded animate-pulse mx-auto" /></td>
                           <td className="px-3 py-2 text-right"><div className="h-4 w-14 bg-gray-100 rounded animate-pulse ml-auto" /></td>
                           <td className="px-3 py-2 text-right"><div className="h-4 w-14 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                          {canEdit && <td className="px-3 py-2" />}
                         </tr>
                       ))
                     ) : (
@@ -1366,8 +1407,54 @@ export default function ProductsPage() {
                         <tr key={e.id}>
                           <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{new Date(e.entry_date).toLocaleDateString("tr-TR")}</td>
                           <td className="px-3 py-2 text-center text-gray-700">{e.quantity}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{e.purchase_price != null ? formatCurrency(num(e.purchase_price)) : "—"}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{e.sale_price != null ? formatCurrency(num(e.sale_price)) : "—"}</td>
+                          {editingHistoryEntryId === e.id ? (
+                            <>
+                              <td className="px-2 py-1.5">
+                                <input
+                                  type="number" step="0.01" value={historyEditPurchase}
+                                  onChange={(ev) => setHistoryEditPurchase(ev.target.value)}
+                                  className="w-24 border border-gray-300 rounded-lg px-2 py-1 text-xs sm:text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <input
+                                  type="number" step="0.01" value={historyEditSale}
+                                  onChange={(ev) => setHistoryEditSale(ev.target.value)}
+                                  className="w-24 border border-gray-300 rounded-lg px-2 py-1 text-xs sm:text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => handleSaveHistoryEntry(e.id)}
+                                  disabled={historyEntrySaving}
+                                  className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2"
+                                >
+                                  Kaydet
+                                </button>
+                                <button
+                                  onClick={() => setEditingHistoryEntryId(null)}
+                                  className="text-gray-400 hover:text-gray-600 text-xs font-medium"
+                                >
+                                  Vazgeç
+                                </button>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-3 py-2 text-right text-gray-700">{e.purchase_price != null ? formatCurrency(num(e.purchase_price)) : "—"}</td>
+                              <td className="px-3 py-2 text-right text-gray-700">{e.sale_price != null ? formatCurrency(num(e.sale_price)) : "—"}</td>
+                              {canEdit && (
+                                <td className="px-3 py-2 text-right whitespace-nowrap">
+                                  <button
+                                    onClick={() => startEditHistoryEntry(e)}
+                                    className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                                  >
+                                    Düzenle
+                                  </button>
+                                </td>
+                              )}
+                            </>
+                          )}
                         </tr>
                       ))
                     )}
