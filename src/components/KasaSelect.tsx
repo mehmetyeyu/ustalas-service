@@ -17,7 +17,11 @@ export function KasaSelect({
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
       className={className}
     >
-      <option value="">Kasa seç...</option>
+      {/* Boş bırakılırsa (kasa_id null) Kasa sayfasında "Kasa" sekmesinde
+          görünür (bkz. src/app/admin/kasa/page.tsx) — buradaki varsayılan
+          seçenek de aynı terminolojiyle "Kasa" (belirli bir kasaya
+          atanmamış, genel nakit). */}
+      <option value="">Kasa</option>
       {kasaOptions.map((k) => (
         <option key={k.id} value={k.id}>{k.name}</option>
       ))}
