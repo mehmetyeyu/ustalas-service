@@ -43,7 +43,9 @@ export default function KasaPage() {
   const canManage = usePermission("kasa.manage");
   const [entries, setEntries] = useState<KasaEntry[]>([]);
   const [balance, setBalance] = useState(0);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState<number | null>(null);
 
   // "all" (Tüm Kasalar, varsayılan) | "unassigned" (kullanıcıya "Kasa" olarak
@@ -101,23 +103,28 @@ export default function KasaPage() {
     }
   }
 
-  async function fetchEntries(kasaFilter: string, from: string, to: string) {
-    setLoading(true);
+  // offset > 0 ise mevcut listenin sonuna eklenir ("Daha Fazla Yükle"),
+  // aksi halde listeyi baştan değiştirir (filtre değişimi/yenileme). API
+  // en yeniden en eskiye döndürdüğünden (bkz. GET /api/kasa) burada artık
+  // ters çevirmeye gerek yok.
+  async function fetchEntries(kasaFilter: string, from: string, to: string, offset = 0) {
+    const append = offset > 0;
+    if (append) setLoadingMore(true); else setLoading(true);
     try {
       const params = new URLSearchParams();
       if (kasaFilter !== "all") params.set("kasaId", kasaFilter);
       if (from && to) { params.set("from", from); params.set("to", to); }
+      if (append) params.set("offset", String(offset));
       const qs = params.toString();
       const res = await fetch(`/api/kasa${qs ? `?${qs}` : ""}`, { cache: "no-store" });
       const data = await res.json();
       const list: KasaEntry[] = Array.isArray(data.entries) ? data.entries : [];
-      setEntries(list);
+      setEntries((prev) => (append ? [...prev, ...list] : list));
       setBalance(Number(data.balance) || 0);
-      if (kasaFilter === "all") {
-        setHasUnassigned(list.some((e) => e.kasa_id == null));
-      }
+      setTotal(Number(data.total) || 0);
+      setHasUnassigned(!!data.hasUnassigned);
     } finally {
-      setLoading(false);
+      if (append) setLoadingMore(false); else setLoading(false);
     }
   }
 
@@ -371,61 +378,63 @@ export default function KasaPage() {
         )}
       </div>
 
-      {kasaList.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-4">
-          <button
-            onClick={() => setSelectedKasa("all")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedKasa === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          >
-            Tüm Kasalar
-          </button>
-          {kasaList.map((k) => (
+      <div className="flex flex-wrap items-end gap-2 mb-4">
+        {kasaList.length > 0 && (
+          <div className="flex flex-wrap gap-1">
             <button
-              key={k.id}
-              onClick={() => setSelectedKasa(String(k.id))}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedKasa === String(k.id) ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              onClick={() => setSelectedKasa("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedKasa === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
             >
-              {k.name}
+              Tüm Kasalar
             </button>
-          ))}
-          {hasUnassigned && (
+            {kasaList.map((k) => (
+              <button
+                key={k.id}
+                onClick={() => setSelectedKasa(String(k.id))}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedKasa === String(k.id) ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              >
+                {k.name}
+              </button>
+            ))}
+            {hasUnassigned && (
+              <button
+                onClick={() => setSelectedKasa("unassigned")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedKasa === "unassigned" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              >
+                Kasa
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-end gap-2 ml-auto">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {(dateFrom || dateTo) && (
             <button
-              onClick={() => setSelectedKasa("unassigned")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedKasa === "unassigned" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="text-gray-400 hover:text-gray-600 text-xs font-medium px-2 py-1.5"
             >
-              Kasa
+              Tüm Zamanlar
             </button>
           )}
         </div>
-      )}
-
-      <div className="flex flex-wrap items-end gap-2 mb-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {(dateFrom || dateTo) && (
-          <button
-            onClick={() => { setDateFrom(""); setDateTo(""); }}
-            className="text-gray-400 hover:text-gray-600 text-xs font-medium px-2 py-1.5"
-          >
-            Tüm Zamanlar
-          </button>
-        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 min-w-0">
@@ -458,7 +467,7 @@ export default function KasaPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {[...entries].reverse().map((e) => (
+                {entries.map((e) => (
                   <tr key={`${e.entry_type}-${e.source_id}`} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                       {e.transfer_pair_kasa_name ? "Kasalar Arası Transfer" : ENTRY_TYPE_LABELS[e.entry_type]}
@@ -508,6 +517,17 @@ export default function KasaPage() {
               </tbody>
             </table>
           </div>
+          {entries.length < total && (
+            <div className="p-4 text-center border-t border-gray-100">
+              <button
+                onClick={() => fetchEntries(selectedKasa, dateFrom, dateTo, entries.length)}
+                disabled={loadingMore}
+                className="text-blue-600 hover:text-blue-800 disabled:opacity-40 text-sm font-medium"
+              >
+                {loadingMore ? "Yükleniyor..." : `Daha Fazla Yükle (${entries.length} / ${total})`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

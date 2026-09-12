@@ -4,6 +4,8 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
 
 // Kasa (fiziksel nakit kasa) — tüm nakit hareketlerini tek kronolojik
 // listede, canlı bir bakiye sütunuyla gösterir. Beş kaynak UNION ALL ile
@@ -30,13 +32,19 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 //
 // ?from=&to= (ikisi de YYYY-MM-DD, ikisi de verilmeli) — opsiyonel tarih
 // aralığı. Verilmezse (varsayılan) tüm geçmiş taranır, bugüne kadar birebir
-// eski davranış. Hacim arttıkça (on binlerce kayıt) her istekte tüm geçmişi
-// pencere fonksiyonuyla taramak yavaşlayabileceğinden eklendi — aralık
-// verildiğinde SADECE o aralıktaki satırlar pencerelenir (gerçek performans
-// kazancı), aralıktan ÖNCEKİ toplam ("opening" CTE) tek bir ucuz agregat
-// sorguyla hesaplanıp her satırın kümülatif bakiyesine eklenir; böylece
-// "1 Mart'taki bakiye" hâlâ o tarihe kadarki TÜM geçmişi doğru yansıtır,
-// sadece Şubat ve öncesi satırlar tek tek pencereye dahil edilmez.
+// eski davranış. Aralık verildiğinde SADECE o aralıktaki satırlar
+// pencerelenir (gerçek performans kazancı), aralıktan ÖNCEKİ toplam
+// ("opening" CTE) tek bir ucuz agregat sorguyla hesaplanıp her satırın
+// kümülatif bakiyesine eklenir; böylece "1 Mart'taki bakiye" hâlâ o tarihe
+// kadarki TÜM geçmişi doğru yansıtır, sadece Şubat ve öncesi satırlar tek
+// tek pencereye dahil edilmez.
+//
+// ?limit=&offset= — sayfalama (varsayılan limit 50, en fazla 200). Satırlar
+// en yeniden en eskiye döner (entry_date/sort_ts/source_rank/source_id DESC)
+// — "Daha Fazla Yükle" ile eski satırlara doğru ilerlenir. running_balance
+// yine de TÜM (from/to ile sınırlı) kayıt kümesi üzerinden doğru hesaplanır,
+// sadece döndürülen SAYFA sınırlanır. `total`, aynı filtrelerle eşleşen
+// TOPLAM satır sayısıdır (istemci "daha fazla var mı" diye bunu kullanır).
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -56,6 +64,9 @@ export async function GET(request: NextRequest) {
     const hasDateRange = !!fromRaw && !!toRaw && ISO_DATE_RE.test(fromRaw) && ISO_DATE_RE.test(toRaw);
     const fromParam = hasDateRange ? fromRaw : null;
     const toParam = hasDateRange ? toRaw : null;
+
+    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(request.nextUrl.searchParams.get("limit") ?? "") || DEFAULT_LIMIT));
+    const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "") || 0);
 
     const baseCte = `
       WITH combined AS (
@@ -130,7 +141,7 @@ export async function GET(request: NextRequest) {
       )
     `;
 
-    const [entriesResult, totalResult] = await Promise.all([
+    const [entriesResult, totalResult, countResult, unassignedResult] = await Promise.all([
       pool.query(
         `${baseCte},
          opening AS (
@@ -149,22 +160,47 @@ export async function GET(request: NextRequest) {
          LEFT JOIN kasalar k ON k.id = windowed.kasa_id AND k.tenant_id = $1
          LEFT JOIN cash_ledger_entries pair_entry ON pair_entry.id = windowed.transfer_pair_id AND pair_entry.tenant_id = $1
          LEFT JOIN kasalar pk ON pk.id = pair_entry.kasa_id AND pk.tenant_id = $1
-         ORDER BY windowed.entry_date, windowed.sort_ts, windowed.source_rank, windowed.source_id`,
-        [user.tenantId, kasaIdParam, fromParam, toParam]
+         ORDER BY windowed.entry_date DESC, windowed.sort_ts DESC, windowed.source_rank DESC, windowed.source_id DESC
+         LIMIT $5 OFFSET $6`,
+        [user.tenantId, kasaIdParam, fromParam, toParam, limit, offset]
       ),
-      // Toplam bakiye entries listesinden bağımsız hesaplanır — aralık
-      // içinde hiç hareket olmasa bile (ör. boş bir ay) doğru kalması için
-      // (pencere fonksiyonunun son satırından türetilirse, o satır hiç
-      // yoksa yanlışlıkla 0 dönerdi).
+      // Toplam bakiye entries listesinden (ve sayfalamadan) bağımsız
+      // hesaplanır — aralık içinde hiç hareket olmasa bile (ör. boş bir ay)
+      // ya da görüntülenen sayfa boş kalsa bile doğru kalması için.
       pool.query<{ balance: number }>(
         `${baseCte}
          SELECT COALESCE(SUM(amount * kasa_direction), 0)::float AS balance
          FROM filtered WHERE $3::date IS NULL OR entry_date <= $3`,
         [user.tenantId, kasaIdParam, toParam]
       ),
+      // Aynı filtrelerle eşleşen TOPLAM satır sayısı — istemci "Daha Fazla
+      // Yükle" gösterilsin mi diye bunu kullanır.
+      pool.query<{ total: number }>(
+        `${baseCte}
+         SELECT COUNT(*)::int AS total FROM filtered
+         WHERE ($3::date IS NULL OR entry_date >= $3) AND ($4::date IS NULL OR entry_date <= $4)`,
+        [user.tenantId, kasaIdParam, fromParam, toParam]
+      ),
+      // "Kasa" (atanmamış) sekmesinin görünürlüğü sayfalamadan bağımsız
+      // olmalı — ilk sayfada hiç atanmamış satır çıkmasa bile, geçmişte
+      // (görüntülenen tarih aralığında) varsa sekme yine de gösterilmeli.
+      pool.query<{ has_unassigned: boolean }>(
+        `${baseCte}
+         SELECT EXISTS (
+           SELECT 1 FROM combined
+           WHERE kasa_id IS NULL
+             AND ($3::date IS NULL OR entry_date >= $3) AND ($4::date IS NULL OR entry_date <= $4)
+         ) AS has_unassigned`,
+        [user.tenantId, kasaIdParam, fromParam, toParam]
+      ),
     ]);
 
-    return NextResponse.json({ balance: totalResult.rows[0].balance, entries: entriesResult.rows });
+    return NextResponse.json({
+      balance: totalResult.rows[0].balance,
+      entries: entriesResult.rows,
+      total: countResult.rows[0].total,
+      hasUnassigned: unassignedResult.rows[0].has_unassigned,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
