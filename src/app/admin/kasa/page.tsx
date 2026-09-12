@@ -56,6 +56,11 @@ export default function KasaPage() {
   // sekme değiştirilince kaybolmasın/yanlış görünmesin diye ayrı bir state'te
   // tutulur.
   const [hasUnassigned, setHasUnassigned] = useState(false);
+  // Opsiyonel tarih aralığı — ikisi de boşsa (varsayılan) tüm geçmiş
+  // gösterilir (bkz. GET /api/kasa dosya başı yorumu: hacim arttıkça
+  // performans için eklendi, ama varsayılan davranış değişmedi).
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [showModal, setShowModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
@@ -96,11 +101,14 @@ export default function KasaPage() {
     }
   }
 
-  async function fetchEntries(kasaFilter: string) {
+  async function fetchEntries(kasaFilter: string, from: string, to: string) {
     setLoading(true);
     try {
-      const qs = kasaFilter === "all" ? "" : `?kasaId=${kasaFilter}`;
-      const res = await fetch(`/api/kasa${qs}`, { cache: "no-store" });
+      const params = new URLSearchParams();
+      if (kasaFilter !== "all") params.set("kasaId", kasaFilter);
+      if (from && to) { params.set("from", from); params.set("to", to); }
+      const qs = params.toString();
+      const res = await fetch(`/api/kasa${qs ? `?${qs}` : ""}`, { cache: "no-store" });
       const data = await res.json();
       const list: KasaEntry[] = Array.isArray(data.entries) ? data.entries : [];
       setEntries(list);
@@ -126,12 +134,12 @@ export default function KasaPage() {
   }, []);
 
   useEffect(() => {
-    fetchEntries(selectedKasa);
+    fetchEntries(selectedKasa, dateFrom, dateTo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKasa]);
+  }, [selectedKasa, dateFrom, dateTo]);
 
   async function refreshAll() {
-    await Promise.all([fetchKasaList(), fetchEntries(selectedKasa)]);
+    await Promise.all([fetchKasaList(), fetchEntries(selectedKasa, dateFrom, dateTo)]);
   }
 
   function openNew() {
@@ -256,7 +264,7 @@ export default function KasaPage() {
       // devam etmesin diye entries de yeniden çekilir. Bağlı ödeme tipi
       // değiştiyse geçmiş kayıtlar da sunucuda backfill edildiğinden
       // (applyKasaLinkChange), entries burada da güncel gelir.
-      await Promise.all([fetchKasaList(), fetchEntries(selectedKasa)]);
+      await Promise.all([fetchKasaList(), fetchEntries(selectedKasa, dateFrom, dateTo)]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
@@ -390,6 +398,35 @@ export default function KasaPage() {
           )}
         </div>
       )}
+
+      <div className="flex flex-wrap items-end gap-2 mb-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => { setDateFrom(""); setDateTo(""); }}
+            className="text-gray-400 hover:text-gray-600 text-xs font-medium px-2 py-1.5"
+          >
+            Tüm Zamanlar
+          </button>
+        )}
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 min-w-0">
         <p className="text-xs text-gray-500 mb-1">{balanceLabel}</p>

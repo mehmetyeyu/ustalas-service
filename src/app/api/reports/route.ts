@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
            SELECT COALESCE(os.payment_type, 'Belirtilmemiş') AS payment_type, os.unit_price AS total
            FROM order_services os
            JOIN orders o ON os.order_id = o.id
-           WHERE NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id)
+           WHERE NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id AND op2.tenant_id = o.tenant_id)
              AND o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3
          ) combined
          GROUP BY payment_type
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
              FROM order_services os
              JOIN orders o ON os.order_id = o.id
              WHERE os.payment_type = 'Nakit'
-               AND NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id)
+               AND NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id AND op2.tenant_id = o.tenant_id)
                AND o.tenant_id = $1
 
              UNION ALL
