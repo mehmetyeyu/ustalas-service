@@ -8,7 +8,7 @@ import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
-import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
+import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
 
 interface EditLineInput {
   id?: number;
@@ -134,6 +134,7 @@ export async function PATCH(
     // tenant_id atadığından burada her zaman dolu olur.
     const { payment_types } = await getAppSettings(user.tenantId!);
     const paymentOptions = flatPaymentOptions(payment_types);
+    const resolvedPayments: { payment_type: string; amount: number; kasa_id: number | null }[] = [];
     for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
       if (!p.payment_type || !isValidPaymentType(p.payment_type, paymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
@@ -142,21 +143,21 @@ export async function PATCH(
       if (!Number.isFinite(amt) || amt <= 0) {
         return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
       }
-      // kasa_id yalnızca Nakit'te anlamlıdır (bkz. INSERT'teki aynı koşul) —
-      // başka bir ödeme tipi seçiliyken istemcide unutulmuş/silinmiş bir
-      // kasa_id save'i gereksiz yere reddetmesin diye sadece Nakit'te doğrulanır.
-      if (p.payment_type === "Nakit") {
-        try {
-          await assertKasaBelongsToTenant(pool, p.kasa_id, user.tenantId!);
-        } catch (err) {
-          if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
-          throw err;
-        }
+      // kasa_id Nakit'te istemcinin seçtiği kasa, başka bir ödeme tipinde ise
+      // (varsa) o tipe Kasaları Yönet'ten bağlı kasa olarak otomatik çözülür
+      // (bkz. src/lib/kasalar.ts: resolveKasaId).
+      let kasaId: number | null;
+      try {
+        kasaId = await resolveKasaId(pool, user.tenantId!, p.payment_type, p.kasa_id);
+      } catch (err) {
+        if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+        throw err;
       }
+      resolvedPayments.push({ payment_type: p.payment_type, amount: amt, kasa_id: kasaId });
     }
 
-    const totalPaid = (payments as { amount: number }[]).reduce((sum, p) => sum + Number(p.amount), 0);
-    const distinctTypes = Array.from(new Set((payments as { payment_type: string }[]).map((p) => p.payment_type)));
+    const totalPaid = resolvedPayments.reduce((sum, p) => sum + p.amount, 0);
+    const distinctTypes = Array.from(new Set(resolvedPayments.map((p) => p.payment_type)));
     const summaryType = distinctTypes.length === 1 ? distinctTypes[0] : "Karışık";
 
     const client = await pool.connect();
@@ -189,10 +190,10 @@ export async function PATCH(
         );
       }
 
-      for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
+      for (const p of resolvedPayments) {
         await client.query(
           "INSERT INTO order_payments (tenant_id, order_id, payment_type, amount, kasa_id) VALUES ($1, $2, $3, $4, $5)",
-          [user.tenantId, id, p.payment_type, Number(p.amount), p.payment_type === "Nakit" ? (p.kasa_id ?? null) : null]
+          [user.tenantId, id, p.payment_type, p.amount, p.kasa_id]
         );
       }
 
@@ -282,13 +283,11 @@ export async function PUT(
       if (l.payment_type && !isValidPaymentType(l.payment_type, orderPaymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
-      if (l.payment_type === "Nakit") {
-        try {
-          await assertKasaBelongsToTenant(pool, l.kasa_id, user.tenantId!);
-        } catch (err) {
-          if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
-          throw err;
-        }
+      try {
+        l.kasa_id = await resolveKasaId(pool, user.tenantId!, l.payment_type, l.kasa_id);
+      } catch (err) {
+        if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+        throw err;
       }
     }
 
@@ -309,6 +308,7 @@ export async function PUT(
       if (payments.length === 0) {
         clearPayments = true;
       } else {
+        editedPayments = [];
         for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
           if (!p.payment_type || !isValidPaymentType(p.payment_type, orderPaymentOptions)) {
             return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
@@ -317,20 +317,15 @@ export async function PUT(
           if (!Number.isFinite(amt) || amt <= 0) {
             return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
           }
-          if (p.payment_type === "Nakit") {
-            try {
-              await assertKasaBelongsToTenant(pool, p.kasa_id, user.tenantId!);
-            } catch (err) {
-              if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
-              throw err;
-            }
+          let kasaId: number | null;
+          try {
+            kasaId = await resolveKasaId(pool, user.tenantId!, p.payment_type, p.kasa_id);
+          } catch (err) {
+            if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
+            throw err;
           }
+          editedPayments.push({ payment_type: p.payment_type, amount: amt, kasa_id: kasaId });
         }
-        editedPayments = (payments as { payment_type: string; amount: number; kasa_id?: number | null }[]).map((p) => ({
-          payment_type: p.payment_type,
-          amount: Number(p.amount),
-          kasa_id: p.payment_type === "Nakit" ? (p.kasa_id ?? null) : null,
-        }));
         const totalPaid = editedPayments.reduce((sum, p) => sum + p.amount, 0);
         if (totalPaid > totalAmount + 0.01) {
           return NextResponse.json(
@@ -429,7 +424,7 @@ export async function PUT(
              SET service_id = $1, unit_price = $2, quantity = $3, cost_price = $4,
                  supplier = $5, stock_code = $6, size_desc = $7, payment_type = $8, product_id = $9, kasa_id = $10
              WHERE id = $11 AND order_id = $12 AND tenant_id = $13`,
-            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.payment_type === "Nakit" ? (l.kasa_id ?? null) : null, l.id, id, user.tenantId]
+            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.kasa_id ?? null, l.id, id, user.tenantId]
           );
         } else {
           if (productId) await deductStock(client, user.tenantId!, productId, quantity);
@@ -437,7 +432,7 @@ export async function PUT(
             `INSERT INTO order_services
                (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id, kasa_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.payment_type === "Nakit" ? (l.kasa_id ?? null) : null]
+            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.kasa_id ?? null]
           );
         }
       }

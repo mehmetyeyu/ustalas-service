@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
+import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -96,21 +96,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    for (const e of items as ExpenseInput[]) {
-      try {
-        await assertKasaBelongsToTenant(pool, e.kasa_id, user.tenantId!);
-      } catch (err) {
-        if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
-        throw err;
-      }
-    }
-
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const ids: number[] = [];
       for (const e of items as ExpenseInput[]) {
         const paymentType = e.payment_type ? String(e.payment_type).trim() : null;
+        const kasaId = await resolveKasaId(client, user.tenantId!, paymentType, e.kasa_id);
         const result = await client.query(
           `INSERT INTO expenses (tenant_id, expense_date, category, description, amount, payment_type, recurring_expense_id, kasa_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -123,7 +115,7 @@ export async function POST(request: NextRequest) {
             Number(e.amount),
             paymentType,
             e.recurring_expense_id || null,
-            paymentType === "Nakit" ? (e.kasa_id ?? null) : null,
+            kasaId,
           ]
         );
         ids.push(result.rows[0].id);
@@ -132,6 +124,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ids }, { status: 201 });
     } catch (err) {
       await client.query("ROLLBACK");
+      if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
       throw err;
     } finally {
       client.release();

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
+import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
 
 export async function PUT(
   request: NextRequest,
@@ -22,14 +22,15 @@ export async function PUT(
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
       return NextResponse.json({ error: "Geçersiz tutar." }, { status: 400 });
     }
+    const trimmedPaymentType = payment_type ? String(payment_type).trim() : null;
+    let resolvedKasaId: number | null;
     try {
-      await assertKasaBelongsToTenant(pool, kasa_id, user.tenantId!);
+      resolvedKasaId = await resolveKasaId(pool, user.tenantId!, trimmedPaymentType, kasa_id);
     } catch (err) {
       if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
       throw err;
     }
 
-    const trimmedPaymentType = payment_type ? String(payment_type).trim() : null;
     const result = await pool.query(
       `UPDATE recurring_expenses SET category = $1, description = $2, amount = $3, payment_type = $4, is_active = $5, kasa_id = $6
        WHERE id = $7 AND tenant_id = $8`,
@@ -39,7 +40,7 @@ export async function PUT(
         amountValue,
         trimmedPaymentType,
         is_active ?? true,
-        trimmedPaymentType === "Nakit" ? (kasa_id ?? null) : null,
+        resolvedKasaId,
         id,
         user.tenantId,
       ]

@@ -5,6 +5,7 @@ import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedgerBatch, LedgerCustomerRequiredError } from "@/lib/customerLedger";
+import { resolveKasaId } from "@/lib/kasalar";
 
 const MAX_LINES = 500;
 
@@ -48,6 +49,12 @@ export async function PATCH(request: NextRequest) {
     if (!paymentType || !isValidPaymentType(paymentType, flatPaymentOptions(payment_types))) {
       return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
     }
+    // İstemciden bir kasa_id gelmiyor (toplu işlem, hangi fiziksel Nakit
+    // kasasına gideceğini bilemez) — sadece yeni tip Kasaları Yönet'ten bir
+    // kasaya BAĞLIYSA (ör. "Nazım Hesap") otomatik/deterministik olarak o
+    // kasa çözülür; Nakit'e toplu geçişte (fiziksel kasa belirsiz) ve
+    // bağlantısız tiplerde bugünkü gibi NULL kalır.
+    const resolvedKasaId = await resolveKasaId(pool, user.tenantId!, paymentType, null);
 
     const client = await pool.connect();
     try {
@@ -58,11 +65,11 @@ export async function PATCH(request: NextRequest) {
       // ait olduğu siparişlerden, order_payments'ta gerçekten BİRDEN FAZLA
       // FARKLI ödeme tipi kayıtlı olanlar — bunlar güncellemenin dışında
       // bırakılır (yukarıdaki dosya yorumuna bkz.).
-      // kasa_id de NULL'a çekilir — bu toplu işlem hangi kasadan/kasaya
-      // olduğunu hiç bilmez (bkz. src/lib/kasalar.ts: "kasa_id sadece
-      // Nakit'te anlamlıdır"), aksi halde ör. Nakit'ten POS'a toplu
-      // çevrilen bir satır eski kasa_id'yi taşımaya devam eder ve sonradan
-      // tekrar Nakit'e çevrilince o kasaya sessizce yeniden atanmış olurdu.
+      // kasa_id yukarıda çözülen resolvedKasaId'ye set edilir (bağlantısız
+      // tiplerde ve Nakit'te null kalır) — aksi halde ör. Nakit'ten POS'a
+      // toplu çevrilen bir satır eski kasa_id'yi taşımaya devam eder ve
+      // sonradan tekrar Nakit'e çevrilince o kasaya sessizce yeniden
+      // atanmış olurdu (bkz. src/lib/kasalar.ts: resolveKasaId).
       const updated = await client.query<{ order_id: number }>(
         `WITH mixed_orders AS (
            SELECT op.order_id
@@ -74,11 +81,11 @@ export async function PATCH(request: NextRequest) {
            GROUP BY op.order_id
            HAVING COUNT(DISTINCT op.payment_type) > 1
          )
-         UPDATE order_services os SET payment_type = $1, kasa_id = NULL
+         UPDATE order_services os SET payment_type = $1, kasa_id = $4
          WHERE os.id = ANY($2) AND os.tenant_id = $3
            AND os.order_id NOT IN (SELECT order_id FROM mixed_orders)
          RETURNING os.order_id`,
-        [paymentType, lineIds, user.tenantId]
+        [paymentType, lineIds, user.tenantId, resolvedKasaId]
       );
 
       const affectedOrderIds = Array.from(new Set(updated.rows.map((r) => r.order_id)));
@@ -110,8 +117,8 @@ export async function PATCH(request: NextRequest) {
         const uniformOrderIds = summaries.rows.filter((r) => r.summary === paymentType).map((r) => r.order_id);
         if (uniformOrderIds.length > 0) {
           await client.query(
-            `UPDATE order_payments SET payment_type = $1, kasa_id = NULL WHERE order_id = ANY($2) AND tenant_id = $3`,
-            [paymentType, uniformOrderIds, user.tenantId]
+            `UPDATE order_payments SET payment_type = $1, kasa_id = $4 WHERE order_id = ANY($2) AND tenant_id = $3`,
+            [paymentType, uniformOrderIds, user.tenantId, resolvedKasaId]
           );
         }
 

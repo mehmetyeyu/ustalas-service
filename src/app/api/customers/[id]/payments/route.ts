@@ -3,7 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { validateManualLedgerInput, InvalidLedgerInputError } from "@/lib/customerLedger";
-import { assertKasaBelongsToTenant, InvalidKasaError } from "@/lib/kasalar";
+import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
 
 // Müşteriler ekranındaki "Tahsilat Al / Borç Ekle" — bağımsız bir cari
 // hareketi (herhangi bir siparişe bağlı DEĞİL, bkz. src/lib/customerLedger.ts
@@ -26,9 +26,10 @@ export async function POST(
     const body = await request.json();
 
     let input;
+    let kasaId: number | null;
     try {
       input = await validateManualLedgerInput(body, user.tenantId!);
-      await assertKasaBelongsToTenant(pool, input.kasaId, user.tenantId!);
+      kasaId = await resolveKasaId(pool, user.tenantId!, input.paymentType, input.kasaId);
     } catch (err) {
       if (err instanceof InvalidLedgerInputError || err instanceof InvalidKasaError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
@@ -51,7 +52,7 @@ export async function POST(
        RETURNING id`,
       [
         user.tenantId, id, input.direction, input.amount,
-        input.paymentType, input.entryDate, input.note, user.userId, input.kasaId,
+        input.paymentType, input.entryDate, input.note, user.userId, kasaId,
       ]
     );
 

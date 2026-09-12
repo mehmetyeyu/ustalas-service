@@ -990,6 +990,14 @@ CREATE TABLE IF NOT EXISTS kasalar (
 CREATE UNIQUE INDEX IF NOT EXISTS kasalar_tenant_name_unique ON kasalar(tenant_id, name);
 CREATE UNIQUE INDEX IF NOT EXISTS kasalar_id_tenant_unique ON kasalar(id, tenant_id);
 
+-- Bir kasa, "Nazım Hesap" gibi Nakit-dışı bir ödeme tipine bağlanabilir (bkz.
+-- src/lib/kasalar.ts: resolveKasaId) — o ödeme tipiyle yapılan işlemler
+-- otomatik olarak bu kasaya sayılır, ayrı bir kasa seçimi gerekmez. Bir ödeme
+-- tipi aynı anda en fazla bir kasaya bağlı olabilir (tenant başına).
+ALTER TABLE kasalar ADD COLUMN IF NOT EXISTS linked_payment_type VARCHAR(100);
+CREATE UNIQUE INDEX IF NOT EXISTS kasalar_tenant_linked_payment_type_unique
+  ON kasalar(tenant_id, linked_payment_type) WHERE linked_payment_type IS NOT NULL;
+
 ALTER TABLE order_payments          ADD COLUMN IF NOT EXISTS kasa_id INT;
 ALTER TABLE order_services          ADD COLUMN IF NOT EXISTS kasa_id INT;
 ALTER TABLE expenses                ADD COLUMN IF NOT EXISTS kasa_id INT;

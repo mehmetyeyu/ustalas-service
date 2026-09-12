@@ -13,6 +13,13 @@ import { hasPermission } from "@/lib/permissions";
 // Abiye Gönderildi", ya da Kasalar Arası Transfer bacakları). Bakiye her
 // zaman canlı SUM()'dır, cache kolonu yok.
 //
+// payment_type = 'Nakit' OLMASA bile kasa_id dolu olan satırlar da dahil
+// edilir — bir ödeme tipi (ör. "Nazım Hesap") Kasaları Yönet'ten bir kasaya
+// BAĞLANMIŞSA (bkz. src/lib/kasalar.ts: resolveKasaId), o tipteki işlemler
+// otomatik kasa_id alır ve buraya, o kasanın gerçek bir hareketiymiş gibi
+// dahil olur. Açıklama metni de gerçek payment_type'ı yansıtır (sadece
+// "Nakit" değil).
+//
 // ?kasaId= — sayısal bir kasa id'si, "unassigned" (kasa_id IS NULL — hiç
 // kasa seçilmemiş eski/manuel hareketler), ya da yok (tüm kasalar, varsayılan).
 // ÖNEMLİ: filtre pencere fonksiyonundan ÖNCE uygulanır (filtered CTE) — aksi
@@ -39,11 +46,11 @@ export async function GET(request: NextRequest) {
            o.id AS ref_id, 1::smallint AS kasa_direction, op.amount::float AS amount,
            op.created_at::date AS entry_date, op.created_at AS sort_ts,
            COALESCE(o.customer_name, o.plate) AS related_account,
-           ('Sipariş #' || o.id || ' Nakit Tahsilatı') AS description,
+           ('Sipariş #' || o.id || ' ' || op.payment_type || ' Tahsilatı') AS description,
            op.kasa_id, NULL::int AS transfer_pair_id
          FROM order_payments op
          JOIN orders o ON o.id = op.order_id
-         WHERE op.payment_type = 'Nakit' AND o.tenant_id = $1
+         WHERE (op.payment_type = 'Nakit' OR op.kasa_id IS NOT NULL) AND o.tenant_id = $1
 
          UNION ALL
 
@@ -52,11 +59,11 @@ export async function GET(request: NextRequest) {
            o.id, 1, os.unit_price::float,
            o.created_at::date, o.created_at,
            COALESCE(o.customer_name, o.plate),
-           ('Sipariş #' || o.id || ' Nakit Tahsilatı'),
+           ('Sipariş #' || o.id || ' ' || os.payment_type || ' Tahsilatı'),
            os.kasa_id, NULL
          FROM order_services os
          JOIN orders o ON os.order_id = o.id
-         WHERE os.payment_type = 'Nakit' AND os.tenant_id = $1
+         WHERE (os.payment_type = 'Nakit' OR os.kasa_id IS NOT NULL) AND os.tenant_id = $1
            AND NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id AND op2.tenant_id = o.tenant_id)
 
          UNION ALL
@@ -71,7 +78,7 @@ export async function GET(request: NextRequest) {
          FROM customer_ledger_entries cle
          JOIN customers c ON c.id = cle.customer_id AND c.tenant_id = cle.tenant_id
          WHERE cle.entry_type = 'MANUEL' AND cle.direction = -1
-           AND cle.payment_type = 'Nakit' AND cle.tenant_id = $1
+           AND (cle.payment_type = 'Nakit' OR cle.kasa_id IS NOT NULL) AND cle.tenant_id = $1
 
          UNION ALL
 
@@ -83,7 +90,7 @@ export async function GET(request: NextRequest) {
            COALESCE(e.description, ''),
            e.kasa_id, NULL
          FROM expenses e
-         WHERE e.payment_type = 'Nakit' AND e.tenant_id = $1
+         WHERE (e.payment_type = 'Nakit' OR e.kasa_id IS NOT NULL) AND e.tenant_id = $1
 
          UNION ALL
 

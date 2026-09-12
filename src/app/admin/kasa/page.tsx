@@ -6,6 +6,7 @@ import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { KasaSelect } from "@/components/KasaSelect";
+import { flatPaymentOptions } from "@/lib/paymentTypes";
 
 interface KasaEntry {
   entry_type: "SIPARIS" | "CARI_TAHSILAT" | "MASRAF" | "MANUEL";
@@ -26,6 +27,7 @@ interface KasaEntry {
 interface Kasa {
   id: number;
   name: string;
+  linked_payment_type: string | null;
 }
 
 const ENTRY_TYPE_LABELS: Record<KasaEntry["entry_type"], string> = {
@@ -66,9 +68,15 @@ export default function KasaPage() {
 
   const [showManageModal, setShowManageModal] = useState(false);
   const [newKasaName, setNewKasaName] = useState("");
+  const [newKasaLinkedType, setNewKasaLinkedType] = useState("");
   const [renamingKasaId, setRenamingKasaId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameLinkedType, setRenameLinkedType] = useState("");
   const [kasaActionSaving, setKasaActionSaving] = useState(false);
+  // "Nazım Hesap" gibi Nakit-dışı bir ödeme tipi bir kasaya bağlanabilir (bkz.
+  // src/lib/kasalar.ts: resolveKasaId) — o tipteki işlemler otomatik bu kasaya
+  // sayılır. Nakit/Cari hariç, tenant'ın gerçek ödeme tipi listesi.
+  const [linkableTypes, setLinkableTypes] = useState<string[]>([]);
 
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferFrom, setTransferFrom] = useState<number | null>(null);
@@ -107,6 +115,14 @@ export default function KasaPage() {
 
   useEffect(() => {
     fetchKasaList();
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.payment_types)) {
+          setLinkableTypes(flatPaymentOptions(d.payment_types).filter((t) => t !== "Nakit" && t !== "Cari"));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -188,8 +204,20 @@ export default function KasaPage() {
 
   function openManage() {
     setNewKasaName("");
+    setNewKasaLinkedType("");
     setRenamingKasaId(null);
     setShowManageModal(true);
+  }
+
+  // Bir ödeme tipi aynı anda en fazla bir kasaya bağlı olabilir — excludeKasaId
+  // (düzenlenen kasanın kendisi) hariç, HALİHAZIRDA başka bir kasaya bağlı
+  // tipler seçenek listesinden çıkarılır (asıl garanti sunucudaki unique index,
+  // bu sadece kullanıcıya baştan geçersiz bir seçeneği göstermemek için).
+  function linkTypeOptions(excludeKasaId: number | null): string[] {
+    const taken = new Set(
+      kasaList.filter((k) => k.id !== excludeKasaId && k.linked_payment_type).map((k) => k.linked_payment_type)
+    );
+    return linkableTypes.filter((t) => !taken.has(t));
   }
 
   async function handleAddKasa() {
@@ -199,10 +227,11 @@ export default function KasaPage() {
       const res = await fetch("/api/kasalar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKasaName.trim() }),
+        body: JSON.stringify({ name: newKasaName.trim(), linked_payment_type: newKasaLinkedType || null }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setNewKasaName("");
+      setNewKasaLinkedType("");
       await fetchKasaList();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -218,13 +247,15 @@ export default function KasaPage() {
       const res = await fetch(`/api/kasalar/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: renameValue.trim() }),
+        body: JSON.stringify({ name: renameValue.trim(), linked_payment_type: renameLinkedType || null }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setRenamingKasaId(null);
       // Hareket tablosundaki "Kasa" kolonu (bkz. entries[].kasa_name) önceki
       // fetch'ten geldiği için, yeniden adlandırma sonrası eski adı göstermeye
-      // devam etmesin diye entries de yeniden çekilir.
+      // devam etmesin diye entries de yeniden çekilir. Bağlı ödeme tipi
+      // değiştiyse geçmiş kayıtlar da sunucuda backfill edildiğinden
+      // (applyKasaLinkChange), entries burada da güncel gelir.
       await Promise.all([fetchKasaList(), fetchEntries(selectedKasa)]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -536,34 +567,51 @@ export default function KasaPage() {
             ) : (
               <div className="space-y-2 mb-4">
                 {kasaList.map((k) => (
-                  <div key={k.id} className="flex items-center gap-2 border border-gray-100 rounded-lg px-3 py-2">
+                  <div key={k.id} className="border border-gray-100 rounded-lg px-3 py-2">
                     {renamingKasaId === k.id ? (
-                      <>
-                        <input
-                          type="text"
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <button
-                          onClick={() => handleRenameKasa(k.id)}
-                          disabled={kasaActionSaving}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-medium shrink-0"
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={() => handleRenameKasa(k.id)}
+                            disabled={kasaActionSaving}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-medium shrink-0"
+                          >
+                            Kaydet
+                          </button>
+                          <button
+                            onClick={() => setRenamingKasaId(null)}
+                            className="text-gray-400 hover:text-gray-600 text-xs font-medium shrink-0"
+                          >
+                            Vazgeç
+                          </button>
+                        </div>
+                        <select
+                          value={renameLinkedType}
+                          onChange={(e) => setRenameLinkedType(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          Kaydet
-                        </button>
-                        <button
-                          onClick={() => setRenamingKasaId(null)}
-                          className="text-gray-400 hover:text-gray-600 text-xs font-medium shrink-0"
-                        >
-                          Vazgeç
-                        </button>
-                      </>
+                          <option value="">Bağlı ödeme tipi yok</option>
+                          {linkTypeOptions(k.id).map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </div>
                     ) : (
-                      <>
-                        <span className="flex-1 text-sm text-gray-800">{k.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1 text-sm text-gray-800">
+                          {k.name}
+                          {k.linked_payment_type && (
+                            <span className="text-gray-400"> · {k.linked_payment_type}</span>
+                          )}
+                        </span>
                         <button
-                          onClick={() => { setRenamingKasaId(k.id); setRenameValue(k.name); }}
+                          onClick={() => { setRenamingKasaId(k.id); setRenameValue(k.name); setRenameLinkedType(k.linked_payment_type || ""); }}
                           className="text-blue-600 hover:text-blue-800 text-xs font-medium shrink-0"
                         >
                           Düzenle
@@ -575,28 +623,40 @@ export default function KasaPage() {
                         >
                           Sil
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 ))}
               </div>
             )}
 
-            <div className="flex gap-2 mb-5">
-              <input
-                type="text"
-                value={newKasaName}
-                onChange={(e) => setNewKasaName(e.target.value)}
-                placeholder="Yeni kasa adı (ör. Nazım Kasa)"
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={handleAddKasa}
-                disabled={kasaActionSaving || !newKasaName.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium px-4 py-2.5 rounded-lg text-sm transition-colors shrink-0"
+            <div className="space-y-2 mb-5">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newKasaName}
+                  onChange={(e) => setNewKasaName(e.target.value)}
+                  placeholder="Yeni kasa adı (ör. Nazım Kasa)"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleAddKasa}
+                  disabled={kasaActionSaving || !newKasaName.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium px-4 py-2.5 rounded-lg text-sm transition-colors shrink-0"
+                >
+                  Ekle
+                </button>
+              </div>
+              <select
+                value={newKasaLinkedType}
+                onChange={(e) => setNewKasaLinkedType(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                Ekle
-              </button>
+                <option value="">Bağlı ödeme tipi yok (Nakit kasası)</option>
+                {linkTypeOptions(null).map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
             </div>
 
             <button
