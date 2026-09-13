@@ -153,12 +153,16 @@ export async function PUT(request: NextRequest) {
       ]
     );
 
-    // contact_* alanları app_settings değil tenants tablosunda (bkz.
+    // name/contact_* alanları app_settings değil tenants tablosunda (bkz.
     // src/lib/provisionTenant.ts, süper admin paneli, /api/shared-stock'un
     // eşleşme bulununca gösterdiği iletişim bilgisi) — ayrı bir UPDATE gerekir.
+    // tenants.name burada business_name ile senkron tutulur — aksi halde
+    // İşletme Adı değiştirilince Süper Admin panelindeki/Paylaşılan Stok'taki
+    // firma adı eskisi olarak kalır (bkz. gerçek bir müşteri raporu: XXX ->
+    // Yeyu Lastik yeniden adlandırılınca Süper Admin'de görünmedi).
     await pool.query(
-      "UPDATE tenants SET contact_name=$1, contact_email=$2, contact_phone=$3 WHERE id=$4",
-      [contact_name, contact_email, contact_phone, user.tenantId]
+      "UPDATE tenants SET name=$1, contact_name=$2, contact_email=$3, contact_phone=$4 WHERE id=$5",
+      [business_name, contact_name, contact_email, contact_phone, user.tenantId]
     );
 
     invalidateBookingConfigCache(user.tenantId!);
