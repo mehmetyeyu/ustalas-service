@@ -24,7 +24,7 @@ const navItems = [
   { href: "/admin/services", label: "Hizmetler", resource: "services" },
   { href: "/admin/customers", label: "Müşteriler", resource: "customers" },
   { href: "/admin/suppliers", label: "Tedarikçiler", resource: "suppliers" },
-  { href: "/admin/shared-stock", label: "Paylaşılan Stok", resource: "shared_stock" },
+  { href: "/admin/shared-stock", label: "Paylaşılan Stok", resource: "shared_stock", isNew: true },
   { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
 ] as const;
 
@@ -39,12 +39,23 @@ const settingsItems = [
   { href: "/admin/appointments/gorunum", label: "Randevu Görünümü", adminOnly: true },
 ] as const;
 
-type NavItem = { href: string; label: string; badge?: number };
+type NavItem = { href: string; label: string; badge?: number; isNew?: boolean };
 
 function NavBadge({ count }: { count: number }) {
   return (
     <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
       {count}
+    </span>
+  );
+}
+
+// Yeni eklenen bir menü öğesini (ör. Paylaşılan Stok) kısa süreliğine
+// vurgulamak için — kullanıcılar keşfetmeden önce fark etsin diye.
+// Kalıcı değil; özellik "yeni" olmaktan çıkınca item'dan isNew kaldırılmalı.
+function NavNewBadge() {
+  return (
+    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-teal-500 text-white text-[9px] font-bold uppercase tracking-wide leading-none">
+      Yeni
     </span>
   );
 }
@@ -151,6 +162,7 @@ function MobileMenu({
             >
               {item.label}
               {!!item.badge && <NavBadge count={item.badge} />}
+              {item.isNew && <NavNewBadge />}
             </Link>
           ))}
 
@@ -258,6 +270,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                 >
                   {item.label}
                   {!!item.badge && <NavBadge count={item.badge} />}
+                  {item.isNew && <NavNewBadge />}
                 </Link>
               ))}
             </div>
