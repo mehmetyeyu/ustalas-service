@@ -217,15 +217,24 @@ DROP INDEX IF EXISTS products_name_unique;
 DROP INDEX IF EXISTS products_code_date_unique;
 DROP INDEX IF EXISTS products_code_nodate_unique;
 
--- Üretim haftası/yılı girilmiş partiler Kod+Hafta+Yıl+Tedarikçi ile; aynı
+-- Üretim haftası/yılı girilmiş partiler firma+Kod+Hafta+Yıl+Tedarikçi ile; aynı
 -- kod ve üretim haftası/yılına sahip parti farklı tedarikçilerden ayrı ayrı
 -- stok girişi olarak eklenebilir (ör. 10/26 partisi 10 farklı tedarikçiden
 -- gelebilir). Henüz üretim haftası/yılı girilmemiş "temel" satır (Excel'den
--- ilk gelen, tarihsiz) tek başına Kod ile benzersizdir — İçe aktarma bu temel
--- satırı bulup günceller, partili satırlar elle eklenir.
+-- ilk gelen, tarihsiz) firma içinde tek başına Kod ile benzersizdir — İçe
+-- aktarma bu temel satırı bulup günceller, partili satırlar elle eklenir.
+--
+-- Bu index'ler burada OLUŞTURULMAZ — tenant_id kolonu henüz yok (aşağıda,
+-- multi-tenant dönüşüm bölümünde ekleniyor), asıl tanım orada
+-- (products_code_batch_unique / products_code_nodate_unique, tenant_id
+-- dahil). Eskiden burada tenant_id'siz (global) bir ara sürüm oluşturulup
+-- aşağıda düzeltiliyordu — ama migration her deploy'da DROP+CREATE ile
+-- yeniden çalıştığından, iki farklı firma aynı Kod'u kullandığında (ör.
+-- Paylaşılan Stok demo verisi, DENEME-* kodları) bu ARA sürüm migration'ı
+-- burada patlatıyor ve asıl (doğru) tanıma hiç ulaşılamıyordu. Sadece DROP
+-- bırakılır ki eski bare index bir yerde kalmışsa temizlensin.
 DROP INDEX IF EXISTS products_code_batch_unique;
-CREATE UNIQUE INDEX IF NOT EXISTS products_code_batch_unique ON products(code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS products_code_nodate_unique ON products(code) WHERE production_year IS NULL;
+DROP INDEX IF EXISTS products_code_nodate_unique;
 -- Yukarıdaki iki unique index kısmi (partial) olduğundan genel Kod eşleşmesini/
 -- GROUP BY code'u (liste ekranı, stok-kodu önerisi) güvenilir şekilde karşılamaz —
 -- düz bir index de eklenir. supplier/season, liste ve stok-kodu filtrelerinde kullanılır.
