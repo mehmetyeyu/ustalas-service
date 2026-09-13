@@ -37,6 +37,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   suppliers: "Tedarikçiler",
   expenses: "Masraflar",
   kasa: "Kasa",
+  shared_stock: "Paylaşılan Stok",
 };
 
 const ACTION_LABELS: Record<string, string> = {
