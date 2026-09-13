@@ -47,6 +47,8 @@ Tek doğruluk kaynağı `src/lib/permissions.ts`'tir (`RESOURCE_ACTIONS`, `PAGE_
 
 **Bilinen sızıntı düzeltmesi:** `GET /api/customers/:id/orders` yalnızca `customers.view` istiyordu ama sipariş tutarı/ödeme tipi gibi finansal veri döndürüyordu — artık `orders.view` de gerektiriyor.
 
+**Süper Admin (`role = "super_admin"`):** bu tablo ve tüm sayfa/aksiyon izin sistemi yalnızca bir firmanın (tenant) kendi kullanıcılarını kapsar — hiçbir firmaya ait olmayan, platformun tamamını yöneten ayrı bir üçüncü rol daha vardır, bkz. Bölüm 17 (Süper Admin Paneli).
+
 ---
 
 ## Modüller
@@ -97,6 +99,7 @@ Tek doğruluk kaynağı `src/lib/permissions.ts`'tir (`RESOURCE_ACTIONS`, `PAGE_
 - **Brute-force koruması:** art arda 5 başarısız denemede hesap 15 dakika kilitlenir (`users.failed_attempts`/`locked_until`, DB'de tutulur); kilitliyken girişte 429 + kalan süre mesajı döner. Başarılı girişte sayaç sıfırlanır ve `last_login_at` güncellenir. Devre dışı bırakılmış (`is_active = false`) bir hesapla giriş denemesi 403 ile reddedilir (bkz. Bölüm 15).
 - Tüm yönetici sayfaları ve tüm API uçları (bkz. Güvenlik Notları) korumalıdır.
 - Giriş sonrası yönlendirme role/izinlere göre değişir — bkz. "Sayfa/Aksiyon Bazlı İzin Sistemi" (Roller bölümü).
+- **Kullanıcı Adı** alanının etiketi "Kullanıcı Adı veya E-posta" olarak netleştirilmiştir (+ `autoCapitalize="none"`) — çünkü `/kayit`'tan kendi kendine kayıt olan firmalarda kullanıcı adı doğrudan e-posta adresidir (bkz. Bölüm 18), sade "Kullanıcı Adı" yazması kafa karıştırıyordu.
 
 ---
 
@@ -356,6 +359,58 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 ---
 
+### 17. Süper Admin Paneli
+
+**Sayfa:** `/super-admin` (`src/app/super-admin/layout.tsx`, `page.tsx`) — firma-bazlı `admin`/`staff` rollerinden ve Bölüm 16'daki tüm izin sisteminden tamamen ayrı, hiçbir firmaya (tenant) ait olmayan bir **platform-seviyesi rol**: `role = "super_admin"`. Bu roldeki kullanıcılar, hiçbir gerçek müşteriye ait olmayan, dahili "Platform Yönetimi" adlı özel bir tenant altında yaşar (`tenants.is_platform = true` ile işaretlenir — gerçek firmalarda hep `false`); `node scripts/create-super-admin.mjs kullaniciadi sifre` ile oluşturulur (Platform tenant'ı ilk çalıştırmada otomatik açılır, sonrakiler onu bulup kullanır). Sayfa/aksiyon bazlı izin sistemine (`RESOURCE_ACTIONS`/`hasPermission`) hiç girmez — Kullanıcılar/Genel Ayarlar'ın `"__admin_only__"` deseniyle aynı mantıkta, doğrudan `user.role === "super_admin"` kontrolüdür.
+
+**Erişim ayrımı (`src/middleware.ts`):** `/super-admin/:path*` için `/admin/*` bloğuyla hiçbir kod paylaşmayan, tamamen ayrı bir matcher dalı vardır (`canAccessPath` hiç çağrılmaz, saf rol kontrolü). Bir süper admin `/` veya `/admin/*`'e girmeye çalışırsa `/super-admin`'e yönlendirilir; tersine normal bir admin/staff `/super-admin`'e girerse rol eşleşmediğinden `/admin/login`'e düşer. `getDefaultAdminPath` (`src/lib/permissions.ts`) da `role === "super_admin"` için `/super-admin` döner.
+
+**Panel:**
+- Tüm gerçek firmaları (`is_platform = false`) Firma Adı, İletişim (bkz. Bölüm 18), Firma Kodu, Kayıt Tarihi ve Aktif/Pasif durumuyla listeler (`GET /api/super-admin/tenants`).
+- **Aktif/Pasif toggle** (`PATCH /api/super-admin/tenants/:id`) — Bölüm 16'daki mevcut `tenants.is_active` mekanizmasının (girişte ve her istekte kontrol edilir, mevcut oturumlar dahil anında düşer) üzerine ince bir arayüz katmanı; tersine çevrilebilir.
+- **"+ Yeni Firma Ekle"** (`POST /api/super-admin/tenants`) — `scripts/create-tenant.mjs`'in çağırdığı **aynı** `src/lib/provisionTenant.ts`'i doğrudan çağırır; oluşturulan Firma Kodu ve Kullanıcı Adı, kapanınca kaybolmaması için modalda ayrıca tutulur (müşteriye iletilecek bilgi).
+- **"Sil" (kalıcı silme)** (`DELETE /api/super-admin/tenants/:id`) — geri alınamaz olduğundan plain `confirm()` yerine, firmanın **mevcut adını harfi harfine yazmayı** zorunlu kılan ayrı bir onay modalı vardır (Aktif/Pasif'in aksine tersine çevrilemez).
+
+**Silme kapsamı ve sırası:** `TENANT_ID_TABLES_IN_DELETE_ORDER` (`src/app/api/super-admin/tenants/[id]/route.ts`) — sırasıyla `push_subscriptions`, `whatsapp_message_log`, `appointments`, `customer_ledger_entries`, `cash_ledger_entries`, `expenses`, `recurring_expenses`, `orders`, `products`, `kasalar`, `currency_rates`, `customers`, `suppliers`, `services`, `storage`, `app_settings`, `users` — bu tam sırayla tek bir transaction içinde `tenant_id`'ye göre silinir, en sonda `tenants` satırının kendisi silinir. Sıra, `database/schema.sql`'deki `tenant_id`/composite FK'ların (varsayılan `RESTRICT`) gerçek bağımlılık grafiğini takip eder; `order_services`/`order_payments`/`product_stock_entries` gibi `orders`/`products`'a zaten `CASCADE` ile bağlı çocuk tablolar ayrıca listede yer almaz (ebeveyn silinince otomatik gider). Firma satırı transaction başında `SELECT ... FOR UPDATE` ile kilitlenir (adı okunup onay girdisiyle karşılaştırılırken başka bir isteğin araya girmesini engeller); sıra bir noktada yanlış olsa bile bir sonraki `DELETE` FK ihlaliyle başarısız olup TÜM transaction'ı geri alır — yarım/sessiz veri kalması mümkün değildir. Gerçek çapraz-referanslı test verisiyle (sipariş, kasa, Cari, masraf) uçtan uca doğrulanmıştır.
+
+**İlgili güvenlik düzeltmesi:** bu panelden Pasif yapılan bir firmanın kullanıcılarının, ilk API çağrısına kadar kısa süre sayfa kabuğunu görmeye devam edebildiği bir sorun bu çalışmayla aynı dönemde bulunup düzeltildi — bkz. Güvenlik Notları.
+
+---
+
+### 18. Kendi Kendine Kayıt (Self-Servis Register)
+
+**Amaç:** E-posta/telefon bilgisi bırakmadan siteden ayrılan ziyaretçilere ulaşmak için, Elevire landing'e (`src/app/elevire/page.tsx`) doğrulama gerektirmeyen, kayıt sonrası doğrudan ürüne düşüren bir kendi kendine kayıt akışı eklendi (rakip araştırması: MYNDOS, GarajPlan, Paraşüt, RepairShopr).
+
+- **Sayfa:** `/kayit` (`src/app/kayit/page.tsx`) — `/admin/login` ile aynı görsel dil (ortalanmış kart). Ad Soyad, İşletme Adı, E-posta, Telefon, Şifre (+ tekrar) toplar.
+- **Uç:** `POST /api/public/register` — kimlik doğrulaması gerektirmeyen public bir uç, `/api/public/randevu` (Bölüm 12) ile aynı konvansiyon. `src/lib/provisionTenant.ts`'i (Süper Admin Paneli'ndeki "+ Yeni Firma Ekle" ile **birebir aynı** fonksiyon) `adminUsername` olarak girilen e-posta ile çağırır — yeni tenant'ta başka kullanıcı olmadığından kullanıcı adı çakışması imkânsızdır. Başarılı kayıt sonrası, `/api/auth/login`'dekiyle **aynı** `signToken`/httpOnly-cookie deseniyle otomatik giriş yapılır (yeni tenant'ın tek kullanıcısı her zaman `role: "admin"`).
+- **Şema:** `tenants` üç yeni nullable kolon kazandı — `contact_name`, `contact_email`, `contact_phone` (`provisionTenant` artık opsiyonel bu alanları da kabul ediyor). Süper Admin Paneli listesi bu bilgiyi gösterir (Bölüm 17); Paylaşılan Stok'ta bir eşleşme bulunduğunda karşı firmaya gösterilen bilgi de aynı üç kolondur (bkz. Bölüm 19).
+- **Elevire landing:** mevcut "Demoyu Ücretsiz Dene" CTA'larının (paylaşılan demo hesabına götürür) **yanına**, `/kayit`'a giden bir "Ücretsiz Hesap Oluştur" CTA'sı eklendi — ikisi bilinçli olarak yan yana durur: demo, hesap açmadan ürünü anında denemek için; kayıt, kendi gerçek firma tenant'ını hemen oluşturmak için.
+- **Bilinçli olarak kapsam dışı bırakılanlar (ilk sürüm):** telefon/e-posta doğrulaması, captcha, rate-limiting yok — düşük trafikli bu ilk sürüm için, gerçek kötüye kullanım görülürse eklenecek bir sonraki adım olarak not edildi (Online Randevu'daki honeypot/hız sınırı, Bölüm 12, henüz buraya taşınmadı).
+
+---
+
+### 19. Paylaşılan Stok (Shared Stock)
+
+**Amaç:** Karşılıklı opt-in ile, bir firmanın diğer bir firmanın (aynı ağdaki) stok özetini görebilmesi — bir müşteri aradığı ebat kendi stoğunda yoksa, komşu bir bayiden hızlıca teyit almak için.
+
+**Karşılıklılık ve görünürlük** (`GET /api/shared-stock`, `src/app/api/shared-stock/route.ts`): çağıran firmanın kendi `app_settings.shared_stock_enabled`'ı kapalıysa, başkalarının stoğu hiç sorgulanmaz (en baştaki erken dönüş) — SQL'e hiç gidilmez. Açıksa, sorgu yalnızca karşı taraf da hem `app_settings.shared_stock_enabled = true` **hem** `tenants.is_active = true` olan firmaları döner. `is_active` kontrolü **bu route'un kendi sorgusunda** ayrıca yapılır — çünkü `getAuthUser()`'ın "oturumdaki tenant her zaman aktiftir" garantisi (bkz. Bölüm 16/middleware) yalnızca **çağıranın kendi** tenant'ı için geçerlidir, sorgulanan **diğer** firmalar için hiçbir garanti yoktur. Bu route, kod tabanında başka bir firmanın verisini okuyan **ilk** yerdir — bu yüzden Pasif firmaları filtrelemek burada baştan tasarıma dahil edilmiştir.
+
+**Paylaşılan/paylaşılmayan alanlar:** yalnızca `brand`, `size_desc`, `season`, `stock_qty`, `production_year`/`production_week` paylaşılır. `purchase_price`, `sale_price`, `supplier` **asla** seçilmez/döndürülmez — route'un header yorumunda da vurgulandığı gibi bu gizlilik sınırı SQL sorgusunun kendisinde uygulanır, istemci tarafı bir filtreleme değildir. **`code` de kasıtlı olarak paylaşılmaz/eşleştirmede kullanılmaz** — her firmanın kendi keyfi iç SKU'sudur, firmalar arası hiçbir anlamı yoktur (biri "L205" derken diğeri aynı kodu bambaşka bir ürün için kullanıyor olabilir); bunun yerine eşleştirme **`(brand, size_desc, season)`** üçlüsü üzerinden yapılır — bilinçli bir tasarım kararıdır, gözden kaçmış bir eksiklik değil.
+
+**Sayfa ve izin:** `/admin/shared-stock` + yeni bir `shared_stock` izin kaynağı (`src/lib/permissions.ts`: `RESOURCE_ACTIONS.shared_stock = ["view"]`, `PAGE_RESOURCE`, `LANDING_ORDER`) — Roller bölümündeki standart desende, `admin`'e varsayılan olarak açık, `staff`'a `/admin/users`'taki izin matrisinden `shared_stock.view` ayrıca verilmesi gerekir. (Bu izin eklenirken `/admin/users` sayfasındaki `RESOURCE_LABELS`'a karşılık gelen bir etiket eklenmeyi **unutulmuştu** — izin matrisinde bu satır bir süre boş/etiketsiz göründü; ayrı bir düzeltmeyle "Paylaşılan Stok" etiketi eklendi. `RESOURCE_ACTIONS`'a yeni bir kaynak eklenince `RESOURCE_LABELS`'ın da güncellenmesi gerektiği, tek doğruluk kaynağı olsa da unutulabilecek bir ikinci dosya konumu olarak burada not edilir.)
+
+**Ayarlar (`/admin/settings`):**
+- **"Paylaşılan Stok" kartı** — `app_settings.shared_stock_enabled` (varsayılan `false`) burada açılıp kapatılır; ayar burada, `/admin/shared-stock` sayfasında sadece salt-okunur gösterilir.
+- **"Şirket Bilgisi" kartı** — aynı çalışmada eklendi: firma kendi `contact_name`/`contact_email`/`contact_phone`'unu (Bölüm 18'de eklenen `tenants` kolonları) self-service düzenleyebilir; önceden bu alanlar yalnızca Süper Admin Paneli'nden ("+ Yeni Firma Ekle") veya `/kayit`'tan self-registration anında girilebiliyordu. Bu bilgi tam olarak Paylaşılan Stok'ta bir eşleşme bulunduğunda karşı firmaya gösterilen bilgi olduğundan, iki kart aynı ayarlar sayfasına birlikte eklendi.
+
+**Menüde "Yeni" rozeti:** `/admin/layout.tsx`'teki nav öğesine küçük, teal renkli bir "YENİ" rozeti eklendi (`NavNewBadge` bileşeni, nav item'daki `isNew` bayrağı) — kullanıcılar özelliği kendiliğinden keşfetmeden önce fark etsin diye. Kalıcı değildir; özellik artık "yeni" sayılmayınca `isNew: true` kaldırılmalıdır.
+
+**Aynı gün bulunup düzeltilen iki gerçek prodüksiyon hatası:**
+- **`tenants.name` / `app_settings.business_name` senkron sorunu:** Genel Ayarlar'daki İşletme Adı alanı yalnızca `app_settings.business_name`'i güncelliyordu; Süper Admin Paneli'nin listesinde ve şimdi Paylaşılan Stok'ta gösterilen firma adı ise **ayrı bir kolon** olan `tenants.name`'den geliyordu — biri değişince diğeri senkron kalmıyordu. Gerçek bir müşteri (İşletme Adı'nı değiştirip Süper Admin panelinde eski adın hâlâ göründüğünü fark etti) bunu ortaya çıkardı. Düzeltme: `PUT /api/settings`, İşletme Adı'nı kaydederken artık aynı istekte `tenants.name`'i de `business_name` ile senkronluyor.
+- **Migration'da geçici global uniqueness penceresi:** `database/schema.sql`'de, multi-tenant dönüşümünden **önceki** (henüz `tenant_id` kolonu eklenmemiş) bir bölüm, `products_code_batch_unique`/`products_code_nodate_unique` index'lerini tenant_id'siz (global) olarak DROP+CREATE ediyordu; asıl doğru, tenant-bazlı tanım dosyanın ilerisindeki multi-tenant dönüşüm bölümündeydi. Migration idempotent olduğundan **her deploy'da** bu index'ler önce (yanlışlıkla) global olarak kurulup birkaç satır sonra doğrusuyla değiştiriliyordu — iki farklı firma aynı ürün kodunu kullanana kadar bu tamamen görünmezdi. İki firmaya da aynı test verisi (`DENEME-001` vb.) eklendiğinde bu geçici global kısıt gerçek bir Vercel prod deploy'unu kırdı. Düzeltme: erken bölümdeki hatalı CREATE'ler kaldırıldı, sadece eski bare index'leri temizleyen `DROP INDEX IF EXISTS` bırakıldı; tek CREATE artık zaten doğru olan, ilerideki tenant-bazlı tanımdır (bkz. Veritabanı Şeması bölümündeki ilgili not — aynı dersin genel kuralı orada yazılıdır).
+
+---
+
 ## Ortam Değişkenleri (.env.local)
 
 ```env
@@ -372,17 +427,17 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 
 | Tablo | Amaç |
 |---|---|
-| `tenants` | Firmalar (çoklu firma altyapısı, Bölüm 16) — `name`, `slug`, `code` (6 haneli Firma Kodu), `is_active`, ileride faturalandırma için ayrılmış boş alanlar |
+| `tenants` | Firmalar (çoklu firma altyapısı, Bölüm 16) — `name`, `slug`, `code` (6 haneli Firma Kodu), `is_active`, `is_platform` (yalnızca dahili "Platform Yönetimi" tenant'ında `true` — Süper Admin hesaplarını barındırır, bkz. Bölüm 17), `contact_name`/`contact_email`/`contact_phone` (Bölüm 18/19), ileride faturalandırma için ayrılmış boş alanlar |
 | `services` | Yapılan İşlem listesi; `price` opsiyonel; `bookable`, `duration_minutes` (Online Randevu'ya açık mı, bkz. Bölüm 12) |
 | `orders` | Siparişler; `status`, `payment_type` (serbest metin), `paid_amount`, `import_ref` (Excel tekilleştirme) |
 | `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, işlem bazlı `payment_type` (yalnızca Excel içe aktarımı doldurur), `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`), `kasa_id` (bkz. Bölüm 14) |
 | `order_payments` | "Ödeme Al & Kapat" ile kapatılan siparişlerin parçalı ödeme kayıtları — `order_id`, `payment_type`, `amount` (bkz. Bölüm 5), `kasa_id` (bkz. Bölüm 14) |
 | `customers`, `suppliers` | Öneri/yönetim dizinleri |
-| `users` | Kullanıcılar — `role` (`admin`/`staff`), şifre bcrypt hash, `failed_attempts`/`locked_until` (brute-force kilidi), `is_active` (devre dışı bırakma), `tokens_invalid_before` (zorla oturum sonlandırma), `last_login_at`; `(tenant_id, username)` composite unique (bkz. Bölüm 16 — Firma Kodu) |
+| `users` | Kullanıcılar — `role` (`admin`/`staff`/`super_admin` — sonuncusu hiçbir firmaya ait olmayan platform rolü, bkz. Bölüm 17), şifre bcrypt hash, `failed_attempts`/`locked_until` (brute-force kilidi), `is_active` (devre dışı bırakma), `tokens_invalid_before` (zorla oturum sonlandırma), `last_login_at`; `(tenant_id, username)` composite unique (bkz. Bölüm 16 — Firma Kodu) |
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
-| `app_settings` | Genel ayarlar — firma başına bir satır (`PRIMARY KEY(tenant_id)`, bkz. Bölüm 16): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 15), `orders_default_date_filter`, `auto_register_customers`, `booking_*` (Online Randevu ayarları, Bölüm 12), `whatsapp_*` (Bölüm 12) |
+| `app_settings` | Genel ayarlar — firma başına bir satır (`PRIMARY KEY(tenant_id)`, bkz. Bölüm 16): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 15), `orders_default_date_filter`, `auto_register_customers`, `booking_*` (Online Randevu ayarları, Bölüm 12), `whatsapp_*` (Bölüm 12), `shared_stock_enabled` (varsayılan `false`, bkz. Bölüm 19) |
 | `expenses` | Masraflar (Bölüm 11) — `expense_date`, `category`, `description`, `amount`, `payment_type`, `recurring_expense_id` (opsiyonel, bkz. `recurring_expenses`), `kasa_id` (bkz. Bölüm 14) |
 | `recurring_expenses` | Sabit gider şablonları (Bölüm 11) — `category`, `description`, `amount`, `payment_type`, `is_active`, `kasa_id`; "Sabit Giderleri Ekle" bunlardan `expenses` satırı üretir |
 | `appointments` | Online Randevu talepleri (Bölüm 12) — `plate`, `customer_name`, `customer_phone`, `service_id`, `requested_at`, `status` (`BEKLEMEDE`/`ONAYLANDI`/`REDDEDILDI`/`TAMAMLANDI`/`IPTAL`/`GELMEDI`), `order_id` (dönüştürüldüyse), `ip_address` (hız sınırı için) |
@@ -397,6 +452,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 **İndeksler** (performans): `orders(created_at)`, `orders(status)`, `orders(customer_name)` (Müşteri Detayı/silme kontrolü için), `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `order_payments(order_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `storage(created_at)`, `storage(islem_tarihi)`, `storage(depo_no)` (yalnızca aktif kayıtlarda benzersiz — bkz. `storage_active_depo_no_unique`), `products(code)`, `products(supplier)`, `products(season)`, `products` üzerindeki iki benzersizlik indeksi.
 
 **Not — stok bütünlüğü:** `order_services.product_id` seçili bir sipariş satırı, o partinin `products.stock_qty`'siyle her zaman senkron tutulur (satır eklenir/silinir/miktarı değişir/parti değişir → sırasıyla düşülür/geri eklenir/farkı uygulanır/eski geri + yeni düşülür). İşlemler transaction içinde `SELECT ... FOR UPDATE` ile kilitlenir; yetersiz stokta `InsufficientStockError` fırlatılır ve tüm işlem geri alınır.
+
+**Not — migration'da kısmi/composite unique index'lerin sırası:** `database/schema.sql` idempotent olduğundan her deploy'da baştan sona tekrar çalışır; bir kısmi (partial) veya composite unique index birden fazla yerde (ör. multi-tenant dönüşümünden önceki eski bir bölüm + dönüşümün kendi bölümü) tanımlanıyorsa, **İLK** tanımın da dönüşüm sonrası nihai kısıtla (ör. `tenant_id` dahil) tutarlı olması gerekir — aksi halde migration, iki tanım arasındaki her deploy'da kısa süreliğine daha GEVŞEK/yanlış bir kısıtı (ör. `products.code` üzerinde firmalar arası global benzersizlik) gerçekten uygulamış olur. Bu tamamen görünmez kalır ve yalnızca o ARA pencerede gerçekten çakışan bir veri (ör. iki farklı firmanın aynı ürün kodunu kullanması) migration'ı gerçek bir deploy'da patlatınca ortaya çıkar (bkz. Bölüm 19 — Paylaşılan Stok, "aynı gün bulunup düzeltilen" migration hatası). Kural: erken bölümde sadece `DROP INDEX IF EXISTS` bırakılmalı, `CREATE` yalnızca ilgili kolon (ör. `tenant_id`) zaten var olduğu noktada, nihai/doğru tanımıyla bir kez yapılmalıdır.
 
 ---
 
@@ -450,12 +507,16 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET | `/api/public/randevu/:slug/meta` | Kimlik doğrulamasız — public form için tenant/hizmet/görünüm bilgisi (60sn TTL cache) |
 | GET | `/api/public/randevu/:slug/slots` | Kimlik doğrulamasız — seçilen tarih+hizmet için müsait saatler |
 | POST | `/api/public/randevu/:slug` | Kimlik doğrulamasız — yeni randevu talebi (honeypot + telefon/IP hız sınırı, bkz. Bölüm 12) |
+| POST | `/api/public/register` | Kimlik doğrulamasız — `/kayit`'tan kendi kendine kayıt: yeni firma oluşturur (`provisionTenant()`) ve otomatik giriş yapar (bkz. Bölüm 18) |
 | GET | `/api/kasa` | Kasa defteri — sayfalı, canlı kümülatif bakiyeli kronolojik liste (`?kasaId=`, `?from=&to=`, `?limit=&offset=`, bkz. Bölüm 14) |
 | POST | `/api/kasa/entries` | Serbest manuel Para Girişi/Çıkışı ekle (hiçbir siparişe/masrafa bağlı değil) |
 | PUT/DELETE | `/api/kasa/entries/:id` | Manuel kasa hareketini düzenle/sil — transfer bacağıysa (`transfer_pair_id` dolu) `PUT` reddedilir, sadece birlikte silinebilir |
 | POST | `/api/kasa/transfers` | Kasalar Arası Transfer — birbirine bağlı iki `cash_ledger_entries` satırı oluşturur |
 | GET/POST | `/api/kasalar`, `/api/kasalar/:id` (PATCH/DELETE) | Kasa dizini CRUD — ad, para birimi, bağlı ödeme tipi (`kasa.manage`, bkz. Bölüm 14) |
 | GET/PUT | `/api/currency-rates` | Tenant başına para birimi → güncel TL kuru (manuel, bkz. Bölüm 14) |
+| GET | `/api/shared-stock` | Karşılıklı opt-in ile diğer firmaların stok özeti (brand/ebat/sezon/adet, fiyat ve `code` hariç) — `shared_stock.view` gerektirir (bkz. Bölüm 19) |
+| GET/POST | `/api/super-admin/tenants` | Süper Admin: tüm firmaları listele / `provisionTenant()` ile yeni firma oluştur (`role: super_admin`, bkz. Bölüm 17) |
+| PATCH/DELETE | `/api/super-admin/tenants/:id` | Süper Admin: firmayı Aktif/Pasif yap / TÜM verisiyle kalıcı olarak sil (bkz. Bölüm 17) |
 
 ---
 
@@ -464,6 +525,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 ```
 /                             → Sipariş oluşturma ekranı (oturum gerektirir, admin gerekmez)
 /randevu/:slug                → Online Randevu — public form, kimlik doğrulaması gerektirmez (bkz. Bölüm 12)
+/kayit                        → Kendi kendine kayıt — public form, kimlik doğrulaması gerektirmez (bkz. Bölüm 18)
 /admin/login                  → Yönetici girişi (Firma Kodu + Kullanıcı Adı + Şifre, bkz. Bölüm 16)
 /admin/orders                 → Sipariş listesi (admin)
 /admin/orders/:id             → Sipariş detayı / düzenleme (admin)
@@ -474,6 +536,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/products               → Ürün Kataloğu + Malzeme Hareketleri (admin)
 /admin/customers              → Müşteri dizini + Cari (admin)
 /admin/suppliers              → Tedarikçi dizini (admin)
+/admin/shared-stock           → Paylaşılan Stok (bkz. Bölüm 19) (admin veya `shared_stock.view` izinli staff)
 /admin/appointments           → Randevular (bkz. Bölüm 12, admin)
 /admin/appointments/ayarlar   → Randevu Ayarları — kapasite, çalışma saatleri, push/WhatsApp bildirimi, embed kodu (admin)
 /admin/appointments/gorunum   → Randevu Görünümü — form stil/tema özelleştirmesi + canlı önizleme (admin)
@@ -481,6 +544,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/profile                → Profil (oturum açmış herkes)
 /admin/users                  → Kullanıcı yönetimi (admin)
 /admin/settings               → Genel ayarlar (admin)
+/super-admin                  → Süper Admin Paneli — firma dizini, yeni firma, kalıcı silme (bkz. Bölüm 17, ayrı `super_admin` rolü, admin/staff giremez)
 ```
 
 ---
@@ -503,3 +567,5 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 - Stok düşümü/geri ekleme işlemleri satır bazlı `FOR UPDATE` kilidi ile eşzamanlılığa karşı korunur (bkz. Veritabanı Şeması notu). Sipariş kapatma (`PATCH /api/orders/:id`) da aynı şekilde siparişi `FOR UPDATE` ile kilitleyip mevcut statüyü kontrol eder — zaten `TAMAMLANDI` bir sipariş tekrar kapatılamaz.
 - **Kullanıcı yönetimi eklenirken (bkz. Bölüm 15) yetki modeli sıkılaştırıldı:** `getAuthUser()` artık `role`'ü JWT'nin imzalı payload'ından değil, **her istekte `users` tablosundan taze** okur — JWT yalnızca kimliği (userId) doğrulamak için kullanılır. Bundan önce rol JWT'ye gömülüydü ve token süresi (varsayılan 12 saat) dolana kadar değişmezdi; bu da bir kullanıcı `admin`'den `staff`'a düşürülse veya silinse bile eski yetkisiyle işlem yapmaya devam edebileceği anlamına geliyordu. Artık rolü değiştirilen/silinen bir kullanıcının bir sonraki API isteği anında yeni yetkiyi (veya "kullanıcı yok" durumunu) yansıtıyor. `middleware.ts`'e bilerek dokunulmadı (Edge runtime, yalnızca sayfa kabuğu görünürlüğünü yönetir); gerçek veri erişimi her zaman `getAuthUser()` üzerinden geçtiği için güvenlik sınırı orada tam korunuyor.
 - `PATCH /api/users/:id`, hedef `id` isteği atan kullanıcının kendisiyse `role`, `password`, `username`, `forceLogout` ve `isActive: false` alanlarının hiçbirini kabul etmez — aksi halde bir admin, çalınmış/ele geçirilmiş bir oturumla mevcut şifreyi hiç bilmeden kendi şifresini değiştirip hesabı ele geçirebilir ve gerçek kullanıcıyı kalıcı olarak dışarıda bırakabilirdi (kendi şifreni/kullanıcı adını değiştirmenin tek yolu Profil sayfasıdır, `/api/auth/password` mevcut şifre doğrulaması yapar). Aynı endpoint, sistemde tek **aktif** `admin` kalmışsa o kullanıcının rolünü değiştirmeyi, devre dışı bırakmayı veya silmeyi de reddeder (`isActive` kontrolü de admin sayımına dahildir).
+- **Pasif firmanın sayfa kabuğu kısa süre görünmeye devam ediyordu:** Süper Admin Paneli (Bölüm 17) eklenene kadar bir firmayı Pasif yapmanın tek yolu doğrudan DB'ydi, o yüzden bu senaryo hiç gerçek trafikte test edilmemişti. `middleware.ts`'te `role === "admin"` için `/` ve `/admin/*` üzerinde JWT-only bir "hızlı yol" vardı (imza doğrulanır, ama `is_active`/`tenant_is_active` için DB'ye hiç gidilmezdi) — Süper Admin Paneli'nden bir firma Pasif yapıldığında, o firmanın admin'i token'ı süresi dolana kadar `/` veya `/admin/*`'in sayfa KABUĞUNU (gerçek veri değil, ilk API çağrısına kadarki boş/yüklenmemiş hâli) hâlâ görebiliyordu — gerçek veri her zaman `getAuthUser()`'dan geçtiğinden hiçbir veri sızmıyordu, ama "erişimin anında kesilmesi" beklentisiyle tutarsızdı. Düzeltme: bu iki route grubunda artık rol ne olursa olsun her istekte `getAuthUserByToken` (tam DB-taze kontrol) çağrılıyor, JWT-only kısayol kaldırıldı.
+- **`tenants.name` / `app_settings.business_name` senkron sorunu:** Genel Ayarlar'daki İşletme Adı yalnızca `app_settings.business_name`'i güncelliyordu; Süper Admin Paneli'nin ve Paylaşılan Stok'un (Bölüm 17/19) gösterdiği firma adı ise ayrı bir kolon olan `tenants.name`'den geliyordu — biri değişince diğeri senkron kalmıyordu, gerçek bir müşteri raporuyla ortaya çıktı. Düzeltme: `PUT /api/settings`, İşletme Adı'nı kaydederken artık aynı istekte `tenants.name`'i de günceller.
