@@ -30,12 +30,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Admin rotaları — admin her zaman geçer (JWT-only, hızlı yol, DB'ye
-  // gitmeden — davranış öncekiyle birebir aynı). staff için ise sayfa bazlı
-  // izin kontrolü gerekiyor; bu, DB'den taze permissions gerektirir (bkz.
-  // src/lib/permissions.ts canAccessPath) — o yüzden sadece staff durumunda
-  // (öncesinde zaten hep "/" e atılan, hiç buraya giremeyen kullanıcılar)
-  // yeni bir DB sorgusu ekleniyor.
   // Süper Admin Paneli — hiçbir firmaya (tenant) ait olmayan, tüm firmaları
   // yönetebilen ayrı bir üst-düzey rol (bkz. src/app/super-admin/). Normal
   // /admin/* izin sistemine (canAccessPath) hiç girmez, doğrudan role kontrolü.
@@ -67,14 +61,20 @@ export async function middleware(request: NextRequest) {
     // Süper admin hiçbir firmaya ait değil, yanlışlıkla bir firmanın
     // paneline düşmesin.
     if (user.role === "super_admin") return NextResponse.redirect(new URL("/super-admin", request.url));
-    if (user.role === "admin") return NextResponse.next();
 
+    // admin için eskiden burada JWT-only bir "hızlı yol" vardı (DB'ye hiç
+    // gitmeden) — ama bu, bir firma Süper Admin Paneli'nden Pasif yapılsa
+    // bile (bkz. src/app/super-admin/) o firmanın admin'inin sayfa
+    // KABUĞUNU (gerçek veri değil, ilk API çağrısına kadar) hâlâ
+    // görebilmesine yol açıyordu. Artık role ne olursa olsun DB'den taze
+    // is_active/tenant_is_active/tokens_invalid_before kontrolü yapılıyor.
     const freshUser = await getAuthUserByToken(token);
     if (!freshUser) {
       const res = NextResponse.redirect(new URL("/admin/login", request.url));
       res.cookies.delete("auth_token");
       return res;
     }
+    if (freshUser.role === "admin") return NextResponse.next();
     if (!canAccessPath(freshUser, pathname)) return NextResponse.redirect(new URL("/", request.url));
     return NextResponse.next();
   }
@@ -83,11 +83,16 @@ export async function middleware(request: NextRequest) {
   // LANDING_REDIRECT tanımlıysa) pazarlama sayfasına, yoksa login'e yönlendirir —
   // ama zaten giriş yapmış birini asla landing'e göndermez (aksi halde "/"'ye
   // giden dahili linkler, ör. Sipariş Ekle, oturum açıkken bile landing'e düşerdi).
+  // DB'den taze kontrol (getAuthUserByToken) kullanılır — sadece imza
+  // doğrulaması (verifyToken) bir firma Pasif yapıldığında bu en sık
+  // ziyaret edilen sayfanın kabuğunun hâlâ görünmesine yol açardı (bkz.
+  // /admin bloğundaki aynı düzeltme).
   if (pathname === "/") {
-    const user = token ? await verifyToken(token) : null;
+    if (!token) return NextResponse.redirect(new URL(LANDING_REDIRECT || "/admin/login", request.url));
+    const user = await getAuthUserByToken(token);
     if (!user) {
       const res = NextResponse.redirect(new URL(LANDING_REDIRECT || "/admin/login", request.url));
-      if (token) res.cookies.delete("auth_token");
+      res.cookies.delete("auth_token");
       return res;
     }
     if (user.role === "super_admin") return NextResponse.redirect(new URL("/super-admin", request.url));
