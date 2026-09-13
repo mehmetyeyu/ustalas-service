@@ -57,6 +57,7 @@ const FEATURES = [
   { code: "RPR", title: "Raporlama", text: "Satış, hizmet ve kâr analizleri; işletmenizin nabzını anlık görün." },
   { code: "MSR", title: "Masraflar & Sabit Giderler", text: "Kira, fatura, maaş gibi sabit giderleri şablonla otomatik oluşturun; aylık gider tablosu tek ekranda." },
   { code: "KSA", title: "Kasa Takibi", text: "Nakit girdi/çıktısını kasa kasa (hatta döviz kasası) canlı bakiyeyle izleyin; kasalar arası transfer ve otomatik ödeme-kasa eşleşmesiyle her kuruşun izini sürün." },
+  { code: "PYS", title: "Paylaşılan Stok", text: "İsterseniz açın, diğer Elevire kullanan servislerin stoğunu görün — elinizde olmayan bir ebadı aramak yerine sistemden bulup direkt arayın. Fiyat ve tedarikçi bilginiz asla paylaşılmaz." },
   { code: "RDV", title: "Online Randevu Sistemi", text: "Müşterileriniz kendi web sitenizden gerçek zamanlı müsaitlik görüp randevu alsın; siz onaylayın, WhatsApp'tan otomatik bilgilendirilsinler." },
   { code: "XLS", title: "Excel İçe/Dışa Aktarma", text: "Mevcut verilerinizi hazır şablonlarla saniyeler içinde sisteme taşıyın." },
   { code: "KLN", title: "Sayfa Bazlı Yetkilendirme", text: "Çalışanlarınız için ayrı hesaplar; her personele hangi sayfayı görüp hangi işlemi yapabileceğini tek tek belirleyin." },
@@ -133,7 +134,7 @@ export default function ElevirePage() {
       <div className="features">
         <div className="wrap">
           <div className="features-head">
-            <h2>Tek Sistem,<br />On Beş İş.</h2>
+            <h2>Tek Sistem,<br />On Altı İş.</h2>
             <p>Sabahtan akşama işletmenizi ayakta tutan her şey Elevire içinde.</p>
           </div>
           <div className="feature-grid">

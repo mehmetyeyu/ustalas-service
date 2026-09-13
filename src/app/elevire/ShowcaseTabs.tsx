@@ -10,6 +10,7 @@ const TABS = [
   { id: "expenses", label: "Masraflar", path: "elevire.app/admin/expenses" },
   { id: "kasa", label: "Kasa Takibi", path: "elevire.app/admin/kasa" },
   { id: "reports", label: "Raporlama", path: "elevire.app/admin/reports" },
+  { id: "shared-stock", label: "Paylaşılan Stok", path: "elevire.app/admin/shared-stock" },
   { id: "appointment", label: "Online Randevu", path: "sizin-siteniz.com" },
 ] as const;
 
@@ -60,6 +61,7 @@ export default function ShowcaseTabs() {
           {active === "expenses" && <ExpensesMock />}
           {active === "kasa" && <KasaMock />}
           {active === "reports" && <ReportsMock />}
+          {active === "shared-stock" && <SharedStockMock />}
         </div>
       </div>
     </div>
@@ -193,6 +195,58 @@ function KasaMock() {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function SharedStockMock() {
+  const rows = [
+    { brand: "Michelin", size: "205/55R16", season: "Yaz", shop: "Kaya Lastik Merkezi", qty: "6 adet" },
+    { brand: "Continental", size: "225/45R17", season: "Yaz", shop: "Demir Lastik Dünyası", qty: "5 adet" },
+    { brand: "Lassa", size: "195/65R15", season: "Kış", shop: "Yıldız Lastik Servisi", qty: "10 adet" },
+    { brand: "Bridgestone", size: "215/60R16", season: "4 Mevsim", shop: "Kaya Lastik Merkezi", qty: "7 adet" },
+  ];
+  return (
+    <div className="mock-list">
+      <div className="mock-chips">
+        <span className="mock-chip is-active">Tüm Sezonlar</span>
+        <span className="mock-chip">Yaz</span>
+        <span className="mock-chip">Kış</span>
+        <span className="mock-chip">4 Mevsim</span>
+      </div>
+      <div className="mock-stats" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+        <div className="mock-stat">
+          <span className="mock-stat-label">Paylaşılan Ebat</span>
+          <span className="mock-stat-value">4</span>
+        </div>
+        <div className="mock-stat">
+          <span className="mock-stat-label">Katılımcı Firma</span>
+          <span className="mock-stat-value">3</span>
+        </div>
+      </div>
+      <table className="mock-table">
+        <thead>
+          <tr>
+            <th>Marka / Ebat</th>
+            <th>Sezon</th>
+            <th>Firma</th>
+            <th className="num">Adet</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td><strong>{r.brand}</strong> <span className="mono">{r.size}</span></td>
+              <td>{r.season}</td>
+              <td>{r.shop}</td>
+              <td className="num mono">{r.qty}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mock-muted" style={{ marginTop: "10px", fontSize: "0.78rem" }}>
+        Fiyat ve tedarikçi bilgisi paylaşılmaz — yalnızca marka, ebat, sezon ve adet görünür.
+      </p>
     </div>
   );
 }
