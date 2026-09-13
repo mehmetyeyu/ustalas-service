@@ -11,6 +11,9 @@ interface Tenant {
   slug: string;
   is_active: boolean;
   created_at: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
 }
 
 export default function SuperAdminPage() {
@@ -23,6 +26,9 @@ export default function SuperAdminPage() {
   const [tenantName, setTenantName] = useState("");
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [saving, setSaving] = useState(false);
   // Yeni firma oluşturulunca dönen kod/kullanıcı adı — müşteriye iletilecek
   // bilgi olduğundan, modal kapansa bile kaybolmasın diye ayrı tutulur.
@@ -66,13 +72,16 @@ export default function SuperAdminPage() {
     setTenantName("");
     setAdminUsername("");
     setAdminPassword("");
+    setContactName("");
+    setContactEmail("");
+    setContactPhone("");
     setCreatedInfo(null);
     setShowAddModal(true);
   }
 
   async function handleAddTenant() {
     if (!tenantName.trim() || !adminUsername.trim() || !adminPassword) {
-      toast.error("Tüm alanlar zorunludur.");
+      toast.error("Firma adı, kullanıcı adı ve şifre zorunludur.");
       return;
     }
     setSaving(true);
@@ -80,7 +89,14 @@ export default function SuperAdminPage() {
       const res = await fetch("/api/super-admin/tenants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantName: tenantName.trim(), adminUsername: adminUsername.trim(), adminPassword }),
+        body: JSON.stringify({
+          tenantName: tenantName.trim(),
+          adminUsername: adminUsername.trim(),
+          adminPassword,
+          contactName: contactName.trim() || undefined,
+          contactEmail: contactEmail.trim() || undefined,
+          contactPhone: contactPhone.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kaydetme başarısız.");
@@ -116,6 +132,7 @@ export default function SuperAdminPage() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Firma Adı</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">İletişim</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Firma Kodu</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kayıt Tarihi</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Durum</th>
@@ -126,6 +143,15 @@ export default function SuperAdminPage() {
                 {tenants.map((t) => (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">{t.name}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      {t.contact_name || t.contact_email || t.contact_phone ? (
+                        <div className="text-xs">
+                          {t.contact_name && <div className="text-gray-700">{t.contact_name}</div>}
+                          {t.contact_email && <div>{t.contact_email}</div>}
+                          {t.contact_phone && <div>{t.contact_phone}</div>}
+                        </div>
+                      ) : "—"}
+                    </td>
                     <td className="px-4 py-3 text-gray-600 font-mono whitespace-nowrap">{t.code}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(t.created_at)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -201,6 +227,32 @@ export default function SuperAdminPage() {
                       placeholder="En az 6 karakter"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="text-xs text-gray-400 mb-3">İletişim bilgisi (opsiyonel)</p>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={contactName}
+                        onChange={(e) => setContactName(e.target.value)}
+                        placeholder="Yetkili Ad Soyad"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="email"
+                        value={contactEmail}
+                        onChange={(e) => setContactEmail(e.target.value)}
+                        placeholder="E-posta"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="tel"
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        placeholder="Telefon"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-3">

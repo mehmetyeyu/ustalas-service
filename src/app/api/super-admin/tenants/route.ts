@@ -14,7 +14,7 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      `SELECT id, name, code, slug, is_active, created_at
+      `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone
        FROM tenants WHERE is_platform = false
        ORDER BY created_at DESC`
     );
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { tenantName, adminUsername, adminPassword } = await request.json();
+    const { tenantName, adminUsername, adminPassword, contactName, contactEmail, contactPhone } = await request.json();
     if (!tenantName || !String(tenantName).trim()) {
       return NextResponse.json({ error: "Firma adı zorunludur." }, { status: 400 });
     }
@@ -48,6 +48,9 @@ export async function POST(request: NextRequest) {
       tenantName: String(tenantName),
       adminUsername: String(adminUsername),
       adminPassword: String(adminPassword),
+      contactName: contactName ? String(contactName) : undefined,
+      contactEmail: contactEmail ? String(contactEmail) : undefined,
+      contactPhone: contactPhone ? String(contactPhone) : undefined,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (error: unknown) {

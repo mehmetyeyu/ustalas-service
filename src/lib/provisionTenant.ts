@@ -84,6 +84,12 @@ export interface ProvisionTenantInput {
   adminPassword: string;
   slug?: string;
   plan?: string;
+  // Kendi kendine kayıt formundan (bkz. src/app/api/public/register/route.ts)
+  // ya da süper admin panelinden elle bilinen iletişim bilgisi — hepsi
+  // opsiyonel, bkz. database/schema.sql: tenants.contact_*.
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
 }
 
 export interface ProvisionTenantResult {
@@ -106,8 +112,14 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     const slug = input.slug?.trim() || await generateUniqueSlug(client, tenantName);
     const code = await generateUniqueCode(client);
     const tenantResult = await client.query(
-      `INSERT INTO tenants (name, slug, code, plan) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [tenantName, slug, code, input.plan ?? null]
+      `INSERT INTO tenants (name, slug, code, plan, contact_name, contact_email, contact_phone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [
+        tenantName, slug, code, input.plan ?? null,
+        input.contactName?.trim() || null,
+        input.contactEmail?.trim() || null,
+        input.contactPhone?.trim() || null,
+      ]
     );
     const tenantId: number = tenantResult.rows[0].id;
 

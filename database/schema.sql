@@ -411,6 +411,15 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- scripts/create-super-admin.mjs, src/app/api/super-admin/tenants/route.ts)
 -- — süper admin panelindeki firma listesinden bu satır hariç tutulur.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_platform BOOLEAN NOT NULL DEFAULT false;
+
+-- Kendi kendine kayıt formundan gelen iletişim bilgisi (bkz.
+-- src/app/api/public/register/route.ts) — süper admin panelinde "hangi
+-- müşteri ne zaman, hangi mail/telefonla kayıt oldu" sorusuna cevap vermek
+-- için. Manuel oluşturulan eski firmalarda ve süper admin panelinden elle
+-- eklenenlerde bilinmiyorsa NULL kalabilir.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_name  VARCHAR(150);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email VARCHAR(150);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(30);
 -- Mevcut tek gerçek müşteri (Ustalas prod) için bootstrap satırı — sonraki
 -- geri-dolum UPDATE'lerinin işaret ettiği firma budur. Elevire kendi ayrı
 -- veritabanında bu INSERT'i kendi başına çalıştırır; isim/slug orada da ilk
