@@ -34,6 +34,12 @@ export default function SuperAdminPage() {
   // bilgi olduğundan, modal kapansa bile kaybolmasın diye ayrı tutulur.
   const [createdInfo, setCreatedInfo] = useState<{ code: string; username: string } | null>(null);
 
+  // Kalıcı silme — geri alınamaz, bu yüzden plain confirm() yerine firma
+  // adını yazarak onaylatan ayrı bir modal (bkz. handleDeleteTenant).
+  const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
   async function fetchTenants() {
     setLoading(true);
     try {
@@ -65,6 +71,29 @@ export default function SuperAdminPage() {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function handleDeleteTenant() {
+    if (!deletingTenant) return;
+    if (deleteConfirmName.trim() !== deletingTenant.name) {
+      toast.error("Firma adı eşleşmedi.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/super-admin/tenants/${deletingTenant.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmName: deleteConfirmName.trim() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Silme başarısız.");
+      setDeletingTenant(null);
+      await fetchTenants();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -164,9 +193,15 @@ export default function SuperAdminPage() {
                       <button
                         onClick={() => handleToggleActive(t)}
                         disabled={togglingId === t.id}
-                        className={`text-xs font-medium disabled:opacity-40 ${t.is_active ? "text-red-500 hover:text-red-700" : "text-green-600 hover:text-green-800"}`}
+                        className={`text-xs font-medium disabled:opacity-40 mr-3 ${t.is_active ? "text-red-500 hover:text-red-700" : "text-green-600 hover:text-green-800"}`}
                       >
                         {togglingId === t.id ? "İşleniyor..." : t.is_active ? "Pasif Yap" : "Aktif Yap"}
+                      </button>
+                      <button
+                        onClick={() => { setDeletingTenant(t); setDeleteConfirmName(""); }}
+                        className="text-xs font-medium text-gray-400 hover:text-red-700"
+                      >
+                        Sil
                       </button>
                     </td>
                   </tr>
@@ -272,6 +307,43 @@ export default function SuperAdminPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {deletingTenant && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Firmayı Kalıcı Olarak Sil</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              <span className="font-semibold text-gray-700">{deletingTenant.name}</span> firmasına ait TÜM veri
+              (siparişler, müşteriler, Cari, Kasa, ürünler, kullanıcılar — her şey) kalıcı olarak silinecek. Bu işlem
+              GERİ ALINAMAZ. Sadece geçici olarak erişimi kapatmak istiyorsanız bunun yerine &quot;Pasif Yap&quot;ı kullanın.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Onaylamak için firma adını yazın: <span className="font-mono">{deletingTenant.name}</span>
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmName}
+              onChange={(e) => setDeleteConfirmName(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 mb-5 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingTenant(null)}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleDeleteTenant}
+                disabled={deleting || deleteConfirmName.trim() !== deletingTenant.name}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                {deleting ? "Siliniyor..." : "Kalıcı Olarak Sil"}
+              </button>
+            </div>
           </div>
         </div>
       )}
