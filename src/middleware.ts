@@ -36,6 +36,26 @@ export async function middleware(request: NextRequest) {
   // src/lib/permissions.ts canAccessPath) — o yüzden sadece staff durumunda
   // (öncesinde zaten hep "/" e atılan, hiç buraya giremeyen kullanıcılar)
   // yeni bir DB sorgusu ekleniyor.
+  // Süper Admin Paneli — hiçbir firmaya (tenant) ait olmayan, tüm firmaları
+  // yönetebilen ayrı bir üst-düzey rol (bkz. src/app/super-admin/). Normal
+  // /admin/* izin sistemine (canAccessPath) hiç girmez, doğrudan role kontrolü.
+  if (pathname.startsWith("/super-admin")) {
+    if (!token) return NextResponse.redirect(new URL("/admin/login", request.url));
+    const user = await verifyToken(token);
+    if (!user) {
+      const res = NextResponse.redirect(new URL("/admin/login", request.url));
+      res.cookies.delete("auth_token");
+      return res;
+    }
+    const freshUser = await getAuthUserByToken(token);
+    if (!freshUser || freshUser.role !== "super_admin") {
+      const res = NextResponse.redirect(new URL("/admin/login", request.url));
+      if (!freshUser) res.cookies.delete("auth_token");
+      return res;
+    }
+    return NextResponse.next();
+  }
+
   if (pathname.startsWith("/admin")) {
     if (!token) return NextResponse.redirect(new URL("/admin/login", request.url));
     const user = await verifyToken(token);
@@ -44,6 +64,9 @@ export async function middleware(request: NextRequest) {
       res.cookies.delete("auth_token");
       return res;
     }
+    // Süper admin hiçbir firmaya ait değil, yanlışlıkla bir firmanın
+    // paneline düşmesin.
+    if (user.role === "super_admin") return NextResponse.redirect(new URL("/super-admin", request.url));
     if (user.role === "admin") return NextResponse.next();
 
     const freshUser = await getAuthUserByToken(token);
@@ -67,6 +90,7 @@ export async function middleware(request: NextRequest) {
       if (token) res.cookies.delete("auth_token");
       return res;
     }
+    if (user.role === "super_admin") return NextResponse.redirect(new URL("/super-admin", request.url));
     return NextResponse.next();
   }
 
@@ -74,5 +98,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*"],
+  matcher: ["/", "/admin/:path*", "/super-admin/:path*"],
 };

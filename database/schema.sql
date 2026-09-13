@@ -405,6 +405,12 @@ CREATE TABLE IF NOT EXISTS tenants (
   trial_ends_at        TIMESTAMPTZ,
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Süper admin hesabının yaşadığı, hiçbir gerçek müşteriye ait olmayan
+-- dahili "Platform" kaydını gerçek müşterilerden ayırt etmek için (bkz.
+-- scripts/create-super-admin.mjs, src/app/api/super-admin/tenants/route.ts)
+-- — süper admin panelindeki firma listesinden bu satır hariç tutulur.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_platform BOOLEAN NOT NULL DEFAULT false;
 -- Mevcut tek gerçek müşteri (Ustalas prod) için bootstrap satırı — sonraki
 -- geri-dolum UPDATE'lerinin işaret ettiği firma budur. Elevire kendi ayrı
 -- veritabanında bu INSERT'i kendi başına çalıştırır; isim/slug orada da ilk

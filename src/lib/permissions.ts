@@ -83,6 +83,9 @@ const LANDING_ORDER: Resource[] = [
 ];
 
 export function getDefaultAdminPath(user: PermissionUser): string | null {
+  // Süper admin hiçbir firmaya (tenant) ait değil, normal /admin/* kaynak
+  // sistemine hiç girmez — bkz. src/app/super-admin/, src/middleware.ts.
+  if (user.role === "super_admin") return "/super-admin";
   if (user.role === "admin") return "/admin/orders";
   for (const resource of LANDING_ORDER) {
     if (hasPermission(user, `${resource}.view`)) return `/admin/${resource}`;
