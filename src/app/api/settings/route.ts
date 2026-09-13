@@ -15,7 +15,10 @@ export async function GET() {
   // "Embed Kodu" bölümünün doğru /randevu/<slug> URL'ini gösterebilmesi,
   // code ise Genel Ayarlar'ın girişte kullanılan Firma Kodu'nu gösterebilmesi
   // için burada ayrıca ekleniyor.
-  const tenantResult = await pool.query<{ slug: string; code: string }>("SELECT slug, code FROM tenants WHERE id = $1", [user.tenantId]);
+  const tenantResult = await pool.query<{ slug: string; code: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null }>(
+    "SELECT slug, code, contact_name, contact_email, contact_phone FROM tenants WHERE id = $1",
+    [user.tenantId]
+  );
   // whatsapp_access_token asla ham haliyle client'a dönmez — sadece kayıtlı
   // olup olmadığı gösterilir (bkz. PUT: boş gönderilirse mevcut token korunur,
   // sadece admin gerçekten yeni bir değer girdiğinde değişir).
@@ -25,6 +28,9 @@ export async function GET() {
     whatsapp_access_token_set: !!settings.whatsapp_access_token,
     slug: tenantResult.rows[0]?.slug ?? null,
     code: tenantResult.rows[0]?.code ?? null,
+    contact_name: tenantResult.rows[0]?.contact_name ?? null,
+    contact_email: tenantResult.rows[0]?.contact_email ?? null,
+    contact_phone: tenantResult.rows[0]?.contact_phone ?? null,
   });
 }
 
@@ -65,6 +71,10 @@ export async function PUT(request: NextRequest) {
     const whatsapp_phone_number_id = body.whatsapp_phone_number_id ? String(body.whatsapp_phone_number_id).trim().slice(0, 50) : null;
     const whatsapp_business_account_id = body.whatsapp_business_account_id ? String(body.whatsapp_business_account_id).trim().slice(0, 50) : null;
     const whatsapp_template_name = body.whatsapp_template_name ? String(body.whatsapp_template_name).trim().slice(0, 100) : null;
+    const shared_stock_enabled = !!body.shared_stock_enabled;
+    const contact_name = body.contact_name ? String(body.contact_name).trim().slice(0, 150) || null : null;
+    const contact_email = body.contact_email ? String(body.contact_email).trim().slice(0, 150) || null : null;
+    const contact_phone = body.contact_phone ? String(body.contact_phone).trim().slice(0, 30) || null : null;
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });
@@ -109,6 +119,9 @@ export async function PUT(request: NextRequest) {
     if (!["", "bugun", "bu_hafta", "bu_ay"].includes(orders_default_date_filter)) {
       return NextResponse.json({ error: "Geçersiz varsayılan tarih filtresi." }, { status: 400 });
     }
+    if (contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact_email)) {
+      return NextResponse.json({ error: "Geçersiz e-posta adresi." }, { status: 400 });
+    }
 
     await pool.query(
       `UPDATE app_settings
@@ -122,8 +135,9 @@ export async function PUT(request: NextRequest) {
            orders_default_date_filter=$19,
            whatsapp_enabled=$20, whatsapp_access_token=CASE WHEN $21 = '' THEN whatsapp_access_token ELSE $21 END,
            whatsapp_phone_number_id=$22, whatsapp_business_account_id=$23, whatsapp_template_name=$24,
+           shared_stock_enabled=$25,
            updated_at=CURRENT_TIMESTAMP
-       WHERE tenant_id=$25`,
+       WHERE tenant_id=$26`,
       [
         business_name, storage_overdue_months, payment_types, booking_capacity,
         JSON.stringify(booking_working_hours), booking_auto_approve, booking_max_days_ahead,
@@ -134,8 +148,17 @@ export async function PUT(request: NextRequest) {
         auto_register_customers, orders_default_date_filter,
         whatsapp_enabled, whatsapp_access_token_input,
         whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
+        shared_stock_enabled,
         user.tenantId,
       ]
+    );
+
+    // contact_* alanları app_settings değil tenants tablosunda (bkz.
+    // src/lib/provisionTenant.ts, süper admin paneli, /api/shared-stock'un
+    // eşleşme bulununca gösterdiği iletişim bilgisi) — ayrı bir UPDATE gerekir.
+    await pool.query(
+      "UPDATE tenants SET contact_name=$1, contact_email=$2, contact_phone=$3 WHERE id=$4",
+      [contact_name, contact_email, contact_phone, user.tenantId]
     );
 
     invalidateBookingConfigCache(user.tenantId!);
@@ -148,6 +171,8 @@ export async function PUT(request: NextRequest) {
       booking_widget_radius, booking_widget_density, booking_widget_heading_size,
       auto_register_customers, orders_default_date_filter,
       whatsapp_enabled, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
+      shared_stock_enabled,
+      contact_name, contact_email, contact_phone,
     });
   } catch (error) {
     console.error(error);

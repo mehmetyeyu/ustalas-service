@@ -35,6 +35,10 @@ export default function GeneralSettingsPage() {
   // gerekiyor. Token burada hiç tutulmuyor/gönderilmiyor — boş string PUT'ta
   // mevcut token'ın korunmasını sağlıyor (bkz. /api/settings PUT).
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [sharedStockEnabled, setSharedStockEnabled] = useState(false);
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState<string | null>(null);
   const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState<string | null>(null);
   const [whatsappTemplateName, setWhatsappTemplateName] = useState<string | null>(null);
@@ -42,9 +46,11 @@ export default function GeneralSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const res = await fetch("/api/settings", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Ayarlar yüklenemedi.");
         setBusinessName(data.business_name ?? "");
         setCode(data.code ?? "");
         setOverdueMonths(String(data.storage_overdue_months ?? 6));
@@ -67,11 +73,20 @@ export default function GeneralSettingsPage() {
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setOrdersDefaultDateFilter(data.orders_default_date_filter ?? "");
         setWhatsappEnabled(!!data.whatsapp_enabled);
+        setSharedStockEnabled(!!data.shared_stock_enabled);
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
         setWhatsappBusinessAccountId(data.whatsapp_business_account_id ?? null);
         setWhatsappTemplateName(data.whatsapp_template_name ?? null);
+        setContactName(data.contact_name ?? "");
+        setContactEmail(data.contact_email ?? "");
+        setContactPhone(data.contact_phone ?? "");
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "Ayarlar yüklenemedi.");
+      } finally {
         setLoading(false);
-      });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function addPaymentType() {
@@ -100,6 +115,10 @@ export default function GeneralSettingsPage() {
       toast.error("En az bir ödeme şekli tanımlı olmalıdır.");
       return;
     }
+    if (contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
+      toast.error("Geçersiz e-posta adresi.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -124,9 +143,13 @@ export default function GeneralSettingsPage() {
           auto_register_customers: autoRegisterCustomers,
           orders_default_date_filter: ordersDefaultDateFilter,
           whatsapp_enabled: whatsappEnabled,
+          shared_stock_enabled: sharedStockEnabled,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
           whatsapp_business_account_id: whatsappBusinessAccountId,
           whatsapp_template_name: whatsappTemplateName,
+          contact_name: contactName.trim(),
+          contact_email: contactEmail.trim(),
+          contact_phone: contactPhone.trim(),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
@@ -172,6 +195,44 @@ export default function GeneralSettingsPage() {
           <p className="text-xs text-gray-400 mt-1">
             Depolama listesinde bu süreden uzun süredir bekleyen lastikler uyarı olarak vurgulanır.
           </p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Şirket Bilgisi</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          Bu bilgiler yalnızca Paylaşılan Stok&apos;ta bir eşleşme bulunduğunda karşı firmaya
+          gösterilir — başka bir yerde paylaşılmaz.
+        </p>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Yetkili Kişi</label>
+          <input
+            type="text"
+            value={contactName}
+            onChange={(e) => setContactName(e.target.value)}
+            placeholder="Örn. Ahmet Yılmaz"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">E-posta</label>
+          <input
+            type="email"
+            value={contactEmail}
+            onChange={(e) => setContactEmail(e.target.value)}
+            placeholder="ornek@firma.com"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
+          <input
+            type="tel"
+            value={contactPhone}
+            onChange={(e) => setContactPhone(e.target.value)}
+            placeholder="0532 000 00 00"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
       </div>
 
@@ -244,6 +305,21 @@ export default function GeneralSettingsPage() {
             </p>
           </div>
           <Switch checked={autoRegisterCustomers} onClick={() => setAutoRegisterCustomers((v) => !v)} />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Paylaşılan Stok</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-gray-700">Stoğumu Diğer Firmalarla Paylaş</div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Açarsanız diğer paylaşıma açık firmalar sizin stoğunuzu (marka/ebat/sezon/adet, fiyat
+              hariç) görebilir, siz de onlarınkini görebilirsiniz — karşılıklıdır. Kapatırsanız
+              başkalarının stoğunu da göremezsiniz.
+            </p>
+          </div>
+          <Switch checked={sharedStockEnabled} onClick={() => setSharedStockEnabled((v) => !v)} />
         </div>
       </div>
 

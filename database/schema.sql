@@ -1082,3 +1082,8 @@ CREATE INDEX IF NOT EXISTS order_services_kasa_idx ON order_services(kasa_id);
 CREATE INDEX IF NOT EXISTS expenses_kasa_idx ON expenses(kasa_id);
 CREATE INDEX IF NOT EXISTS customer_ledger_entries_kasa_idx ON customer_ledger_entries(kasa_id);
 CREATE INDEX IF NOT EXISTS cash_ledger_entries_kasa_idx ON cash_ledger_entries(kasa_id);
+
+-- Paylaşılan Stok: karşılıklı opt-in ile diğer aktif firmaların stok
+-- özetini (marka/ebat/sezon bazında, fiyat/tedarikçi/kod HARİÇ)
+-- görüntüleme. Tek yönlü değil — bkz. /api/shared-stock.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS shared_stock_enabled BOOLEAN NOT NULL DEFAULT false;

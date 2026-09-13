@@ -37,6 +37,7 @@ export interface AppSettings {
   whatsapp_phone_number_id: string | null;
   whatsapp_business_account_id: string | null;
   whatsapp_template_name: string | null;
+  shared_stock_enabled: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -64,6 +65,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   whatsapp_phone_number_id: null,
   whatsapp_business_account_id: null,
   whatsapp_template_name: null,
+  shared_stock_enabled: false,
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -75,7 +77,8 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
             booking_widget_radius, booking_widget_density, booking_widget_heading_size,
             auto_register_customers, orders_default_date_filter, whatsapp_enabled, whatsapp_access_token,
-            whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name
+            whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
+            shared_stock_enabled
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );

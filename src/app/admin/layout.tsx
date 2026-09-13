@@ -24,6 +24,7 @@ const navItems = [
   { href: "/admin/services", label: "Hizmetler", resource: "services" },
   { href: "/admin/customers", label: "Müşteriler", resource: "customers" },
   { href: "/admin/suppliers", label: "Tedarikçiler", resource: "suppliers" },
+  { href: "/admin/shared-stock", label: "Paylaşılan Stok", resource: "shared_stock" },
   { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
 ] as const;
 
