@@ -5,8 +5,10 @@ import { useState } from "react";
 const TABS = [
   { id: "orders-form", label: "Sipariş Formu", path: "elevire.app/orders/new" },
   { id: "orders-list", label: "Sipariş Listesi", path: "elevire.app/admin/orders" },
+  { id: "cari", label: "Cari Hesap", path: "elevire.app/admin/customers" },
   { id: "storage", label: "Depolama", path: "elevire.app/admin/storage" },
   { id: "expenses", label: "Masraflar", path: "elevire.app/admin/expenses" },
+  { id: "kasa", label: "Kasa Takibi", path: "elevire.app/admin/kasa" },
   { id: "reports", label: "Raporlama", path: "elevire.app/admin/reports" },
   { id: "appointment", label: "Online Randevu", path: "sizin-siteniz.com" },
 ] as const;
@@ -53,8 +55,10 @@ export default function ShowcaseTabs() {
           {active === "appointment" && <AppointmentMock />}
           {active === "orders-form" && <OrdersFormMock />}
           {active === "orders-list" && <OrdersListMock />}
+          {active === "cari" && <CariMock />}
           {active === "storage" && <StorageMock />}
           {active === "expenses" && <ExpensesMock />}
+          {active === "kasa" && <KasaMock />}
           {active === "reports" && <ReportsMock />}
         </div>
       </div>
@@ -92,6 +96,103 @@ function AppointmentMock() {
           <i></i>Onaylanınca müşteriye WhatsApp&apos;tan otomatik bilgilendirme gider
         </span>
       </div>
+    </div>
+  );
+}
+
+function CariMock() {
+  const rows = [
+    { name: "Can Demir", phone: "0555 234 56 78", last: "Sipariş #482 · 11.09.2026", balance: "2.400 ₺", debt: true },
+    { name: "Merve Kaya", phone: "0555 345 67 89", last: "Sipariş #479 · 08.09.2026", balance: "650 ₺", debt: true },
+    { name: "Zeynep Aksoy", phone: "0555 456 78 90", last: "Nakit Tahsilat · 05.09.2026", balance: "0 ₺", debt: false },
+  ];
+  return (
+    <div className="mock-list">
+      <div className="mock-stats" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+        <div className="mock-stat">
+          <span className="mock-stat-label">Toplam Alacağınız</span>
+          <span className="mock-stat-value">12.450 ₺</span>
+        </div>
+        <div className="mock-stat">
+          <span className="mock-stat-label">Borçlu Müşteri</span>
+          <span className="mock-stat-value">8</span>
+        </div>
+      </div>
+      <table className="mock-table">
+        <thead>
+          <tr>
+            <th>Müşteri</th>
+            <th>Telefon</th>
+            <th>Son Hareket</th>
+            <th className="num">Bakiye</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name}>
+              <td>{r.name}</td>
+              <td className="mono">{r.phone}</td>
+              <td>{r.last}</td>
+              <td className={`num${r.debt ? " mock-amount-neg" : " mock-muted"}`}>{r.balance}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <span className="mock-btn">Tahsilat Al</span>
+    </div>
+  );
+}
+
+function KasaMock() {
+  const rows = [
+    { date: "12.09.2026", type: "Sipariş Tahsilatı", kasa: "Nazım Kasa", account: "Ahmet Yılmaz", amount: "+1.150 ₺", pos: true, balance: "84.320 ₺" },
+    { date: "11.09.2026", type: "Masraf", kasa: "Sait Kasa", account: "Araç Yakıtı", amount: "-850 ₺", pos: false, balance: "83.170 ₺" },
+    { date: "10.09.2026", type: "Cari Tahsilatı", kasa: "Nazım Kasa", account: "Can Demir", amount: "+650 ₺", pos: true, balance: "84.020 ₺" },
+    { date: "09.09.2026", type: "Kasalar Arası Transfer", kasa: "Sait Kasa → Nazım Kasa", account: "—", amount: "-2.000 ₺", pos: false, balance: "83.370 ₺" },
+  ];
+  return (
+    <div className="mock-list">
+      <div className="mock-chips">
+        <span className="mock-chip is-active">Tüm Kasalar</span>
+        <span className="mock-chip">Nazım Kasa</span>
+        <span className="mock-chip">Sait Kasa</span>
+        <span className="mock-chip">Dolar Kasa</span>
+      </div>
+      <div className="mock-stats" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+        <div className="mock-stat">
+          <span className="mock-stat-label">Tüm Kasalar Bakiyesi</span>
+          <span className="mock-stat-value">83.370 ₺</span>
+        </div>
+        <div className="mock-stat">
+          <span className="mock-stat-label">Dolar Kasa</span>
+          <span className="mock-stat-value">$1.100</span>
+          <span className="mock-stat-sub">≈ 45.320 ₺ (kur: 41,20)</span>
+        </div>
+      </div>
+      <table className="mock-table">
+        <thead>
+          <tr>
+            <th>Tarih</th>
+            <th>İşlem Türü</th>
+            <th>Kasa</th>
+            <th>İlgili Hesap</th>
+            <th className="num">Tutar</th>
+            <th className="num">Bakiye</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="mono">{r.date}</td>
+              <td>{r.type}</td>
+              <td>{r.kasa}</td>
+              <td>{r.account}</td>
+              <td className={`num ${r.pos ? "mock-amount-pos" : "mock-amount-neg"}`}>{r.amount}</td>
+              <td className="num mono">{r.balance}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -49,12 +49,14 @@ export const metadata: Metadata = {
 const FEATURES = [
   { code: "SIP", title: "Sipariş Yönetimi", text: "Plaka bazlı sipariş kaydı, uygulanan hizmetler ve ödeme takibi tek ekranda." },
   { code: "MUS", title: "Müşteri Yönetimi", text: "Müşteri dizini, iletişim bilgileri ve geçmiş sipariş kayıtları tek tıkla." },
+  { code: "CAR", title: "Cari Hesap Takibi", text: "Sipariş cari olarak kapatıldığında müşteri bakiyesi otomatik güncellenir; tahsilat aldığınızda tek tıkla düşer, borçlu müşteri listesi her an elinizin altında." },
   { code: "HZM", title: "Hizmet Kataloğu", text: "Kendi hizmet listenizi oluşturun; sipariş formunda tek tıkla ekleyip fiyatlandırın." },
   { code: "STK", title: "Stok & Fiyat Takibi", text: "Ürün stok seviyeleri, parti bazlı alış/satış fiyat geçmişi." },
   { code: "DEPO", title: "Mevsimlik Depolama Takibi", text: "Hangi lastik ne zaman depoya girdi, bekleyen kayıtlar için otomatik uyarı." },
   { code: "TED", title: "Tedarikçi Takibi", text: "Tedarikçi bazlı ürün ve maliyet kayıtları." },
   { code: "RPR", title: "Raporlama", text: "Satış, hizmet ve kâr analizleri; işletmenizin nabzını anlık görün." },
   { code: "MSR", title: "Masraflar & Sabit Giderler", text: "Kira, fatura, maaş gibi sabit giderleri şablonla otomatik oluşturun; aylık gider tablosu tek ekranda." },
+  { code: "KSA", title: "Kasa Takibi", text: "Nakit girdi/çıktısını kasa kasa (hatta döviz kasası) canlı bakiyeyle izleyin; kasalar arası transfer ve otomatik ödeme-kasa eşleşmesiyle her kuruşun izini sürün." },
   { code: "RDV", title: "Online Randevu Sistemi", text: "Müşterileriniz kendi web sitenizden gerçek zamanlı müsaitlik görüp randevu alsın; siz onaylayın, WhatsApp'tan otomatik bilgilendirilsinler." },
   { code: "XLS", title: "Excel İçe/Dışa Aktarma", text: "Mevcut verilerinizi hazır şablonlarla saniyeler içinde sisteme taşıyın." },
   { code: "KLN", title: "Sayfa Bazlı Yetkilendirme", text: "Çalışanlarınız için ayrı hesaplar; her personele hangi sayfayı görüp hangi işlemi yapabileceğini tek tek belirleyin." },
@@ -121,7 +123,7 @@ export default function ElevirePage() {
           <div className="showcase-head">
             <span className="problem-tag">UYGULAMADAN</span>
             <h2>Ekranın arkasında<br />gerçek bir sistem var.</h2>
-            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız altı ekranı: online randevu, sipariş oluşturma, sipariş listesi, depolama takibi, masraf takibi ve raporlama.</p>
+            <p className="showcase-intro">Mockup değil — Elevire&apos;nin günlük kullandığınız sekiz ekranı: online randevu, sipariş oluşturma, sipariş listesi, cari hesap takibi, depolama takibi, masraf takibi, kasa takibi ve raporlama.</p>
           </div>
           <ShowcaseTabs />
         </div>
@@ -130,7 +132,7 @@ export default function ElevirePage() {
       <div className="features">
         <div className="wrap">
           <div className="features-head">
-            <h2>Tek Sistem,<br />On Üç İş.</h2>
+            <h2>Tek Sistem,<br />On Beş İş.</h2>
             <p>Sabahtan akşama işletmenizi ayakta tutan her şey Elevire içinde.</p>
           </div>
           <div className="feature-grid">
@@ -622,6 +624,16 @@ const CSS = `
     border-radius: 999px;
     padding: 5px 12px;
   }
+  .elevire .mock-chip.is-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .elevire .mock-amount-pos { color: var(--accent-2); font-weight: 600; }
+  .elevire .mock-amount-neg { color: var(--ink); font-weight: 600; }
+  .elevire .mock-muted { color: var(--ink-soft); }
+  .elevire .mock-stat-sub { display: block; font-size: 0.72rem; color: var(--ink-soft); margin-top: 2px; }
 
   .elevire .mock-slots-label { display: block; margin-bottom: 10px; }
   .elevire .mock-slots {
