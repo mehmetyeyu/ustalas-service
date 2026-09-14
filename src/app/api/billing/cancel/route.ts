@@ -18,8 +18,11 @@ export async function POST() {
       return NextResponse.json({ error: "Aktif bir abonelik bulunamadı." }, { status: 400 });
     }
 
+    // iyzico'da hemen iptal edilir (bir daha tahsilat yapılmaz) ama
+    // billing_status 'active' kalır — zaten ödenmiş dönem sonuna kadar
+    // erişim sürer (bkz. src/lib/billing.ts isBillingLocked, plan).
     await cancelSubscription(subscriptionRef);
-    await pool.query("UPDATE tenants SET billing_status = 'canceled' WHERE id = $1", [user.tenantId]);
+    await pool.query("UPDATE tenants SET billing_cancel_at_period_end = true WHERE id = $1", [user.tenantId]);
 
     return NextResponse.json({ success: true });
   } catch (error) {

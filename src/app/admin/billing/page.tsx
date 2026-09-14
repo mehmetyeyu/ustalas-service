@@ -137,6 +137,8 @@ export default function BillingPage() {
 
   const billingStatus = user?.billingStatus ?? null;
   const isActive = billingStatus === "active";
+  const cancelAtPeriodEnd = isActive && !!user?.billingCancelAtPeriodEnd;
+  const periodEndsAt = user?.billingPeriodEndsAt ? new Date(user.billingPeriodEndsAt) : null;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -157,8 +159,13 @@ export default function BillingPage() {
             {billingStatus === "canceled" && (
               <p className="text-xs text-gray-400 mt-1">Aboneliğiniz iptal edildi. Devam etmek için yeniden abone olun.</p>
             )}
+            {cancelAtPeriodEnd && periodEndsAt && (
+              <p className="text-xs text-amber-600 mt-1">
+                Aboneliğiniz iptal edildi, bir daha tahsilat yapılmayacak. Erişiminiz {periodEndsAt.toLocaleDateString("tr-TR")} tarihine kadar sürecek.
+              </p>
+            )}
           </div>
-          {isActive && (
+          {isActive && !cancelAtPeriodEnd && (
             <button
               onClick={cancelSubscription}
               disabled={submitting !== null}

@@ -12,6 +12,18 @@ function planNameFromRef(ref: string | undefined): string | null {
   return Object.entries(PLAN_REFS).find(([, v]) => v === ref)?.[0] ?? null;
 }
 
+// iyzico'nun gerçek dönem sonu tarihini hangi alanda döndürdüğü
+// (retrieveCheckoutForm/webhook) araştırmayla kesinleştirilemedi — bu
+// yüzden kendimiz hesaplıyoruz (bkz. plan). "monthly" dışında her şey
+// (plan bilinmiyorsa dahil) güvenli taraf olan yıllık'a değil, daha kısa
+// olan aylık'a yakınsar mı diye değil — bilinmiyorsa aylık varsayılır
+// (daha kısa pencere, erişim gereksiz uzamaz).
+function computePeriodEndsAt(plan: string | null): Date {
+  const now = new Date();
+  if (plan === "yearly") return new Date(now.setFullYear(now.getFullYear() + 1));
+  return new Date(now.setMonth(now.getMonth() + 1));
+}
+
 // iyzico'nun ödeme sonrası yönlendirdiği callbackUrl — bkz. /api/billing/checkout.
 // Kasıtlı olarak auth cookie'sine GÜVENMEZ (bu bir üçüncü taraf yönlendirmesi,
 // çerezin güvenilir gelip gelmeyeceği garanti değil); tenant eşleştirmesi
@@ -47,12 +59,17 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     }
 
     const plan = planNameFromRef((result as Record<string, unknown>).pricingPlanReferenceCode as string | undefined);
+    const periodEndsAt = computePeriodEndsAt(plan);
 
+    // billing_cancel_at_period_end=false: daha önce iptal edilip dönem
+    // sonunu bekleyen bir abonelik varsa (bkz. /api/billing/cancel), yeniden
+    // abone olunca bu bayrak sıfırlanır.
     await pool.query(
       `UPDATE tenants SET billing_status = 'active', billing_provider = 'iyzico',
-              billing_subscription_ref = $1, billing_customer_id = $2, plan = COALESCE($3, plan)
-       WHERE id = $4`,
-      [result.subscriptionReferenceCode, result.customerReferenceCode ?? null, plan, tenantId]
+              billing_subscription_ref = $1, billing_customer_id = $2, plan = COALESCE($3, plan),
+              billing_period_ends_at = $4, billing_cancel_at_period_end = false
+       WHERE id = $5`,
+      [result.subscriptionReferenceCode, result.customerReferenceCode ?? null, plan, periodEndsAt, tenantId]
     );
 
     return redirectTo("success");

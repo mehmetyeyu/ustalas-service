@@ -14,6 +14,8 @@ interface AuthUser {
   billingStatus: string | null;
   trialEndsAt: string | null;
   plan: string | null;
+  billingCancelAtPeriodEnd: boolean;
+  billingPeriodEndsAt: string | null;
 }
 
 interface AuthState {
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ? {
                 username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "",
                 billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
+                billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
               }
             : null,
           loading: false,

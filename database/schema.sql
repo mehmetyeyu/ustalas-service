@@ -1111,3 +1111,11 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_subscription_ref VARCHAR(10
 -- kalır. Yalnızca bundan sonra /api/public/register ile kendi kendine
 -- kayıt olanlar provisionTenant()'ta açıkça 'trialing' başlar.
 UPDATE tenants SET billing_status = 'exempt' WHERE billing_status IS NULL;
+
+-- İptal, ödenmiş dönemin sonuna kadar erişimi KESMEZ (Netflix vb. SaaS
+-- standardı) — /api/billing/cancel iyzico'da aboneliği hemen iptal eder
+-- (bir daha tahsilat yapılmaz) ama billing_status='active' kalır,
+-- billing_cancel_at_period_end=true olur; isBillingLocked (bkz.
+-- src/lib/billing.ts) yalnızca billing_period_ends_at geçince kilitler.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_period_ends_at TIMESTAMPTZ;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cancel_at_period_end BOOLEAN NOT NULL DEFAULT false;

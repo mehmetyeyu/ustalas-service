@@ -83,7 +83,7 @@ export async function middleware(request: NextRequest) {
     if (
       freshUser.tenantId != null &&
       !pathname.startsWith("/admin/billing") &&
-      isBillingLocked({ billing_status: freshUser.billingStatus ?? null, trial_ends_at: freshUser.trialEndsAt ?? null })
+      isBillingLocked({ billing_status: freshUser.billingStatus ?? null, trial_ends_at: freshUser.trialEndsAt ?? null, billing_cancel_at_period_end: freshUser.billingCancelAtPeriodEnd, billing_period_ends_at: freshUser.billingPeriodEndsAt })
     ) {
       return NextResponse.redirect(new URL("/admin/billing", request.url));
     }
@@ -111,7 +111,7 @@ export async function middleware(request: NextRequest) {
     if (user.role === "super_admin") return NextResponse.redirect(new URL("/super-admin", request.url));
     if (
       user.tenantId != null &&
-      isBillingLocked({ billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null })
+      isBillingLocked({ billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, billing_cancel_at_period_end: user.billingCancelAtPeriodEnd, billing_period_ends_at: user.billingPeriodEndsAt })
     ) {
       return NextResponse.redirect(new URL("/admin/billing", request.url));
     }
