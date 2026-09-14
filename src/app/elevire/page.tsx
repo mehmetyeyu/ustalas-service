@@ -167,6 +167,19 @@ export default function ElevirePage() {
           <span>© 2026 Elevire</span>
           <span>bir Yeyu ürünü</span>
         </div>
+        <div className="wrap footer-legal">
+          <nav className="legal-nav">
+            <a href="/elevire/legal/hakkimizda">Hakkımızda</a>
+            <a href="/elevire/legal/gizlilik">Gizlilik Sözleşmesi</a>
+            <a href="/elevire/legal/mesafeli-satis-sozlesmesi">Mesafeli Satış Sözleşmesi</a>
+            <a href="/elevire/legal/iptal-ve-iade">İptal ve İade Koşulları</a>
+          </nav>
+          <div className="payment-badges">
+            <span className="payment-badge">VISA</span>
+            <span className="payment-badge">Mastercard</span>
+            <span className="payment-badge">iyzico ile Öde</span>
+          </div>
+        </div>
       </footer>
     </div>
   );
@@ -921,6 +934,27 @@ const CSS = `
     font-family: var(--font-mono);
     font-size: 0.78rem;
     color: var(--ink-soft);
+  }
+  .elevire footer .footer-legal {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .elevire footer .legal-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-family: var(--font-body);
+  }
+  .elevire footer .legal-nav a { text-decoration: none; }
+  .elevire footer .legal-nav a:hover { text-decoration: underline; }
+  .elevire footer .payment-badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .elevire footer .payment-badge {
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 7px;
   }
 
   @media (max-width: 760px) {
