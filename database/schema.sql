@@ -1096,3 +1096,18 @@ CREATE INDEX IF NOT EXISTS cash_ledger_entries_kasa_idx ON cash_ledger_entries(k
 -- özetini (marka/ebat/sezon bazında, fiyat/tedarikçi/kod HARİÇ)
 -- görüntüleme. Tek yönlü değil — bkz. /api/shared-stock.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS shared_stock_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- iyzico Abonelik (SaaS faturalandırma) — tenants.plan/billing_provider/
+-- billing_customer_id/billing_status/trial_ends_at daha önce (multi-tenant
+-- dönüşümünde) ayrılmış ama hiç kullanılmamıştı, bkz. plan
+-- (~/.claude/plans/golden-jingling-spindle.md). billing_subscription_ref,
+-- iyzico'daki subscriptionReferenceCode'u tutar — retry/cancel/upgrade
+-- çağrıları bu referansla yapılır.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_subscription_ref VARCHAR(100);
+
+-- Geriye dönük: bu kolonlar eklenmeden önce var olan TÜM firmalar (Ustalas,
+-- FB Lastik, Süper Admin panelinden elle eklenenler, ...) muaf sayılır —
+-- hiçbiri iyzico'ya hiç girmez, Aktif/Pasif kontrolü hep Süper Admin'de
+-- kalır. Yalnızca bundan sonra /api/public/register ile kendi kendine
+-- kayıt olanlar provisionTenant()'ta açıkça 'trialing' başlar.
+UPDATE tenants SET billing_status = 'exempt' WHERE billing_status IS NULL;

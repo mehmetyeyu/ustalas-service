@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getAuthUserByToken } from "@/lib/auth";
 import { canAccessPath, getDefaultAdminPath } from "@/lib/permissions";
+import { isBillingLocked } from "@/lib/billing";
 
 // Sadece pazarlama/demo dağıtımlarında (ör. Elevire) set edilir — ayarlıysa
 // kök yol dahili sipariş aracı yerine doğrudan landing sayfasına yönlendirir.
@@ -74,6 +75,18 @@ export async function middleware(request: NextRequest) {
       res.cookies.delete("auth_token");
       return res;
     }
+    // Faturalandırma kilidi (bkz. src/lib/billing.ts) — tenants.is_active'ten
+    // AYRI bir mekanizma: kullanıcı giriş yapabilir, sadece /admin/billing
+    // dışındaki sayfalara yönlendirilmez (kendi kendine tekrar abone
+    // olabilsin diye). role === "admin" bile bu kontrolden muaf değildir —
+    // faturalandırmayı yönetmesi gereken tam olarak admin'dir.
+    if (
+      freshUser.tenantId != null &&
+      !pathname.startsWith("/admin/billing") &&
+      isBillingLocked({ billing_status: freshUser.billingStatus ?? null, trial_ends_at: freshUser.trialEndsAt ?? null })
+    ) {
+      return NextResponse.redirect(new URL("/admin/billing", request.url));
+    }
     if (freshUser.role === "admin") return NextResponse.next();
     if (!canAccessPath(freshUser, pathname)) return NextResponse.redirect(new URL("/", request.url));
     return NextResponse.next();
@@ -96,6 +109,12 @@ export async function middleware(request: NextRequest) {
       return res;
     }
     if (user.role === "super_admin") return NextResponse.redirect(new URL("/super-admin", request.url));
+    if (
+      user.tenantId != null &&
+      isBillingLocked({ billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null })
+    ) {
+      return NextResponse.redirect(new URL("/admin/billing", request.url));
+    }
     return NextResponse.next();
   }
 

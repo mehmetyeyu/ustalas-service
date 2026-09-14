@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { hasPermission } from "@/lib/permissions";
+import { trialDaysLeft } from "@/lib/billing";
 
 // Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
 // giriyor — sabit kodlanmış tek bir logo yerine, giriş yapan kullanıcının
@@ -37,6 +38,10 @@ const settingsItems = [
   { href: "/admin/settings", label: "Genel Ayarlar", adminOnly: true },
   { href: "/admin/appointments/ayarlar", label: "Randevu Ayarları", adminOnly: true },
   { href: "/admin/appointments/gorunum", label: "Randevu Görünümü", adminOnly: true },
+  // billing_status='exempt' (Ustalas, FB Lastik, Süper Admin'den elle
+  // eklenenler) hiç faturalandırmaya girmez — bu firmalara "Abonelik"
+  // menüsü hiç gösterilmez, bkz. görünürlük filtresi (AdminLayoutInner).
+  { href: "/admin/billing", label: "Abonelik", adminOnly: true },
 ] as const;
 
 type NavItem = { href: string; label: string; badge?: number; isNew?: boolean };
@@ -239,9 +244,10 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       ? { ...item, badge: pendingAppointments }
       : item
   );
-  const visibleSettingsItems = loading || user?.role === "admin"
+  const visibleSettingsItems = (loading || user?.role === "admin"
     ? settingsItems
-    : settingsItems.filter((item) => !item.adminOnly);
+    : settingsItems.filter((item) => !item.adminOnly)
+  ).filter((item) => item.href !== "/admin/billing" || (!loading && user?.billingStatus !== "exempt"));
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -286,6 +292,12 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </nav>
+      {!loading && user?.role === "admin" && user.billingStatus === "trialing" && !pathname.startsWith("/admin/billing") && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-sm text-center py-2 px-4">
+          Deneme sürenizin bitmesine {trialDaysLeft(user.trialEndsAt)} gün kaldı —{" "}
+          <Link href="/admin/billing" className="font-semibold underline">Abone Ol</Link>
+        </div>
+      )}
       <main className="p-4 sm:p-6">{children}</main>
     </div>
   );

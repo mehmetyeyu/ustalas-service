@@ -14,6 +14,29 @@ interface Tenant {
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  billing_status: string | null;
+  trial_ends_at: string | null;
+  plan: string | null;
+}
+
+const BILLING_LABELS: Record<string, { label: string; className: string }> = {
+  exempt: { label: "Muaf", className: "bg-gray-100 text-gray-600" },
+  trialing: { label: "Deneme", className: "bg-amber-100 text-amber-700" },
+  active: { label: "Aktif", className: "bg-emerald-100 text-emerald-700" },
+  past_due: { label: "Ödeme Sorunu", className: "bg-red-100 text-red-700" },
+  canceled: { label: "İptal", className: "bg-gray-100 text-gray-600" },
+};
+
+function BillingBadge({ status, trialEndsAt }: { status: string | null; trialEndsAt: string | null }) {
+  const info = (status && BILLING_LABELS[status]) || { label: "—", className: "bg-gray-100 text-gray-500" };
+  const daysLeft = status === "trialing" && trialEndsAt
+    ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+    : null;
+  return (
+    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${info.className}`}>
+      {info.label}{daysLeft !== null ? ` (${daysLeft} gün)` : ""}
+    </span>
+  );
 }
 
 export default function SuperAdminPage() {
@@ -165,6 +188,7 @@ export default function SuperAdminPage() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Firma Kodu</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kayıt Tarihi</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Durum</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Faturalandırma</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -188,6 +212,9 @@ export default function SuperAdminPage() {
                         <i className={`w-1.5 h-1.5 rounded-full ${t.is_active ? "bg-green-600" : "bg-gray-500"}`}></i>
                         {t.is_active ? "Aktif" : "Pasif"}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <BillingBadge status={t.billing_status} trialEndsAt={t.trial_ends_at} />
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <button

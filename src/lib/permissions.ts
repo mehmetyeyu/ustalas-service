@@ -62,6 +62,7 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/expenses", resource: "expenses" },
   { prefix: "/admin/kasa", resource: "kasa" },
   { prefix: "/admin/shared-stock", resource: "shared_stock" },
+  { prefix: "/admin/billing", resource: null },
   { prefix: "/admin/profile", resource: null },
   { prefix: "/admin/users", resource: "__admin_only__" },
   { prefix: "/admin/settings", resource: "__admin_only__" },

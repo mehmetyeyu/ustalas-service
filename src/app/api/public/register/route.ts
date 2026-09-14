@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       contactName: name,
       contactEmail: emailTrimmed,
       contactPhone: phoneTrimmed,
+      startTrial: true,
     });
 
     // Kayıt sonrası otomatik giriş — bkz. src/app/api/auth/login/route.ts'teki

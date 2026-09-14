@@ -11,5 +11,8 @@ export async function GET() {
   // çok sık çağrıldığından (her admin sayfası mount'unda) getAppSettings()'in
   // 22 kolonluk sorgusu yerine tek kolonluk ucuz bir sorgu kullanılıyor.
   const business_name = await getBusinessName(user.tenantId!);
-  return NextResponse.json({ username: user.username, role: user.role, permissions: user.permissions ?? [], business_name });
+  return NextResponse.json({
+    username: user.username, role: user.role, permissions: user.permissions ?? [], business_name,
+    billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, plan: user.plan ?? null,
+  });
 }

@@ -9,6 +9,11 @@ interface AuthUser {
   role: string;
   permissions: string[];
   businessName: string;
+  // Faturalandırma (bkz. src/lib/billing.ts, /admin/billing) — deneme
+  // geri sayımı banner'ı ve kilit sayfası bunları kullanır.
+  billingStatus: string | null;
+  trialEndsAt: string | null;
+  plan: string | null;
 }
 
 interface AuthState {
@@ -32,7 +37,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         setState({
           user: data
-            ? { username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "" }
+            ? {
+                username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "",
+                billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
+              }
             : null,
           loading: false,
         });

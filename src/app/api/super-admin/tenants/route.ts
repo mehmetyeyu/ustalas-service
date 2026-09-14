@@ -14,7 +14,8 @@ export async function GET() {
 
   try {
     const result = await pool.query(
-      `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone
+      `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone,
+              billing_status, trial_ends_at, plan
        FROM tenants WHERE is_platform = false
        ORDER BY created_at DESC`
     );

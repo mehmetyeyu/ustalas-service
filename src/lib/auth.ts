@@ -15,6 +15,12 @@ export interface JwtPayload {
   // okumasıyla doldurulur (bkz. getAuthUserByToken). Henüz geri
   // doldurulmamış (çok eski) bir kullanıcı için null olabilir.
   tenantId?: number | null;
+  // Faturalandırma kilidi (bkz. src/lib/billing.ts, src/middleware.ts) —
+  // role/permissions gibi bunlar da her istekte DB'den taze okunur, JWT'ye
+  // hiç gömülmez.
+  billingStatus?: string | null;
+  trialEndsAt?: string | null;
+  plan?: string | null;
   iat?: number;
   iatMs?: number;
 }
@@ -56,7 +62,8 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
 
   const result = await pool.query(
     `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
-            u.tenant_id, t.is_active AS tenant_is_active
+            u.tenant_id, t.is_active AS tenant_is_active,
+            t.billing_status, t.trial_ends_at, t.plan
      FROM users u
      LEFT JOIN tenants t ON t.id = u.tenant_id
      WHERE u.id = $1`,
@@ -89,6 +96,9 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     role: user.role,
     permissions: user.permissions ?? [],
     tenantId: user.tenant_id ?? null,
+    billingStatus: user.billing_status ?? null,
+    trialEndsAt: user.trial_ends_at ?? null,
+    plan: user.plan ?? null,
   };
 }
 

@@ -90,6 +90,12 @@ export interface ProvisionTenantInput {
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
+  // true: sadece /api/public/register (kendi kendine kayıt) geçer — 7 gün
+  // kartsız deneme başlatır (billing_status='trialing', trial_ends_at=+7
+  // gün). false/verilmemiş: Süper Admin paneli "+ Yeni Firma Ekle" ve
+  // scripts/create-tenant.mjs — bu firmalar faturalandırmadan muaf
+  // (billing_status='exempt'), bkz. plan (golden-jingling-spindle.md).
+  startTrial?: boolean;
 }
 
 export interface ProvisionTenantResult {
@@ -111,14 +117,17 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
 
     const slug = input.slug?.trim() || await generateUniqueSlug(client, tenantName);
     const code = await generateUniqueCode(client);
+    const billingStatus = input.startTrial ? "trialing" : "exempt";
+    const trialEndsAt = input.startTrial ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
     const tenantResult = await client.query(
-      `INSERT INTO tenants (name, slug, code, plan, contact_name, contact_email, contact_phone)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      `INSERT INTO tenants (name, slug, code, plan, contact_name, contact_email, contact_phone, billing_status, trial_ends_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         tenantName, slug, code, input.plan ?? null,
         input.contactName?.trim() || null,
         input.contactEmail?.trim() || null,
         input.contactPhone?.trim() || null,
+        billingStatus, trialEndsAt,
       ]
     );
     const tenantId: number = tenantResult.rows[0].id;
