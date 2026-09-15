@@ -30,18 +30,28 @@ const PRICING = {
 
 // Landing herkese açık olduğundan (girişsiz) kullanıcının kendi tenant'ının
 // kur ayarını (bkz. src/lib/kasalar.ts, Kasa çoklu para birimi) okuyamaz —
-// bunun yerine anahtarsız, ücretsiz bir genel kur servisinden çekilir.
+// bunun yerine TCMB'nin resmi, ücretsiz döviz kuru feed'inden çekilir
+// (Türk kullanıcıya "TCMB kuruyla" demek hem resmi hem güvenilir).
+// XML'in yapısı çok basit/stabil olduğundan (kamu feed'i, nadiren değişir)
+// yeni bir XML parser bağımlılığı eklemek yerine hedefli bir regex
+// kullanılıyor. Satış kuru (ForexSelling) kullanılır — bir dolar
+// fiyatının TL karşılığını tüketiciye gösterirken referans alınan kur bu.
 // Sunucu tarafında (Server Component) 6 saatte bir yenilenir; başarısız
-// olursa TL karşılığı hiç gösterilmez, sadece USD fiyat kalır.
+// olursa (hafta sonu/tatilde son iş gününün kuru zaten döner) TL karşılığı
+// hiç gösterilmez, sadece USD fiyat kalır.
 async function getUsdTryRate(): Promise<number | null> {
   try {
-    const res = await fetch("https://open.er-api.com/v6/latest/USD", {
+    const res = await fetch("https://www.tcmb.gov.tr/kurlar/today.xml", {
       next: { revalidate: 21600 },
     });
     if (!res.ok) return null;
-    const data = await res.json();
-    const rate = data?.rates?.TRY;
-    return typeof rate === "number" && rate > 0 ? rate : null;
+    const xml = await res.text();
+    const usdBlockMatch = xml.match(/<Currency[^>]*Kod="USD"[^>]*>([\s\S]*?)<\/Currency>/);
+    if (!usdBlockMatch) return null;
+    const sellingMatch = usdBlockMatch[1].match(/<ForexSelling>([\d.]+)<\/ForexSelling>/);
+    if (!sellingMatch) return null;
+    const rate = parseFloat(sellingMatch[1]);
+    return Number.isFinite(rate) && rate > 0 ? rate : null;
   } catch {
     return null;
   }
@@ -49,6 +59,13 @@ async function getUsdTryRate(): Promise<number | null> {
 
 function formatTry(amount: number): string {
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(amount);
+}
+
+// Kurun kendisi (ör. "1 USD ≈ 48,64 TL") — plan toplamlarından farklı
+// olarak burada 2 ondalık basamak gösterilir, aksi halde kur farkı
+// hissedilmez düzeyde yuvarlanırdı.
+function formatTry2(amount: number): string {
+  return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 }
 
 const TITLE = "Elevire — Lastik Servisi Yönetim Yazılımı";
@@ -212,7 +229,10 @@ export default async function ElevirePage() {
               <a className="btn btn-primary pricing-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
             </div>
           </div>
-          <p className="pricing-note">Fiyatlar USD bazlıdır, TL karşılığı güncel kurla anlık hesaplanır. Ödemeler iyzico güvencesiyle alınır.</p>
+          <p className="pricing-note">
+            Fiyatlar USD bazlıdır, TL karşılığı güncel TCMB kuruyla hesaplanır
+            {usdTryRate && <> (1 USD ≈ {formatTry2(usdTryRate)} TL)</>}. Ödemeler iyzico güvencesiyle alınır.
+          </p>
         </div>
       </div>
 
