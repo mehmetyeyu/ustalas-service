@@ -18,6 +18,39 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
+// Dolar bazlı — DB (Neon) ve Vercel maliyetleri dolar olduğundan TL
+// aşınmasına karşı marj burada korunuyor. iyzico'daki gerçek Fiyat Planı
+// da aynı USD değerleriyle oluşturulmalı (bkz. scripts/iyzico-setup.mjs).
+// Burada değişirse orada da güncellenmesi gerekir — tek bir API'den ikisi
+// birden okunmuyor çünkü bu sayfa herkese açık/girişsiz render ediliyor.
+const PRICING = {
+  monthly: 25,
+  yearly: 250,
+} as const;
+
+// Landing herkese açık olduğundan (girişsiz) kullanıcının kendi tenant'ının
+// kur ayarını (bkz. src/lib/kasalar.ts, Kasa çoklu para birimi) okuyamaz —
+// bunun yerine anahtarsız, ücretsiz bir genel kur servisinden çekilir.
+// Sunucu tarafında (Server Component) 6 saatte bir yenilenir; başarısız
+// olursa TL karşılığı hiç gösterilmez, sadece USD fiyat kalır.
+async function getUsdTryRate(): Promise<number | null> {
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD", {
+      next: { revalidate: 21600 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rate = data?.rates?.TRY;
+    return typeof rate === "number" && rate > 0 ? rate : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatTry(amount: number): string {
+  return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(amount);
+}
+
 const TITLE = "Elevire — Lastik Servisi Yönetim Yazılımı";
 const DESCRIPTION =
   "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu. Kurulum yok, kredi kartı gerekmez.";
@@ -65,7 +98,8 @@ const FEATURES = [
   { code: "AYR", title: "Firmanıza Özel Ayarlar", text: "İşletme adınızı ve kabul ettiğiniz ödeme şekillerini (nakit, POS, cari, havale) kendiniz düzenleyin." },
 ];
 
-export default function ElevirePage() {
+export default async function ElevirePage() {
+  const usdTryRate = await getUsdTryRate();
   return (
     <div className={`elevire ${oswald.variable} ${sourceSans.variable} ${jetbrainsMono.variable}`}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
@@ -146,6 +180,39 @@ export default function ElevirePage() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      <div className="pricing">
+        <div className="wrap">
+          <div className="features-head">
+            <h2>Basit Fiyatlandırma,<br />Sürpriz Yok.</h2>
+            <p>7 gün ücretsiz deneyin, kart bilgisi istemeyiz. Beğenirseniz aylık ya da yıllık plana geçin.</p>
+          </div>
+          <div className="pricing-grid">
+            <div className="pricing-card">
+              <h3>Aylık</h3>
+              <div className="pricing-amount">
+                ${PRICING.monthly}<span className="pricing-period">/ay</span>
+              </div>
+              {usdTryRate && (
+                <p className="pricing-try">≈ {formatTry(PRICING.monthly * usdTryRate)} TL/ay</p>
+              )}
+              <a className="btn btn-primary pricing-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
+            </div>
+            <div className="pricing-card is-featured">
+              <span className="pricing-badge">2 AY ÜCRETSİZ</span>
+              <h3>Yıllık</h3>
+              <div className="pricing-amount">
+                ${PRICING.yearly}<span className="pricing-period">/yıl</span>
+              </div>
+              {usdTryRate && (
+                <p className="pricing-try">≈ {formatTry(PRICING.yearly * usdTryRate)} TL/yıl</p>
+              )}
+              <a className="btn btn-primary pricing-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
+            </div>
+          </div>
+          <p className="pricing-note">Fiyatlar USD bazlıdır, TL karşılığı güncel kurla anlık hesaplanır. Ödemeler iyzico güvencesiyle alınır.</p>
         </div>
       </div>
 
@@ -865,6 +932,76 @@ const CSS = `
     color: var(--ink-soft);
     font-size: 0.95rem;
     line-height: 1.55;
+  }
+
+  /* ---------- pricing ---------- */
+  .elevire .pricing { padding: 0 0 96px; }
+  .elevire .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 24px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .elevire .pricing-card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .elevire .pricing-card.is-featured {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 1px var(--accent-2);
+  }
+  .elevire .pricing-badge {
+    position: absolute;
+    top: -12px;
+    right: 24px;
+    background: var(--accent-2);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: 3px;
+  }
+  .elevire .pricing-card h3 {
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+  }
+  .elevire .pricing-amount {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 2.6rem;
+    letter-spacing: 0;
+    color: var(--ink);
+  }
+  .elevire .pricing-period {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 1rem;
+    color: var(--ink-soft);
+  }
+  .elevire .pricing-try {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+  .elevire .pricing-cta { margin-top: auto; width: 100%; justify-content: center; }
+  .elevire .pricing-note {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    margin-top: 28px;
   }
 
   /* ---------- closing cta ---------- */

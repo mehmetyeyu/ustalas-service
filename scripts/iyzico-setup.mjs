@@ -4,8 +4,13 @@
 // çalıştığından "@/" alias'ını çözemez, bkz. scripts/create-tenant.mjs'in
 // aynı gerekçesi) kendi başına tekrarlar.
 //
-// Kullanım: node scripts/iyzico-setup.mjs <aylık-fiyat> <yıllık-fiyat>
-// Örnek:    node scripts/iyzico-setup.mjs 499.90 4999.00
+// Fiyatlar USD bazlıdır — DB/Vercel maliyetleri dolar olduğundan TL
+// aşınmasına karşı marj korumak için (bkz. plan). Landing sayfasındaki
+// TL karşılığı ayrıca canlı kurla hesaplanır, buradaki USD fiyatla
+// senkron kalmalı (bkz. src/app/elevire/page.tsx PRICING sabiti).
+//
+// Kullanım: node scripts/iyzico-setup.mjs <aylık-fiyat-usd> <yıllık-fiyat-usd>
+// Örnek:    node scripts/iyzico-setup.mjs 25.00 250.00
 //
 // .env.local'de IYZICO_API_KEY, IYZICO_SECRET_KEY, IYZICO_BASE_URL
 // (sandbox: https://sandbox-api.iyzipay.com) tanımlı olmalı. Çıktıdaki üç
@@ -75,7 +80,7 @@ console.log("Ürün oluşturuldu:", product.productReferenceCode);
 const monthly = await iyzicoRequest("POST", `/v2/subscription/products/${product.productReferenceCode}/pricing-plans`, {
   name: "Aylık",
   price: monthlyPrice,
-  currencyCode: "TRY",
+  currencyCode: "USD",
   paymentInterval: "MONTHLY",
   planPaymentType: "RECURRING",
 });
@@ -84,7 +89,7 @@ console.log("Aylık plan oluşturuldu:", monthly.pricingPlanReferenceCode);
 const yearly = await iyzicoRequest("POST", `/v2/subscription/products/${product.productReferenceCode}/pricing-plans`, {
   name: "Yıllık",
   price: yearlyPrice,
-  currencyCode: "TRY",
+  currencyCode: "USD",
   paymentInterval: "YEARLY",
   planPaymentType: "RECURRING",
 });

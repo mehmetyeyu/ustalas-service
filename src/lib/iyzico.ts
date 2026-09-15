@@ -93,7 +93,7 @@ export interface IyzicoPricingPlan {
 
 export async function createPricingPlan(
   productReferenceCode: string,
-  params: { name: string; price: string; currencyCode: "TRY"; paymentInterval: "MONTHLY" | "YEARLY"; trialPeriodDays?: number }
+  params: { name: string; price: string; currencyCode: "USD" | "TRY" | "EUR"; paymentInterval: "MONTHLY" | "YEARLY"; trialPeriodDays?: number }
 ): Promise<IyzicoPricingPlan> {
   return iyzicoRequest("POST", `/v2/subscription/products/${productReferenceCode}/pricing-plans`, {
     ...params,
