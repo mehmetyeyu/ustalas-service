@@ -77,11 +77,14 @@ const CSS = `
     display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;
   }
   .elevire-legal .legal-nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; }
-  .elevire-legal .payment-badges { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .elevire-legal .payment-badge {
-    font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em;
-    color: var(--ink-soft); border: 1px solid var(--line); border-radius: 4px; padding: 3px 7px;
+  .elevire-legal .payment-badges { display: flex; align-items: center; }
+  .elevire-legal .payment-badge-dark { display: none; }
+  @media (prefers-color-scheme: dark) {
+    .elevire-legal:not([data-theme="light"]) .payment-badge-light { display: none; }
+    .elevire-legal:not([data-theme="light"]) .payment-badge-dark { display: block; }
   }
+  .elevire-legal[data-theme="dark"] .payment-badge-light { display: none; }
+  .elevire-legal[data-theme="dark"] .payment-badge-dark { display: block; }
 `;
 
 export default function ElevireLegalLayout({ children }: { children: React.ReactNode }) {
@@ -104,9 +107,8 @@ export default function ElevireLegalLayout({ children }: { children: React.React
             ))}
           </nav>
           <div className="payment-badges">
-            <span className="payment-badge">VISA</span>
-            <span className="payment-badge">Mastercard</span>
-            <span className="payment-badge">iyzico ile Öde</span>
+            <img src="/payment-logos/logo-band-colored.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" className="payment-badge-light" height={18} />
+            <img src="/payment-logos/logo-band-white.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" className="payment-badge-dark" height={18} />
           </div>
         </div>
       </footer>

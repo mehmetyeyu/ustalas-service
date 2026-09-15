@@ -175,9 +175,8 @@ export default function ElevirePage() {
             <a href="/elevire/legal/iptal-ve-iade">İptal ve İade Koşulları</a>
           </nav>
           <div className="payment-badges">
-            <span className="payment-badge">VISA</span>
-            <span className="payment-badge">Mastercard</span>
-            <span className="payment-badge">iyzico ile Öde</span>
+            <img src="/payment-logos/logo-band-colored.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" className="payment-badge-light" height={20} />
+            <img src="/payment-logos/logo-band-white.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" className="payment-badge-dark" height={20} />
           </div>
         </div>
       </footer>
@@ -948,14 +947,14 @@ const CSS = `
   }
   .elevire footer .legal-nav a { text-decoration: none; }
   .elevire footer .legal-nav a:hover { text-decoration: underline; }
-  .elevire footer .payment-badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .elevire footer .payment-badge {
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 3px 7px;
+  .elevire footer .payment-badges { display: flex; align-items: center; }
+  .elevire footer .payment-badge-dark { display: none; }
+  @media (prefers-color-scheme: dark) {
+    .elevire:not([data-theme="light"]) footer .payment-badge-light { display: none; }
+    .elevire:not([data-theme="light"]) footer .payment-badge-dark { display: block; }
   }
+  .elevire[data-theme="dark"] footer .payment-badge-light { display: none; }
+  .elevire[data-theme="dark"] footer .payment-badge-dark { display: block; }
 
   @media (max-width: 760px) {
     .elevire .problem .wrap { grid-template-columns: 1fr; gap: 28px; }
