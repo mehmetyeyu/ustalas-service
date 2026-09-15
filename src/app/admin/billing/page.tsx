@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
@@ -23,6 +23,14 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<div className="text-center text-gray-400 py-12">Yükleniyor...</div>}>
+      <BillingPageContent />
+    </Suspense>
+  );
+}
+
+function BillingPageContent() {
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
   const searchParams = useSearchParams();
