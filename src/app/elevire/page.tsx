@@ -218,11 +218,12 @@ export default async function ElevirePage() {
               <a className="btn btn-primary pricing-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
             </div>
             <div className="pricing-card is-featured">
-              <span className="pricing-badge">2 AY ÜCRETSİZ</span>
+              <span className="pricing-badge">%{Math.round((1 - PRICING.yearly / (PRICING.monthly * 12)) * 100)} İNDİRİM</span>
               <h3>Yıllık</h3>
               <div className="pricing-amount">
-                ${PRICING.yearly}<span className="pricing-period">/yıl</span>
+                <span className="pricing-original">${PRICING.monthly * 12}</span> ${PRICING.yearly}<span className="pricing-period">/yıl</span>
               </div>
+              <p className="pricing-savings">Aylık ödeme yerine 12 aylık ödemeyi tek seferde yapın, 2 ay bedava kazanın!</p>
               {usdTryRate && (
                 <p className="pricing-try">≈ {formatTry(PRICING.yearly * usdTryRate)} TL/yıl</p>
               )}
@@ -1009,6 +1010,18 @@ const CSS = `
     font-weight: 400;
     font-size: 1rem;
     color: var(--ink-soft);
+  }
+  .elevire .pricing-original {
+    font-size: 1.3rem;
+    font-weight: 400;
+    color: var(--ink-soft);
+    text-decoration: line-through;
+    margin-right: 4px;
+  }
+  .elevire .pricing-savings {
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
   }
   .elevire .pricing-try {
     font-family: var(--font-mono);
