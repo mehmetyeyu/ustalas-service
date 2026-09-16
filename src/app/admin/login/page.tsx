@@ -10,21 +10,11 @@ import { useToast } from "@/components/ToastProvider";
 // (bkz. /api/auth/branding).
 const DEFAULT_BUSINESS_NAME = "Lastik Servis Paneli";
 
-// Sadece Elevire'de (NEXT_PUBLIC_DEMO_MODE=true) — paylaşılan demo hesabının
-// bilgileri zaten landing sayfasında ve schema.sql'de açıkça public, o yüzden
-// burada önceden doldurmak yeni bir bilgi ifşa etmiyor, sadece ziyaretçinin
-// yazmadan doğrudan Giriş Yap'a basabilmesini sağlıyor. Ustalas'ta bu değişken
-// tanımlı değildir, alanlar her zaman boş başlar. "000001" — src/lib/demoSeed.ts
-// gecelik reset'te Elevire'nin tenant kodunu bu sabit değere ayarlıyor (bilinçli
-// olarak gerçek rastgele kod aralığının, 100000-999999, dışında).
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-const DEMO_CODE = "000001";
-
 export default function LoginPage() {
   const toast = useToast();
-  const [code, setCode] = useState(DEMO_MODE ? DEMO_CODE : "");
-  const [username, setUsername] = useState(DEMO_MODE ? "admin" : "");
-  const [password, setPassword] = useState(DEMO_MODE ? "admin123" : "");
+  const [code, setCode] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [businessName, setBusinessName] = useState(DEFAULT_BUSINESS_NAME);
 

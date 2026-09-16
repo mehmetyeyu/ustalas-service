@@ -126,7 +126,7 @@ export default async function ElevirePage() {
           <a className="wordmark" href="#top">
             <span className="bar"></span>Elevıre
           </a>
-          <a className="nav-cta" href="/admin/login">Demoyu Dene</a>
+          <a className="nav-cta" href="/kayit">Ücretsiz Dene</a>
         </div>
       </div>
 
@@ -151,7 +151,6 @@ export default async function ElevirePage() {
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary" href="/kayit">Ücretsiz Hesap Oluştur</a>
-            <a className="btn btn-secondary" href="/admin/login">Demoyu Ücretsiz Dene</a>
             <span className="hero-note">KURULUM YOK · KREDİ KARTI GEREKMEZ</span>
           </div>
         </div>
@@ -241,10 +240,9 @@ export default async function ElevirePage() {
         <div className="hero-tread"></div>
         <div className="wrap closing-inner">
           <h2>Hemen Deneyin,<br />Farkı Görün.</h2>
-          <p>Kurulum gerekmez, kredi kartı istenmez — kendi hesabınızı açın ya da demo hesabıyla dakikalar içinde sisteme göz atın.</p>
+          <p>Kurulum gerekmez, kredi kartı istenmez — kendi hesabınızı açın, dakikalar içinde sisteme göz atın.</p>
           <div className="hero-actions">
             <a className="btn btn-primary" href="/kayit">Ücretsiz Hesap Oluştur</a>
-            <a className="btn btn-secondary" href="/admin/login">Demoyu Ücretsiz Dene</a>
           </div>
           <p style={{ marginTop: "18px" }} className="hero-note">KURULUM YOK · KREDİ KARTI GEREKMEZ</p>
         </div>
@@ -518,15 +516,6 @@ const CSS = `
   .elevire .btn-primary::after {
     content: "→";
     font-family: var(--font-body);
-  }
-  .elevire .btn-secondary {
-    background: transparent;
-    color: var(--ink);
-    border-color: var(--line);
-  }
-  .elevire .btn-secondary:hover {
-    border-color: var(--ink-soft);
-    background: var(--ground);
   }
   .elevire .hero-note {
     font-family: var(--font-mono);
@@ -1081,14 +1070,6 @@ const CSS = `
     opacity: 1;
   }
   .elevire .closing .hero-note { color: color-mix(in srgb, var(--ground) 55%, transparent); }
-  .elevire .closing .btn-secondary {
-    color: var(--ground);
-    border-color: color-mix(in srgb, var(--ground) 40%, transparent);
-  }
-  .elevire .closing .btn-secondary:hover {
-    border-color: var(--ground);
-    background: color-mix(in srgb, var(--ground) 12%, transparent);
-  }
 
   /* ---------- footer ---------- */
   .elevire footer {
