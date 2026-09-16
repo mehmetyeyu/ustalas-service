@@ -544,7 +544,7 @@ export default function CustomersPage() {
       {/* Cari Hareketleri Modal */}
       {ledgerModalCustomer && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between mb-5">
               <div>
                 <h2 className="text-xl font-bold text-gray-800">{ledgerModalCustomer.name} — Cari Hareketleri</h2>
