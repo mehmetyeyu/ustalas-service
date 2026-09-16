@@ -581,6 +581,7 @@ export default function CustomersPage() {
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Sipariş No</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Plaka</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Hizmet / Açıklama</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Ürün</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bakiye</th>
                       {canManageBalance && <th className="px-3 py-2"></th>}
@@ -602,19 +603,10 @@ export default function CustomersPage() {
                           {e.entry_type === "SIPARIS" ? (
                             <div className="space-y-0.5">
                               {(e.order_lines || []).map((l, i) => (
-                                <div key={i} className="text-xs whitespace-nowrap">
-                                  <span className="text-gray-700">{l.name}</span>
-                                  {l.quantity > 1 && <span className="text-gray-400"> ×{l.quantity}</span>}
-                                  {l.size_desc && <span className="text-gray-400"> — {l.size_desc}</span>}
-                                  {l.supplier && <span className="text-gray-400"> ({l.supplier})</span>}
-                                  <span className="text-gray-500"> · {formatCurrency(l.unit_price)}</span>
+                                <div key={i} className="text-xs text-gray-700 whitespace-nowrap">
+                                  {l.name}{l.quantity > 1 && <span className="text-gray-400"> ×{l.quantity}</span>}
                                 </div>
                               ))}
-                              {e.order_total_amount != null && e.order_paid_amount != null && e.order_paid_amount !== e.order_total_amount && (
-                                <div className="text-xs text-orange-600 font-medium whitespace-nowrap">
-                                  Toplam {formatCurrency(e.order_total_amount)} — Alınan {formatCurrency(e.order_paid_amount)}
-                                </div>
-                              )}
                               {e.order_notes && (
                                 <div className="text-xs text-yellow-700 italic">Not: {e.order_notes}</div>
                               )}
@@ -625,8 +617,26 @@ export default function CustomersPage() {
                             </span>
                           )}
                         </td>
-                        <td className={`px-3 py-2 text-right font-medium whitespace-nowrap align-top ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
-                          {e.direction === 1 ? "+" : "-"}{formatCurrency(e.amount)}
+                        <td className="px-3 py-2 text-gray-700 align-top">
+                          {e.entry_type === "SIPARIS" ? (
+                            <div className="space-y-0.5">
+                              {(e.order_lines || []).map((l, i) => (
+                                <div key={i} className="text-xs text-gray-500 whitespace-nowrap">
+                                  {l.size_desc
+                                    ? `${l.size_desc}${l.supplier ? ` (${l.supplier})` : ""}`
+                                    : (l.supplier || "—")}
+                                </div>
+                              ))}
+                            </div>
+                          ) : "—"}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-medium align-top ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
+                          <div className="whitespace-nowrap">{e.direction === 1 ? "+" : "-"}{formatCurrency(e.amount)}</div>
+                          {e.entry_type === "SIPARIS" && e.order_total_amount != null && e.order_paid_amount != null && e.order_paid_amount !== e.order_total_amount && (
+                            <div className="text-[11px] font-normal text-orange-600 whitespace-nowrap mt-0.5">
+                              Sipariş: {formatCurrency(e.order_total_amount)} / Alınan: {formatCurrency(e.order_paid_amount)}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap align-top">{formatCurrency(e.running_balance)}</td>
                         {canManageBalance && (
