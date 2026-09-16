@@ -181,6 +181,11 @@ function BillingPageContent() {
                 Aboneliğiniz iptal edildi, bir daha tahsilat yapılmayacak. Erişiminiz {periodEndsAt.toLocaleDateString("tr-TR")} tarihine kadar sürecek.
               </p>
             )}
+            {isActive && !cancelAtPeriodEnd && periodEndsAt && (
+              <p className="text-xs text-gray-400 mt-1">
+                Sonraki yenileme tarihi: {periodEndsAt.toLocaleDateString("tr-TR")}
+              </p>
+            )}
           </div>
           {isActive && !cancelAtPeriodEnd && (
             <button
