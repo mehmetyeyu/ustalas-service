@@ -3,9 +3,9 @@
 // DATABASE_URL'e uygular. schema.sql tamamen idempotent olduğundan (IF NOT
 // EXISTS, ON CONFLICT DO NOTHING) tekrar tekrar çalıştırmak güvenlidir.
 //
-// pg (ham TCP) kullanılır, @neondatabase/serverless değil — src/lib/demoSeed.ts
-// içindeki notta açıklandığı gibi, serverless paketin WebSocket/fetch tabanlı
-// bağlantısı bu tür ortamlarda güvenilir çalışmıyor.
+// pg (ham TCP) kullanılır, @neondatabase/serverless değil — serverless
+// paketin WebSocket/fetch tabanlı bağlantısı bu tür ortamlarda (build script,
+// Node ile doğrudan çalıştırma) güvenilir çalışmıyor.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

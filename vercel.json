@@ -1,5 +1,1 @@
-{
-  "crons": [
-    { "path": "/api/admin/reset-demo", "schedule": "0 2 * * *" }
-  ]
-}
+{}
