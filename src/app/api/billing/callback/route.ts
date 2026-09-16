@@ -58,6 +58,25 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       return redirectTo("failed");
     }
 
+    // Tekrar oynatma (replay) koruması: bu route yalnızca YENİ bir aboneliği
+    // aktive etmek için vardır — bir abonelik zaten bu subscriptionReferenceCode
+    // ile 'active' ise (token/URL saklanıp tekrar açılırsa, ör. tarayıcı
+    // geçmişinden), dönemi bir kez daha uzatmadan sessizce başarı sayfasına
+    // dönülür. Gerçek dönem yenilemeleri webhook üzerinden işlenir (bkz.
+    // /api/webhooks/iyzico), bu route'un tekrar çalışması hiçbir zaman
+    // meşru bir "yeni ödeme" anlamına gelmez — gerçek bir denetimde bulunan
+    // bir açık.
+    const existing = await pool.query<{ billing_subscription_ref: string | null; billing_status: string | null }>(
+      "SELECT billing_subscription_ref, billing_status FROM tenants WHERE id = $1",
+      [tenantId]
+    );
+    const alreadyActivated =
+      existing.rows[0]?.billing_status === "active" &&
+      existing.rows[0]?.billing_subscription_ref === result.subscriptionReferenceCode;
+    if (alreadyActivated) {
+      return redirectTo("success");
+    }
+
     const plan = planNameFromRef((result as Record<string, unknown>).pricingPlanReferenceCode as string | undefined);
     const periodEndsAt = computePeriodEndsAt(plan);
 

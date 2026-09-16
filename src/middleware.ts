@@ -12,6 +12,41 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("auth_token")?.value;
 
+  // Faturalandırma kilidi — daha önce sadece sayfa yönlendirmesinde
+  // uygulanıyordu (bkz. /admin ve / blokları), bu da kilitli bir firmanın
+  // sayfa yerine doğrudan API'ye istek atarak (curl, eski bir sekmeden
+  // kalan fetch) tüm verisine erişmeye devam edebilmesine yol açıyordu —
+  // gerçek bir denetimde bulunup düzeltildi. /api/billing/* ve /api/auth/*
+  // hariç tutulur: kilitli bir firma yine giriş yapabilmeli, /me ile kendi
+  // durumunu görebilmeli, çıkış yapabilmeli ve /admin/billing üzerinden
+  // kendi kendine yeniden abone olabilmeli — aksi halde kilitten çıkış
+  // imkânsız hale gelirdi. /api/public/*, /api/webhooks/* ve
+  // /api/super-admin/* de bu kontrolün tamamen dışındadır (kimlik
+  // doğrulaması farklı veya hiç yok, tenant kavramı yok).
+  if (pathname.startsWith("/api/")) {
+    const exempt =
+      pathname.startsWith("/api/public/") ||
+      pathname.startsWith("/api/auth/") ||
+      pathname.startsWith("/api/billing/") ||
+      pathname.startsWith("/api/webhooks/") ||
+      pathname.startsWith("/api/super-admin/");
+    if (!exempt && token) {
+      const user = await getAuthUserByToken(token);
+      if (
+        user &&
+        user.role !== "super_admin" &&
+        user.tenantId != null &&
+        isBillingLocked({ billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, billing_cancel_at_period_end: user.billingCancelAtPeriodEnd, billing_period_ends_at: user.billingPeriodEndsAt })
+      ) {
+        return NextResponse.json(
+          { error: "Aboneliğinizin süresi doldu. Devam etmek için Genel Ayarlar > Abonelik üzerinden yeniden abone olun." },
+          { status: 402 }
+        );
+      }
+    }
+    return NextResponse.next();
+  }
+
   // Login sayfası — zaten giriş yapmışsa yönlendir
   if (pathname === "/admin/login") {
     if (token) {
@@ -122,5 +157,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*", "/super-admin/:path*"],
+  matcher: ["/", "/admin/:path*", "/super-admin/:path*", "/api/:path*"],
 };
