@@ -567,7 +567,9 @@ export default function CustomersPage() {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Sipariş No</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Plaka</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Hizmet / Açıklama</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bakiye</th>
                       {canManageBalance && <th className="px-3 py-2"></th>}
@@ -579,12 +581,15 @@ export default function CustomersPage() {
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(e.entry_date)}</td>
                         <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
                           {e.entry_type === "SIPARIS"
-                            ? (
-                              <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">
-                                {e.order_plate ? `${e.order_plate} — ` : ""}
-                                {e.order_services_summary || `#${e.order_id} Sipariş`}
-                              </Link>
-                            )
+                            ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">#{e.order_id}</Link>
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                          {e.entry_type === "SIPARIS" ? (e.order_plate || "—") : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                          {e.entry_type === "SIPARIS"
+                            ? (e.order_services_summary || "—")
                             : (e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç"))}
                         </td>
                         <td className={`px-3 py-2 text-right font-medium whitespace-nowrap ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
