@@ -43,6 +43,8 @@ interface LedgerEntry {
   entry_date: string;
   note: string | null;
   order_id: number | null;
+  order_plate: string | null;
+  order_services_summary: string | null;
   kasa_id: number | null;
   running_balance: number;
 }
@@ -577,7 +579,12 @@ export default function CustomersPage() {
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(e.entry_date)}</td>
                         <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
                           {e.entry_type === "SIPARIS"
-                            ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">#{e.order_id} Sipariş</Link>
+                            ? (
+                              <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">
+                                {e.order_plate ? `${e.order_plate} — ` : ""}
+                                {e.order_services_summary || `#${e.order_id} Sipariş`}
+                              </Link>
+                            )
                             : (e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç"))}
                         </td>
                         <td className={`px-3 py-2 text-right font-medium whitespace-nowrap ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
