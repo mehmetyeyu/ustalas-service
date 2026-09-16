@@ -13,7 +13,7 @@ const PHONE_RE = /^[0-9+()\s-]{7,20}$/;
 // tenant'ta başka kullanıcı olmadığından çakışma imkânsız.
 export async function POST(request: NextRequest) {
   try {
-    const { contactName, businessName, email, phone, password } = await request.json();
+    const { contactName, businessName, email, phone, password, acceptedPrivacyPolicy } = await request.json();
 
     const name = String(contactName ?? "").trim();
     const business = String(businessName ?? "").trim();
@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
 
     if (!name || !business || !emailTrimmed || !phoneTrimmed || !passwordStr) {
       return NextResponse.json({ error: "Tüm alanlar zorunludur." }, { status: 400 });
+    }
+    // Client-side checkbox tek başına yeterli değil — hukuki kanıt amaçlı
+    // burada da zorunlu kılınır (bkz. database/schema.sql notu).
+    if (acceptedPrivacyPolicy !== true) {
+      return NextResponse.json({ error: "Devam etmek için Gizlilik Sözleşmesi'ni kabul etmeniz gerekiyor." }, { status: 400 });
     }
     if (!EMAIL_RE.test(emailTrimmed)) {
       return NextResponse.json({ error: "Geçersiz e-posta adresi." }, { status: 400 });
@@ -42,6 +47,7 @@ export async function POST(request: NextRequest) {
       contactEmail: emailTrimmed,
       contactPhone: phoneTrimmed,
       startTrial: true,
+      acceptedPrivacyPolicy: true,
     });
 
     // Kayıt sonrası otomatik giriş — bkz. src/app/api/auth/login/route.ts'teki

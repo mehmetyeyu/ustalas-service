@@ -96,6 +96,10 @@ export interface ProvisionTenantInput {
   // scripts/create-tenant.mjs — bu firmalar faturalandırmadan muaf
   // (billing_status='exempt'), bkz. plan (golden-jingling-spindle.md).
   startTrial?: boolean;
+  // Kayıt anında Gizlilik Sözleşmesi onayı verildiyse true — hukuki kanıt
+  // amaçlı ne zaman kabul edildiği ayrıca saklanır (bkz. database/schema.sql
+  // notu, /api/public/register bu alanı zorunlu kılar).
+  acceptedPrivacyPolicy?: boolean;
 }
 
 export interface ProvisionTenantResult {
@@ -119,15 +123,16 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     const code = await generateUniqueCode(client);
     const billingStatus = input.startTrial ? "trialing" : "exempt";
     const trialEndsAt = input.startTrial ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
+    const privacyPolicyAcceptedAt = input.acceptedPrivacyPolicy ? new Date() : null;
     const tenantResult = await client.query(
-      `INSERT INTO tenants (name, slug, code, plan, contact_name, contact_email, contact_phone, billing_status, trial_ends_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO tenants (name, slug, code, plan, contact_name, contact_email, contact_phone, billing_status, trial_ends_at, privacy_policy_accepted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         tenantName, slug, code, input.plan ?? null,
         input.contactName?.trim() || null,
         input.contactEmail?.trim() || null,
         input.contactPhone?.trim() || null,
-        billingStatus, trialEndsAt,
+        billingStatus, trialEndsAt, privacyPolicyAcceptedAt,
       ]
     );
     const tenantId: number = tenantResult.rows[0].id;

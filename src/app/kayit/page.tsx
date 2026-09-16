@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -23,12 +24,16 @@ export default function RegisterPage() {
       toast.error("Şifreler eşleşmiyor.");
       return;
     }
+    if (!acceptedPrivacyPolicy) {
+      toast.error("Devam etmek için Gizlilik Sözleşmesi'ni kabul etmeniz gerekiyor.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/public/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactName, businessName, email, phone, password }),
+        body: JSON.stringify({ contactName, businessName, email, phone, password, acceptedPrivacyPolicy }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kayıt başarısız.");
@@ -119,9 +124,26 @@ export default function RegisterPage() {
               />
             </div>
 
+            <label className="flex items-start gap-2.5 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={acceptedPrivacyPolicy}
+                onChange={(e) => setAcceptedPrivacyPolicy(e.target.checked)}
+                required
+                className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>
+                Kayıt olarak{" "}
+                <a href="/elevire/legal/gizlilik" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">
+                  Gizlilik Sözleşmesi
+                </a>
+                &apos;ni okudum ve kabul ediyorum.
+              </span>
+            </label>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !acceptedPrivacyPolicy}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-lg transition-colors mt-2"
             >
               {loading ? "Hesap oluşturuluyor..." : "Ücretsiz Hesap Oluştur"}

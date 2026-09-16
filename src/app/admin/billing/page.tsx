@@ -37,6 +37,7 @@ function BillingPageContent() {
   const [plans, setPlans] = useState<{ monthly: PlanInfo; yearly: PlanInfo } | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<"monthly" | "yearly" | "cancel" | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   useEffect(() => {
     const result = searchParams.get("result");
@@ -78,12 +79,16 @@ function BillingPageContent() {
   }
 
   async function startCheckout(plan: "monthly" | "yearly") {
+    if (!acceptedTerms) {
+      toast.error("Devam etmek için Mesafeli Satış Sözleşmesi'ni kabul etmeniz gerekiyor.");
+      return;
+    }
     setSubmitting(plan);
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, acceptedTerms }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Hata oluştu.");
@@ -96,13 +101,17 @@ function BillingPageContent() {
   }
 
   async function switchPlan(plan: "monthly" | "yearly") {
+    if (!acceptedTerms) {
+      toast.error("Devam etmek için Mesafeli Satış Sözleşmesi'ni kabul etmeniz gerekiyor.");
+      return;
+    }
     if (!confirm(`Planınızı ${plan === "monthly" ? "Aylık" : "Yıllık"} olarak değiştirmek istediğinize emin misiniz? Mevcut aboneliğiniz iptal edilip yeni plan tam fiyattan başlar.`)) return;
     setSubmitting(plan);
     try {
       const res = await fetch("/api/billing/switch-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, acceptedTerms }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Hata oluştu.");
@@ -192,7 +201,22 @@ function BillingPageContent() {
           Abonelik planları şu anda yüklenemedi, lütfen daha sonra tekrar deneyin.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <>
+          <label className="flex items-start gap-2.5 text-sm text-gray-600 mb-4">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+              <a href="/elevire/legal/mesafeli-satis-sozlesmesi" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">
+                Mesafeli Satış Sözleşmesi
+              </a>
+              &apos;ni okudum, kabul ediyorum; dijital hizmetin ödeme onayıyla birlikte hemen ifa edileceğini ve bu nedenle cayma hakkımın bulunmadığını biliyorum.
+            </span>
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(["monthly", "yearly"] as const).map((key) => {
             const plan = plans[key];
             const isCurrentPlan = isActive && user?.plan === key;
@@ -209,7 +233,7 @@ function BillingPageContent() {
                   ) : isActive ? (
                     <button
                       onClick={() => switchPlan(key)}
-                      disabled={submitting !== null}
+                      disabled={submitting !== null || !acceptedTerms}
                       className="w-full border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                     >
                       {submitting === key ? "İşleniyor..." : "Bu Plana Geç"}
@@ -217,7 +241,7 @@ function BillingPageContent() {
                   ) : (
                     <button
                       onClick={() => startCheckout(key)}
-                      disabled={submitting !== null}
+                      disabled={submitting !== null || !acceptedTerms}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg disabled:opacity-50"
                     >
                       {submitting === key ? "Yönlendiriliyor..." : "Abone Ol"}
@@ -227,7 +251,8 @@ function BillingPageContent() {
               </div>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

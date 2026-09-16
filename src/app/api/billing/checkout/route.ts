@@ -18,7 +18,20 @@ export async function POST(request: NextRequest) {
   if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { plan } = await request.json();
+    const { plan, acceptedTerms } = await request.json();
+    // Client-side checkbox tek başına yeterli değil — Mesafeli Satış
+    // Sözleşmesi'ndeki cayma hakkı feragatinin geçerli olması için ödeme
+    // anında açık onay burada da zorunlu kılınır ve ne zaman verildiği
+    // saklanır (bkz. database/schema.sql: terms_accepted_at). Plan
+    // geçerliliğinden ÖNCE kontrol edilir — hangi plan seçilirse seçilsin
+    // onay şart.
+    if (acceptedTerms !== true) {
+      return NextResponse.json({ error: "Mesafeli Satış Sözleşmesi'ni kabul etmeniz gerekiyor." }, { status: 400 });
+    }
+    // Onay verildiği an kaydedilir — sonraki plan doğrulaması/iyzico
+    // çağrısı başarısız olsa bile, kullanıcının bu anda onay verdiği
+    // gerçeği değişmez.
+    await pool.query("UPDATE tenants SET terms_accepted_at = now() WHERE id = $1", [user.tenantId]);
     const pricingPlanRef = PLAN_REFS[plan];
     if (!pricingPlanRef) {
       return NextResponse.json({ error: "Geçersiz plan." }, { status: 400 });

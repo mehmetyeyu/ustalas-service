@@ -1119,3 +1119,12 @@ UPDATE tenants SET billing_status = 'exempt' WHERE billing_status IS NULL;
 -- src/lib/billing.ts) yalnızca billing_period_ends_at geçince kilitler.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_period_ends_at TIMESTAMPTZ;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cancel_at_period_end BOOLEAN NOT NULL DEFAULT false;
+
+-- Hukuki kanıt amaçlı — sadece bir checkbox'ı zorunlu kılmak yeterli değil,
+-- "ne zaman kabul edildiği" kayıt altına alınmalı (bkz. plan, Mesafeli
+-- Satış Sözleşmesi'ndeki cayma hakkı feragati ve KVKK aydınlatma
+-- yükümlülüğü). privacy_policy_accepted_at: /kayit'ta kayıt anında.
+-- terms_accepted_at: /admin/billing'de ilk gerçek ödeme (checkout)
+-- başlatılırken — bkz. src/app/api/billing/checkout/route.ts.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS privacy_policy_accepted_at TIMESTAMPTZ;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
