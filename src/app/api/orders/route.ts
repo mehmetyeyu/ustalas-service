@@ -87,13 +87,33 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    const { plate, customer_name, customer_phone, notes, lines } = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, order_date } = await request.json();
 
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json(
         { error: "Plaka ve en az bir satır zorunludur." },
         { status: 400 }
       );
+    }
+    // Geçmişe dönük giriş (ör. "2 gün önce girmeyi unuttuğum sipariş") —
+    // gönderilmezse mevcut davranış (CURRENT_TIMESTAMP) aynen sürer. Gelecek
+    // bir tarih kabul edilmez, siparişin henüz gerçekleşmediği bir tarih
+    // mantıksız olurdu.
+    let createdAt: Date | null = null;
+    if (order_date) {
+      const parsed = new Date(order_date);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json({ error: "Geçersiz tarih." }, { status: 400 });
+      }
+      // Sadece tarih (gün) kısmı geçmişe alınır, saat kısmı "şimdi" kalır —
+      // aynı geçmiş günde birden fazla sipariş girilirse aralarındaki sıra
+      // (created_at DESC varsayılan sıralaması) hâlâ giriş sırasını yansıtır.
+      const now = new Date();
+      parsed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      if (parsed.getTime() > now.getTime()) {
+        return NextResponse.json({ error: "Gelecek bir tarih girilemez." }, { status: 400 });
+      }
+      createdAt = parsed;
     }
     for (const l of lines as OrderLineInput[]) {
       if (!l.service_name || !String(l.service_name).trim()) {
@@ -123,9 +143,9 @@ export async function POST(request: NextRequest) {
       }
 
       const orderResult = await client.query(
-        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE') RETURNING id`,
-        [user.tenantId, plate, customer_name || null, customer_phone || null, notes || null, totalAmount]
+        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', COALESCE($7, CURRENT_TIMESTAMP)) RETURNING id`,
+        [user.tenantId, plate, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt]
       );
 
       const orderId = orderResult.rows[0].id;

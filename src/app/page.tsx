@@ -246,6 +246,12 @@ export default function OrderPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [notes, setNotes] = useState("");
+  // Varsayılan bugün — geçmiş bir günü unutup girmeyi hatırlayan personel
+  // için geriye dönük tarih seçilebilir (bkz. /api/orders POST: order_date).
+  // Raporlar created_at'e göre gruplandığından (payment_date'e göre değil,
+  // bkz. src/app/api/reports/route.ts) bu tek başına doğru güne düşmesi
+  // için yeterli.
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
   // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
@@ -406,6 +412,7 @@ export default function OrderPage() {
           customer_name: customerName.trim() || null,
           customer_phone: customerPhone.trim() || null,
           notes: notes.trim() || null,
+          order_date: orderDate || null,
           lines: validLines.map((l) => ({
             service_name: l.service_name.trim(),
             supplier: l.supplier.trim() || null,
@@ -429,6 +436,7 @@ export default function OrderPage() {
       setCustomerName("");
       setCustomerPhone("");
       setNotes("");
+      setOrderDate(new Date().toISOString().slice(0, 10));
       setLines([{ ...EMPTY_LINE }]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -473,7 +481,7 @@ export default function OrderPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Araç Plakası <span className="text-red-500">*</span>
@@ -484,6 +492,18 @@ export default function OrderPage() {
                   onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
                   placeholder="34 ABC 123"
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tarih
+                </label>
+                <input
+                  type="date"
+                  value={orderDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setOrderDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
