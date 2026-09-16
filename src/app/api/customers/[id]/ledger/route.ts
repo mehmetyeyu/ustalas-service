@@ -30,15 +30,24 @@ export async function GET(
 
     // "#123 Sipariş" tek başına neyin yapıldığını göstermiyordu — FB Lastik'ten
     // gelen talep üzerine (bkz. görüşme notları) SIPARIS satırları artık
-    // siparişin plakasını ve işlem/hizmet dökümünü de taşıyor, arayüz bunları
-    // gösterip sipariş linkini korur.
+    // siparişin plakasını ve tam hizmet dökümünü (sipariş detayındaki
+    // "Hizmetler" görünümüyle birebir aynı alanlar: Adet, Ebat, Tedarikçi,
+    // satır bazlı Tutar) taşıyor, ayrıca Toplam/Alınan farkı ve varsa Notu.
+    // Maliyet ve Stok Kodu kasıtlı olarak dışarıda — sipariş detayının
+    // KENDİ salt-okunur görünümü de bunları göstermiyor (bkz.
+    // admin/orders/[id]/page.tsx "Hizmetler" bölümü), sadece düzenleme
+    // formunda var.
     const entriesResult = await pool.query(
       `SELECT cle.id, cle.entry_type, cle.direction, cle.amount::float AS amount, cle.payment_type,
               cle.entry_date::text AS entry_date, cle.note, cle.order_id, cle.kasa_id,
-              o.plate AS order_plate,
-              (SELECT STRING_AGG(s.name, ', ' ORDER BY os.id)
+              o.plate AS order_plate, o.total_amount::float AS order_total_amount,
+              o.paid_amount::float AS order_paid_amount, o.notes AS order_notes,
+              (SELECT json_agg(json_build_object(
+                 'name', s.name, 'quantity', os.quantity, 'size_desc', os.size_desc,
+                 'supplier', os.supplier, 'unit_price', os.unit_price::float
+               ) ORDER BY os.id)
                FROM order_services os JOIN services s ON s.id = os.service_id
-               WHERE os.order_id = cle.order_id) AS order_services_summary,
+               WHERE os.order_id = cle.order_id) AS order_lines,
               SUM(cle.amount * cle.direction) OVER (ORDER BY cle.entry_date, cle.id)::float AS running_balance
        FROM customer_ledger_entries cle
        LEFT JOIN orders o ON o.id = cle.order_id AND o.tenant_id = cle.tenant_id

@@ -44,9 +44,20 @@ interface LedgerEntry {
   note: string | null;
   order_id: number | null;
   order_plate: string | null;
-  order_services_summary: string | null;
+  order_lines: OrderLedgerLine[] | null;
+  order_total_amount: number | null;
+  order_paid_amount: number | null;
+  order_notes: string | null;
   kasa_id: number | null;
   running_balance: number;
+}
+
+interface OrderLedgerLine {
+  name: string;
+  quantity: number;
+  size_desc: string | null;
+  supplier: string | null;
+  unit_price: number;
 }
 
 export default function CustomersPage() {
@@ -578,26 +589,48 @@ export default function CustomersPage() {
                   <tbody className="divide-y divide-gray-100">
                     {ledgerEntries.map((e) => (
                       <tr key={e.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(e.entry_date)}</td>
-                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap align-top">{formatDate(e.entry_date)}</td>
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap align-top">
                           {e.entry_type === "SIPARIS"
                             ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">#{e.order_id}</Link>
                             : "—"}
                         </td>
-                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap align-top">
                           {e.entry_type === "SIPARIS" ? (e.order_plate || "—") : "—"}
                         </td>
-                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
-                          {e.entry_type === "SIPARIS"
-                            ? (e.order_services_summary || "—")
-                            : (e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç"))}
+                        <td className="px-3 py-2 text-gray-700 align-top">
+                          {e.entry_type === "SIPARIS" ? (
+                            <div className="space-y-0.5">
+                              {(e.order_lines || []).map((l, i) => (
+                                <div key={i} className="text-xs whitespace-nowrap">
+                                  <span className="text-gray-700">{l.name}</span>
+                                  {l.quantity > 1 && <span className="text-gray-400"> ×{l.quantity}</span>}
+                                  {l.size_desc && <span className="text-gray-400"> — {l.size_desc}</span>}
+                                  {l.supplier && <span className="text-gray-400"> ({l.supplier})</span>}
+                                  <span className="text-gray-500"> · {formatCurrency(l.unit_price)}</span>
+                                </div>
+                              ))}
+                              {e.order_total_amount != null && e.order_paid_amount != null && e.order_paid_amount !== e.order_total_amount && (
+                                <div className="text-xs text-orange-600 font-medium whitespace-nowrap">
+                                  Toplam {formatCurrency(e.order_total_amount)} — Alınan {formatCurrency(e.order_paid_amount)}
+                                </div>
+                              )}
+                              {e.order_notes && (
+                                <div className="text-xs text-yellow-700 italic">Not: {e.order_notes}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="whitespace-nowrap">
+                              {e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç")}
+                            </span>
+                          )}
                         </td>
-                        <td className={`px-3 py-2 text-right font-medium whitespace-nowrap ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
+                        <td className={`px-3 py-2 text-right font-medium whitespace-nowrap align-top ${e.direction === 1 ? "text-red-600" : "text-green-600"}`}>
                           {e.direction === 1 ? "+" : "-"}{formatCurrency(e.amount)}
                         </td>
-                        <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">{formatCurrency(e.running_balance)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap align-top">{formatCurrency(e.running_balance)}</td>
                         {canManageBalance && (
-                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <td className="px-3 py-2 text-right whitespace-nowrap align-top">
                             {e.entry_type === "MANUEL" && (
                               <div className="flex items-center justify-end gap-2">
                                 <button
