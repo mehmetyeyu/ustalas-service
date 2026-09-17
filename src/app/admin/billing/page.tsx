@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { trialDaysLeft } from "@/lib/billing";
-import { formatTry, formatTry2 } from "@/lib/exchangeRate";
+import { formatTry2 } from "@/lib/exchangeRate";
 
 interface PlanInfo {
   referenceCode: string;
@@ -15,12 +15,20 @@ interface PlanInfo {
   paymentInterval: "MONTHLY" | "YEARLY";
 }
 
+// Landing sayfasındaki (/elevire) referans fiyat — vitrin fiyatı hep bu
+// USD değerler üzerinden gösterilir (tutarlılık için). Gerçek tahsilat
+// ise TRY'dir (yerli kartlar dövizle ödeme yapamıyor, bkz. iyzico-setup.mjs
+// notu) — iyzico'daki plan fiyatı (plans[key].price/currencyCode) bunun
+// o anki TL karşılığıdır, "Kartınızdan ... tahsil edilecek" satırında
+// ayrıca gösterilir. İkisi karıştırılmasın diye kasıtlı olarak ayrı
+// tutuluyor: üstteki $ vitrin fiyatı sabit, alttaki gerçek tahsilat
+// tutarı iyzico'daki plan güncellenince değişir.
+const USD_REFERENCE_PRICING = { monthly: 25, yearly: 250 } as const;
+
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", TRY: "₺", EUR: "€" };
 
-// Landing sayfasındaki gibi ("$25") sembol öneki — "25 USD" yerine daha
-// tanıdık/kısa. Bilinmeyen bir para birimi gelirse (bugün hep USD ama
-// createPricingPlan TRY/EUR de kabul ediyor) koda geri düşer.
 function formatPlanPrice(amount: number, currencyCode: string): string {
+  if (currencyCode === "TRY") return `₺${formatTry2(amount)}`;
   const symbol = CURRENCY_SYMBOLS[currencyCode];
   return symbol ? `${symbol}${amount}` : `${amount} ${currencyCode}`;
 }
@@ -255,18 +263,10 @@ function BillingPageContent() {
           {(["monthly", "yearly"] as const).map((key) => {
             const plan = plans[key];
             const isCurrentPlan = isActive && user?.plan === key;
-            const priceNum = Number(plan.price);
-            const monthlyPriceNum = Number(plans.monthly.price);
-            // Landing sayfasındaki (/elevire) aynı gösterim — orada sabit
-            // PRICING sabitinden hesaplanıyordu, burada gerçek iyzico plan
-            // fiyatlarından türetiliyor (daha doğru: planlar değişirse
-            // otomatik senkron kalır).
-            const discountPct = key === "yearly" && monthlyPriceNum > 0
-              ? Math.round((1 - priceNum / (monthlyPriceNum * 12)) * 100)
+            const usdPrice = USD_REFERENCE_PRICING[key];
+            const discountPct = key === "yearly"
+              ? Math.round((1 - USD_REFERENCE_PRICING.yearly / (USD_REFERENCE_PRICING.monthly * 12)) * 100)
               : 0;
-            const tlEquivalent = plans.usdTryRate && plan.currencyCode === "USD"
-              ? formatTry(priceNum * plans.usdTryRate)
-              : null;
             return (
               <div key={key} className={`relative bg-white rounded-xl shadow-sm p-6 flex flex-col ${key === "yearly" ? "ring-2 ring-blue-500" : ""}`}>
                 {discountPct > 0 && (
@@ -278,16 +278,15 @@ function BillingPageContent() {
                 <div className="text-2xl font-bold text-gray-800 mt-1">
                   {key === "yearly" && discountPct > 0 && (
                     <span className="text-base font-normal text-gray-400 line-through mr-1.5">
-                      {formatPlanPrice(monthlyPriceNum * 12, plan.currencyCode)}
+                      ${USD_REFERENCE_PRICING.monthly * 12}
                     </span>
                   )}
-                  {formatPlanPrice(priceNum, plan.currencyCode)}
+                  ${usdPrice}
                   <span className="text-sm font-normal text-gray-400"> / {key === "monthly" ? "ay" : "yıl"}</span>
                 </div>
-                {tlEquivalent && (
-                  <p className="text-xs text-gray-400 mb-4">≈ {tlEquivalent} TL{plans.usdTryRate ? ` (1 USD ≈ ${formatTry2(plans.usdTryRate)} TL)` : ""}</p>
-                )}
-                {!tlEquivalent && <div className="mb-4" />}
+                <p className="text-xs text-gray-400 mb-4">
+                  Kartınızdan {formatPlanPrice(Number(plan.price), plan.currencyCode)} tahsil edilecek
+                </p>
                 <div className="mt-auto">
                   {isCurrentPlan ? (
                     <div className="text-center text-sm font-medium text-emerald-600 py-2.5">Mevcut Planınız</div>
