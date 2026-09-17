@@ -37,59 +37,79 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Geçersiz plan." }, { status: 400 });
     }
 
-    const tenantResult = await pool.query<{
+    // initializeCheckoutForm HER çağrıldığında iyzico'da yeni bir müşteri +
+    // yeni bir abonelik açar, var olan bir aboneliği hiç kontrol etmez.
+    // billing_status yalnızca callback tamamlanınca 'active' olduğundan,
+    // salt bir "zaten aktif mi" kontrolü checkout başlatılıp callback
+    // tamamlanana kadarki pencereyi (kullanıcı kart bilgilerini girerken)
+    // kapatamaz — o pencerede aynı tenant ikinci bir checkout/switch-plan
+    // daha başlatabilir. Bu yüzden tek bir atomik UPDATE...RETURNING ile
+    // billing_checkout_lock_at claim ediliyor (bkz. database/schema.sql notu)
+    // — satır kilidi sayesinde eşzamanlı iki istekten yalnızca biri WHERE
+    // koşulunu geçer. "İptal edilmiş ama ödenmiş dönemi bitmemiş" (bkz.
+    // src/lib/billing.ts isBillingLocked) durumda iyzico'daki abonelik zaten
+    // gerçekten iptal edilmiş olduğundan (bkz. /api/billing/cancel) yeniden
+    // abone olmaya izin veriliyor — sadece "hâlâ gerçekten aktif" durum
+    // reddediliyor.
+    const claimResult = await pool.query<{
       name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
       billing_status: string | null; trial_ends_at: string | null;
     }>(
-      "SELECT name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at FROM tenants WHERE id = $1",
+      `UPDATE tenants SET billing_checkout_lock_at = now()
+       WHERE id = $1
+         AND (billing_status IS DISTINCT FROM 'active' OR billing_cancel_at_period_end = true)
+         AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
+       RETURNING name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at`,
       [user.tenantId]
     );
-    const tenant = tenantResult.rows[0];
-    if (!tenant) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
-
-    // initializeCheckoutForm HER çağrıldığında iyzico'da yeni bir müşteri +
-    // yeni bir abonelik açar, var olan aktif aboneliği hiç kontrol etmez —
-    // bu route'u zaten aktifken tekrar çağırmak (çift tıklama, iki sekme,
-    // ya da senkronize olmayan bir UI state'i) gerçek bir MÜKERRER abonelik
-    // yaratır ve ikisi de ayrı ayrı otomatik yenilenip tahsilat yapmaya
-    // devam eder. Gerçek bir sandbox denemesinde tam olarak bu oldu (bkz.
-    // /api/billing/callback notu) — 3 fazla aktif abonelik elle iptal
-    // edilmek zorunda kaldı. Plan değişimi için ayrı bir yol zaten var
-    // (/api/billing/switch-plan, önce iptal eder) — bu yüzden burada aktifken
-    // her zaman reddetmek güvenli.
-    if (tenant.billing_status === "active") {
-      return NextResponse.json({ error: "Zaten aktif bir aboneliğiniz var. Plan değiştirmek için mevcut plan kartındaki seçeneği kullanın." }, { status: 400 });
-    }
-
-    // Deneme bitmeden erken abone olan bir firma, kalan ücretsiz süresini
-    // kaybetmesin diye — hâlâ deneme içindeyse kalan gün iyzico'ya
-    // trialPeriodDays olarak geçilir (deneme bittiyse 0, hemen tahsilat).
-    const remainingTrialDays = tenant.billing_status === "trialing" ? trialDaysLeft(tenant.trial_ends_at) : 0;
-    const callbackUrl = new URL("/api/billing/callback", request.url).toString();
-
-    const result = await initializeCheckoutForm({
-      conversationId: String(user.tenantId),
-      callbackUrl,
-      pricingPlanReferenceCode: pricingPlanRef,
-      subscriptionInitialStatus: "ACTIVE",
-      trialPeriodDays: remainingTrialDays > 0 ? remainingTrialDays : undefined,
-      customer: buildCustomerFromTenant(tenant),
-    });
-
-    // /api/billing/callback'in token'dan tenant'ı bulabilmesi için —
-    // retrieveCheckoutForm yanıtı conversationId'yi HİÇ döndürmüyor
-    // (gerçek bir sandbox çağrısında saptandı, bkz. database/schema.sql
-    // notu). ON CONFLICT: aynı kullanıcı art arda "Abone Ol"a basarsa
-    // iyzico'nun her seferinde yeni bir token döndürmesi beklenir, ama
-    // garantiye almak için üzerine yazılır.
-    if (result.token) {
-      await pool.query(
-        "INSERT INTO iyzico_checkout_sessions (token, tenant_id, plan) VALUES ($1, $2, $3) ON CONFLICT (token) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, plan = EXCLUDED.plan",
-        [result.token, user.tenantId, plan]
+    const tenant = claimResult.rows[0];
+    if (!tenant) {
+      const exists = await pool.query("SELECT 1 FROM tenants WHERE id = $1", [user.tenantId]);
+      if (exists.rows.length === 0) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Zaten aktif bir aboneliğiniz var ya da devam eden bir ödeme işlemi var. Birkaç dakika sonra tekrar deneyin." },
+        { status: 400 }
       );
     }
 
-    return NextResponse.json(result);
+    try {
+      // Deneme bitmeden erken abone olan bir firma, kalan ücretsiz süresini
+      // kaybetmesin diye — hâlâ deneme içindeyse kalan gün iyzico'ya
+      // trialPeriodDays olarak geçilir (deneme bittiyse 0, hemen tahsilat).
+      const remainingTrialDays = tenant.billing_status === "trialing" ? trialDaysLeft(tenant.trial_ends_at) : 0;
+      const callbackUrl = new URL("/api/billing/callback", request.url).toString();
+
+      const result = await initializeCheckoutForm({
+        conversationId: String(user.tenantId),
+        callbackUrl,
+        pricingPlanReferenceCode: pricingPlanRef,
+        subscriptionInitialStatus: "ACTIVE",
+        trialPeriodDays: remainingTrialDays > 0 ? remainingTrialDays : undefined,
+        customer: buildCustomerFromTenant(tenant),
+      });
+
+      // /api/billing/callback'in token'dan tenant'ı bulabilmesi için —
+      // retrieveCheckoutForm yanıtı conversationId'yi HİÇ döndürmüyor
+      // (gerçek bir sandbox çağrısında saptandı, bkz. database/schema.sql
+      // notu). ON CONFLICT: aynı kullanıcı art arda "Abone Ol"a basarsa
+      // iyzico'nun her seferinde yeni bir token döndürmesi beklenir, ama
+      // garantiye almak için üzerine yazılır.
+      if (result.token) {
+        await pool.query(
+          "INSERT INTO iyzico_checkout_sessions (token, tenant_id, plan) VALUES ($1, $2, $3) ON CONFLICT (token) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, plan = EXCLUDED.plan",
+          [result.token, user.tenantId, plan]
+        );
+      }
+
+      return NextResponse.json(result);
+    } catch (error) {
+      // Kilit, callback tamamlanınca serbest bırakılır (bkz.
+      // /api/billing/callback) — ama iyzico çağrısı burada patlarsa callback
+      // hiç çalışmayacağından, kullanıcı 15 dakika beklemek zorunda kalmasın
+      // diye kilit hemen geri alınıyor.
+      await pool.query("UPDATE tenants SET billing_checkout_lock_at = NULL WHERE id = $1", [user.tenantId]);
+      throw error;
+    }
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : "Sunucu hatası.";

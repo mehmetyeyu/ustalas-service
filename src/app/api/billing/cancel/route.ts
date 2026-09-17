@@ -9,13 +9,19 @@ export async function POST() {
   if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const result = await pool.query<{ billing_subscription_ref: string | null }>(
-      "SELECT billing_subscription_ref FROM tenants WHERE id = $1",
+    const result = await pool.query<{ billing_subscription_ref: string | null; billing_cancel_at_period_end: boolean }>(
+      "SELECT billing_subscription_ref, billing_cancel_at_period_end FROM tenants WHERE id = $1",
       [user.tenantId]
     );
     const subscriptionRef = result.rows[0]?.billing_subscription_ref;
     if (!subscriptionRef) {
       return NextResponse.json({ error: "Aktif bir abonelik bulunamadı." }, { status: 400 });
+    }
+    // Abonelik iyzico'da zaten iptal edilmişse (bkz. altta) referansı tekrar
+    // iptal etmeye çalışmak iyzico'da hataya yol açar — çift tıklama/tekrar
+    // istekte sessizce başarı dönülür.
+    if (result.rows[0]?.billing_cancel_at_period_end) {
+      return NextResponse.json({ success: true });
     }
 
     // iyzico'da hemen iptal edilir (bir daha tahsilat yapılmaz) ama

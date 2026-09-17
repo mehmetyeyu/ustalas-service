@@ -52,6 +52,13 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
 
   if (!token) return redirectTo("failed");
 
+  // checkout/switch-plan tarafından claim edilen billing_checkout_lock_at
+  // (bkz. o route'lardaki not) bu callback tamamlanınca (başarılı ya da
+  // başarısız fark etmez) serbest bırakılmalı — aksi halde kullanıcı 15
+  // dakikalık TTL dolana kadar yeniden deneyemez. tenantId, session
+  // bulunduktan sonra biliniyor; finally bloğunun erişebilmesi için try
+  // dışında tanımlanıyor.
+  let tenantId: number | null = null;
   try {
     // Tenant, checkout/switch-plan başlatılırken kaydedilen token→tenant_id
     // eşleşmesinden bulunur — retrieveCheckoutForm'un kendi yanıtı buna
@@ -65,7 +72,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       console.error("iyzico callback — token için kayıtlı checkout session bulunamadı:", token);
       return redirectTo("failed");
     }
-    const tenantId = session.tenant_id;
+    tenantId = session.tenant_id;
 
     const result = await retrieveCheckoutForm(token);
     // Gerçek bir sandbox çağrısıyla doğrulandı: bu uç nokta "status" değil
@@ -119,6 +126,12 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
   } catch (error) {
     console.error(error);
     return redirectTo("failed");
+  } finally {
+    if (tenantId !== null) {
+      await pool
+        .query("UPDATE tenants SET billing_checkout_lock_at = NULL WHERE id = $1", [tenantId])
+        .catch((err) => console.error("checkout kilidi serbest bırakılamadı:", err));
+    }
   }
 }
 

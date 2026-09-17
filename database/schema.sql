@@ -1120,6 +1120,20 @@ UPDATE tenants SET billing_status = 'exempt' WHERE billing_status IS NULL;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_period_ends_at TIMESTAMPTZ;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cancel_at_period_end BOOLEAN NOT NULL DEFAULT false;
 
+-- Eşzamanlı checkout kilidi: initializeCheckoutForm HER çağrıldığında
+-- iyzico'da yeni bir müşteri + abonelik açar, var olan bir aboneliği hiç
+-- kontrol etmez. billing_status yalnızca callback tamamlanınca 'active'
+-- olduğundan, checkout başlatılıp callback tamamlanana kadarki pencerede
+-- (kullanıcı kart bilgilerini girerken) aynı tenant için ikinci bir
+-- checkout/switch-plan çağrısı (çift tıklama, iki sekme, hem Aylık hem
+-- Yıllık'ı ayrı ayrı denemek) hiçbir şey tarafından engellenmiyordu — gerçek
+-- bir sandbox denemesinde bu yüzden 3 fazla aktif (ve otomatik yenilenen)
+-- abonelik oluştu, elle iptal edilmek zorunda kalındı. checkout/switch-plan
+-- artık tek bir atomik UPDATE...RETURNING ile bu sütunu claim ediyor; 15
+-- dakikalık TTL, bir çağrı hiç tamamlanmadan (ör. sunucu hatası) kilidi
+-- sonsuza kadar tutmasını önler.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_checkout_lock_at TIMESTAMPTZ;
+
 -- Hukuki kanıt amaçlı — sadece bir checkbox'ı zorunlu kılmak yeterli değil,
 -- "ne zaman kabul edildiği" kayıt altına alınmalı (bkz. plan, Mesafeli
 -- Satış Sözleşmesi'ndeki cayma hakkı feragati ve KVKK aydınlatma

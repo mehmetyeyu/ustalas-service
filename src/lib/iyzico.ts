@@ -244,5 +244,12 @@ export function verifyWebhookSignature(params: {
     params.merchantId + SECRET_KEY + params.eventType + params.subscriptionReferenceCode +
     params.orderReferenceCode + params.customerReferenceCode;
   const expected = crypto.createHmac("sha256", SECRET_KEY!).update(message).digest("hex");
-  return expected === params.signatureHeader;
+  // Sabit zamanlı karşılaştırma — string eşitliği (===) erken çıkışla ilk
+  // uyuşmayan karakterde durur, bu da (teorik de olsa) zamanlama yan kanalı
+  // ile imza tahminine izin verir. Uzunluklar farklıysa timingSafeEqual
+  // exception atar, bu yüzden önce kontrol ediliyor.
+  const expectedBuf = Buffer.from(expected, "hex");
+  const receivedBuf = Buffer.from(params.signatureHeader, "hex");
+  if (expectedBuf.length !== receivedBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, receivedBuf);
 }

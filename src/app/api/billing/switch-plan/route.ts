@@ -35,48 +35,74 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Geçersiz plan." }, { status: 400 });
     }
 
-    const tenantResult = await pool.query<{
+    // bkz. /api/billing/checkout — aynı eşzamanlılık kilidi, checkout ile
+    // PAYLAŞILAN aynı sütun (billing_checkout_lock_at) üzerinden: aksi halde
+    // bu route ile checkout aynı tenant için birbirinden habersiz aynı anda
+    // çalışıp yine mükerrer abonelik yaratabilirdi. switch-plan'ın kendine
+    // özgü ön koşulu yok (zaten aktif bir tenant'ın plan değiştirmesi için
+    // var) — sadece devam eden başka bir checkout/switch olmadığından emin
+    // olunuyor.
+    const claimResult = await pool.query<{
       name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
-      billing_subscription_ref: string | null;
+      billing_subscription_ref: string | null; billing_cancel_at_period_end: boolean;
     }>(
-      "SELECT name, contact_name, contact_email, contact_phone, billing_subscription_ref FROM tenants WHERE id = $1",
+      `UPDATE tenants SET billing_checkout_lock_at = now()
+       WHERE id = $1
+         AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
+       RETURNING name, contact_name, contact_email, contact_phone, billing_subscription_ref, billing_cancel_at_period_end`,
       [user.tenantId]
     );
-    const tenant = tenantResult.rows[0];
-    if (!tenant) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
-
-    if (tenant.billing_subscription_ref) {
-      await cancelSubscription(tenant.billing_subscription_ref);
-      // İptal iyzico'da gerçekleşti — bundan sonraki checkout adımı
-      // (aşağıda) ağ hatası vb. ile başarısız olursa bile bu gerçeği DB'ye
-      // hemen yansıtıyoruz. Aksi halde eski abonelik gerçekte iptal
-      // edilmişken tenant hâlâ tam aktif görünür, dönem sonu geldiğinde
-      // hiçbir past_due/kilit sinyali almadan sessizce ödemesiz kalırdı
-      // (gerçek bir denetimde bulunan bir açık). Gerçekten yeniden abone
-      // olunca /api/billing/callback bu bayrağı zaten false'a çeviriyor.
-      await pool.query("UPDATE tenants SET billing_cancel_at_period_end = true WHERE id = $1", [user.tenantId]);
-    }
-
-    const callbackUrl = new URL("/api/billing/callback", request.url).toString();
-
-    const result = await initializeCheckoutForm({
-      conversationId: String(user.tenantId),
-      callbackUrl,
-      pricingPlanReferenceCode: pricingPlanRef,
-      subscriptionInitialStatus: "ACTIVE",
-      customer: buildCustomerFromTenant(tenant),
-    });
-
-    // bkz. /api/billing/checkout — aynı gerekçe (retrieveCheckoutForm
-    // conversationId döndürmüyor).
-    if (result.token) {
-      await pool.query(
-        "INSERT INTO iyzico_checkout_sessions (token, tenant_id, plan) VALUES ($1, $2, $3) ON CONFLICT (token) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, plan = EXCLUDED.plan",
-        [result.token, user.tenantId, plan]
+    const tenant = claimResult.rows[0];
+    if (!tenant) {
+      const exists = await pool.query("SELECT 1 FROM tenants WHERE id = $1", [user.tenantId]);
+      if (exists.rows.length === 0) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Devam eden bir ödeme işlemi var. Birkaç dakika sonra tekrar deneyin." },
+        { status: 400 }
       );
     }
 
-    return NextResponse.json(result);
+    try {
+      // billing_cancel_at_period_end zaten true ise abonelik iyzico'da
+      // önceden iptal edilmiş demektir (bkz. /api/billing/cancel) — aynı
+      // referansı tekrar iptal etmeye çalışmak iyzico'da hataya yol açar.
+      if (tenant.billing_subscription_ref && !tenant.billing_cancel_at_period_end) {
+        await cancelSubscription(tenant.billing_subscription_ref);
+        // İptal iyzico'da gerçekleşti — bundan sonraki checkout adımı
+        // (aşağıda) ağ hatası vb. ile başarısız olursa bile bu gerçeği DB'ye
+        // hemen yansıtıyoruz. Aksi halde eski abonelik gerçekte iptal
+        // edilmişken tenant hâlâ tam aktif görünür, dönem sonu geldiğinde
+        // hiçbir past_due/kilit sinyali almadan sessizce ödemesiz kalırdı
+        // (gerçek bir denetimde bulunan bir açık). Gerçekten yeniden abone
+        // olunca /api/billing/callback bu bayrağı zaten false'a çeviriyor.
+        await pool.query("UPDATE tenants SET billing_cancel_at_period_end = true WHERE id = $1", [user.tenantId]);
+      }
+
+      const callbackUrl = new URL("/api/billing/callback", request.url).toString();
+
+      const result = await initializeCheckoutForm({
+        conversationId: String(user.tenantId),
+        callbackUrl,
+        pricingPlanReferenceCode: pricingPlanRef,
+        subscriptionInitialStatus: "ACTIVE",
+        customer: buildCustomerFromTenant(tenant),
+      });
+
+      // bkz. /api/billing/checkout — aynı gerekçe (retrieveCheckoutForm
+      // conversationId döndürmüyor).
+      if (result.token) {
+        await pool.query(
+          "INSERT INTO iyzico_checkout_sessions (token, tenant_id, plan) VALUES ($1, $2, $3) ON CONFLICT (token) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, plan = EXCLUDED.plan",
+          [result.token, user.tenantId, plan]
+        );
+      }
+
+      return NextResponse.json(result);
+    } catch (error) {
+      // bkz. /api/billing/checkout — aynı gerekçe.
+      await pool.query("UPDATE tenants SET billing_checkout_lock_at = NULL WHERE id = $1", [user.tenantId]);
+      throw error;
+    }
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : "Sunucu hatası.";
