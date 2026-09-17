@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { verifyWebhookSignature } from "@/lib/iyzico";
+import { getSubscription, verifyWebhookSignature } from "@/lib/iyzico";
+
+interface SubscriptionOrder {
+  referenceCode: string;
+  paymentAttempts?: Array<{ errorCode?: string; errorMessage?: string }>;
+}
+
+// GET /v2/subscription/subscriptions/{ref} yanıtındaki ilgili order'ın
+// paymentAttempts'inde FAILED denemeler için errorCode/errorMessage AYRICA
+// mevcut — webhook'un kendisi bunu hiç içermiyor (bkz. database/schema.sql
+// notu). En son (son elemandaki) errorMessage alınır; hiçbiri yoksa (ör.
+// yanıt şekli beklenenden farklıysa) generic bir mesaja düşülür — bu ek
+// sorgu tamamen "daha iyi mesaj" amaçlı, ana kilitleme akışını bloklamamalı.
+async function fetchFailureReason(subscriptionReferenceCode: string, orderReferenceCode: string | undefined): Promise<string> {
+  const fallback = "Ödeme alınamadı.";
+  try {
+    const sub = await getSubscription(subscriptionReferenceCode) as { orders?: SubscriptionOrder[] };
+    const order = sub.orders?.find((o) => o.referenceCode === orderReferenceCode) ?? sub.orders?.[sub.orders.length - 1];
+    const lastAttempt = order?.paymentAttempts?.[order.paymentAttempts.length - 1];
+    return lastAttempt?.errorMessage || fallback;
+  } catch (error) {
+    console.error("iyzico webhook — başarısızlık sebebi çekilemedi:", error);
+    return fallback;
+  }
+}
 
 // iyzico Abonelik yaşam döngüsü bildirimleri (yenileme başarılı/başarısız,
 // bkz. plan) — X-IYZ-SIGNATURE-V3 imza doğrulaması iyzico hesabında
@@ -76,25 +100,25 @@ export async function POST(request: NextRequest) {
       const periodEndsAt = tenant.plan === "yearly"
         ? new Date(now.setFullYear(now.getFullYear() + 1))
         : new Date(now.setMonth(now.getMonth() + 1));
+      // billing_last_payment_error temizlenir — önceki bir başarısız
+      // denemeden kalma mesaj varsa (ör. kart güncellenip yeniden denenmiş
+      // olabilir), artık geçerli değil.
       await pool.query(
-        "UPDATE tenants SET billing_status = 'active', billing_period_ends_at = $1 WHERE billing_subscription_ref = $2",
+        "UPDATE tenants SET billing_status = 'active', billing_period_ends_at = $1, billing_last_payment_error = NULL WHERE billing_subscription_ref = $2",
         [periodEndsAt, subscriptionReferenceCode]
       );
     }
   } else if (iyziEventType === "subscription.order.failure") {
     // V1'de otomatik yeniden deneme (dunning) yok — başarısız ödeme
     // doğrudan kilitler, firma /admin/billing'den yeniden abone olur
-    // (bkz. plan, "V1 kapsam dışı"). iyzico'nun webhook payload'ı BAŞARISIZLIK
-    // SEBEBİNİ içermiyor (resmi dokümanla doğrulandı — sadece
-    // orderReferenceCode/subscriptionReferenceCode/iyziEventType/iyziEventTime
-    // var, kart reddi/limit/3D Secure gibi bir detay hiç gelmiyor) —
-    // bu yüzden burada gösterecek daha fazla bir "hata mesajı" yok, sadece
-    // olayın kendisi loglanıyor (proaktif müşteri bildirimi henüz yok, bkz.
-    // plan — kullanıcı bunu ancak /admin/billing'e düştüğünde görüyor).
-    console.warn("iyzico webhook — abonelik ödemesi başarısız, tenant kilitleniyor:", { subscriptionReferenceCode, orderReferenceCode });
+    // (bkz. plan, "V1 kapsam dışı"). Webhook'un kendisi başarısızlık
+    // sebebini içermiyor — fetchFailureReason ile AYRI bir GET çağrısıyla
+    // çekiliyor (bkz. yukarısı, database/schema.sql notu).
+    const reason = await fetchFailureReason(subscriptionReferenceCode, orderReferenceCode);
+    console.warn("iyzico webhook — abonelik ödemesi başarısız, tenant kilitleniyor:", { subscriptionReferenceCode, orderReferenceCode, reason });
     const result = await pool.query(
-      "UPDATE tenants SET billing_status = 'past_due' WHERE billing_subscription_ref = $1",
-      [subscriptionReferenceCode]
+      "UPDATE tenants SET billing_status = 'past_due', billing_last_payment_error = $1 WHERE billing_subscription_ref = $2",
+      [reason, subscriptionReferenceCode]
     );
     if (result.rowCount === 0) {
       console.warn("iyzico webhook — subscriptionReferenceCode için eşleşen tenant bulunamadı:", { iyziEventType, subscriptionReferenceCode });

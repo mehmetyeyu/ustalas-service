@@ -23,6 +23,9 @@ export interface JwtPayload {
   plan?: string | null;
   billingCancelAtPeriodEnd?: boolean | null;
   billingPeriodEndsAt?: string | null;
+  // Son başarısız otomatik yenileme denemesinin iyzico'dan gelen (zaten
+  // Türkçe) sebep mesajı — bkz. src/app/api/webhooks/iyzico/route.ts.
+  billingLastPaymentError?: string | null;
   iat?: number;
   iatMs?: number;
 }
@@ -66,7 +69,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
             u.tenant_id, t.is_active AS tenant_is_active,
             t.billing_status, t.trial_ends_at, t.plan,
-            t.billing_cancel_at_period_end, t.billing_period_ends_at
+            t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error
      FROM users u
      LEFT JOIN tenants t ON t.id = u.tenant_id
      WHERE u.id = $1`,
@@ -104,6 +107,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     plan: user.plan ?? null,
     billingCancelAtPeriodEnd: user.billing_cancel_at_period_end ?? null,
     billingPeriodEndsAt: user.billing_period_ends_at ?? null,
+    billingLastPaymentError: user.billing_last_payment_error ?? null,
   };
 }
 

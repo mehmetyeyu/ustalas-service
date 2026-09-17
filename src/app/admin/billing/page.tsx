@@ -207,7 +207,9 @@ function BillingPageContent() {
               <p className="text-xs text-gray-400 mt-1">Deneme sürenizin bitmesine {trialDaysLeft(user?.trialEndsAt ?? null)} gün kaldı.</p>
             )}
             {billingStatus === "past_due" && (
-              <p className="text-xs text-red-500 mt-1">Son ödeme alınamadı, erişiminiz kısıtlandı. Devam etmek için yeniden abone olun.</p>
+              <p className="text-xs text-red-500 mt-1">
+                Son ödeme alınamadı{user?.billingLastPaymentError ? ` (${user.billingLastPaymentError})` : ""}, erişiminiz kısıtlandı. Devam etmek için yeniden abone olun.
+              </p>
             )}
             {(billingStatus === "canceled" || cancelPeriodEnded) && (
               <p className="text-xs text-gray-400 mt-1">Aboneliğiniz iptal edildi. Devam etmek için yeniden abone olun.</p>

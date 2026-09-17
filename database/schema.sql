@@ -1151,6 +1151,18 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_checkout_lock_at TIMESTAMPT
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_pricing_plan_ref VARCHAR(100);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_repriced_for_period_end TIMESTAMPTZ;
 
+-- subscription.order.failure webhook'unun kendisi BAŞARISIZLIK SEBEBİNİ hiç
+-- içermiyor (docs.iyzico.com/ek-bilgiler/hata-kodlari ile birlikte resmi
+-- webhook payload dokümanından doğrulandı) — ama GET /v2/subscription/
+-- subscriptions/{ref} yanıtındaki ilgili order'ın paymentAttempts'inde
+-- FAILED denemeler için errorCode/errorMessage AYRICA mevcut (errorMessage
+-- zaten Türkçe, ör. "Kart limiti yetersiz, yetersiz bakiye" — kendi
+-- kod->mesaj çeviri tablomuzu tutmaya gerek yok). billing_last_payment_error,
+-- webhook bu ek sorguyla çektiği mesajı /admin/billing'de gösterebilmek
+-- için saklar; bir sonraki başarılı ödemede temizlenir (bkz. webhook
+-- route'u).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_last_payment_error TEXT;
+
 -- Hukuki kanıt amaçlı — sadece bir checkbox'ı zorunlu kılmak yeterli değil,
 -- "ne zaman kabul edildiği" kayıt altına alınmalı (bkz. plan, Mesafeli
 -- Satış Sözleşmesi'ndeki cayma hakkı feragati ve KVKK aydınlatma
