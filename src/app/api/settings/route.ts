@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { getAppSettings } from "@/lib/settings";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { invalidateBookingConfigCache } from "@/lib/publicBookingConfigCache";
+import { normalizeTurkishPhone } from "@/lib/phone";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -74,7 +75,16 @@ export async function PUT(request: NextRequest) {
     const shared_stock_enabled = !!body.shared_stock_enabled;
     const contact_name = body.contact_name ? String(body.contact_name).trim().slice(0, 150) || null : null;
     const contact_email = body.contact_email ? String(body.contact_email).trim().slice(0, 150) || null : null;
-    const contact_phone = body.contact_phone ? String(body.contact_phone).trim().slice(0, 30) || null : null;
+    // İyzico faturalandırma akışı (bkz. src/lib/iyzico.ts:normalizeGsmNumber)
+    // temiz, geçerli bir ulusal numaraya güveniyor — serbest metin burada
+    // kabul edilip iyzico'ya gidince reddedilmesin diye (gerçek bir
+    // denetimde saptandı) doğrulama/normalize kaynağında yapılır. Alan
+    // opsiyonel: boş bırakılırsa null, doluysa geçerli olmak zorunda.
+    const contactPhoneRaw = body.contact_phone ? String(body.contact_phone).trim() : "";
+    const contact_phone = contactPhoneRaw ? normalizeTurkishPhone(contactPhoneRaw) : null;
+    if (contactPhoneRaw && !contact_phone) {
+      return NextResponse.json({ error: "Geçersiz telefon numarası." }, { status: 400 });
+    }
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });

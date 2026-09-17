@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signToken } from "@/lib/auth";
 import { provisionTenant } from "@/lib/provisionTenant";
+import { normalizeTurkishPhone } from "@/lib/phone";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[0-9+()\s-]{7,20}$/;
 
 // Elevire landing'deki "Ücretsiz Hesap Oluştur" (bkz. src/app/kayit/page.tsx)
 // — kendi kendine kayıt, auth gerektirmeyen public bir uç (src/app/api/public/
@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
     if (!EMAIL_RE.test(emailTrimmed)) {
       return NextResponse.json({ error: "Geçersiz e-posta adresi." }, { status: 400 });
     }
-    if (!PHONE_RE.test(phoneTrimmed)) {
+    const normalizedPhone = normalizeTurkishPhone(phoneTrimmed);
+    if (!normalizedPhone) {
       return NextResponse.json({ error: "Geçersiz telefon numarası." }, { status: 400 });
     }
     if (passwordStr.length < 6) {
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       adminPassword: passwordStr,
       contactName: name,
       contactEmail: emailTrimmed,
-      contactPhone: phoneTrimmed,
+      contactPhone: normalizedPhone,
       startTrial: true,
       acceptedPrivacyPolicy: true,
     });
