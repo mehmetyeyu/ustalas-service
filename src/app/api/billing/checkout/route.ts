@@ -47,6 +47,20 @@ export async function POST(request: NextRequest) {
     const tenant = tenantResult.rows[0];
     if (!tenant) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
 
+    // initializeCheckoutForm HER çağrıldığında iyzico'da yeni bir müşteri +
+    // yeni bir abonelik açar, var olan aktif aboneliği hiç kontrol etmez —
+    // bu route'u zaten aktifken tekrar çağırmak (çift tıklama, iki sekme,
+    // ya da senkronize olmayan bir UI state'i) gerçek bir MÜKERRER abonelik
+    // yaratır ve ikisi de ayrı ayrı otomatik yenilenip tahsilat yapmaya
+    // devam eder. Gerçek bir sandbox denemesinde tam olarak bu oldu (bkz.
+    // /api/billing/callback notu) — 3 fazla aktif abonelik elle iptal
+    // edilmek zorunda kaldı. Plan değişimi için ayrı bir yol zaten var
+    // (/api/billing/switch-plan, önce iptal eder) — bu yüzden burada aktifken
+    // her zaman reddetmek güvenli.
+    if (tenant.billing_status === "active") {
+      return NextResponse.json({ error: "Zaten aktif bir aboneliğiniz var. Plan değiştirmek için mevcut plan kartındaki seçeneği kullanın." }, { status: 400 });
+    }
+
     // Deneme bitmeden erken abone olan bir firma, kalan ücretsiz süresini
     // kaybetmesin diye — hâlâ deneme içindeyse kalan gün iyzico'ya
     // trialPeriodDays olarak geçilir (deneme bittiyse 0, hemen tahsilat).
