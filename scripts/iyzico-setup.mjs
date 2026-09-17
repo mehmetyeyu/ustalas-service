@@ -4,17 +4,28 @@
 // çalıştığından "@/" alias'ını çözemez, bkz. scripts/create-tenant.mjs'in
 // aynı gerekçesi) kendi başına tekrarlar.
 //
-// Fiyatlar USD bazlıdır — DB/Vercel maliyetleri dolar olduğundan TL
-// aşınmasına karşı marj korumak için (bkz. plan). Landing sayfasındaki
-// TL karşılığı ayrıca canlı kurla hesaplanır, buradaki USD fiyatla
-// senkron kalmalı (bkz. src/app/elevire/page.tsx PRICING sabiti).
+// Fiyatlar dolar bazlı belirleniyor — DB/Vercel maliyetleri dolar
+// olduğundan TL aşınmasına karşı marj korumak için (bkz. plan). AMA
+// gerçek tahsilat TRY olarak yapılmalı: yerli (Türkiye'de basılan)
+// kartlar döviz (USD/EUR) ile doğrudan ödeme yapamıyor (BDDK kısıtı) —
+// gerçek bir denemede "Yerli kart ile döviz ödemesi yapılamaz" hatasıyla
+// saptandı. Bu yüzden bu script'e TRY fiyatlar (o günkü TCMB kuruyla
+// çevrilmiş) verilir, currencyCode parametresiyle. Bu, iyzico'da SABİT
+// bir fiyat demektir — TL zamanla USD karşısında değer kaybettikçe bu
+// planı periyodik olarak (yeni bir plan oluşturup env var'ı güncelleyerek)
+// yeniden fiyatlamak gerekir, otomatik değildir.
 //
-// Kullanım: node scripts/iyzico-setup.mjs <aylık-fiyat-usd> <yıllık-fiyat-usd>
-// Örnek:    node scripts/iyzico-setup.mjs 25.00 250.00
+// Kullanım: node scripts/iyzico-setup.mjs <aylık-fiyat> <yıllık-fiyat> [currency]
+// Örnek:    node scripts/iyzico-setup.mjs 1216.87 12168.73 TRY
+//
+// IYZICO_PRODUCT_REF .env.local'de zaten tanımlıysa YENİ bir ürün
+// oluşturulmaz, mevcut ürüne yeni fiyat planları eklenir (ör. aynı
+// "Elevire Abonelik" ürünü altında hem eski USD hem yeni TRY planları
+// bir arada durabilir, kullanılmayanlar zararsızca öylece kalır).
 //
 // .env.local'de IYZICO_API_KEY, IYZICO_SECRET_KEY, IYZICO_BASE_URL
-// (sandbox: https://sandbox-api.iyzipay.com) tanımlı olmalı. Çıktıdaki üç
-// referans kodu .env.local'e (IYZICO_PRODUCT_REF, IYZICO_PLAN_MONTHLY_REF,
+// (sandbox: https://sandbox-api.iyzipay.com) tanımlı olmalı. Çıktıdaki
+// referans kodları .env.local'e (IYZICO_PRODUCT_REF, IYZICO_PLAN_MONTHLY_REF,
 // IYZICO_PLAN_YEARLY_REF) elle kopyalanır. Hem sandbox hem (onay gelince)
 // production ortamı için AYRI AYRI çalıştırılmalı — referans kodları
 // ortamlar arası taşınmaz.
@@ -35,9 +46,14 @@ if (!API_KEY || !SECRET_KEY || !BASE_URL) {
   process.exit(1);
 }
 
-const [monthlyPrice, yearlyPrice] = process.argv.slice(2);
+const [monthlyPrice, yearlyPrice, currencyArg] = process.argv.slice(2);
+const currencyCode = (currencyArg || "USD").toUpperCase();
 if (!monthlyPrice || !yearlyPrice) {
-  console.error("Kullanım: node scripts/iyzico-setup.mjs <aylık-fiyat> <yıllık-fiyat>");
+  console.error("Kullanım: node scripts/iyzico-setup.mjs <aylık-fiyat> <yıllık-fiyat> [currency]");
+  process.exit(1);
+}
+if (!["USD", "TRY", "EUR"].includes(currencyCode)) {
+  console.error("Geçersiz para birimi (USD/TRY/EUR olmalı):", currencyCode);
   process.exit(1);
 }
 
@@ -71,31 +87,37 @@ async function iyzicoRequest(method, uriPath, body) {
   return raw.data ?? raw;
 }
 
-const product = await iyzicoRequest("POST", "/v2/subscription/products", {
-  name: "Elevire Abonelik",
-  description: "Lastik Servisi Yönetim Sistemi - aylık/yıllık abonelik",
-});
-console.log("Ürün oluşturuldu:", product.referenceCode);
+let productRef = process.env.IYZICO_PRODUCT_REF;
+if (productRef) {
+  console.log("Mevcut ürün kullanılıyor:", productRef);
+} else {
+  const product = await iyzicoRequest("POST", "/v2/subscription/products", {
+    name: "Elevire Abonelik",
+    description: "Lastik Servisi Yönetim Sistemi - aylık/yıllık abonelik",
+  });
+  productRef = product.referenceCode;
+  console.log("Ürün oluşturuldu:", productRef);
+}
 
-const monthly = await iyzicoRequest("POST", `/v2/subscription/products/${product.referenceCode}/pricing-plans`, {
-  name: "Aylık",
+const monthly = await iyzicoRequest("POST", `/v2/subscription/products/${productRef}/pricing-plans`, {
+  name: `Aylık (${currencyCode})`,
   price: monthlyPrice,
-  currencyCode: "USD",
+  currencyCode,
   paymentInterval: "MONTHLY",
   planPaymentType: "RECURRING",
 });
 console.log("Aylık plan oluşturuldu:", monthly.referenceCode);
 
-const yearly = await iyzicoRequest("POST", `/v2/subscription/products/${product.referenceCode}/pricing-plans`, {
-  name: "Yıllık",
+const yearly = await iyzicoRequest("POST", `/v2/subscription/products/${productRef}/pricing-plans`, {
+  name: `Yıllık (${currencyCode})`,
   price: yearlyPrice,
-  currencyCode: "USD",
+  currencyCode,
   paymentInterval: "YEARLY",
   planPaymentType: "RECURRING",
 });
 console.log("Yıllık plan oluşturuldu:", yearly.referenceCode);
 
 console.log("\n.env.local'e ekle:");
-console.log(`IYZICO_PRODUCT_REF=${product.referenceCode}`);
+console.log(`IYZICO_PRODUCT_REF=${productRef}`);
 console.log(`IYZICO_PLAN_MONTHLY_REF=${monthly.referenceCode}`);
 console.log(`IYZICO_PLAN_YEARLY_REF=${yearly.referenceCode}`);
