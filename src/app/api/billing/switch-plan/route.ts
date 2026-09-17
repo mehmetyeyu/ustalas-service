@@ -47,6 +47,14 @@ export async function POST(request: NextRequest) {
 
     if (tenant.billing_subscription_ref) {
       await cancelSubscription(tenant.billing_subscription_ref);
+      // İptal iyzico'da gerçekleşti — bundan sonraki checkout adımı
+      // (aşağıda) ağ hatası vb. ile başarısız olursa bile bu gerçeği DB'ye
+      // hemen yansıtıyoruz. Aksi halde eski abonelik gerçekte iptal
+      // edilmişken tenant hâlâ tam aktif görünür, dönem sonu geldiğinde
+      // hiçbir past_due/kilit sinyali almadan sessizce ödemesiz kalırdı
+      // (gerçek bir denetimde bulunan bir açık). Gerçekten yeniden abone
+      // olunca /api/billing/callback bu bayrağı zaten false'a çeviriyor.
+      await pool.query("UPDATE tenants SET billing_cancel_at_period_end = true WHERE id = $1", [user.tenantId]);
     }
 
     const callbackUrl = new URL("/api/billing/callback", request.url).toString();

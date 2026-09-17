@@ -156,6 +156,12 @@ function BillingPageContent() {
   const isActive = billingStatus === "active";
   const cancelAtPeriodEnd = isActive && !!user?.billingCancelAtPeriodEnd;
   const periodEndsAt = user?.billingPeriodEndsAt ? new Date(user.billingPeriodEndsAt) : null;
+  // billing_status hiçbir yerde koddan 'canceled'a yazılmıyor — dönem
+  // sonu geçmiş iptal edilmiş bir abonelik (isBillingLocked zaten
+  // fonksiyonel olarak kilitler) ekranda hâlâ "Aktif" görünürdü. Ayrı bir
+  // arka plan görevi eklemek yerine görüntülenen etiket burada türetiliyor.
+  const cancelPeriodEnded = cancelAtPeriodEnd && periodEndsAt != null && periodEndsAt.getTime() <= Date.now();
+  const displayStatus = cancelPeriodEnded ? "canceled" : billingStatus;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -166,17 +172,17 @@ function BillingPageContent() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="text-sm font-medium text-gray-700">Durum</div>
-            <div className="text-lg font-bold text-gray-800">{billingStatus ? STATUS_LABELS[billingStatus] ?? billingStatus : "—"}</div>
+            <div className="text-lg font-bold text-gray-800">{displayStatus ? STATUS_LABELS[displayStatus] ?? displayStatus : "—"}</div>
             {billingStatus === "trialing" && (
               <p className="text-xs text-gray-400 mt-1">Deneme sürenizin bitmesine {trialDaysLeft(user?.trialEndsAt ?? null)} gün kaldı.</p>
             )}
             {billingStatus === "past_due" && (
               <p className="text-xs text-red-500 mt-1">Son ödeme alınamadı, erişiminiz kısıtlandı. Devam etmek için yeniden abone olun.</p>
             )}
-            {billingStatus === "canceled" && (
+            {(billingStatus === "canceled" || cancelPeriodEnded) && (
               <p className="text-xs text-gray-400 mt-1">Aboneliğiniz iptal edildi. Devam etmek için yeniden abone olun.</p>
             )}
-            {cancelAtPeriodEnd && periodEndsAt && (
+            {cancelAtPeriodEnd && !cancelPeriodEnded && periodEndsAt && (
               <p className="text-xs text-amber-600 mt-1">
                 Aboneliğiniz iptal edildi, bir daha tahsilat yapılmayacak. Erişiminiz {periodEndsAt.toLocaleDateString("tr-TR")} tarihine kadar sürecek.
               </p>

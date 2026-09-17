@@ -36,6 +36,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Geçersiz imza." }, { status: 401 });
   }
 
+  // Webhook sağlayıcıları (iyzico dahil) aynı olayı zaman aşımı/ağ
+  // hatasında birden fazla kez tekrar gönderebilir — order_reference_code
+  // PRIMARY KEY'e INSERT ile tekilleştirilir, ikinci teslimat sessizce
+  // atlanır (aksi halde dönem sonu her tekrarda bir tur daha uzardı).
+  if (orderReferenceCode) {
+    const dedupe = await pool.query(
+      "INSERT INTO iyzico_webhook_events (order_reference_code, event_type) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [orderReferenceCode, iyziEventType]
+    );
+    if (dedupe.rowCount === 0) {
+      console.warn("iyzico webhook — bu orderReferenceCode zaten işlenmiş, tekrar atlandı.", { iyziEventType, orderReferenceCode });
+      return NextResponse.json({ received: true, verified: true, duplicate: true });
+    }
+  }
+
   if (iyziEventType === "subscription.order.success") {
     // Her başarılı tahsilat (ilk ödeme ya da yenileme fark etmeksizin)
     // ödenmiş dönemi bir sonraki periyoda uzatır — bkz. src/lib/billing.ts

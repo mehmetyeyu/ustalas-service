@@ -17,6 +17,8 @@ interface Tenant {
   billing_status: string | null;
   trial_ends_at: string | null;
   plan: string | null;
+  billing_cancel_at_period_end: boolean;
+  billing_period_ends_at: string | null;
 }
 
 const BILLING_LABELS: Record<string, { label: string; className: string }> = {
@@ -27,8 +29,15 @@ const BILLING_LABELS: Record<string, { label: string; className: string }> = {
   canceled: { label: "İptal", className: "bg-gray-100 text-gray-600" },
 };
 
-function BillingBadge({ status, trialEndsAt }: { status: string | null; trialEndsAt: string | null }) {
-  const info = (status && BILLING_LABELS[status]) || { label: "—", className: "bg-gray-100 text-gray-500" };
+function BillingBadge({
+  status, trialEndsAt, cancelAtPeriodEnd, periodEndsAt,
+}: { status: string | null; trialEndsAt: string | null; cancelAtPeriodEnd: boolean; periodEndsAt: string | null }) {
+  // billing_status hiçbir yerde koddan 'canceled'a yazılmıyor (bkz.
+  // src/app/admin/billing/page.tsx'teki aynı not) — dönem sonu geçmiş
+  // iptal edilmiş bir abonelik burada da hâlâ "Aktif" görünürdü.
+  const periodEnded = cancelAtPeriodEnd && periodEndsAt != null && new Date(periodEndsAt).getTime() <= Date.now();
+  const displayStatus = periodEnded ? "canceled" : status;
+  const info = (displayStatus && BILLING_LABELS[displayStatus]) || { label: "—", className: "bg-gray-100 text-gray-500" };
   const daysLeft = status === "trialing" && trialEndsAt
     ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
     : null;
@@ -214,7 +223,12 @@ export default function SuperAdminPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <BillingBadge status={t.billing_status} trialEndsAt={t.trial_ends_at} />
+                      <BillingBadge
+                        status={t.billing_status}
+                        trialEndsAt={t.trial_ends_at}
+                        cancelAtPeriodEnd={t.billing_status === "active" && t.billing_cancel_at_period_end}
+                        periodEndsAt={t.billing_period_ends_at}
+                      />
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <button

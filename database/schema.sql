@@ -1128,3 +1128,15 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cancel_at_period_end BOOLEA
 -- başlatılırken — bkz. src/app/api/billing/checkout/route.ts.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS privacy_policy_accepted_at TIMESTAMPTZ;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+
+-- Webhook idempotency — iyzico (çoğu webhook sağlayıcısı gibi) aynı
+-- olayı zaman aşımı/ağ hatasında birden fazla kez tekrar gönderebilir.
+-- order_reference_code PRIMARY KEY olduğundan aynı fatura/tahsilat olayı
+-- ikinci kez geldiğinde INSERT ON CONFLICT DO NOTHING ile sessizce
+-- atlanır — bkz. src/app/api/webhooks/iyzico/route.ts (gerçek bir
+-- denetimde bulunan, dönem sonunu tekrar tekrar uzatabilecek bir açık).
+CREATE TABLE IF NOT EXISTS iyzico_webhook_events (
+  order_reference_code VARCHAR(100) PRIMARY KEY,
+  event_type VARCHAR(50) NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
