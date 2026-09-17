@@ -7,7 +7,7 @@ import { useToast } from "@/components/ToastProvider";
 import { trialDaysLeft } from "@/lib/billing";
 
 interface PlanInfo {
-  pricingPlanReferenceCode: string;
+  referenceCode: string;
   name: string;
   price: string;
   currencyCode: string;

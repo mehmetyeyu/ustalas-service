@@ -49,12 +49,12 @@ function buildAuthHeader(uriPath, bodyStr) {
   return { authorization: `IYZWSv2 ${Buffer.from(authStr, "utf8").toString("base64")}`, randomKey };
 }
 
-// NOT: iyzico'nun gerçek alanları `data` altında mı üst seviyede mi
-// döndüğü ve referans kodu alan adının tam olarak ne olduğu (bu script
-// `productReferenceCode`/`pricingPlanReferenceCode` varsayıyor, bkz.
-// src/lib/iyzico.ts'teki aynı varsayım) araştırmayla kesinleştirilemedi.
-// İlk gerçek sandbox çağrısında konsola tam ham yanıtı da basıyoruz ki
-// varsayım yanlışsa hemen görülüp düzeltilebilsin.
+// Gerçek sandbox çağrısıyla doğrulandı: alanlar `data` altında dönüyor
+// (varsayım doğruydu) ama referans kodu alan adı `referenceCode` —
+// `productReferenceCode`/`pricingPlanReferenceCode` DEĞİL (bkz.
+// docs.iyzico.com/en/products/subscription/subscription-implementation/
+// {subscription-product,payment-plan}.md). Ham yanıt yine de konsola
+// basılıyor, ileride başka bir varsayım yanlış çıkarsa hemen görülsün.
 async function iyzicoRequest(method, uriPath, body) {
   const bodyStr = body ? JSON.stringify(body) : "{}";
   const { authorization, randomKey } = buildAuthHeader(uriPath, bodyStr);
@@ -64,10 +64,10 @@ async function iyzicoRequest(method, uriPath, body) {
     body: method === "GET" ? undefined : bodyStr,
   });
   const raw = await res.json();
+  console.log(`  (ham yanıt — ${uriPath}):`, JSON.stringify(raw));
   if (!res.ok || raw.status === "failure") {
     throw new Error(`iyzico hatası (${uriPath}): ${raw.errorMessage || res.statusText}`);
   }
-  console.log(`  (ham yanıt — ${uriPath}):`, JSON.stringify(raw));
   return raw.data ?? raw;
 }
 
@@ -75,27 +75,27 @@ const product = await iyzicoRequest("POST", "/v2/subscription/products", {
   name: "Elevire Abonelik",
   description: "Lastik Servisi Yönetim Sistemi - aylık/yıllık abonelik",
 });
-console.log("Ürün oluşturuldu:", product.productReferenceCode);
+console.log("Ürün oluşturuldu:", product.referenceCode);
 
-const monthly = await iyzicoRequest("POST", `/v2/subscription/products/${product.productReferenceCode}/pricing-plans`, {
+const monthly = await iyzicoRequest("POST", `/v2/subscription/products/${product.referenceCode}/pricing-plans`, {
   name: "Aylık",
   price: monthlyPrice,
   currencyCode: "USD",
   paymentInterval: "MONTHLY",
   planPaymentType: "RECURRING",
 });
-console.log("Aylık plan oluşturuldu:", monthly.pricingPlanReferenceCode);
+console.log("Aylık plan oluşturuldu:", monthly.referenceCode);
 
-const yearly = await iyzicoRequest("POST", `/v2/subscription/products/${product.productReferenceCode}/pricing-plans`, {
+const yearly = await iyzicoRequest("POST", `/v2/subscription/products/${product.referenceCode}/pricing-plans`, {
   name: "Yıllık",
   price: yearlyPrice,
   currencyCode: "USD",
   paymentInterval: "YEARLY",
   planPaymentType: "RECURRING",
 });
-console.log("Yıllık plan oluşturuldu:", yearly.pricingPlanReferenceCode);
+console.log("Yıllık plan oluşturuldu:", yearly.referenceCode);
 
 console.log("\n.env.local'e ekle:");
-console.log(`IYZICO_PRODUCT_REF=${product.productReferenceCode}`);
-console.log(`IYZICO_PLAN_MONTHLY_REF=${monthly.pricingPlanReferenceCode}`);
-console.log(`IYZICO_PLAN_YEARLY_REF=${yearly.pricingPlanReferenceCode}`);
+console.log(`IYZICO_PRODUCT_REF=${product.referenceCode}`);
+console.log(`IYZICO_PLAN_MONTHLY_REF=${monthly.referenceCode}`);
+console.log(`IYZICO_PLAN_YEARLY_REF=${yearly.referenceCode}`);

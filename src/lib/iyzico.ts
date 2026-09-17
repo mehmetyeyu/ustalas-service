@@ -74,8 +74,14 @@ async function iyzicoRequest<T = Record<string, unknown>>(
 
 // --- Ürün / Fiyat Planı (bkz. scripts/iyzico-setup.mjs — tek seferlik kurulum) ---
 
+// docs.iyzico.com/en/products/subscription/subscription-implementation/
+// subscription-product.md ile doğrulandı — ürünün KENDİ referans kodu
+// "referenceCode" (önceden yanlışlıkla "productReferenceCode" varsayılmıştı,
+// gerçek sandbox çağrısında "Sistem hatası" ile fark edildi — o hata
+// aslında imzalamadan değil, hesapta Abonelik add-on'ının henüz aktif
+// olmamasından kaynaklanıyordu, ayrıca bu alan adı sorunu ortaya çıktı).
 export interface IyzicoProduct {
-  productReferenceCode: string;
+  referenceCode: string;
   name: string;
 }
 
@@ -83,8 +89,13 @@ export async function createProduct(name: string, description?: string): Promise
   return iyzicoRequest("POST", "/v2/subscription/products", { name, description });
 }
 
+// docs.iyzico.com/en/products/subscription/subscription-implementation/
+// payment-plan.md ile doğrulandı — planın KENDİ referans kodu da
+// "referenceCode" (yanıt ayrıca planın bağlı olduğu ürünü belirten ayrı
+// bir "productReferenceCode" alanı da içeriyor, o farklı bir şey).
 export interface IyzicoPricingPlan {
-  pricingPlanReferenceCode: string;
+  referenceCode: string;
+  productReferenceCode: string;
   name: string;
   price: string;
   currencyCode: string;
