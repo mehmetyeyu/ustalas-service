@@ -1,3 +1,13 @@
+// Vitrin fiyatı — hem landing (/elevire) hem Abonelik (/admin/billing)
+// sayfası AYNI USD rakamlarını göstermeli, tek kaynaktan okunur (iki ayrı
+// dosyada birbirinden habersiz iki sabit vardı, kullanıcı fark etti).
+// DİKKAT: bu sadece VİTRİN fiyatı — gerçek tahsilat/otomatik yenileme
+// iyzico'daki SABİT TRY plan fiyatı üzerinden yapılır (bkz.
+// scripts/iyzico-setup.mjs notu), o gün geçerli kurdan YENİDEN
+// hesaplanmaz. İkisi zamanla birbirinden sapabilir, bkz. plan fiyatının
+// periyodik güncellenmesi notu.
+export const USD_REFERENCE_PRICING = { monthly: 25, yearly: 250 } as const;
+
 // USD/TRY kuru — hem herkese açık landing sayfasında (src/app/elevire/
 // page.tsx) hem /admin/billing'de (gerçek iyzico plan fiyatlarının TL
 // karşılığını göstermek için, bkz. /api/billing/plans) kullanılır. TCMB'nin

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { trialDaysLeft } from "@/lib/billing";
-import { formatTry2 } from "@/lib/exchangeRate";
+import { formatTry2, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
 
 interface PlanInfo {
   referenceCode: string;
@@ -15,16 +15,14 @@ interface PlanInfo {
   paymentInterval: "MONTHLY" | "YEARLY";
 }
 
-// Landing sayfasındaki (/elevire) referans fiyat — vitrin fiyatı hep bu
-// USD değerler üzerinden gösterilir (tutarlılık için). Gerçek tahsilat
-// ise TRY'dir (yerli kartlar dövizle ödeme yapamıyor, bkz. iyzico-setup.mjs
-// notu) — iyzico'daki plan fiyatı (plans[key].price/currencyCode) bunun
-// o anki TL karşılığıdır, "Kartınızdan ... tahsil edilecek" satırında
-// ayrıca gösterilir. İkisi karıştırılmasın diye kasıtlı olarak ayrı
-// tutuluyor: üstteki $ vitrin fiyatı sabit, alttaki gerçek tahsilat
-// tutarı iyzico'daki plan güncellenince değişir.
-const USD_REFERENCE_PRICING = { monthly: 25, yearly: 250 } as const;
-
+// USD_REFERENCE_PRICING artık src/lib/exchangeRate.ts'te — landing (/elevire)
+// ile paylaşılan TEK kaynak (iki dosyada birbirinden habersiz iki sabit
+// olma riski ortadan kalktı). Gerçek tahsilat ise TRY'dir (yerli kartlar
+// dövizle ödeme yapamıyor, bkz. iyzico-setup.mjs notu) — iyzico'daki plan
+// fiyatı (plans[key].price/currencyCode) "Kartınızdan ... tahsil
+// edilecek" satırında ayrıca gösterilir. İkisi kasıtlı olarak ayrı:
+// üstteki $ vitrin fiyatı sabit, alttaki gerçek tahsilat tutarı
+// iyzico'daki plan güncellenince değişir.
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", TRY: "₺", EUR: "€" };
 
 function formatPlanPrice(amount: number, currencyCode: string): string {

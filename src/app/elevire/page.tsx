@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Oswald, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import ShowcaseTabs from "./ShowcaseTabs";
-import { getUsdTryRate, formatTry, formatTry2 } from "@/lib/exchangeRate";
+import { getUsdTryRate, formatTry, formatTry2, USD_REFERENCE_PRICING as PRICING } from "@/lib/exchangeRate";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -19,15 +19,13 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
-// Dolar bazlı — DB (Neon) ve Vercel maliyetleri dolar olduğundan TL
-// aşınmasına karşı marj burada korunuyor. iyzico'daki gerçek Fiyat Planı
-// da aynı USD değerleriyle oluşturulmalı (bkz. scripts/iyzico-setup.mjs).
-// Burada değişirse orada da güncellenmesi gerekir — tek bir API'den ikisi
-// birden okunmuyor çünkü bu sayfa herkese açık/girişsiz render ediliyor.
-const PRICING = {
-  monthly: 25,
-  yearly: 250,
-} as const;
+// Vitrin fiyatı artık src/lib/exchangeRate.ts'te (USD_REFERENCE_PRICING,
+// burada PRICING adıyla import ediliyor) — /admin/billing ile paylaşılan
+// TEK kaynak, iki dosyada birbirinden habersiz iki sabit olma riski
+// ortadan kalktı. Gerçek tahsilat/otomatik yenileme iyzico'daki SABİT TRY
+// plan fiyatı üzerinden yapılır (bkz. scripts/iyzico-setup.mjs), bu
+// sabitten dinamik olarak türetilmez — ikisi periyodik olarak elle
+// senkronize tutulmalı.
 
 // Landing herkese açık olduğundan (girişsiz) kullanıcının kendi tenant'ının
 // kur ayarını (bkz. src/lib/kasalar.ts, Kasa çoklu para birimi) okuyamaz —
