@@ -51,8 +51,14 @@ async function iyzicoRequest<T = Record<string, unknown>>(
 ): Promise<T> {
   assertConfigured();
   // Body, imzalanan STRING ile isteğe giden STRING birebir aynı olmalı —
-  // aksi halde imza sunucu tarafında uyuşmaz (bkz. yukarısı).
-  const bodyStr = body ? JSON.stringify(body) : "{}";
+  // aksi halde imza sunucu tarafında uyuşmaz (bkz. yukarısı). GET
+  // isteğinde fetch'e hiç body verilmediğinden ("body: undefined" —
+  // aşağıya bkz.) imza de boş string ile hesaplanmalı; "{}" ile imzalayıp
+  // gerçekte hiçbir şey göndermemek gerçek bir çağrıda "Authentication
+  // token is not verified" hatasına yol açtı (getPricingPlan ile
+  // saptandı). Body'li POST'larda (ör. ürün/plan oluşturma) davranış
+  // aynı kalır.
+  const bodyStr = method === "GET" ? "" : (body ? JSON.stringify(body) : "{}");
   const { authorization, randomKey } = buildAuthHeader(uriPath, bodyStr);
 
   const res = await fetch(`${BASE_URL}${uriPath}`, {
