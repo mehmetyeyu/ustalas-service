@@ -189,43 +189,6 @@ function BillingPageContent() {
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* iyzico Checkout Form (bkz. handleCheckoutResult) kendi bundle.js'i
-          ile document.body'e ortalı bir popup enjekte ediyor — sidesheet
-          (sağdan kayan panel) yapmak için bunu CSS'le override ediyoruz.
-          #checkoutform-box iyzico'nun verdiği STABİL, hash olmayan tek id;
-          diğer class'lar (css-xxxxx-...) Emotion CSS-in-JS hash'i olduğundan
-          iyzico bundle'ını güncellerse değişebilir. Bu yüzden hash'e değil,
-          id'ye ve class isimlerinin okunabilir kısmına ([class*="Close-Close"]
-          gibi) dayanılıyor — yine de kırılgan bir hack, iyzico'nun kendi
-          (dokümante edilmemiş) DOM'una müdahale ediyoruz. */}
-      <style jsx global>{`
-        #checkoutform-box {
-          position: fixed !important;
-          top: 0 !important;
-          right: 0 !important;
-          left: auto !important;
-          height: 100vh !important;
-          max-height: 100vh !important;
-          width: min(440px, 100vw) !important;
-          max-width: min(440px, 100vw) !important;
-          border-radius: 0 !important;
-          margin: 0 !important;
-          overflow-y: auto !important;
-          animation: iyzico-sidesheet-in 0.25s ease-out;
-        }
-        [class*="Close-Close"] {
-          position: fixed !important;
-          top: 12px !important;
-          right: 12px !important;
-          left: auto !important;
-          transform: none !important;
-          z-index: 1;
-        }
-        @keyframes iyzico-sidesheet-in {
-          from { transform: translateX(100%); }
-          to { transform: translateX(0); }
-        }
-      `}</style>
       <h1 className="text-xl font-bold text-gray-800 mb-1">Abonelik</h1>
       <p className="text-sm text-gray-500 mb-6">Elevire aboneliğinizi buradan yönetin.</p>
 
