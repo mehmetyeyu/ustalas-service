@@ -88,10 +88,25 @@ export async function GET(request: NextRequest) {
       // billing_subscription_ref MUTLAKA bu yeni referansla güncellenmeli.
       const upgraded = await upgradeSubscription(tenant.billing_subscription_ref, newPlan.referenceCode, "NEXT_PERIOD");
 
-      await pool.query(
-        `UPDATE tenants SET billing_subscription_ref = $1, billing_pricing_plan_ref = $2, billing_repriced_for_period_end = $3 WHERE id = $4`,
-        [upgraded.referenceCode, newPlan.referenceCode, tenant.billing_period_ends_at, tenant.id]
-      );
+      // upgrade bu noktada iyzico'da GERÇEKTEN gerçekleşti — geri alınamaz.
+      // Aşağıdaki DB yazması (Neon soğuk başlangıcı, bağlantı kopması vb.)
+      // başarısız olursa bu yeni referans kalıcı olarak kaybolur (tenant
+      // doğru tahsil edilir ama DB'miz hâlâ eski/pasif referansı gösterir,
+      // gelecekteki webhook'lar hiçbir tenant'a eşleşmez — bir denetimde
+      // bulunan gerçek bir risk). Bu yüzden yazmadan ÖNCE, yazma başarısız
+      // olsa bile Vercel loglarında kalıcı/aranabilir bir iz bırakılıyor.
+      try {
+        await pool.query(
+          `UPDATE tenants SET billing_subscription_ref = $1, billing_pricing_plan_ref = $2, billing_repriced_for_period_end = $3 WHERE id = $4`,
+          [upgraded.referenceCode, newPlan.referenceCode, tenant.billing_period_ends_at, tenant.id]
+        );
+      } catch (dbError) {
+        console.error(
+          "reprice-subscriptions — KRİTİK: iyzico upgrade BAŞARILI oldu ama DB yazması BAŞARISIZ, elle düzeltme gerekiyor:",
+          { tenantId: tenant.id, oldSubscriptionRef: tenant.billing_subscription_ref, newSubscriptionRef: upgraded.referenceCode, newPricingPlanRef: newPlan.referenceCode, dbError }
+        );
+        throw dbError;
+      }
 
       results.push({ tenantId: tenant.id, status: "repriced" });
     } catch (error) {

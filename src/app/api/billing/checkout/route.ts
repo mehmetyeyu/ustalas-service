@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { trialDaysLeft } from "@/lib/billing";
-import { buildCustomerFromTenant, initializeCheckoutForm } from "@/lib/iyzico";
+import { buildCustomerFromTenant, cancelSubscription, initializeCheckoutForm } from "@/lib/iyzico";
 
 const PLAN_REFS: Record<string, string | undefined> = {
   monthly: process.env.IYZICO_PLAN_MONTHLY_REF,
@@ -53,13 +53,13 @@ export async function POST(request: NextRequest) {
     // reddediliyor.
     const claimResult = await pool.query<{
       name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
-      billing_status: string | null; trial_ends_at: string | null;
+      billing_status: string | null; trial_ends_at: string | null; billing_subscription_ref: string | null;
     }>(
       `UPDATE tenants SET billing_checkout_lock_at = now()
        WHERE id = $1
          AND (billing_status IS DISTINCT FROM 'active' OR billing_cancel_at_period_end = true)
          AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
-       RETURNING name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at`,
+       RETURNING name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at, billing_subscription_ref`,
       [user.tenantId]
     );
     const tenant = claimResult.rows[0];
@@ -73,6 +73,23 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      // past_due (son yenilemede kart reddedildi) bir firma yeniden abone
+      // olurken, o kötü karta hâlâ bağlı ESKİ abonelik iyzico'da hâlâ
+      // ACTIVE kalır (başarısız bir ödeme iyzico'da aboneliği kendiliğinden
+      // iptal etmez, sadece o dönemin siparişini FAILED işaretler) — bu
+      // temizlenmeden yeni bir checkout başlatılırsa iki paralel abonelik
+      // oluşur (bir denetimde bulunan gerçek bir risk: eski kart daha sonra
+      // çalışır hale gelirse kendi doğal yenileme tarihinde sürpriz bir
+      // mükerrer tahsilat yapabilir). Bu temizlik başarısız olursa (ör. ref
+      // zaten geçersiz) yeni abone olmayı ENGELLEMEMELİ, sadece loglanır.
+      if (tenant.billing_status === "past_due" && tenant.billing_subscription_ref) {
+        try {
+          await cancelSubscription(tenant.billing_subscription_ref);
+        } catch (cancelError) {
+          console.error("checkout — past_due eski abonelik iptal edilemedi, yine de devam ediliyor:", { tenantId: user.tenantId, oldRef: tenant.billing_subscription_ref, cancelError });
+        }
+      }
+
       // Deneme bitmeden erken abone olan bir firma, kalan ücretsiz süresini
       // kaybetmesin diye — hâlâ deneme içindeyse kalan gün iyzico'ya
       // trialPeriodDays olarak geçilir (deneme bittiyse 0, hemen tahsilat).
