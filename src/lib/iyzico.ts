@@ -133,6 +133,21 @@ export interface IyzicoCustomer {
   billingAddress: { contactName: string; city: string; country: string; address: string };
 }
 
+// iyzico E.164 bekliyor (ör. "+905555555555") — kayıt formlarımızdan gelen
+// telefon numaraları Türkiye'de yaygın yerel biçimde ("0555 555 55 55")
+// saklanıyor, bu da "Geçersiz telefon numarası" hatasıyla reddedildi
+// (gerçek bir sandbox çağrısıyla saptandı). Sadece 0 ile başlayan 11
+// haneli TR numaraları ve zaten +90/90 ile başlayanlar normalize edilir;
+// tanınmayan bir biçimse dokunulmadan bırakılır (iyzico kendi hata
+// mesajını versin, burada sessizce yanlış bir numara üretmeyelim).
+function normalizeGsmNumber(phone: string): string {
+  const digits = phone.replace(/[^\d]/g, "");
+  if (digits.length === 11 && digits.startsWith("0")) return `+90${digits.slice(1)}`;
+  if (digits.length === 12 && digits.startsWith("90")) return `+${digits}`;
+  if (digits.length === 10) return `+90${digits}`;
+  return phone.startsWith("+") ? phone : `+${digits || phone}`;
+}
+
 // checkout ve plan değiştirme aynı tenant→customer dönüşümünü kullanır.
 export function buildCustomerFromTenant(tenant: {
   name: string;
@@ -146,7 +161,7 @@ export function buildCustomerFromTenant(tenant: {
     name: firstName,
     surname,
     email: tenant.contact_email || "",
-    gsmNumber: tenant.contact_phone || undefined,
+    gsmNumber: tenant.contact_phone ? normalizeGsmNumber(tenant.contact_phone) : undefined,
     // iyzico kimlik numarası zorunlu tutuyor; B2B abonelikte gerçek bir
     // TC/vergi no yerine bu placeholder kullanılıyor — sandbox'ta gerçek
     // bir çağrıyla bunun kabul edilip edilmediği doğrulanmalı (bkz. plan).
