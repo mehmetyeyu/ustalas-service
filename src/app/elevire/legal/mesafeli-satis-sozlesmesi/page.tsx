@@ -54,6 +54,22 @@ export default function MesafeliSatisSozlesmesiPage() {
         sonunda bilinçli olarak bir plan seçip ödeme bilgisini girmesiyle
         başlar.
       </p>
+      <p>
+        Abonelik ücretleri, Satıcı’nın altyapı maliyetlerinin (sunucu,
+        veritabanı barındırma vb.) yabancı para birimi (ABD Doları)
+        cinsinden olması nedeniyle ABD Doları referans değeri üzerinden
+        belirlenir; tahsilat ise ilgili mevzuat gereği Türk Lirası
+        üzerinden yapılır. Bu nedenle, Türk Lirası karşılığı, güncel döviz
+        kuru önemli ölçüde değiştiğinde yeni bir dönem başlamadan önce
+        yeniden hesaplanabilir. Ücrette değişiklik yapılması halinde,
+        güncel tutar ilgili yenileme tarihinden en az 15 (on beş) gün önce
+        Abone’ye kayıtlı e-posta adresi üzerinden bildirilir. Abone,
+        bildirilen yeni tutarı kabul etmek istemezse aboneliğini yenileme
+        tarihinden önce, aşağıdaki 6. maddede açıklanan şekilde iptal
+        ederek yeni tutar üzerinden ücretlendirilmekten kaçınabilir;
+        aksi halde yenileme tarihinde güncel tutar üzerinden tahsilat
+        yapılmaya devam eder.
+      </p>
 
       <h2>4. Ödeme Şekli</h2>
       <p>
