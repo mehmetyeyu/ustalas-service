@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/ToastProvider";
+import { formatTurkishPhoneInput } from "@/lib/phone";
 
 // Elevire landing'deki "Ücretsiz Hesap Oluştur" — kendi kendine kayıt,
 // bkz. src/app/api/public/register/route.ts. src/app/admin/login/page.tsx
@@ -94,7 +95,7 @@ export default function RegisterPage() {
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(formatTurkishPhoneInput(e.target.value))}
                 placeholder="0555 123 45 67"
                 required
                 className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"

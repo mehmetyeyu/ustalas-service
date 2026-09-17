@@ -6,6 +6,7 @@ import { Switch } from "@/components/Switch";
 import { CopyBox } from "@/components/CopyBox";
 import { useToast } from "@/components/ToastProvider";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+import { formatTurkishPhoneInput } from "@/lib/phone";
 
 export default function GeneralSettingsPage() {
   const toast = useToast();
@@ -229,7 +230,7 @@ export default function GeneralSettingsPage() {
           <input
             type="tel"
             value={contactPhone}
-            onChange={(e) => setContactPhone(e.target.value)}
+            onChange={(e) => setContactPhone(formatTurkishPhoneInput(e.target.value))}
             placeholder="0532 000 00 00"
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />

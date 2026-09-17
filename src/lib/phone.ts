@@ -7,6 +7,18 @@
 // denemesinde saptandı). Bu fonksiyon o sorunu kaynağında (form girişinde)
 // önler — mobil/sabit hat ayrımı yapmaz, sadece geçerli 10 haneli bir
 // ulusal numaraya indirgenip indirgenemediğine bakar.
+// Kullanıcı yazarken canlı olarak "0555 123 45 67" biçimine böler — sadece
+// görsel bir maske, doğrulama yapmaz (o iş normalizeTurkishPhone'da,
+// gönderim anında). Basitlik için her tuş vuruşunda tüm değer yeniden
+// biçimlendirilir; imleç ortada değil sondaysa (yaygın kullanım) sorun
+// çıkarmaz.
+export function formatTurkishPhoneInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 11);
+  return [digits.slice(0, 4), digits.slice(4, 7), digits.slice(7, 9), digits.slice(9, 11)]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function normalizeTurkishPhone(input: string): string | null {
   const digits = input.replace(/\D/g, "");
   let national: string;
