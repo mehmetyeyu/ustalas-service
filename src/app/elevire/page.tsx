@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Oswald, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import ShowcaseTabs from "./ShowcaseTabs";
+import { getUsdTryRate, formatTry, formatTry2 } from "@/lib/exchangeRate";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -30,43 +31,10 @@ const PRICING = {
 
 // Landing herkese açık olduğundan (girişsiz) kullanıcının kendi tenant'ının
 // kur ayarını (bkz. src/lib/kasalar.ts, Kasa çoklu para birimi) okuyamaz —
-// bunun yerine TCMB'nin resmi, ücretsiz döviz kuru feed'inden çekilir
-// (Türk kullanıcıya "TCMB kuruyla" demek hem resmi hem güvenilir).
-// XML'in yapısı çok basit/stabil olduğundan (kamu feed'i, nadiren değişir)
-// yeni bir XML parser bağımlılığı eklemek yerine hedefli bir regex
-// kullanılıyor. Satış kuru (ForexSelling) kullanılır — bir dolar
-// fiyatının TL karşılığını tüketiciye gösterirken referans alınan kur bu.
-// Sunucu tarafında (Server Component) 6 saatte bir yenilenir; başarısız
-// olursa (hafta sonu/tatilde son iş gününün kuru zaten döner) TL karşılığı
-// hiç gösterilmez, sadece USD fiyat kalır.
-async function getUsdTryRate(): Promise<number | null> {
-  try {
-    const res = await fetch("https://www.tcmb.gov.tr/kurlar/today.xml", {
-      next: { revalidate: 21600 },
-    });
-    if (!res.ok) return null;
-    const xml = await res.text();
-    const usdBlockMatch = xml.match(/<Currency[^>]*Kod="USD"[^>]*>([\s\S]*?)<\/Currency>/);
-    if (!usdBlockMatch) return null;
-    const sellingMatch = usdBlockMatch[1].match(/<ForexSelling>([\d.]+)<\/ForexSelling>/);
-    if (!sellingMatch) return null;
-    const rate = parseFloat(sellingMatch[1]);
-    return Number.isFinite(rate) && rate > 0 ? rate : null;
-  } catch {
-    return null;
-  }
-}
-
-function formatTry(amount: number): string {
-  return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(amount);
-}
-
-// Kurun kendisi (ör. "1 USD ≈ 48,64 TL") — plan toplamlarından farklı
-// olarak burada 2 ondalık basamak gösterilir, aksi halde kur farkı
-// hissedilmez düzeyde yuvarlanırdı.
-function formatTry2(amount: number): string {
-  return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-}
+// bunun yerine TCMB kuru kullanılır (bkz. src/lib/exchangeRate.ts, artık
+// /admin/billing ile ortak). Sunucu tarafında (Server Component) 6 saatte
+// bir yenilenir; başarısız olursa (hafta sonu/tatilde son iş gününün kuru
+// zaten döner) TL karşılığı hiç gösterilmez, sadece USD fiyat kalır.
 
 const TITLE = "Elevire — Lastik Servisi Yönetim Yazılımı";
 const DESCRIPTION =
