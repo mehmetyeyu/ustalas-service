@@ -1140,3 +1140,17 @@ CREATE TABLE IF NOT EXISTS iyzico_webhook_events (
   event_type VARCHAR(50) NOT NULL,
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Gerçek bir sandbox denemesinde saptandı: /v2/subscription/checkoutform/
+-- {token} yanıtı conversationId'yi HİÇ döndürmüyor (dokümante edilmemiş,
+-- varsayım yanlış çıktı) — yani /api/billing/callback, checkout
+-- başlatılırken gönderdiğimiz conversationId (=tenant id) üzerinden
+-- tenant'ı bulamıyordu. Bunun yerine token, checkout/switch-plan
+-- başlatılırken burada tenant_id ile eşleştirilip saklanır; callback
+-- token'dan tenant'ı buradan bulur — iyzico'nun yanıtına hiç bağımlı değil.
+CREATE TABLE IF NOT EXISTS iyzico_checkout_sessions (
+  token      VARCHAR(100) PRIMARY KEY,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  plan       VARCHAR(20),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -193,12 +193,23 @@ export async function initializeCheckoutForm(params: {
   return iyzicoRequest("POST", "/v2/subscription/checkoutform/initialize", params);
 }
 
+// Gerçek bir sandbox çağrısıyla doğrulandı — önceki varsayım (status,
+// subscriptionReferenceCode, conversationId alanları) tamamen yanlıştı.
+// Bu uç nokta aslında oluşan ABONELİĞİN kendisini döndürüyor: kendi
+// referans kodu "referenceCode" (subscriptionReferenceCode DEĞİL),
+// başarı "subscriptionStatus === 'ACTIVE'" ile anlaşılıyor (status alanı
+// hiç yok), ve "conversationId" HİÇ dönmüyor — tenant eşleştirmesi bu
+// yüzden checkout başlatılırken ayrıca kaydedilen bir token→tenant
+// eşleşmesinden yapılmalı (bkz. iyzico_checkout_sessions, /api/billing/callback).
 export interface CheckoutFormResult {
-  status: string;
-  subscriptionReferenceCode?: string;
-  customerReferenceCode?: string;
+  referenceCode?: string;
   parentReferenceCode?: string;
-  conversationId?: string;
+  pricingPlanReferenceCode?: string;
+  customerReferenceCode?: string;
+  subscriptionStatus?: string;
+  trialDays?: number;
+  createdDate?: number;
+  startDate?: number;
   [key: string]: unknown;
 }
 

@@ -67,6 +67,15 @@ export async function POST(request: NextRequest) {
       customer: buildCustomerFromTenant(tenant),
     });
 
+    // bkz. /api/billing/checkout — aynı gerekçe (retrieveCheckoutForm
+    // conversationId döndürmüyor).
+    if (result.token) {
+      await pool.query(
+        "INSERT INTO iyzico_checkout_sessions (token, tenant_id, plan) VALUES ($1, $2, $3) ON CONFLICT (token) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, plan = EXCLUDED.plan",
+        [result.token, user.tenantId, plan]
+      );
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     console.error(error);

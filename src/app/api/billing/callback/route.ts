@@ -27,8 +27,10 @@ function computePeriodEndsAt(plan: string | null): Date {
 // iyzico'nun ödeme sonrası yönlendirdiği callbackUrl — bkz. /api/billing/checkout.
 // Kasıtlı olarak auth cookie'sine GÜVENMEZ (bu bir üçüncü taraf yönlendirmesi,
 // çerezin güvenilir gelip gelmeyeceği garanti değil); tenant eşleştirmesi
-// checkout başlatılırken gönderilen conversationId (=tenant id) üzerinden
-// yapılır, retrieveCheckoutForm sonucundan geri okunur.
+// checkout/switch-plan başlatılırken kaydedilen iyzico_checkout_sessions
+// (token → tenant_id) üzerinden yapılır — retrieveCheckoutForm yanıtı
+// conversationId'yi HİÇ döndürmüyor (gerçek bir sandbox çağrısında
+// saptandı, önceki varsayım yanlıştı).
 async function handleCallback(request: NextRequest): Promise<NextResponse> {
   let token: string | null = null;
   try {
@@ -51,16 +53,35 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
   if (!token) return redirectTo("failed");
 
   try {
+    // Tenant, checkout/switch-plan başlatılırken kaydedilen token→tenant_id
+    // eşleşmesinden bulunur — retrieveCheckoutForm'un kendi yanıtı buna
+    // güvenilir bir şekilde izin vermiyor (aşağıya bkz.).
+    const sessionResult = await pool.query<{ tenant_id: number; plan: string | null }>(
+      "SELECT tenant_id, plan FROM iyzico_checkout_sessions WHERE token = $1",
+      [token]
+    );
+    const session = sessionResult.rows[0];
+    if (!session) {
+      console.error("iyzico callback — token için kayıtlı checkout session bulunamadı:", token);
+      return redirectTo("failed");
+    }
+    const tenantId = session.tenant_id;
+
     const result = await retrieveCheckoutForm(token);
-    const tenantId = result.conversationId ? parseInt(result.conversationId, 10) : NaN;
-    const succeeded = result.status === "SUCCESS" || result.status === "success";
-    if (!succeeded || !tenantId || !result.subscriptionReferenceCode) {
+    // Gerçek bir sandbox çağrısıyla doğrulandı: bu uç nokta "status" değil
+    // "subscriptionStatus" döndürüyor, aboneliğin kendi referans kodu
+    // "subscriptionReferenceCode" değil "referenceCode" (bkz. src/lib/
+    // iyzico.ts CheckoutFormResult notu) — önceki varsayım yanlış olduğundan
+    // her başarılı ödeme "başarısız" sanılıp DB'ye hiç yazılmıyordu.
+    const succeeded = result.subscriptionStatus === "ACTIVE";
+    if (!succeeded || !result.referenceCode) {
+      console.error("iyzico checkout başarısız/eksik — ham yanıt:", JSON.stringify(result));
       return redirectTo("failed");
     }
 
     // Tekrar oynatma (replay) koruması: bu route yalnızca YENİ bir aboneliği
-    // aktive etmek için vardır — bir abonelik zaten bu subscriptionReferenceCode
-    // ile 'active' ise (token/URL saklanıp tekrar açılırsa, ör. tarayıcı
+    // aktive etmek için vardır — bir abonelik zaten bu referenceCode ile
+    // 'active' ise (token/URL saklanıp tekrar açılırsa, ör. tarayıcı
     // geçmişinden), dönemi bir kez daha uzatmadan sessizce başarı sayfasına
     // dönülür. Gerçek dönem yenilemeleri webhook üzerinden işlenir (bkz.
     // /api/webhooks/iyzico), bu route'un tekrar çalışması hiçbir zaman
@@ -72,12 +93,15 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     );
     const alreadyActivated =
       existing.rows[0]?.billing_status === "active" &&
-      existing.rows[0]?.billing_subscription_ref === result.subscriptionReferenceCode;
+      existing.rows[0]?.billing_subscription_ref === result.referenceCode;
     if (alreadyActivated) {
       return redirectTo("success");
     }
 
-    const plan = planNameFromRef((result as Record<string, unknown>).pricingPlanReferenceCode as string | undefined);
+    // Plan adı önce kendi kaydımızdan (session.plan — checkout'ta hangi
+    // plan seçildiğini zaten biliyoruz), yoksa iyzico'nun döndürdüğü
+    // pricingPlanReferenceCode'dan çözülür.
+    const plan = session.plan ?? planNameFromRef(result.pricingPlanReferenceCode);
     const periodEndsAt = computePeriodEndsAt(plan);
 
     // billing_cancel_at_period_end=false: daha önce iptal edilip dönem
@@ -88,7 +112,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
               billing_subscription_ref = $1, billing_customer_id = $2, plan = COALESCE($3, plan),
               billing_period_ends_at = $4, billing_cancel_at_period_end = false
        WHERE id = $5`,
-      [result.subscriptionReferenceCode, result.customerReferenceCode ?? null, plan, periodEndsAt, tenantId]
+      [result.referenceCode, result.customerReferenceCode ?? null, plan, periodEndsAt, tenantId]
     );
 
     return redirectTo("success");
