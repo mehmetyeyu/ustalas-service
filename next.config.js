@@ -35,11 +35,20 @@ const nextConfig = {
         // olmadan bu framework'te güvenilir bir CSP kurulamıyor; kod
         // tabanında dangerouslySetInnerHTML/eval yok, tüm SQL
         // parametreli, bu yüzden artık risk kabul edilebilir.
-        "script-src 'self' 'unsafe-inline'",
+        // iyzico Checkout Form (/admin/billing, bkz. src/lib/iyzico.ts)
+        // kendi barındırdığı bir script bundle'ı (sandbox-static.iyzipay.com
+        // veya prod'da static.iyzipay.com) enjekte edip iyzico'nun kendi
+        // API/gateway subdomain'lerine (sandbox-api/merchantgw/
+        // consumerapigw.iyzipay.com) bağlanıyor — hepsi *.iyzipay.com altında
+        // olduğundan tek bir wildcard yeterli. Gerçek bir production
+        // denemesinde 3D Secure adımının farklı bir domain (banka sayfası)
+        // gerektirdiği görülürse burası genişletilmeli.
+        "script-src 'self' 'unsafe-inline' https://*.iyzipay.com",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
+        "img-src 'self' data: https://*.iyzipay.com",
         "font-src 'self'",
-        "connect-src 'self'",
+        "connect-src 'self' https://*.iyzipay.com",
+        "frame-src 'self' https://*.iyzipay.com",
         "base-uri 'self'",
         "form-action 'self'",
       ];

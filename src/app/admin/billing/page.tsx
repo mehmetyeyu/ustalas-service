@@ -78,12 +78,25 @@ function BillingPageContent() {
       return;
     }
     if (result.checkoutFormContent) {
-      // iyzico'nun barındırdığı formu doğrudan sayfaya enjekte eder — bkz.
-      // next.config.js CSP notu, iyzico'nun script domain'i script-src'ye
-      // eklenmesi gerekebilir (ilk gerçek yanıt görülünce netleşecek).
+      // iyzico'nun checkoutFormContent'i tamamen <script> etiketlerinden
+      // oluşuyor (iyziInit/iyziUcsInit/iyziSubscriptionInit tanımlayıp
+      // bundle.js'i enjekte ediyorlar) — ama innerHTML ile eklenen
+      // <script>'ler tarayıcı tarafından ÇALIŞTIRILMAZ (güvenlik kısıtı),
+      // bu yüzden form hiç render olmuyordu (gerçek bir denemede saptandı).
+      // Her script'i document.createElement ile YENİDEN oluşturup DOM'a
+      // ekleyerek gerçekten çalışmasını sağlıyoruz — sıra önemli
+      // (iyziUcsInit/iyziSubscriptionInit "typeof iyziInit" kontrolü yapıyor).
       const container = document.createElement("div");
       container.innerHTML = result.checkoutFormContent;
       document.body.appendChild(container);
+      for (const oldScript of Array.from(container.querySelectorAll("script"))) {
+        const newScript = document.createElement("script");
+        for (const attr of Array.from(oldScript.attributes)) {
+          newScript.setAttribute(attr.name, attr.value);
+        }
+        newScript.textContent = oldScript.textContent;
+        oldScript.parentNode?.replaceChild(newScript, oldScript);
+      }
       return;
     }
     toast.error("Ödeme sayfası başlatılamadı.");
