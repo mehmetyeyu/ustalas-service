@@ -1,1 +1,9 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/reprice-subscriptions",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}
+

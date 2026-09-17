@@ -113,13 +113,18 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
 
     // billing_cancel_at_period_end=false: daha önce iptal edilip dönem
     // sonunu bekleyen bir abonelik varsa (bkz. /api/billing/cancel), yeniden
-    // abone olunca bu bayrak sıfırlanır.
+    // abone olunca bu bayrak sıfırlanır. billing_pricing_plan_ref, dönemsel
+    // repricing cron'unun (bkz. database/schema.sql notu) "hâlâ eski plan
+    // mı" kontrolü için tutulur. billing_repriced_for_period_end=NULL:
+    // yepyeni bir abonelik/dönem başlıyor, önceki repricing işaretinin
+    // bununla hiçbir ilgisi yok.
     await pool.query(
       `UPDATE tenants SET billing_status = 'active', billing_provider = 'iyzico',
               billing_subscription_ref = $1, billing_customer_id = $2, plan = COALESCE($3, plan),
-              billing_period_ends_at = $4, billing_cancel_at_period_end = false
-       WHERE id = $5`,
-      [result.referenceCode, result.customerReferenceCode ?? null, plan, periodEndsAt, tenantId]
+              billing_period_ends_at = $4, billing_cancel_at_period_end = false,
+              billing_pricing_plan_ref = $5, billing_repriced_for_period_end = NULL
+       WHERE id = $6`,
+      [result.referenceCode, result.customerReferenceCode ?? null, plan, periodEndsAt, result.pricingPlanReferenceCode ?? null, tenantId]
     );
 
     return redirectTo("success");

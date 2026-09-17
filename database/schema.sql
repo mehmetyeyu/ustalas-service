@@ -1134,6 +1134,23 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cancel_at_period_end BOOLEA
 -- sonsuza kadar tutmasını önler.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_checkout_lock_at TIMESTAMPTZ;
 
+-- USD referans fiyatının TL karşılığı zamanla kur farkıyla sapar (bkz.
+-- src/lib/exchangeRate.ts USD_REFERENCE_PRICING notu) — Mesafeli Satış
+-- Sözleşmesi'ndeki dönemsel güncelleme maddesine dayanarak, her tenant'ın
+-- YENİLEME tarihinden 3 gün önce (aylık ve yıllıkta aynı pencere, kullanıcı
+-- kararı) o günün kuruyla YENİ bir iyzico fiyat planı oluşturulup
+-- /upgrade (upgradePeriod=NEXT_PERIOD, kart bilgisi istenmeden) ile mevcut
+-- döneme dokunmadan bir SONRAKİ tahsilata uygulanır (bkz. scripts/
+-- reprice-subscriptions cron'u). billing_pricing_plan_ref, tenant'ın o an
+-- bağlı olduğu iyzico fiyat planının referans kodu — checkout/callback
+-- tarafından yazılır, cron bunu "hâlâ eski plan mı" kontrolü için okur.
+-- billing_repriced_for_period_end, bir dönem için repricing'in zaten
+-- tetiklendiğini işaretler (3 günlük pencere boyunca cron her gün
+-- çalıştığından, aynı dönem için /upgrade'in birden fazla kez
+-- çağrılmasını önler — bkz. cron route'u).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_pricing_plan_ref VARCHAR(100);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_repriced_for_period_end TIMESTAMPTZ;
+
 -- Hukuki kanıt amaçlı — sadece bir checkbox'ı zorunlu kılmak yeterli değil,
 -- "ne zaman kabul edildiği" kayıt altına alınmalı (bkz. plan, Mesafeli
 -- Satış Sözleşmesi'ndeki cayma hakkı feragati ve KVKK aydınlatma

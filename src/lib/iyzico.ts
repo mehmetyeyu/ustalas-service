@@ -227,6 +227,46 @@ export async function getSubscription(subscriptionReferenceCode: string): Promis
   return iyzicoRequest("GET", `/v2/subscription/subscriptions/${subscriptionReferenceCode}`);
 }
 
+// docs.iyzico.com/en/products/subscription/subscription-implementation/
+// subscription-transactions.md ile doğrulandı — hedef plan AYNI ürüne ve
+// AYNI ödeme periyoduna (paymentInterval + paymentIntervalCount) ait olmak
+// zorunda (Aylık↔Yıllık arası çalışmaz, bkz. /api/billing/switch-plan'ın
+// neden iptal+yeni checkout kullandığı). upgradePeriod="NEXT_PERIOD" ile
+// kart bilgisi istenmeden, mevcut (zaten ödenmiş) döneme dokunmadan bir
+// SONRAKİ tahsilata yeni fiyat uygulanır — bkz. scripts/
+// reprice-subscriptions.mjs (cron). resetRecurrenceCount=false: dönem
+// bitiş tarihi mevcut plandan aynen yeni plana taşınır, sıfırlanmaz.
+//
+// ÖNEMLİ (gerçek bir sandbox çağrısıyla saptandı): upgrade, VERİLEN
+// subscriptionReferenceCode'u YERİNDE güncellemiyor — o referansı
+// "UPGRADED" durumuna çekip AYNI parentReferenceCode altında YENİ bir
+// abonelik nesnesi (yeni referenceCode, subscriptionStatus="ACTIVE")
+// oluşturuyor; bu yeni referenceCode doğrudan bu çağrının yanıtında
+// dönüyor. Çağıran taraf tenants.billing_subscription_ref'i mutlaka bu
+// YENİ referansla güncellemeli — aksi halde sonraki cancel/upgrade/webhook
+// eşleştirmeleri artık pasif olan eski referansı hedefler.
+export interface UpgradeSubscriptionResult {
+  referenceCode: string;
+  parentReferenceCode?: string;
+  pricingPlanReferenceCode?: string;
+  customerReferenceCode?: string;
+  subscriptionStatus?: string;
+  [key: string]: unknown;
+}
+
+export async function upgradeSubscription(
+  subscriptionReferenceCode: string,
+  newPricingPlanReferenceCode: string,
+  upgradePeriod: "NOW" | "NEXT_PERIOD"
+): Promise<UpgradeSubscriptionResult> {
+  return iyzicoRequest("POST", `/v2/subscription/subscriptions/${subscriptionReferenceCode}/upgrade`, {
+    newPricingPlanReferenceCode,
+    upgradePeriod,
+    useTrial: false,
+    resetRecurrenceCount: false,
+  });
+}
+
 // --- Webhook imza doğrulaması (bkz. /api/webhooks/iyzico) ---
 // X-IYZ-SIGNATURE-V3 header'ı — iyzico entegrasyon ekibi hesapta AÇMADIĞI
 // sürece bu header hiç gelmez; env IYZICO_WEBHOOK_SIGNATURE_ENABLED=true
