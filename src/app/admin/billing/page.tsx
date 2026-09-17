@@ -15,6 +15,16 @@ interface PlanInfo {
   paymentInterval: "MONTHLY" | "YEARLY";
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", TRY: "₺", EUR: "€" };
+
+// Landing sayfasındaki gibi ("$25") sembol öneki — "25 USD" yerine daha
+// tanıdık/kısa. Bilinmeyen bir para birimi gelirse (bugün hep USD ama
+// createPricingPlan TRY/EUR de kabul ediyor) koda geri düşer.
+function formatPlanPrice(amount: number, currencyCode: string): string {
+  const symbol = CURRENCY_SYMBOLS[currencyCode];
+  return symbol ? `${symbol}${amount}` : `${amount} ${currencyCode}`;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   trialing: "Deneme Sürümü",
   active: "Aktif",
@@ -255,10 +265,10 @@ function BillingPageContent() {
                 <div className="text-2xl font-bold text-gray-800 mt-1">
                   {key === "yearly" && discountPct > 0 && (
                     <span className="text-base font-normal text-gray-400 line-through mr-1.5">
-                      {monthlyPriceNum * 12} {plan.currencyCode}
+                      {formatPlanPrice(monthlyPriceNum * 12, plan.currencyCode)}
                     </span>
                   )}
-                  {plan.price} {plan.currencyCode}
+                  {formatPlanPrice(priceNum, plan.currencyCode)}
                   <span className="text-sm font-normal text-gray-400"> / {key === "monthly" ? "ay" : "yıl"}</span>
                 </div>
                 {tlEquivalent && (
