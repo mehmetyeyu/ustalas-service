@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { provisionTenant } from "@/lib/provisionTenant";
+import { getUsdTryRate } from "@/lib/exchangeRate";
 
 // Süper Admin Paneli — hiçbir gerçek müşteriye ait olmayan, tüm firmaları
 // (tenants) yönetebilen ayrı bir üst-düzey rol (bkz. src/app/super-admin/,
@@ -13,13 +14,23 @@ export async function GET() {
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const result = await pool.query(
-      `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone,
-              billing_status, trial_ends_at, plan, billing_cancel_at_period_end, billing_period_ends_at
-       FROM tenants WHERE is_platform = false
-       ORDER BY created_at DESC`
-    );
-    return NextResponse.json(result.rows);
+    // usdTryRate, tenant listesiyle PARALEL çekilir (birbirinden bağımsız) —
+    // MRR tahmini (bkz. src/app/super-admin/page.tsx) sadece VİTRİN fiyatı
+    // (USD_REFERENCE_PRICING) üzerinden yapılıyor, her tenant için ayrı
+    // ayrı iyzico'ya sorup gerçek plan fiyatını çekmek gereksiz N+1 çağrı
+    // olurdu — landing/billing sayfalarındaki "vitrin fiyatı" mantığıyla
+    // aynı, tahmini/gösterge amaçlı bir rakam.
+    const [result, usdTryRate] = await Promise.all([
+      pool.query(
+        `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone,
+                billing_status, trial_ends_at, plan, billing_cancel_at_period_end, billing_period_ends_at,
+                billing_last_payment_error
+         FROM tenants WHERE is_platform = false
+         ORDER BY created_at DESC`
+      ),
+      getUsdTryRate(),
+    ]);
+    return NextResponse.json({ tenants: result.rows, usdTryRate });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

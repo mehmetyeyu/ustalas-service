@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { USD_REFERENCE_PRICING, formatTry } from "@/lib/exchangeRate";
 
 interface Tenant {
   id: number;
@@ -20,6 +21,19 @@ interface Tenant {
   plan: string | null;
   billing_cancel_at_period_end: boolean;
   billing_period_ends_at: string | null;
+  billing_last_payment_error: string | null;
+}
+
+// isBillingLocked ile AYNI mantık (bkz. src/lib/billing.ts) — burada ayrıca
+// "bu tenant şu an GERÇEKTEN ödeyen/aktif bir abone mi" sorusuna cevap
+// vermek için (MRR tahmini, bkz. aşağısı) kullanılıyor: 'active' olsa bile
+// iptal edilip dönemi geçmişse artık gerçek bir gelir kaynağı değil.
+function isEffectivelyActive(t: Tenant): boolean {
+  if (t.billing_status !== "active") return false;
+  if (t.billing_cancel_at_period_end && t.billing_period_ends_at) {
+    return new Date(t.billing_period_ends_at).getTime() > Date.now();
+  }
+  return true;
 }
 
 const BILLING_LABELS: Record<string, { label: string; className: string }> = {
@@ -53,6 +67,7 @@ export default function SuperAdminPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [usdTryRate, setUsdTryRate] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
@@ -79,7 +94,8 @@ export default function SuperAdminPage() {
     try {
       const res = await fetch("/api/super-admin/tenants", { cache: "no-store" });
       const data = await res.json();
-      setTenants(Array.isArray(data) ? data : []);
+      setTenants(Array.isArray(data?.tenants) ? data.tenants : []);
+      setUsdTryRate(typeof data?.usdTryRate === "number" ? data.usdTryRate : null);
     } finally {
       setLoading(false);
     }
@@ -172,6 +188,15 @@ export default function SuperAdminPage() {
     }
   }
 
+  // MRR tahmini — sadece VİTRİN fiyatı (USD_REFERENCE_PRICING) üzerinden,
+  // gerçek iyzico plan fiyatları (repricing sonrası tenant'tan tenant'a
+  // farklılaşabilir) tek tek çekilmiyor. Yıllık abonelikler 12'ye bölünüp
+  // aylığa normalize ediliyor.
+  const activeMonthly = tenants.filter((t) => isEffectivelyActive(t) && t.plan === "monthly").length;
+  const activeYearly = tenants.filter((t) => isEffectivelyActive(t) && t.plan === "yearly").length;
+  const estimatedMrrUsd = activeMonthly * USD_REFERENCE_PRICING.monthly + activeYearly * (USD_REFERENCE_PRICING.yearly / 12);
+  const estimatedMrrTry = usdTryRate != null ? estimatedMrrUsd * usdTryRate : null;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -183,6 +208,26 @@ export default function SuperAdminPage() {
           + Yeni Firma Ekle
         </button>
       </div>
+
+      {!loading && tenants.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <div className="text-xs text-gray-500 mb-1">Aktif Abone (Aylık)</div>
+            <div className="text-xl font-bold text-gray-800">{activeMonthly}</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <div className="text-xs text-gray-500 mb-1">Aktif Abone (Yıllık)</div>
+            <div className="text-xl font-bold text-gray-800">{activeYearly}</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-4 col-span-2 sm:col-span-1">
+            <div className="text-xs text-gray-500 mb-1">Tahmini Aylık Gelir</div>
+            <div className="text-xl font-bold text-gray-800">
+              {estimatedMrrTry != null ? `₺${formatTry(estimatedMrrTry)}` : "—"}
+            </div>
+            <div className="text-[11px] text-gray-400 mt-0.5">Vitrin fiyatı üzerinden, gösterge amaçlı</div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
@@ -225,12 +270,33 @@ export default function SuperAdminPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <BillingBadge
-                        status={t.billing_status}
-                        trialEndsAt={t.trial_ends_at}
-                        cancelAtPeriodEnd={t.billing_status === "active" && t.billing_cancel_at_period_end}
-                        periodEndsAt={t.billing_period_ends_at}
-                      />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <BillingBadge
+                          status={t.billing_status}
+                          trialEndsAt={t.trial_ends_at}
+                          cancelAtPeriodEnd={t.billing_status === "active" && t.billing_cancel_at_period_end}
+                          periodEndsAt={t.billing_period_ends_at}
+                        />
+                        {t.plan && (
+                          <span className="text-xs text-gray-500">{t.plan === "yearly" ? "Yıllık" : "Aylık"}</span>
+                        )}
+                      </div>
+                      {t.billing_status === "active" && t.billing_period_ends_at && (
+                        t.billing_cancel_at_period_end ? (
+                          <div className="text-[11px] text-amber-600 mt-0.5">
+                            İptal — {formatDate(t.billing_period_ends_at)}&apos;e kadar erişim
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            Yenileme: {formatDate(t.billing_period_ends_at)}
+                          </div>
+                        )
+                      )}
+                      {t.billing_status === "past_due" && t.billing_last_payment_error && (
+                        <div className="text-[11px] text-red-500 mt-0.5 max-w-[220px] whitespace-normal">
+                          {t.billing_last_payment_error}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <button
