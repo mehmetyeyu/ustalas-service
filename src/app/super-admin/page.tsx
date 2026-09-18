@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { USD_REFERENCE_PRICING, formatTry } from "@/lib/exchangeRate";
+import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
+
+const PAYMENT_STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  SUCCESS: { label: "Başarılı", className: "bg-emerald-100 text-emerald-700" },
+  FAILED: { label: "Başarısız", className: "bg-red-100 text-red-700" },
+  SUBSCRIPTION_CANCELED: { label: "İptal", className: "bg-gray-100 text-gray-600" },
+  SUBSCRIPTION_UPGRADED: { label: "Plan Değişti", className: "bg-blue-100 text-blue-700" },
+};
 
 interface Tenant {
   id: number;
@@ -69,6 +77,12 @@ export default function SuperAdminPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [usdTryRate, setUsdTryRate] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  // Ödeme geçmişi modalı — bkz. /api/super-admin/tenants/[id]/payments,
+  // her açılışta o an canlı iyzico'dan çekilir (kendi DB'mizde tarih/tutar/
+  // durum bilgisi tutulmuyor, sadece IFN eşlemesi için paymentId var).
+  const [viewingPaymentsTenant, setViewingPaymentsTenant] = useState<Tenant | null>(null);
+  const [payments, setPayments] = useState<PaymentHistoryRow[] | null>(null);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -121,6 +135,23 @@ export default function SuperAdminPage() {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function openPayments(t: Tenant) {
+    setViewingPaymentsTenant(t);
+    setPayments(null);
+    setPaymentsLoading(true);
+    try {
+      const res = await fetch(`/api/super-admin/tenants/${t.id}/payments`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Ödeme geçmişi alınamadı.");
+      setPayments(Array.isArray(data.payments) ? data.payments : []);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+      setPayments([]);
+    } finally {
+      setPaymentsLoading(false);
     }
   }
 
@@ -300,6 +331,12 @@ export default function SuperAdminPage() {
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <button
+                        onClick={() => openPayments(t)}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 mr-3"
+                      >
+                        Ödemeler
+                      </button>
+                      <button
                         onClick={() => handleToggleActive(t)}
                         disabled={togglingId === t.id}
                         className={`text-xs font-medium disabled:opacity-40 mr-3 ${t.is_active ? "text-red-500 hover:text-red-700" : "text-green-600 hover:text-green-800"}`}
@@ -452,6 +489,58 @@ export default function SuperAdminPage() {
               >
                 {deleting ? "Siliniyor..." : "Kalıcı Olarak Sil"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingPaymentsTenant && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">{viewingPaymentsTenant.name} — Ödeme Geçmişi</h2>
+              <button
+                onClick={() => setViewingPaymentsTenant(null)}
+                className="text-gray-400 hover:text-gray-600 text-sm font-medium"
+              >
+                Kapat
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {paymentsLoading ? (
+                <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
+              ) : !payments || payments.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">Bu firma için hiç ödeme kaydı yok.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Plan</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Durum</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {payments.map((p, i) => {
+                      const info = (p.status && PAYMENT_STATUS_LABELS[p.status]) || { label: p.status ?? "—", className: "bg-gray-100 text-gray-500" };
+                      return (
+                        <tr key={`${p.paymentId ?? p.subscriptionRef}-${i}`}>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.date ? formatDate(new Date(p.date)) : "—"}</td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.planName ?? "—"}</td>
+                          <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
+                            {p.amount != null && p.currencyCode ? formatMoney(p.amount, p.currencyCode) : "—"}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${info.className}`}>{info.label}</span>
+                            {p.errorMessage && <div className="text-[11px] text-red-500 mt-0.5">{p.errorMessage}</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

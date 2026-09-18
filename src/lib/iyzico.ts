@@ -227,10 +227,50 @@ export async function getSubscription(subscriptionReferenceCode: string): Promis
   return iyzicoRequest("GET", `/v2/subscription/subscriptions/${subscriptionReferenceCode}`);
 }
 
-interface SubscriptionOrder {
+export interface SubscriptionOrder {
   referenceCode: string;
+  price?: number;
+  currencyCode?: string;
+  startPeriod?: number;
+  endPeriod?: number;
   orderStatus?: string;
-  paymentAttempts?: Array<{ paymentId?: string | number }>;
+  paymentAttempts?: Array<{
+    paymentId?: string | number;
+    paymentStatus?: string;
+    createdDate?: number;
+    errorCode?: string;
+    errorMessage?: string;
+  }>;
+}
+
+export interface SubscriptionSearchItem {
+  referenceCode: string;
+  parentReferenceCode?: string;
+  pricingPlanName?: string;
+  pricingPlanReferenceCode?: string;
+  customerReferenceCode?: string;
+  customerEmail?: string;
+  subscriptionStatus?: string;
+  orders?: SubscriptionOrder[];
+}
+
+// GET /v2/subscription/subscriptions — sorgu parametresiz (bkz. plan). Bu
+// uç noktaya ?page=/&count= gibi bir query eklemek gerçek bir denemede
+// "Authentication token is not verified" (401) ile başarısız oldu — imza
+// mesajına uriPath'in TAM olarak (query dahil) eklenmesi diğer tüm
+// çağrılarda doğru çalışırken burada neden işe yaramadığı dokümante
+// edilmemiş, iyzico'nun bu uç noktaya özgü bir tuhaflığı olabilir. Bare
+// (parametresiz) çağrı güvenilir çalışıyor ve varsayılan sayfa boyutu şu an
+// kullanım ölçeğimizdeki tüm abonelikleri (birkaç düzine) tek seferde
+// döndürüyor — tenant sayısı ciddi büyürse sayfalama/filtreleme sorunu
+// ayrıca çözülmeli.
+export async function listSubscriptions(): Promise<{
+  totalCount: number;
+  currentPage: number;
+  pageCount: number;
+  items: SubscriptionSearchItem[];
+}> {
+  return iyzicoRequest("GET", "/v2/subscription/subscriptions");
 }
 
 // IFN (bkz. database/schema.sql iyzico_payments notu) bize sadece paymentId
