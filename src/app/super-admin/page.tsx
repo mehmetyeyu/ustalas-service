@@ -122,7 +122,7 @@ export default function SuperAdminPage() {
   // Gerçek toplam gelir — bkz. /api/super-admin/revenue, "tahmini" (vitrin
   // fiyatı üzerinden) MRR kutusundan AYRI: iyzico Raporlama Servisi'nden
   // bu ayın gerçek işlemleri gün gün çekilip toplanıyor.
-  const [revenue, setRevenue] = useState<{ totalPayout: number; totalGross: number; paymentCount: number } | null>(null);
+  const [revenue, setRevenue] = useState<{ totalPayout: number; totalGross: number; totalCommission: number; paymentCount: number } | null>(null);
   const [revenueLoading, setRevenueLoading] = useState(true);
   // Faturalandırma olayları — bkz. /api/super-admin/billing-events,
   // webhook/IFN/repricing olaylarının artık sadece sunucu loglarında değil
@@ -332,7 +332,9 @@ export default function SuperAdminPage() {
               {revenueLoading ? "…" : revenue ? `₺${formatTry(revenue.totalPayout)}` : "—"}
             </div>
             <div className="text-[11px] text-gray-400 mt-0.5">
-              {revenue ? `${revenue.paymentCount} tahsilat, komisyon düşülmüş` : "iyzico Raporlama Servisi'nden"}
+              {revenue
+                ? `${revenue.paymentCount} tahsilat, ₺${formatTry(revenue.totalCommission)} komisyon düşülmüş`
+                : "iyzico Raporlama Servisi'nden"}
             </div>
           </div>
         </div>
@@ -625,7 +627,7 @@ export default function SuperAdminPage() {
 
       {viewingPaymentsTenant && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-4xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800">{viewingPaymentsTenant.name} — Ödeme Geçmişi</h2>
               <button
@@ -647,6 +649,7 @@ export default function SuperAdminPage() {
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Ödeme No</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Komisyon</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Net Gelir</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Durum</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Hesap Durumu</th>
@@ -662,6 +665,9 @@ export default function SuperAdminPage() {
                           <td className="px-3 py-2 text-gray-500 font-mono whitespace-nowrap">{p.paymentId}</td>
                           <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
                             {p.amount != null && p.currencyCode ? formatMoney(p.amount, p.currencyCode) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right text-red-500 whitespace-nowrap">
+                            {p.commission != null && p.currencyCode ? `-${formatMoney(p.commission, p.currencyCode)}` : "—"}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
                             {p.merchantPayoutAmount != null && p.currencyCode ? formatMoney(p.merchantPayoutAmount, p.currencyCode) : "—"}
@@ -690,8 +696,11 @@ export default function SuperAdminPage() {
                   </tbody>
                   <tfoot className="border-t border-gray-200">
                     <tr>
-                      <td className="px-3 py-2 text-xs text-gray-500 font-medium" colSpan={2}>Toplam net gelir</td>
+                      <td className="px-3 py-2 text-xs text-gray-500 font-medium" colSpan={2}>Toplam</td>
                       <td></td>
+                      <td className="px-3 py-2 text-right text-xs font-medium text-red-500 whitespace-nowrap">
+                        -{formatMoney(payments.reduce((sum, p) => sum + (p.commission ?? 0), 0), payments[0]?.currencyCode ?? "TRY")}
+                      </td>
                       <td className="px-3 py-2 text-right text-sm font-bold text-gray-800 whitespace-nowrap">
                         {formatMoney(payments.reduce((sum, p) => sum + (p.merchantPayoutAmount ?? 0), 0), payments[0]?.currencyCode ?? "TRY")}
                       </td>

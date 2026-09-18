@@ -358,6 +358,12 @@ export interface PaymentDetailItem {
   paymentConversationId?: string;
   fraudStatus?: number;
   createdDate?: string;
+  // iyzico'nun kestiği komisyon — gerçek bir örnekte ₺12.168,73'lük bir
+  // ödemede iyziCommissionRateAmount=424.69, iyziCommissionFee=0.25
+  // (toplamda ~%3,5) olarak doğrulandı. merchantPayoutAmount zaten bu
+  // ikisi düşülmüş net tutar (bkz. itemTransactions).
+  iyziCommissionRateAmount?: number;
+  iyziCommissionFee?: number;
   itemTransactions?: Array<{
     paymentTransactionId: number;
     transactionStatus?: number;
@@ -383,6 +389,12 @@ export interface PaymentTransaction {
   paidPrice?: number;
   transactionCurrency?: string;
   merchantPayoutAmount?: number;
+  // AYNI komisyon verisi ama /details'ten FARKLI alan isimleriyle geliyor
+  // (iyzicoCommission/iyzicoFee — /details'teki iyziCommissionRateAmount/
+  // iyziCommissionFee ile aynı anlam, gerçek bir çağrıyla doğrulandı) —
+  // iyzico'nun Raporlama Servisi'ndeki iki ucu arasında tutarsız isimlendirme.
+  iyzicoCommission?: number;
+  iyzicoFee?: number;
 }
 
 // Belirli bir GÜNÜN tüm işlemleri (tüm tenant'lar/conversationId'ler

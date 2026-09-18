@@ -24,6 +24,9 @@ export interface PaymentHistoryRow {
   // /details döndürüyor — bu yüzden üstteki "Bu Ay Gerçek Net Gelir"
   // özeti bunu ayıramıyor, bkz. /api/super-admin/revenue).
   blockageResolvedDate: number | null;
+  // iyzico'nun kestiği toplam komisyon (bkz. src/lib/iyzico.ts
+  // PaymentDetailItem notu) — amount - commission = merchantPayoutAmount.
+  commission: number | null;
 }
 
 // Tenant'ın TÜM ödeme geçmişi — iyzico'nun Raporlama Servisi'nden
@@ -58,6 +61,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       fraudStatus: p.fraudStatus ?? null,
       blockageResolvedDate: p.itemTransactions?.[0]?.blockageResolvedDate
         ? new Date(p.itemTransactions[0].blockageResolvedDate).getTime()
+        : null,
+      commission: p.iyziCommissionRateAmount != null || p.iyziCommissionFee != null
+        ? (p.iyziCommissionRateAmount ?? 0) + (p.iyziCommissionFee ?? 0)
         : null,
     }));
     payments.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
