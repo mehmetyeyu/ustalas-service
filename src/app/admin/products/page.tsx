@@ -7,6 +7,7 @@ import { parseProductRows, chunk, type ParsedProductRow } from "@/lib/productsEx
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -193,6 +194,7 @@ function seasonBadge(season: string | null) {
 
 export default function ProductsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("products");
   const canCreate = usePermission("products.create");
   const canEdit = usePermission("products.edit");
@@ -500,7 +502,7 @@ export default function ProductsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu partiyi silmek istediğinize emin misiniz?\nPartiye ait tüm stok girişi / fiyat geçmişi de kalıcı olarak silinecek.")) return;
+    if (!(await confirm({ message: "Bu partiyi silmek istediğinize emin misiniz?\nPartiye ait tüm stok girişi / fiyat geçmişi de kalıcı olarak silinecek.", confirmText: "Sil", variant: "danger" }))) return;
     setDeletingId(id);
     try {
       const res = await fetch(`/api/products/${id}`, { method: "DELETE" });

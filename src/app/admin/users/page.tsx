@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { formatDate } from "@/lib/format";
 import { RESOURCE_ACTIONS } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const MENU_WIDTH = 192; // w-48
 const MENU_MAX_HEIGHT = 260;
@@ -91,6 +92,7 @@ function PermissionMatrix({ value, onChange }: { value: string[]; onChange: (nex
 
 export default function UsersPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<User[]>([]);
   const [currentUsername, setCurrentUsername] = useState("");
   const [loading, setLoading] = useState(true);
@@ -215,7 +217,7 @@ export default function UsersPage() {
   }
 
   async function handleDelete(u: User) {
-    if (!confirm(`"${u.username}" kullanıcısını silmek istediğinize emin misiniz?`)) return;
+    if (!(await confirm({ message: `"${u.username}" kullanıcısını silmek istediğinize emin misiniz?`, confirmText: "Sil", variant: "danger" }))) return;
     try {
       const res = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).error || "Silme başarısız.");
@@ -226,7 +228,7 @@ export default function UsersPage() {
   }
 
   async function patchUser(u: User, body: Record<string, unknown>, confirmMsg?: string) {
-    if (confirmMsg && !confirm(confirmMsg)) return;
+    if (confirmMsg && !(await confirm(confirmMsg))) return;
     setBusyAction(u.id);
     try {
       const res = await fetch(`/api/users/${u.id}`, {

@@ -7,6 +7,7 @@ import { formatDate, formatCurrency } from "@/lib/format";
 import { parseOrderRows, chunk, type ParsedOrder } from "@/lib/ordersExcel";
 import { Tooltip } from "@/components/Tooltip";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { useViewGuard, usePermission } from "../AuthContext";
 
@@ -235,6 +236,7 @@ const EMPTY_FIELD_FILTERS: FieldFilters = {
 
 export default function OrdersPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canDelete = usePermission("orders.delete");
@@ -397,7 +399,7 @@ export default function OrdersPage() {
   }, []);
 
   async function deleteOrder(id: number) {
-    if (!confirm(`#${id} numaralı siparişi silmek istediğinize emin misiniz?`)) return;
+    if (!(await confirm({ message: `#${id} numaralı siparişi silmek istediğinize emin misiniz?`, confirmText: "Sil", variant: "danger" }))) return;
     setDeletingId(id);
     try {
       await fetch(`/api/orders/${id}`, { method: "DELETE" });
@@ -478,7 +480,7 @@ export default function OrdersPage() {
   async function applyBulkPaymentType() {
     if (!bulkPaymentType || selectedLineIds.size === 0) return;
     const count = selectedLineIds.size;
-    if (!confirm(`${count} satırın ödeme şeklini "${bulkPaymentType}" olarak değiştirmek istediğinize emin misiniz?`)) return;
+    if (!(await confirm(`${count} satırın ödeme şeklini "${bulkPaymentType}" olarak değiştirmek istediğinize emin misiniz?`))) return;
     setBulkApplying(true);
     try {
       const res = await fetch("/api/orders/bulk-payment-type", {

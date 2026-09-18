@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Tenant {
   id: number;
@@ -50,6 +51,7 @@ function BillingBadge({
 
 export default function SuperAdminPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<number | null>(null);
@@ -89,7 +91,7 @@ export default function SuperAdminPage() {
 
   async function handleToggleActive(t: Tenant) {
     const action = t.is_active ? "pasif" : "aktif";
-    if (!confirm(`${t.name} firmasını ${action} yapmak istediğinize emin misiniz?`)) return;
+    if (!(await confirm({ message: `${t.name} firmasını ${action} yapmak istediğinize emin misiniz?`, variant: t.is_active ? "danger" : "default" }))) return;
     setTogglingId(t.id);
     try {
       const res = await fetch(`/api/super-admin/tenants/${t.id}`, {

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { trialDaysLeft } from "@/lib/billing";
 import { formatTry2, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
 
@@ -50,6 +51,7 @@ export default function BillingPage() {
 function BillingPageContent() {
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const searchParams = useSearchParams();
   const [plans, setPlans] = useState<{ monthly: PlanInfo; yearly: PlanInfo; usdTryRate: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,7 +157,11 @@ function BillingPageContent() {
       toast.error("Devam etmek için Mesafeli Satış Sözleşmesi'ni kabul etmeniz gerekiyor.");
       return;
     }
-    if (!confirm(`Planınızı ${plan === "monthly" ? "Aylık" : "Yıllık"} olarak değiştirmek istediğinize emin misiniz? Mevcut aboneliğiniz iptal edilip yeni plan tam fiyattan başlar.`)) return;
+    const ok = await confirm({
+      message: `Planınızı ${plan === "monthly" ? "Aylık" : "Yıllık"} olarak değiştirmek istediğinize emin misiniz? Mevcut aboneliğiniz iptal edilip yeni plan tam fiyattan başlar.`,
+      confirmText: "Planı Değiştir",
+    });
+    if (!ok) return;
     setSubmitting(plan);
     try {
       const res = await fetch("/api/billing/switch-plan", {
@@ -174,7 +180,12 @@ function BillingPageContent() {
   }
 
   async function cancelSubscription() {
-    if (!confirm("Aboneliğinizi iptal etmek istediğinize emin misiniz? İptal sonrası erişiminiz kısıtlanır.")) return;
+    const ok = await confirm({
+      message: "Aboneliğinizi iptal etmek istediğinize emin misiniz? İptal sonrası erişiminiz kısıtlanır.",
+      confirmText: "Aboneliği İptal Et",
+      variant: "danger",
+    });
+    if (!ok) return;
     setSubmitting("cancel");
     try {
       const res = await fetch("/api/billing/cancel", { method: "POST" });

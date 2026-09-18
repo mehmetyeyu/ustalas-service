@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDate, formatCurrency, formatMoney } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { CURRENCY_OPTIONS } from "@/lib/kasalar";
@@ -41,6 +42,7 @@ const ENTRY_TYPE_LABELS: Record<KasaEntry["entry_type"], string> = {
 
 export default function KasaPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("kasa");
   const canManage = usePermission("kasa.manage");
   const [entries, setEntries] = useState<KasaEntry[]>([]);
@@ -228,7 +230,7 @@ export default function KasaPage() {
     const confirmMsg = e.transfer_pair_kasa_name
       ? `Bu transferi (${e.kasa_name || "?"} ↔ ${e.transfer_pair_kasa_name}) silmek istediğinize emin misiniz?`
       : "Bu kasa hareketini silmek istediğinize emin misiniz?";
-    if (!confirm(confirmMsg)) return;
+    if (!(await confirm({ message: confirmMsg, confirmText: "Sil", variant: "danger" }))) return;
     if (deletingEntryId !== null) return;
     setDeletingEntryId(e.source_id);
     try {
@@ -337,7 +339,7 @@ export default function KasaPage() {
   }
 
   async function handleDeleteKasa(id: number) {
-    if (!confirm("Bu kasayı silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu kasayı silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     setKasaActionSaving(true);
     try {
       const res = await fetch(`/api/kasalar/${id}`, { method: "DELETE" });

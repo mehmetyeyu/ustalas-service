@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Supplier {
   id: number;
@@ -11,6 +12,7 @@ interface Supplier {
 
 export default function SuppliersPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("suppliers");
   const canCreate = usePermission("suppliers.create");
   const canEdit = usePermission("suppliers.edit");
@@ -72,7 +74,7 @@ export default function SuppliersPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu tedarikçiyi silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu tedarikçiyi silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     await fetch(`/api/suppliers/${id}`, { method: "DELETE" });
     await fetchSuppliers();
   }

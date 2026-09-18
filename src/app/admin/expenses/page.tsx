@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/format";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/expenseCategories";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 
 interface Expense {
@@ -70,6 +71,7 @@ function emptyRecurringForm(): { category: string; description: string; amount: 
 
 export default function ExpensesPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("expenses");
   const canCreate = usePermission("expenses.create");
   const canEdit = usePermission("expenses.edit");
@@ -285,7 +287,7 @@ export default function ExpensesPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu masrafı silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu masrafı silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     await fetch(`/api/expenses/${id}`, { method: "DELETE" });
     await fetchExpenses();
   }
@@ -357,7 +359,7 @@ export default function ExpensesPage() {
   }
 
   async function handleDeleteRecurring(id: number) {
-    if (!confirm("Bu sabit gider tanımını silmek istediğinize emin misiniz? (Geçmiş masraf kayıtları etkilenmez.)")) return;
+    if (!(await confirm({ message: "Bu sabit gider tanımını silmek istediğinize emin misiniz? (Geçmiş masraf kayıtları etkilenmez.)", confirmText: "Sil", variant: "danger" }))) return;
     await fetch(`/api/recurring-expenses/${id}`, { method: "DELETE" });
     await fetchRecurringTemplates();
   }

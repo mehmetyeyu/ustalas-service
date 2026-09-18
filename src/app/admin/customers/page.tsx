@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { flatPaymentOptions, PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { KasaSelect } from "@/components/KasaSelect";
 
@@ -62,6 +63,7 @@ interface OrderLedgerLine {
 
 export default function CustomersPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("customers");
   const canCreate = usePermission("customers.create");
   const canEdit = usePermission("customers.edit");
@@ -176,7 +178,7 @@ export default function CustomersPage() {
   }
 
   async function handleDeleteEntry(customerId: number, entryId: number) {
-    if (!confirm("Bu cari hareketi silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu cari hareketi silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     if (deletingEntryId !== null) return;
     setDeletingEntryId(entryId);
     try {
@@ -265,7 +267,7 @@ export default function CustomersPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu müşteriyi silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu müşteriyi silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

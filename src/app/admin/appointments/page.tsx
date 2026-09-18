@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Appointment {
   id: number;
@@ -45,6 +46,7 @@ const FILTERS = [
 
 export default function AppointmentsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("appointments");
   const canApprove = usePermission("appointments.approve");
   const canDelete = usePermission("appointments.delete");
@@ -101,7 +103,7 @@ export default function AppointmentsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu randevuyu silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu randevuyu silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     setBusyId(id);
     await fetch(`/api/appointments/${id}`, { method: "DELETE" });
     await fetchItems();

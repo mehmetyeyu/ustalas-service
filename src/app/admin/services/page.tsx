@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Service {
   id: number;
@@ -16,6 +17,7 @@ interface Service {
 
 export default function ServicesPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("services");
   const canCreate = usePermission("services.create");
   const canEdit = usePermission("services.edit");
@@ -96,7 +98,7 @@ export default function ServicesPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu hizmeti devre dışı bırakmak istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu hizmeti devre dışı bırakmak istediğinize emin misiniz?", confirmText: "Devre Dışı Bırak", variant: "danger" }))) return;
     await fetch(`/api/services/${id}`, { method: "DELETE" });
     await fetchServices();
   }

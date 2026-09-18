@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface StorageItem {
   id: number;
@@ -257,6 +258,7 @@ function printLabel(item: StorageItem) {
 
 export default function StoragePage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("storage");
   const canCreate = usePermission("storage.create");
   const canEdit = usePermission("storage.edit");
@@ -408,7 +410,7 @@ export default function StoragePage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return;
+    if (!(await confirm({ message: "Bu kaydı silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     setDeletingId(id);
     try {
       await fetch(`/api/storage/${id}`, { method: "DELETE" });
@@ -419,7 +421,7 @@ export default function StoragePage() {
   }
 
   async function handleTeslim(item: StorageItem) {
-    if (!confirm(`Depo No ${item.depo_no} — ${item.plate} lastiği teslim edildi olarak işaretlensin mi?\nBu depo numarası serbest kalacak.`)) return;
+    if (!(await confirm({ message: `Depo No ${item.depo_no} — ${item.plate} lastiği teslim edildi olarak işaretlensin mi?\nBu depo numarası serbest kalacak.`, confirmText: "Teslim Et" }))) return;
     setTeslimId(item.id);
     try {
       await fetch(`/api/storage/${item.id}`, {

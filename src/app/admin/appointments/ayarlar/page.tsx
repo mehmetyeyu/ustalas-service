@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PushNotificationToggle } from "../../PushNotificationToggle";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { Switch } from "@/components/Switch";
 import { CopyBox } from "@/components/CopyBox";
 
@@ -28,6 +29,7 @@ const DAYS: { key: DayKey; label: string }[] = [
 // alanları etkilemiyor.
 export default function AppointmentSettingsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [businessName, setBusinessName] = useState("");
   const [overdueMonths, setOverdueMonths] = useState("6");
   const [paymentTypes, setPaymentTypes] = useState<string[]>([]);
@@ -171,13 +173,15 @@ export default function AppointmentSettingsPage() {
   }
 
   async function handleRegenerateSlug() {
-    if (
-      !confirm(
+    const ok = await confirm({
+      message:
         "Yeni bir bağlantı oluşturulacak. Web sitenize daha önce eklediğiniz " +
-          "eski script/iframe kodu ÇALIŞMAZ HALE GELİR — yeni kodu alıp sitenizde " +
-          "güncellemeniz gerekir. Devam edilsin mi?"
-      )
-    ) {
+        "eski script/iframe kodu ÇALIŞMAZ HALE GELİR — yeni kodu alıp sitenizde " +
+        "güncellemeniz gerekir. Devam edilsin mi?",
+      confirmText: "Yeni Bağlantı Oluştur",
+      variant: "danger",
+    });
+    if (!ok) {
       return;
     }
     setRegenerating(true);

@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 
 interface OrderDetail {
@@ -350,6 +351,7 @@ function TireBatchPicker({
 
 function OrderDetailPageInner() {
   const toast = useToast();
+  const confirm = useConfirm();
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canApprove = usePermission("orders.approve");
@@ -611,12 +613,12 @@ function OrderDetailPageInner() {
     }
   }
 
-  function handleEditLinePaymentChange(index: number, line: EditLine, val: string) {
+  async function handleEditLinePaymentChange(index: number, line: EditLine, val: string) {
     // Karışık (boş) durumdan tek bir ödeme tipine geçmek, aşağıdaki
     // parçalı ödeme girişleriyle çelişir — bu yüzden önce onaylatılır,
     // onaylanırsa parçalı girişler sıfırlanır.
     if (!line.payment_type && val && editPayments.length > 0) {
-      const ok = window.confirm(
+      const ok = await confirm(
         "Bu satıra ödeme tipi seçmek, aşağıdaki parçalı ödeme girişlerini sıfırlayacak. Devam edilsin mi?"
       );
       if (!ok) return;
