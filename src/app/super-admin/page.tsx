@@ -625,7 +625,7 @@ export default function SuperAdminPage() {
 
       {viewingPaymentsTenant && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800">{viewingPaymentsTenant.name} — Ödeme Geçmişi</h2>
               <button
@@ -649,6 +649,7 @@ export default function SuperAdminPage() {
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Net Gelir</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Durum</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Hesap Durumu</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -672,6 +673,17 @@ export default function SuperAdminPage() {
                             )}
                             {p.refundStatus && <div className="text-[11px] text-amber-600 mt-0.5">İade: {p.refundStatus}</div>}
                           </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {p.blockageResolvedDate == null ? (
+                              <span className="text-gray-400 text-xs">—</span>
+                            ) : p.blockageResolvedDate <= Date.now() ? (
+                              <span className="text-xs font-medium text-emerald-700">Hesapta</span>
+                            ) : (
+                              <span className="text-xs font-medium text-amber-600 whitespace-nowrap">
+                                Bekliyor ({new Date(p.blockageResolvedDate).toLocaleDateString("tr-TR")})
+                              </span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -683,6 +695,7 @@ export default function SuperAdminPage() {
                       <td className="px-3 py-2 text-right text-sm font-bold text-gray-800 whitespace-nowrap">
                         {formatMoney(payments.reduce((sum, p) => sum + (p.merchantPayoutAmount ?? 0), 0), payments[0]?.currencyCode ?? "TRY")}
                       </td>
+                      <td></td>
                       <td></td>
                     </tr>
                   </tfoot>

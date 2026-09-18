@@ -16,6 +16,14 @@ export interface PaymentHistoryRow {
   // 1 temiz (normal, en sık görülen), 2 incelendi/kabul edildi. Sadece 1
   // dışındaki değerler frontend'de ayrıca vurgulanıyor.
   fraudStatus: number | null;
+  // Para banka hesabımıza HEMEN geçmiyor — iyzico (çoğu ödeme kuruluşu
+  // gibi) belirli bir süre (gerçek veride ~8 gün) "blokajda" tutuyor.
+  // Bu tarihten önce ödeme "Başarılı" görünse de para henüz hesaba
+  // geçmemiş demektir — sadece per-tenant modalında var (Raporlama
+  // Servisi'nin gün-bazlı /transactions ucu bu alanı DÖNDÜRMÜYOR, sadece
+  // /details döndürüyor — bu yüzden üstteki "Bu Ay Gerçek Net Gelir"
+  // özeti bunu ayıramıyor, bkz. /api/super-admin/revenue).
+  blockageResolvedDate: number | null;
 }
 
 // Tenant'ın TÜM ödeme geçmişi — iyzico'nun Raporlama Servisi'nden
@@ -48,6 +56,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       refundStatus: p.paymentRefundStatus && p.paymentRefundStatus !== "NOT_REFUNDED" ? p.paymentRefundStatus : null,
       merchantPayoutAmount: p.itemTransactions?.[0]?.merchantPayoutAmount ?? null,
       fraudStatus: p.fraudStatus ?? null,
+      blockageResolvedDate: p.itemTransactions?.[0]?.blockageResolvedDate
+        ? new Date(p.itemTransactions[0].blockageResolvedDate).getTime()
+        : null,
     }));
     payments.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
 
