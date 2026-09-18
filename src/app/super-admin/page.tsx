@@ -633,6 +633,7 @@ export default function SuperAdminPage() {
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Ödeme No</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Net Gelir</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Durum</th>
@@ -644,6 +645,7 @@ export default function SuperAdminPage() {
                       return (
                         <tr key={`${p.paymentId}-${i}`}>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.date ? formatDate(new Date(p.date)) : "—"}</td>
+                          <td className="px-3 py-2 text-gray-500 font-mono whitespace-nowrap">{p.paymentId}</td>
                           <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
                             {p.amount != null && p.currencyCode ? formatMoney(p.amount, p.currencyCode) : "—"}
                           </td>
@@ -660,7 +662,7 @@ export default function SuperAdminPage() {
                   </tbody>
                   <tfoot className="border-t border-gray-200">
                     <tr>
-                      <td className="px-3 py-2 text-xs text-gray-500 font-medium">Toplam net gelir</td>
+                      <td className="px-3 py-2 text-xs text-gray-500 font-medium" colSpan={2}>Toplam net gelir</td>
                       <td></td>
                       <td className="px-3 py-2 text-right text-sm font-bold text-gray-800 whitespace-nowrap">
                         {formatMoney(payments.reduce((sum, p) => sum + (p.merchantPayoutAmount ?? 0), 0), payments[0]?.currencyCode ?? "TRY")}
