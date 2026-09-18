@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getUsdTryRate, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
 import { createPricingPlan, upgradeSubscription } from "@/lib/iyzico";
+import { logBillingEvent } from "@/lib/billingEvents";
 
 const PRODUCT_REF = process.env.IYZICO_PRODUCT_REF;
 
@@ -109,9 +110,12 @@ export async function GET(request: NextRequest) {
       }
 
       results.push({ tenantId: tenant.id, status: "repriced" });
+      await logBillingEvent(tenant.id, "reprice_success", `${planKey === "yearly" ? "Yıllık" : "Aylık"} → ₺${tryPrice} (kur: ${rate.toFixed(4)})`);
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
       console.error(`reprice-subscriptions — tenant ${tenant.id} için hata:`, error);
-      results.push({ tenantId: tenant.id, status: "failed", detail: error instanceof Error ? error.message : String(error) });
+      results.push({ tenantId: tenant.id, status: "failed", detail });
+      await logBillingEvent(tenant.id, "reprice_failure", detail);
     }
   }
 

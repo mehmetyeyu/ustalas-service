@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { cancelSubscription } from "@/lib/iyzico";
+import { logBillingEvent } from "@/lib/billingEvents";
 
 // iyzico IFN (Instant Fraud Notification) — entegrasyon@iyzico.com ile
 // yazışmada doğrulandı: bu mekanizmanın Abonelik/Checkout Form dahil TÜM
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const tenantId = mapping.rows[0]?.tenant_id;
   if (!tenantId) {
     console.error("iyzico IFN — paymentId için eşleşen tenant bulunamadı, elle inceleme gerekebilir:", { paymentId, fraudStatus });
+    await logBillingEvent(null, "ifn_tenant_not_found", `paymentId=${paymentId}, fraudStatus=${fraudStatus}`);
     return NextResponse.json({ received: true, matched: false });
   }
 
@@ -75,5 +77,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   console.warn("iyzico IFN — dolandırıcılık nedeniyle tenant kilitlendi:", { tenantId, paymentId, fraudStatus });
+  await logBillingEvent(tenantId, "ifn_rejected", `paymentId=${paymentId}, fraudStatus=${fraudStatus}`);
   return NextResponse.json({ received: true, matched: true });
 }

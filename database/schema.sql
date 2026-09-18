@@ -1214,3 +1214,17 @@ CREATE TABLE IF NOT EXISTS iyzico_payments (
   tenant_id  INT NOT NULL REFERENCES tenants(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Faturalandırma olay günlüğü — Süper Admin'de görünürlük için (bkz.
+-- src/app/super-admin/page.tsx). Öncesinde webhook/IFN/repricing olayları
+-- sadece console.warn/error ile Vercel sunucu loglarına düşüyordu, panelde
+-- hiç görünmüyordu. tenant_id NULL olabilir (ör. IFN bildirimi bilinmeyen
+-- bir paymentId taşıyorsa, hiçbir tenant'a eşlenemez).
+CREATE TABLE IF NOT EXISTS billing_events (
+  id         SERIAL PRIMARY KEY,
+  tenant_id  INT REFERENCES tenants(id),
+  event_type VARCHAR(50) NOT NULL,
+  detail     TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_billing_events_created_at ON billing_events(created_at DESC);

@@ -16,6 +16,26 @@ const PAYMENT_STATUS_LABELS: Record<string, { label: string; className: string }
   SUCCESS: { label: "Başarılı", className: "bg-emerald-100 text-emerald-700" },
 };
 
+interface BillingEvent {
+  id: number;
+  tenant_id: number | null;
+  tenant_name: string | null;
+  event_type: string;
+  detail: string | null;
+  created_at: string;
+}
+
+const BILLING_EVENT_LABELS: Record<string, { label: string; className: string }> = {
+  webhook_success: { label: "Yenileme başarılı", className: "bg-emerald-100 text-emerald-700" },
+  webhook_failure: { label: "Yenileme başarısız", className: "bg-red-100 text-red-700" },
+  webhook_tenant_not_found: { label: "Eşleşmeyen webhook", className: "bg-amber-100 text-amber-700" },
+  webhook_ignored_canceled: { label: "Yenileme yoksayıldı (iptal)", className: "bg-gray-100 text-gray-600" },
+  ifn_rejected: { label: "Dolandırıcılık reddi", className: "bg-red-100 text-red-700" },
+  ifn_tenant_not_found: { label: "Eşleşmeyen IFN", className: "bg-amber-100 text-amber-700" },
+  reprice_success: { label: "Repricing başarılı", className: "bg-blue-100 text-blue-700" },
+  reprice_failure: { label: "Repricing başarısız", className: "bg-red-100 text-red-700" },
+};
+
 interface Tenant {
   id: number;
   name: string;
@@ -86,6 +106,17 @@ export default function SuperAdminPage() {
   const [payments, setPayments] = useState<PaymentHistoryRow[] | null>(null);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  // Gerçek toplam gelir — bkz. /api/super-admin/revenue, "tahmini" (vitrin
+  // fiyatı üzerinden) MRR kutusundan AYRI: iyzico Raporlama Servisi'nden
+  // bu ayın gerçek işlemleri gün gün çekilip toplanıyor.
+  const [revenue, setRevenue] = useState<{ totalPayout: number; totalGross: number; paymentCount: number } | null>(null);
+  const [revenueLoading, setRevenueLoading] = useState(true);
+  // Faturalandırma olayları — bkz. /api/super-admin/billing-events,
+  // webhook/IFN/repricing olaylarının artık sadece sunucu loglarında değil
+  // panelde de görünmesi için.
+  const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
+  const [billingEventsLoading, setBillingEventsLoading] = useState(true);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [tenantName, setTenantName] = useState("");
@@ -119,6 +150,18 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     fetchTenants();
+
+    fetch("/api/super-admin/revenue")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setRevenue(data))
+      .catch(() => setRevenue(null))
+      .finally(() => setRevenueLoading(false));
+
+    fetch("/api/super-admin/billing-events")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setBillingEvents(Array.isArray(data) ? data : []))
+      .catch(() => setBillingEvents([]))
+      .finally(() => setBillingEventsLoading(false));
   }, []);
 
   async function handleToggleActive(t: Tenant) {
@@ -230,6 +273,18 @@ export default function SuperAdminPage() {
   const estimatedMrrUsd = activeMonthly * USD_REFERENCE_PRICING.monthly + activeYearly * (USD_REFERENCE_PRICING.yearly / 12);
   const estimatedMrrTry = usdTryRate != null ? estimatedMrrUsd * usdTryRate : null;
 
+  const filteredTenants = tenants.filter((t) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      t.name.toLowerCase().includes(q) ||
+      t.code.includes(q) ||
+      (t.contact_name?.toLowerCase().includes(q) ?? false) ||
+      (t.contact_email?.toLowerCase().includes(q) ?? false) ||
+      (t.contact_phone?.includes(q) ?? false)
+    );
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -243,7 +298,7 @@ export default function SuperAdminPage() {
       </div>
 
       {!loading && tenants.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow-sm p-4">
             <div className="text-xs text-gray-500 mb-1">Aktif Abone (Aylık)</div>
             <div className="text-xl font-bold text-gray-800">{activeMonthly}</div>
@@ -252,13 +307,34 @@ export default function SuperAdminPage() {
             <div className="text-xs text-gray-500 mb-1">Aktif Abone (Yıllık)</div>
             <div className="text-xl font-bold text-gray-800">{activeYearly}</div>
           </div>
-          <div className="bg-white rounded-xl shadow-sm p-4 col-span-2 sm:col-span-1">
+          <div className="bg-white rounded-xl shadow-sm p-4">
             <div className="text-xs text-gray-500 mb-1">Tahmini Aylık Gelir</div>
             <div className="text-xl font-bold text-gray-800">
               {estimatedMrrTry != null ? `₺${formatTry(estimatedMrrTry)}` : "—"}
             </div>
             <div className="text-[11px] text-gray-400 mt-0.5">Vitrin fiyatı üzerinden, gösterge amaçlı</div>
           </div>
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <div className="text-xs text-gray-500 mb-1">Bu Ay Gerçek Net Gelir</div>
+            <div className="text-xl font-bold text-gray-800">
+              {revenueLoading ? "…" : revenue ? `₺${formatTry(revenue.totalPayout)}` : "—"}
+            </div>
+            <div className="text-[11px] text-gray-400 mt-0.5">
+              {revenue ? `${revenue.paymentCount} tahsilat, komisyon düşülmüş` : "iyzico Raporlama Servisi'nden"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && tenants.length > 0 && (
+        <div className="mb-4">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Firma adı, kodu, e-posta ya da telefon ara..."
+            className="w-full sm:w-80 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
       )}
 
@@ -266,6 +342,8 @@ export default function SuperAdminPage() {
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
       ) : tenants.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Henüz firma yok.</div>
+      ) : filteredTenants.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Aramayla eşleşen firma yok.</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -282,7 +360,7 @@ export default function SuperAdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {tenants.map((t) => (
+                {filteredTenants.map((t) => (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">{t.name}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
@@ -354,6 +432,43 @@ export default function SuperAdminPage() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <h2 className="text-lg font-bold text-gray-800 mt-8 mb-4">Son Faturalandırma Olayları</h2>
+      {billingEventsLoading ? (
+        <div className="text-center text-gray-400 py-8">Yükleniyor...</div>
+      ) : billingEvents.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm p-8 text-center text-gray-400 text-sm">Henüz kayıtlı bir olay yok.</div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600 whitespace-nowrap">Firma</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600 whitespace-nowrap">Olay</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">Detay</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {billingEvents.map((e) => {
+                  const info = BILLING_EVENT_LABELS[e.event_type] || { label: e.event_type, className: "bg-gray-100 text-gray-500" };
+                  return (
+                    <tr key={e.id}>
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{formatDate(e.created_at)}</td>
+                      <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{e.tenant_name ?? "—"}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${info.className}`}>{info.label}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500">{e.detail ?? "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

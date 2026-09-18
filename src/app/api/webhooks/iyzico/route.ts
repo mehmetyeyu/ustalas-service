@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { findPaymentId, getSubscription, verifyWebhookSignature } from "@/lib/iyzico";
+import { logBillingEvent } from "@/lib/billingEvents";
 
 interface SubscriptionOrder {
   referenceCode: string;
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
       // kaybolur). Proaktif müşteri bildirimi henüz yok (bkz. plan) — bu
       // yüzden en azından bunun loglanması, izlenebilirlik için önemli.
       console.warn("iyzico webhook — subscriptionReferenceCode için eşleşen tenant bulunamadı:", { iyziEventType, subscriptionReferenceCode });
+      await logBillingEvent(null, "webhook_tenant_not_found", `subscriptionReferenceCode eşleşmedi: ${subscriptionReferenceCode}`);
     } else if (!tenant.billing_cancel_at_period_end) {
       const now = new Date();
       const periodEndsAt = tenant.plan === "yearly"
@@ -107,6 +109,7 @@ export async function POST(request: NextRequest) {
         "UPDATE tenants SET billing_status = 'active', billing_period_ends_at = $1, billing_last_payment_error = NULL WHERE billing_subscription_ref = $2",
         [periodEndsAt, subscriptionReferenceCode]
       );
+      await logBillingEvent(tenant.id, "webhook_success", `Dönem uzatıldı: ${periodEndsAt.toISOString().slice(0, 10)}`);
 
       // IFN (bkz. database/schema.sql iyzico_payments notu) — best-effort.
       try {
@@ -120,6 +123,13 @@ export async function POST(request: NextRequest) {
       } catch (paymentIdError) {
         console.error("iyzico webhook — paymentId çekilemedi:", { tenantId: tenant.id, paymentIdError });
       }
+    } else {
+      // billing_cancel_at_period_end=true — bilinçli olarak dönem
+      // uzatılmadı (yukarıya bkz.). Bu "hiçbir şey yapılmadı" durumu da
+      // loglanıyor, aksi halde Süper Admin'de "neden bu webhook hiç etki
+      // etmedi" sorusu cevapsız kalırdı (gerçek bir denemede, iptal edilmiş
+      // 338176 için tetiklenen bir webhook_success sessizce kayboluyordu).
+      await logBillingEvent(tenant.id, "webhook_ignored_canceled", "Abonelik iptal edilmiş, dönem uzatılmadı.");
     }
   } else if (iyziEventType === "subscription.order.failure") {
     // V1'de otomatik yeniden deneme (dunning) yok — başarısız ödeme
@@ -129,12 +139,15 @@ export async function POST(request: NextRequest) {
     // çekiliyor (bkz. yukarısı, database/schema.sql notu).
     const reason = await fetchFailureReason(subscriptionReferenceCode, orderReferenceCode);
     console.warn("iyzico webhook — abonelik ödemesi başarısız, tenant kilitleniyor:", { subscriptionReferenceCode, orderReferenceCode, reason });
-    const result = await pool.query(
-      "UPDATE tenants SET billing_status = 'past_due', billing_last_payment_error = $1 WHERE billing_subscription_ref = $2",
+    const result = await pool.query<{ id: number }>(
+      "UPDATE tenants SET billing_status = 'past_due', billing_last_payment_error = $1 WHERE billing_subscription_ref = $2 RETURNING id",
       [reason, subscriptionReferenceCode]
     );
     if (result.rowCount === 0) {
       console.warn("iyzico webhook — subscriptionReferenceCode için eşleşen tenant bulunamadı:", { iyziEventType, subscriptionReferenceCode });
+      await logBillingEvent(null, "webhook_tenant_not_found", `subscriptionReferenceCode eşleşmedi: ${subscriptionReferenceCode}`);
+    } else {
+      await logBillingEvent(result.rows[0].id, "webhook_failure", reason);
     }
   }
 

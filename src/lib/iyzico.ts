@@ -373,3 +373,27 @@ export async function getPaymentDetailsByConversationId(conversationId: string):
   );
   return result.payments ?? [];
 }
+
+export interface PaymentTransaction {
+  transactionType: string;
+  transactionStatus?: number;
+  paymentId: number;
+  conversationId?: string;
+  price?: number;
+  paidPrice?: number;
+  transactionCurrency?: string;
+  merchantPayoutAmount?: number;
+}
+
+// Belirli bir GÜNÜN tüm işlemleri (tüm tenant'lar/conversationId'ler
+// dahil) — Süper Admin'deki gerçek toplam gelir hesaplaması için (bkz.
+// /api/super-admin/revenue), bir ay boyunca gün gün çağrılıp toplanıyor.
+// transactionDate formatı "YYYY-MM-DD" olmalı (gerçek bir denemeyle
+// doğrulandı — "YYYYMMDD" gibi diğer formatlar reddediliyor).
+export async function getPaymentTransactions(transactionDate: string, page: number): Promise<PaymentTransaction[]> {
+  const result = await iyzicoRequest<{ transactions?: PaymentTransaction[] }>(
+    "GET",
+    `/v2/reporting/payment/transactions?transactionDate=${encodeURIComponent(transactionDate)}&page=${page}`
+  );
+  return result.transactions ?? [];
+}
