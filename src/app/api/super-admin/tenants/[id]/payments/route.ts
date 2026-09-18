@@ -10,6 +10,12 @@ export interface PaymentHistoryRow {
   paymentId: string;
   refundStatus: string | null;
   merchantPayoutAmount: number | null;
+  // iyzico'nun otomatik dolandırıcılık taraması sonucu (bkz. iyzico-fraud/
+  // [secret]/route.ts REJECTED_STATUSES notu — aynı sayısal değerler):
+  // -3/-2/-1 reddedildi (IFN ile zaten kilitleniyor), 0 inceleniyor,
+  // 1 temiz (normal, en sık görülen), 2 incelendi/kabul edildi. Sadece 1
+  // dışındaki değerler frontend'de ayrıca vurgulanıyor.
+  fraudStatus: number | null;
 }
 
 // Tenant'ın TÜM ödeme geçmişi — iyzico'nun Raporlama Servisi'nden
@@ -41,6 +47,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       paymentId: String(p.paymentId),
       refundStatus: p.paymentRefundStatus && p.paymentRefundStatus !== "NOT_REFUNDED" ? p.paymentRefundStatus : null,
       merchantPayoutAmount: p.itemTransactions?.[0]?.merchantPayoutAmount ?? null,
+      fraudStatus: p.fraudStatus ?? null,
     }));
     payments.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
 

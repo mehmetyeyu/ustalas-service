@@ -16,6 +16,18 @@ const PAYMENT_STATUS_LABELS: Record<string, { label: string; className: string }
   SUCCESS: { label: "Başarılı", className: "bg-emerald-100 text-emerald-700" },
 };
 
+// iyzico'nun IFN mailinden — aynı değerler src/app/api/webhooks/iyzico-fraud/
+// [secret]/route.ts'teki REJECTED_STATUSES ile birebir. 1 (temiz) en sık
+// görülen/beklenen değer olduğundan HİÇ rozet göstermiyoruz — sadece
+// dikkat gerektiren durumlar (inceleniyor/incelendi/reddedildi) vurgulanıyor.
+const FRAUD_STATUS_LABELS: Record<number, { label: string; className: string }> = {
+  0: { label: "İnceleniyor", className: "bg-amber-100 text-amber-700" },
+  2: { label: "İncelendi, Onaylandı", className: "bg-blue-100 text-blue-700" },
+  "-1": { label: "Reddedildi", className: "bg-red-100 text-red-700" },
+  "-2": { label: "Reddedildi", className: "bg-red-100 text-red-700" },
+  "-3": { label: "Reddedildi", className: "bg-red-100 text-red-700" },
+};
+
 interface BillingEvent {
   id: number;
   tenant_id: number | null;
@@ -642,6 +654,7 @@ export default function SuperAdminPage() {
                   <tbody className="divide-y divide-gray-100">
                     {payments.map((p, i) => {
                       const info = (p.status && PAYMENT_STATUS_LABELS[p.status]) || { label: p.status ?? "—", className: "bg-gray-100 text-gray-500" };
+                      const fraudInfo = p.fraudStatus != null ? FRAUD_STATUS_LABELS[p.fraudStatus] : null;
                       return (
                         <tr key={`${p.paymentId}-${i}`}>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.date ? formatDate(new Date(p.date)) : "—"}</td>
@@ -654,6 +667,9 @@ export default function SuperAdminPage() {
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${info.className}`}>{info.label}</span>
+                            {fraudInfo && (
+                              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1 ${fraudInfo.className}`}>{fraudInfo.label}</span>
+                            )}
                             {p.refundStatus && <div className="text-[11px] text-amber-600 mt-0.5">İade: {p.refundStatus}</div>}
                           </td>
                         </tr>
