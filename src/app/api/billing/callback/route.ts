@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { retrieveCheckoutForm } from "@/lib/iyzico";
+import { findPaymentId, retrieveCheckoutForm } from "@/lib/iyzico";
 
 const PLAN_REFS: Record<string, string | undefined> = {
   monthly: process.env.IYZICO_PLAN_MONTHLY_REF,
@@ -126,6 +126,25 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
        WHERE id = $6`,
       [result.referenceCode, result.customerReferenceCode ?? null, plan, periodEndsAt, result.pricingPlanReferenceCode ?? null, tenantId]
     );
+
+    // IFN (dolandırıcılık incelemesi) bildirimi bize sadece paymentId
+    // veriyor, hangi tenant'a ait olduğunu bulabilmemiz için kendi
+    // eşlememizi tutmamız gerekiyor (bkz. database/schema.sql
+    // iyzico_payments notu) — best-effort, başarısız olursa aktivasyonu
+    // bloklamaz.
+    try {
+      const paymentId = await findPaymentId(result.referenceCode);
+      if (paymentId) {
+        await pool.query(
+          "INSERT INTO iyzico_payments (payment_id, tenant_id) VALUES ($1, $2) ON CONFLICT (payment_id) DO NOTHING",
+          [paymentId, tenantId]
+        );
+      } else {
+        console.warn("iyzico callback — paymentId bulunamadı, IFN eşlemesi kaydedilemedi:", { tenantId, subscriptionRef: result.referenceCode });
+      }
+    } catch (paymentIdError) {
+      console.error("iyzico callback — paymentId çekilemedi:", { tenantId, paymentIdError });
+    }
 
     return redirectTo("success");
   } catch (error) {

@@ -1197,3 +1197,20 @@ CREATE TABLE IF NOT EXISTS iyzico_checkout_sessions (
   plan       VARCHAR(20),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- IFN (Instant Fraud Notification, bkz. src/app/api/webhooks/iyzico-fraud/
+-- [secret]/route.ts) bildirimi SADECE {paymentId, fraudStatus} taşıyor —
+-- hangi tenant'a ait olduğunu bulabilmemiz için PAYMENT ID → tenant
+-- eşlemesini KENDİMİZ tutmamız gerekiyor (GET /payment/detail paymentId
+-- ile sorgulanınca orijinal conversationId'yi GERİ VERMİYOR, sadece bizim
+-- o anki istekte gönderdiğimiz conversationId'yi yankılıyor — gerçek bir
+-- sandbox çağrısıyla doğrulandı, bu yüzden ayrı bir tabloya ihtiyaç var).
+-- Her başarılı tahsilatta (ilk ödeme: bkz. /api/billing/callback, yenileme:
+-- bkz. /api/webhooks/iyzico) GET /v2/subscription/subscriptions/{ref}
+-- yanıtındaki ilgili order'ın paymentAttempts'inden paymentId çekilip
+-- buraya yazılır (best-effort — başarısız olursa ana akışı bloklamaz).
+CREATE TABLE IF NOT EXISTS iyzico_payments (
+  payment_id VARCHAR(50) PRIMARY KEY,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

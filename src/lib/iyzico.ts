@@ -227,6 +227,29 @@ export async function getSubscription(subscriptionReferenceCode: string): Promis
   return iyzicoRequest("GET", `/v2/subscription/subscriptions/${subscriptionReferenceCode}`);
 }
 
+interface SubscriptionOrder {
+  referenceCode: string;
+  orderStatus?: string;
+  paymentAttempts?: Array<{ paymentId?: string | number }>;
+}
+
+// IFN (bkz. database/schema.sql iyzico_payments notu) bize sadece paymentId
+// veriyor — hangi tenant'a ait olduğunu bulabilmemiz için her başarılı
+// tahsilatta paymentId'yi KENDİMİZ paymentAttempts'ten çekip saklamamız
+// gerekiyor (/payment/detail orijinal conversationId'yi geri vermiyor,
+// gerçek bir çağrıyla doğrulandı). orderReferenceCode verilirse o order
+// aranır (yenileme webhook'u — bkz. /api/webhooks/iyzico); verilmezse ilk
+// SUCCESS order alınır (ilk aktivasyon — bkz. /api/billing/callback, o an
+// tek bir SUCCESS order olması beklenir).
+export async function findPaymentId(subscriptionReferenceCode: string, orderReferenceCode?: string): Promise<string | null> {
+  const sub = await getSubscription(subscriptionReferenceCode) as { orders?: SubscriptionOrder[] };
+  const order = orderReferenceCode
+    ? sub.orders?.find((o) => o.referenceCode === orderReferenceCode)
+    : sub.orders?.find((o) => o.orderStatus === "SUCCESS");
+  const lastAttempt = order?.paymentAttempts?.[order.paymentAttempts.length - 1];
+  return lastAttempt?.paymentId != null ? String(lastAttempt.paymentId) : null;
+}
+
 // docs.iyzico.com/en/products/subscription/subscription-implementation/
 // subscription-transactions.md ile doğrulandı — hedef plan AYNI ürüne ve
 // AYNI ödeme periyoduna (paymentInterval + paymentIntervalCount) ait olmak

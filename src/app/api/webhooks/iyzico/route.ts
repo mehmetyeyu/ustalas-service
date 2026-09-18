@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { getSubscription, verifyWebhookSignature } from "@/lib/iyzico";
+import { findPaymentId, getSubscription, verifyWebhookSignature } from "@/lib/iyzico";
 
 interface SubscriptionOrder {
   referenceCode: string;
@@ -82,8 +82,8 @@ export async function POST(request: NextRequest) {
     // abonelikte (iyzico'da zaten iptal edilmiş, bir daha tahsilat
     // olmamalı) bu event gelirse dönemi UZATMIYORUZ — aksi halde iptal
     // edilmiş bir abonelik yanlışlıkla yeniden kilitsiz kalabilir.
-    const tenantResult = await pool.query<{ plan: string | null; billing_cancel_at_period_end: boolean }>(
-      "SELECT plan, billing_cancel_at_period_end FROM tenants WHERE billing_subscription_ref = $1",
+    const tenantResult = await pool.query<{ id: number; plan: string | null; billing_cancel_at_period_end: boolean }>(
+      "SELECT id, plan, billing_cancel_at_period_end FROM tenants WHERE billing_subscription_ref = $1",
       [subscriptionReferenceCode]
     );
     const tenant = tenantResult.rows[0];
@@ -107,6 +107,19 @@ export async function POST(request: NextRequest) {
         "UPDATE tenants SET billing_status = 'active', billing_period_ends_at = $1, billing_last_payment_error = NULL WHERE billing_subscription_ref = $2",
         [periodEndsAt, subscriptionReferenceCode]
       );
+
+      // IFN (bkz. database/schema.sql iyzico_payments notu) — best-effort.
+      try {
+        const paymentId = await findPaymentId(subscriptionReferenceCode, orderReferenceCode);
+        if (paymentId) {
+          await pool.query(
+            "INSERT INTO iyzico_payments (payment_id, tenant_id) VALUES ($1, $2) ON CONFLICT (payment_id) DO NOTHING",
+            [paymentId, tenant.id]
+          );
+        }
+      } catch (paymentIdError) {
+        console.error("iyzico webhook — paymentId çekilemedi:", { tenantId: tenant.id, paymentIdError });
+      }
     }
   } else if (iyziEventType === "subscription.order.failure") {
     // V1'de otomatik yeniden deneme (dunning) yok — başarısız ödeme
