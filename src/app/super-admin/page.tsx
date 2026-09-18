@@ -7,11 +7,13 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { USD_REFERENCE_PRICING, formatTry } from "@/lib/exchangeRate";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
 
+// paymentStatus'un tam değer haritası iyzico tarafından dokümante edilmemiş
+// — gerçek başarılı ödemelerde gözlemlenen tek değer "SUCCESS" (bkz.
+// /api/super-admin/tenants/[id]/payments notu, paymentStatus===1'den
+// türetiliyor). Tanınmayan bir ham sayı gelirse (ör. bir başarısızlık kodu)
+// aşağıdaki fallback (ham metni gösterir) devreye giriyor.
 const PAYMENT_STATUS_LABELS: Record<string, { label: string; className: string }> = {
   SUCCESS: { label: "Başarılı", className: "bg-emerald-100 text-emerald-700" },
-  FAILED: { label: "Başarısız", className: "bg-red-100 text-red-700" },
-  SUBSCRIPTION_CANCELED: { label: "İptal", className: "bg-gray-100 text-gray-600" },
-  SUBSCRIPTION_UPGRADED: { label: "Plan Değişti", className: "bg-blue-100 text-blue-700" },
 };
 
 interface Tenant {
@@ -516,8 +518,8 @@ export default function SuperAdminPage() {
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tarih</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Plan</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Tutar</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Net Gelir</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Durum</th>
                     </tr>
                   </thead>
@@ -525,20 +527,32 @@ export default function SuperAdminPage() {
                     {payments.map((p, i) => {
                       const info = (p.status && PAYMENT_STATUS_LABELS[p.status]) || { label: p.status ?? "—", className: "bg-gray-100 text-gray-500" };
                       return (
-                        <tr key={`${p.paymentId ?? p.subscriptionRef}-${i}`}>
+                        <tr key={`${p.paymentId}-${i}`}>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.date ? formatDate(new Date(p.date)) : "—"}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.planName ?? "—"}</td>
                           <td className="px-3 py-2 text-right text-gray-800 font-medium whitespace-nowrap">
                             {p.amount != null && p.currencyCode ? formatMoney(p.amount, p.currencyCode) : "—"}
                           </td>
+                          <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
+                            {p.merchantPayoutAmount != null && p.currencyCode ? formatMoney(p.merchantPayoutAmount, p.currencyCode) : "—"}
+                          </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${info.className}`}>{info.label}</span>
-                            {p.errorMessage && <div className="text-[11px] text-red-500 mt-0.5">{p.errorMessage}</div>}
+                            {p.refundStatus && <div className="text-[11px] text-amber-600 mt-0.5">İade: {p.refundStatus}</div>}
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
+                  <tfoot className="border-t border-gray-200">
+                    <tr>
+                      <td className="px-3 py-2 text-xs text-gray-500 font-medium">Toplam net gelir</td>
+                      <td></td>
+                      <td className="px-3 py-2 text-right text-sm font-bold text-gray-800 whitespace-nowrap">
+                        {formatMoney(payments.reduce((sum, p) => sum + (p.merchantPayoutAmount ?? 0), 0), payments[0]?.currencyCode ?? "TRY")}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               )}
             </div>

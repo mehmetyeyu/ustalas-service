@@ -1,37 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { listSubscriptions } from "@/lib/iyzico";
+import { getPaymentDetailsByConversationId } from "@/lib/iyzico";
 
 export interface PaymentHistoryRow {
   date: number | null;
   amount: number | null;
   currencyCode: string | null;
   status: string | null;
-  errorMessage: string | null;
-  planName: string | null;
-  paymentId: string | null;
-  subscriptionRef: string;
+  paymentId: string;
+  refundStatus: string | null;
+  merchantPayoutAmount: number | null;
 }
 
-// Tenant'ın TÜM ödeme geçmişi — iyzico_payments (bkz. database/schema.sql)
-// sadece IFN eşlemesi için paymentId tutuyor, tarih/tutar/durum içermiyor.
-// Bir tenant zaman içinde BİRDEN FAZLA subscriptionReferenceCode'a sahip
-// olabilir (her /upgrade veya iptal+yeniden abone olma yeni bir referans
-// üretiyor, bkz. src/lib/iyzico.ts upgradeSubscription notu) — bu yüzden
-// tek bir referansı GET etmek yetmiyor, listSubscriptions() ile TÜM
-// abonelikler çekilip customerReferenceCode'a göre süzülüyor.
-//
-// BİLİNEN SINIRLAMA: initializeCheckoutForm HER çağrıldığında iyzico'da
-// aynı müşteri bilgisiyle bile YENİ bir customerReferenceCode oluşturuyor
-// (tekilleştirme yok, gerçek bir denemede doğrulandı) — biz DB'de sadece
-// EN GÜNCEL customerReferenceCode'u tutuyoruz (tenants.billing_customer_id).
-// Yani bir tenant iptal edip yeniden abone olduysa (past_due sonrası, bkz.
-// /api/billing/checkout), ESKİ customerReferenceCode'a bağlı geçmiş ödemeler
-// bu listede GÖRÜNMEZ — sadece mevcut müşteri döngüsündeki geçmiş görünür.
-// Bilinçli olarak düzeltilmedi (kullanıcı kararı): tüm geçmiş
-// customerReferenceCode'ları ayrıca takip etmek yeni bir tablo + her
-// checkout/callback'te ek yazma gerektirir, nadir bir senaryo için orantısız.
+// Tenant'ın TÜM ödeme geçmişi — iyzico'nun Raporlama Servisi'nden
+// (bkz. src/lib/iyzico.ts getPaymentDetailsByConversationId notu)
+// conversationId = tenant id ile sorgulanıyor. Bu, /v2/subscription/*
+// uçlarının customerReferenceCode'a bağımlı olmasından kaynaklanan eski
+// sınırlamayı (tenant zaman içinde farklı customerReferenceCode'lara sahip
+// olabiliyor, bkz. git geçmişi) ortadan kaldırıyor — conversationId her
+// checkout/switch-plan'da AYNI (tenant id) gönderiliyor, hiç değişmiyor.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser();
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
@@ -40,36 +27,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const tenantId = Number(id);
   if (!Number.isInteger(tenantId)) return NextResponse.json({ error: "Geçersiz firma." }, { status: 400 });
 
-  const tenantResult = await pool.query<{ billing_customer_id: string | null }>(
-    "SELECT billing_customer_id FROM tenants WHERE id = $1",
-    [tenantId]
-  );
-  const customerRef = tenantResult.rows[0]?.billing_customer_id;
-  if (!customerRef) return NextResponse.json({ payments: [] as PaymentHistoryRow[] });
-
   try {
-    const search = await listSubscriptions();
-    const matching = search.items.filter((s) => s.customerReferenceCode === customerRef);
+    const details = await getPaymentDetailsByConversationId(String(tenantId));
 
-    const payments: PaymentHistoryRow[] = [];
-    for (const sub of matching) {
-      for (const order of sub.orders ?? []) {
-        // WAITING: henüz denenmemiş (gelecekteki) sipariş — GEÇMİŞ bir
-        // tahsilat değil, listeye dahil edilmiyor.
-        for (const attempt of order.paymentAttempts ?? []) {
-          payments.push({
-            date: attempt.createdDate ?? order.startPeriod ?? null,
-            amount: order.price ?? null,
-            currencyCode: order.currencyCode ?? null,
-            status: attempt.paymentStatus ?? order.orderStatus ?? null,
-            errorMessage: attempt.errorMessage ?? null,
-            planName: sub.pricingPlanName ?? null,
-            paymentId: attempt.paymentId != null ? String(attempt.paymentId) : null,
-            subscriptionRef: sub.referenceCode,
-          });
-        }
-      }
-    }
+    const payments: PaymentHistoryRow[] = details.map((p) => ({
+      date: p.createdDate ? new Date(p.createdDate).getTime() : null,
+      amount: p.price ?? null,
+      currencyCode: p.currency ?? null,
+      // paymentStatus'un tam değer haritası dokümante edilmemiş — gerçek
+      // başarılı ödemelerde gözlemlenen tek değer 1. Tanınmayan bir değer
+      // gelirse ham sayı olarak gösterilir (bkz. frontend PAYMENT_STATUS_LABELS).
+      status: p.paymentStatus === 1 ? "SUCCESS" : String(p.paymentStatus),
+      paymentId: String(p.paymentId),
+      refundStatus: p.paymentRefundStatus && p.paymentRefundStatus !== "NOT_REFUNDED" ? p.paymentRefundStatus : null,
+      merchantPayoutAmount: p.itemTransactions?.[0]?.merchantPayoutAmount ?? null,
+    }));
     payments.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
 
     return NextResponse.json({ payments });

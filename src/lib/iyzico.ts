@@ -59,7 +59,18 @@ async function iyzicoRequest<T = Record<string, unknown>>(
   // saptandı). Body'li POST'larda (ör. ürün/plan oluşturma) davranış
   // aynı kalır.
   const bodyStr = method === "GET" ? "" : (body ? JSON.stringify(body) : "{}");
-  const { authorization, randomKey } = buildAuthHeader(uriPath, bodyStr);
+  // İmza her zaman sorgu dizesi (?...) OLMADAN, "bare" path ile hesaplanır
+  // — gerçek istek ise TAM path'e (sorgu dahil) gider. Bu, resmi iyzipay-
+  // node SDK'sının kaynak kodundan doğrulandı: SDK, Authorization
+  // header'ını path değişkenleri değiştirilmiş ama sorgu dizesi HİÇ
+  // eklenmemiş bir "generatedPath" ile imzalıyor, query string'i ayrı bir
+  // `qs` parametresi olarak sadece gerçek isteğe ekliyor. Önceden sorgu
+  // dizesini de imzaya dahil etmek (`randomKey + tamPath + body`) gerçek
+  // çağrılarda "Authentication token is not verified" (401) ile
+  // başarısız oluyordu (ör. /v2/subscription/subscriptions?page=... ve
+  // /v2/reporting/payment/* uçları) — dokümantasyon bunu hiç açıklamıyor.
+  const signaturePath = uriPath.split("?")[0];
+  const { authorization, randomKey } = buildAuthHeader(signaturePath, bodyStr);
 
   const res = await fetch(`${BASE_URL}${uriPath}`, {
     method,
@@ -243,36 +254,6 @@ export interface SubscriptionOrder {
   }>;
 }
 
-export interface SubscriptionSearchItem {
-  referenceCode: string;
-  parentReferenceCode?: string;
-  pricingPlanName?: string;
-  pricingPlanReferenceCode?: string;
-  customerReferenceCode?: string;
-  customerEmail?: string;
-  subscriptionStatus?: string;
-  orders?: SubscriptionOrder[];
-}
-
-// GET /v2/subscription/subscriptions — sorgu parametresiz (bkz. plan). Bu
-// uç noktaya ?page=/&count= gibi bir query eklemek gerçek bir denemede
-// "Authentication token is not verified" (401) ile başarısız oldu — imza
-// mesajına uriPath'in TAM olarak (query dahil) eklenmesi diğer tüm
-// çağrılarda doğru çalışırken burada neden işe yaramadığı dokümante
-// edilmemiş, iyzico'nun bu uç noktaya özgü bir tuhaflığı olabilir. Bare
-// (parametresiz) çağrı güvenilir çalışıyor ve varsayılan sayfa boyutu şu an
-// kullanım ölçeğimizdeki tüm abonelikleri (birkaç düzine) tek seferde
-// döndürüyor — tenant sayısı ciddi büyürse sayfalama/filtreleme sorunu
-// ayrıca çözülmeli.
-export async function listSubscriptions(): Promise<{
-  totalCount: number;
-  currentPage: number;
-  pageCount: number;
-  items: SubscriptionSearchItem[];
-}> {
-  return iyzicoRequest("GET", "/v2/subscription/subscriptions");
-}
-
 // IFN (bkz. database/schema.sql iyzico_payments notu) bize sadece paymentId
 // veriyor — hangi tenant'a ait olduğunu bulabilmemiz için her başarılı
 // tahsilatta paymentId'yi KENDİMİZ paymentAttempts'ten çekip saklamamız
@@ -355,4 +336,40 @@ export function verifyWebhookSignature(params: {
   const receivedBuf = Buffer.from(params.signatureHeader, "hex");
   if (expectedBuf.length !== receivedBuf.length) return false;
   return crypto.timingSafeEqual(expectedBuf, receivedBuf);
+}
+
+// --- Raporlama Servisi (bkz. /api/super-admin/tenants/[id]/payments) ---
+// Abonelik değil KLASİK ödeme API'sinin bir parçası (Ek Servisler) — özel
+// bir aktivasyon gerektirmiyor, gerçek bir denemeyle doğrulandı (parametresiz
+// çağrı 401 değil 422 "zorunlu alan eksik" döndürdü, yani hesap zaten
+// yetkili). paymentConversationId ile sorgulanabiliyor ve bu alan
+// checkoutform/switch-plan'da gönderdiğimiz conversationId'yi (=tenant id)
+// AYNEN geri veriyor — /v2/subscription/subscriptions'ın customerReferenceCode
+// üzerinden filtrelemesinden farklı olarak, bir tenant zaman içinde farklı
+// customerReferenceCode'lara sahip olsa bile (her checkout'ta iyzico yeni
+// bir müşteri kaydı açıyor, bkz. plan) TÜM geçmişi tek çağrıda veriyor.
+export interface PaymentDetailItem {
+  paymentId: number;
+  paymentStatus: number;
+  paymentRefundStatus?: string;
+  price?: number;
+  paidPrice?: number;
+  currency?: string;
+  paymentConversationId?: string;
+  fraudStatus?: number;
+  createdDate?: string;
+  itemTransactions?: Array<{
+    paymentTransactionId: number;
+    transactionStatus?: number;
+    merchantPayoutAmount?: number;
+    blockageResolvedDate?: string;
+  }>;
+}
+
+export async function getPaymentDetailsByConversationId(conversationId: string): Promise<PaymentDetailItem[]> {
+  const result = await iyzicoRequest<{ payments?: PaymentDetailItem[] }>(
+    "GET",
+    `/v2/reporting/payment/details?paymentConversationId=${encodeURIComponent(conversationId)}`
+  );
+  return result.payments ?? [];
 }
