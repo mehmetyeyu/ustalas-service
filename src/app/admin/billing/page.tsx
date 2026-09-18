@@ -55,6 +55,12 @@ function BillingPageContent() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<"monthly" | "yearly" | "cancel" | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // iyzico CF, sayfaya gömülü (responsive) render için #iyzipay-checkout-form
+  // id'li bir div'in DOM'da ÖNCEDEN var olmasını bekliyor (bkz. docs.iyzico.com
+  // odeme-metotlari/odeme-formu/cf-entegrasyonu) — script'leri enjekte etmeden
+  // önce bu container'ın render edilmiş olması gerektiğinden state+effect ile
+  // sıralanıyor (aşağıya bkz.).
+  const [pendingFormContent, setPendingFormContent] = useState<string | null>(null);
 
   useEffect(() => {
     const result = searchParams.get("result");
@@ -84,29 +90,43 @@ function BillingPageContent() {
       return;
     }
     if (result.checkoutFormContent) {
-      // iyzico'nun checkoutFormContent'i tamamen <script> etiketlerinden
-      // oluşuyor (iyziInit/iyziUcsInit/iyziSubscriptionInit tanımlayıp
-      // bundle.js'i enjekte ediyorlar) — ama innerHTML ile eklenen
-      // <script>'ler tarayıcı tarafından ÇALIŞTIRILMAZ (güvenlik kısıtı),
-      // bu yüzden form hiç render olmuyordu (gerçek bir denemede saptandı).
-      // Her script'i document.createElement ile YENİDEN oluşturup DOM'a
-      // ekleyerek gerçekten çalışmasını sağlıyoruz — sıra önemli
-      // (iyziUcsInit/iyziSubscriptionInit "typeof iyziInit" kontrolü yapıyor).
-      const container = document.createElement("div");
-      container.innerHTML = result.checkoutFormContent;
-      document.body.appendChild(container);
-      for (const oldScript of Array.from(container.querySelectorAll("script"))) {
-        const newScript = document.createElement("script");
-        for (const attr of Array.from(oldScript.attributes)) {
-          newScript.setAttribute(attr.name, attr.value);
-        }
-        newScript.textContent = oldScript.textContent;
-        oldScript.parentNode?.replaceChild(newScript, oldScript);
-      }
+      // Script enjeksiyonu bir sonraki effect'e bırakılıyor — #iyzipay-
+      // checkout-form container'ı (bkz. aşağıdaki JSX) bu state'e bağlı
+      // olarak koşullu render edildiğinden, script'ler çalışıp container'ı
+      // ARADIĞINDA DOM'da zaten var olması garanti edilmiş oluyor.
+      setPendingFormContent(result.checkoutFormContent);
       return;
     }
     toast.error("Ödeme sayfası başlatılamadı.");
   }
+
+  useEffect(() => {
+    if (!pendingFormContent) return;
+    // iyzico'nun checkoutFormContent'i tamamen <script> etiketlerinden
+    // oluşuyor (iyziInit/iyziUcsInit/iyziSubscriptionInit tanımlayıp
+    // bundle.js'i enjekte ediyorlar) — ama innerHTML ile eklenen
+    // <script>'ler tarayıcı tarafından ÇALIŞTIRILMAZ (güvenlik kısıtı),
+    // bu yüzden form hiç render olmuyordu (gerçek bir denemede saptandı).
+    // Her script'i document.createElement ile YENİDEN oluşturup DOM'a
+    // ekleyerek gerçekten çalışmasını sağlıyoruz — sıra önemli
+    // (iyziUcsInit/iyziSubscriptionInit "typeof iyziInit" kontrolü yapıyor).
+    // Script'lerin kendisi DOM'da nereye eklendiğinden bağımsız (sadece
+    // çalışmaları yeterli) — asıl render hedefi #iyzipay-checkout-form'dur
+    // (bkz. docs.iyzico.com odeme-metotlari/odeme-formu/cf-entegrasyonu,
+    // "responsive" modu).
+    const scriptsHost = document.createElement("div");
+    scriptsHost.innerHTML = pendingFormContent;
+    document.body.appendChild(scriptsHost);
+    for (const oldScript of Array.from(scriptsHost.querySelectorAll("script"))) {
+      const newScript = document.createElement("script");
+      for (const attr of Array.from(oldScript.attributes)) {
+        newScript.setAttribute(attr.name, attr.value);
+      }
+      newScript.textContent = oldScript.textContent;
+      oldScript.parentNode?.replaceChild(newScript, oldScript);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFormContent]);
 
   async function startCheckout(plan: "monthly" | "yearly") {
     if (!acceptedTerms) {
@@ -237,7 +257,13 @@ function BillingPageContent() {
         </div>
       </div>
 
-      {loading ? (
+      {pendingFormContent && (
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          <div id="iyzipay-checkout-form" className="responsive"></div>
+        </div>
+      )}
+
+      {pendingFormContent ? null : loading ? (
         <div className="text-center text-gray-400 py-8">Planlar yükleniyor...</div>
       ) : !plans ? (
         <div className="bg-white rounded-xl shadow-sm p-6 text-center text-sm text-gray-500">
