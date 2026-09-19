@@ -223,6 +223,16 @@ function BillingPageContent() {
   // arka plan görevi eklemek yerine görüntülenen etiket burada türetiliyor.
   const cancelPeriodEnded = cancelAtPeriodEnd && periodEndsAt != null && periodEndsAt.getTime() <= Date.now();
   const displayStatus = cancelPeriodEnded ? "canceled" : billingStatus;
+  // Plan değişimi (switch-plan) native bir upgrade DEĞİL — mevcut abonelik
+  // ANINDA iptal edilip yeni plan tam fiyattan yeniden checkout'a girer,
+  // prorasyon (kalan gün/ay mahsubu) YOK (bkz. /api/billing/switch-plan).
+  // Bu yüzden döngünün ortasında (ör. Yıllık ödemiş birine Aylık'a "geç"
+  // seçeneği) göstermek, müşterinin önceden ödediği kalan süreyi karşılıksız
+  // kaybetmesine yol açar — business kararı: bu seçenek sadece yenileme
+  // tarihine reprice cron'uyla AYNI 3 günlük pencerede yaklaşıldığında
+  // gösterilir (bkz. src/app/api/cron/reprice-subscriptions/route.ts).
+  const daysUntilRenewal = periodEndsAt ? (periodEndsAt.getTime() - Date.now()) / 86400000 : null;
+  const canSwitchPlanNow = daysUntilRenewal !== null && daysUntilRenewal <= 3;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -282,6 +292,12 @@ function BillingPageContent() {
         </div>
       ) : (
         <>
+          {/* isActive && !canSwitchPlanNow durumunda hiçbir kart aksiyon
+              butonu göstermiyor (mevcut plan "Mevcut Planınız" düz metni,
+              diğeri "yenileme tarihine yakın" bilgi metni) — bu yüzden
+              onay kutusu da o durumda gizlenir, aksi halde hiçbir düğmeye
+              bağlı olmadan anlamsızca ekranda kalırdı. */}
+          {(!isActive || canSwitchPlanNow) && (
           <label className="flex items-start gap-2.5 text-sm text-gray-600 mb-4">
             <input
               type="checkbox"
@@ -296,6 +312,7 @@ function BillingPageContent() {
               &apos;ni okudum, kabul ediyorum; dijital hizmetin ödeme onayıyla birlikte hemen ifa edileceğini ve bu nedenle cayma hakkımın bulunmadığını biliyorum.
             </span>
           </label>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(["monthly", "yearly"] as const).map((key) => {
             const plan = plans[key];
@@ -327,7 +344,7 @@ function BillingPageContent() {
                 <div className="mt-auto">
                   {isCurrentPlan ? (
                     <div className="text-center text-sm font-medium text-emerald-600 py-2.5">Mevcut Planınız</div>
-                  ) : isActive ? (
+                  ) : isActive && canSwitchPlanNow ? (
                     <button
                       onClick={() => switchPlan(key)}
                       disabled={submitting !== null || !acceptedTerms}
@@ -335,6 +352,10 @@ function BillingPageContent() {
                     >
                       {submitting === key ? "İşleniyor..." : "Bu Plana Geç"}
                     </button>
+                  ) : isActive ? (
+                    <div className="text-center text-xs text-gray-400 py-2.5 px-1">
+                      Yenileme tarihinize ({periodEndsAt?.toLocaleDateString("tr-TR")}) yakın bu plana geçebilirsiniz
+                    </div>
                   ) : (
                     <button
                       onClick={() => startCheckout(key)}
