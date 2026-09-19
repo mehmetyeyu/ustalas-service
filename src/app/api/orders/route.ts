@@ -7,6 +7,7 @@ import { deductStock, InsufficientStockError } from "@/lib/productStock";
 import { buildOrderQuery } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
 import { getAutoRegisterCustomers } from "@/lib/settings";
+import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
 
 interface OrderLineInput {
   service_name: string;
@@ -75,7 +76,55 @@ export async function GET(request: NextRequest) {
     const totalAmount: number = countResult.rows[0].total_amount;
     const totalKar: number = countResult.rows[0].total_kar;
 
-    return NextResponse.json({ items: result.rows, total, totalAmount, totalKar, page, limit });
+    // FIFO Cari uzlaşma — bkz. src/lib/customerLedger.ts computeOrderLedgerStatus.
+    // Bu sayfadaki siparişlerin bağlı olduğu müşterilerin TAM geçmişi
+    // gerekiyor (sadece sayfadaki siparişler değil — bir eski sipariş, bu
+    // sayfada görünmeyen daha da eski bir borcu bekliyor olabilir).
+    const orderIds = Array.from(new Set(result.rows.map((r) => r.id as number)));
+    const statusByOrderId = new Map<number, OrderLedgerStatus>();
+    if (orderIds.length > 0) {
+      const ledgerResult = await pool.query<{ customer_id: number; order_id: number | null; direction: 1 | -1; amount: number }>(
+        `SELECT cle.customer_id, cle.order_id, cle.direction, cle.amount::float AS amount
+         FROM customer_ledger_entries cle
+         WHERE cle.tenant_id = $1
+           AND cle.customer_id IN (
+             SELECT DISTINCT customer_id FROM customer_ledger_entries
+             WHERE tenant_id = $1 AND order_id = ANY($2)
+           )
+         ORDER BY cle.customer_id, cle.entry_date, cle.id`,
+        [user.tenantId, orderIds]
+      );
+      let currentCustomerId: number | null = null;
+      let currentGroup: LedgerFifoEntry[] = [];
+      const flushGroup = () => {
+        if (currentGroup.length > 0) {
+          for (const [orderId, status] of Array.from(computeOrderLedgerStatus(currentGroup))) {
+            statusByOrderId.set(orderId, status);
+          }
+        }
+      };
+      for (const row of ledgerResult.rows) {
+        if (row.customer_id !== currentCustomerId) {
+          flushGroup();
+          currentCustomerId = row.customer_id;
+          currentGroup = [];
+        }
+        currentGroup.push({ orderId: row.order_id, direction: row.direction, amount: row.amount });
+      }
+      flushGroup();
+    }
+    const items = result.rows.map((r) => {
+      const status = statusByOrderId.get(r.id as number);
+      return {
+        ...r,
+        cari_settled: status ? status.remainingAmount <= 0.009 : false,
+        cari_remaining_amount: status && status.remainingAmount > 0.009 && status.remainingAmount < status.originalAmount - 0.009
+          ? status.remainingAmount
+          : null,
+      };
+    });
+
+    return NextResponse.json({ items, total, totalAmount, totalKar, page, limit });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

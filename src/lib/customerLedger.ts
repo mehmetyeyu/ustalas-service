@@ -169,3 +169,67 @@ export async function syncOrderLedgerBatch(
     params
   );
 }
+
+// --- FIFO Cari uzlaşma hesaplaması (Sipariş listesindeki "Cari" rozeti için) ---
+// Business kararı: kısmi/toplu ödemeler her zaman EN ESKİ açık siparişten
+// başlayarak sırayla düşülür (geleneksel esnaf Cari defteri mantığı — bkz.
+// görüşme notları). Sorun: bir müşterinin toplu/tek kalemde aldığı bir ödeme
+// hangi siparişi kapattığını BELİRTMİYOR (customer_ledger_entries'teki
+// MANUEL kayıtların çoğu order_id=NULL) — bu yüzden "hangi sipariş(ler)
+// artık ödenmiş sayılır" sorusunun cevabı, müşterinin TÜM geçmişi
+// kronolojik sırayla tek bir kuyruk gibi işlenerek hesaplanıyor: her borç
+// (direction=1) kuyruğa girer, her ödeme (direction=-1) kuyruğun EN
+// ÖNÜNDEKİ (en eski) borç(lar)ı bitirene kadar sırayla düşer.
+//
+// order_id'si olmayan borçlar (MANUEL, ör. elle "borç ekle") da kuyrukta
+// yer TUTAR — aksi halde onlardan SONRA gelen bir sipariş borcu, aradaki bu
+// borcu atlayıp haksız yere önce "kapandı" görünebilirdi — ama hiçbir zaman
+// dönen kümeye eklenmez (bağlı oldukları bir sipariş yok, işaretlenecek
+// bir şey yok).
+export interface LedgerFifoEntry {
+  orderId: number | null;
+  direction: 1 | -1;
+  amount: number;
+}
+
+// remainingAmount: bu siparişin borcundan hâlâ karşılanmamış kısım (0 =
+// tamamen ödendi, originalAmount ile aynıysa hiç dokunulmamış, arası bir
+// değerse KISMEN ödenmiş — bkz. Sipariş listesindeki "Cari (₺X kaldı)"
+// rozeti, business kararıyla eklendi).
+export interface OrderLedgerStatus {
+  originalAmount: number;
+  remainingAmount: number;
+}
+
+export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]): Map<number, OrderLedgerStatus> {
+  const queue: { orderId: number | null; remaining: number }[] = [];
+  const statusByOrderId = new Map<number, OrderLedgerStatus>();
+
+  for (const entry of entriesChronological) {
+    if (entry.direction === 1) {
+      queue.push({ orderId: entry.orderId, remaining: entry.amount });
+      if (entry.orderId != null) {
+        statusByOrderId.set(entry.orderId, { originalAmount: entry.amount, remainingAmount: entry.amount });
+      }
+      continue;
+    }
+    let credit = entry.amount;
+    while (credit > 0.009 && queue.length > 0) {
+      const front = queue[0];
+      if (front.remaining <= credit + 0.009) {
+        credit -= front.remaining;
+        front.remaining = 0;
+        queue.shift();
+      } else {
+        front.remaining -= credit;
+        credit = 0;
+      }
+      if (front.orderId != null) {
+        const status = statusByOrderId.get(front.orderId);
+        if (status) status.remainingAmount = Math.max(0, front.remaining);
+      }
+    }
+  }
+
+  return statusByOrderId;
+}

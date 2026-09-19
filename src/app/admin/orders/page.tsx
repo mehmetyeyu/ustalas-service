@@ -184,6 +184,14 @@ interface OrderRow {
   unit_price: number | null;
   cost_price: number | null;
   has_split_payment: boolean;
+  // FIFO Cari uzlaşma sonucu — bkz. /api/orders GET. Sadece payment_type
+  // "Cari" olan satırlar için anlamlı; müşterinin sonraki bir ödemesi
+  // (parçalı/toplu, en eski borçtan başlayarak) bu siparişin borcunu
+  // kapatmışsa true. cari_remaining_amount, KISMEN ödenmiş siparişlerde
+  // (borcun bir kısmı düşmüş ama tamamı değil) kalan tutarı taşır, aksi
+  // halde null.
+  cari_settled: boolean;
+  cari_remaining_amount: number | null;
 }
 
 function toLocalDate(d: Date): string {
@@ -1148,7 +1156,15 @@ export default function OrdersPage() {
                           {formatCurrency(kar)}
                         </td>
                       )}
-                      {visibleCols.payment_type && <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.payment_type || "-"}</td>}
+                      {visibleCols.payment_type && (
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                          {r.payment_type === "Cari" && r.cari_settled
+                            ? "Cari (Ödendi)"
+                            : r.payment_type === "Cari" && r.cari_remaining_amount != null
+                            ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
+                            : r.payment_type || "-"}
+                        </td>
+                      )}
                       {visibleCols.notes && (
                         <td className="px-4 py-3 text-gray-500 max-w-xs truncate" title={r.notes || undefined}>
                           {r.notes || "-"}
