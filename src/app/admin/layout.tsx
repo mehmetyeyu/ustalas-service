@@ -207,6 +207,31 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, loading } = useAuth();
   const [pendingAppointments, setPendingAppointments] = useState(0);
+  const [showTrialModal, setShowTrialModal] = useState(false);
+
+  // Üstteki amber banner (aşağıda) her sayfada sessizce duruyor, kolayca
+  // gözden kaçabiliyor — deneme süresi devam eden (henüz abone olmamış)
+  // bir admin'e ARA SIRA bir modal ile daha görünür bir uyarı verilir.
+  // Kaç gün kaldığından bağımsız — henüz ödeme yapmamış her trialing
+  // tenant için geçerli. Her sayfa geçişinde göstermek rahatsız edici
+  // olurdu, bu yüzden sekme başına bir sayaç (sessionStorage) tutulup ilk
+  // geçişte ve sonra her 5 geçişte bir gösterilir. /admin/billing
+  // sayfasının kendisinde gösterilmez (zaten o sayfa aboneliği yönetiyor).
+  useEffect(() => {
+    if (loading || !user) return;
+    if (user.role !== "admin" || user.billingStatus !== "trialing") return;
+    if (pathname.startsWith("/admin/billing")) return;
+    try {
+      const key = "trial_modal_nav_count";
+      const count = Number(sessionStorage.getItem(key) || "0") + 1;
+      sessionStorage.setItem(key, String(count));
+      if (count === 1 || count % 5 === 0) setShowTrialModal(true);
+    } catch {
+      // sessionStorage engellenmiş olabilir (gizli sekme vb.) — sayaç
+      // olmadan modal hiç gösterilmez, banner zaten yeterli bir yedek.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, loading, user?.role, user?.billingStatus, user?.trialEndsAt]);
 
   // Randevu sayfasına girmeden "bekleyen randevu var mı" görülebilsin diye —
   // nav'daki rozet, kullanıcı isteği üzerine eklendi. Sayfa açılışında ve
@@ -299,6 +324,32 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <main className="p-4 sm:p-6">{children}</main>
+      {showTrialModal && user && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm text-center">
+            <h2 className="text-lg font-bold text-gray-800 mb-2">Deneme Süreniz Bitmek Üzere</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              Deneme sürenizin bitmesine <span className="font-semibold text-amber-600">{trialDaysLeft(user.trialEndsAt)} gün</span> kaldı.
+              Kesintisiz kullanmaya devam etmek için hemen abone olun.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowTrialModal(false)}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+              >
+                Daha Sonra
+              </button>
+              <Link
+                href="/admin/billing"
+                onClick={() => setShowTrialModal(false)}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                Abone Ol
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
