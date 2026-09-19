@@ -192,6 +192,10 @@ interface OrderRow {
   // halde null.
   cari_settled: boolean;
   cari_remaining_amount: number | null;
+  // Sadece cari_settled=true iken dolu — bu siparişin borcuna katkıda
+  // bulunan ödeme(ler)in yöntemi (tek yöntemse o, birden fazla farklı
+  // yöntem karıştıysa "Karışık").
+  cari_paid_via: string | null;
 }
 
 function toLocalDate(d: Date): string {
@@ -1159,7 +1163,9 @@ export default function OrdersPage() {
                       {visibleCols.payment_type && (
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                           {r.payment_type === "Cari" && r.cari_settled
-                            ? "Cari (Ödendi)"
+                            ? r.cari_paid_via
+                              ? `Cari (Ödendi - ${r.cari_paid_via})`
+                              : "Cari (Ödendi)"
                             : r.payment_type === "Cari" && r.cari_remaining_amount != null
                             ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
                             : r.payment_type || "-"}

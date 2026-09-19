@@ -190,32 +190,41 @@ export interface LedgerFifoEntry {
   orderId: number | null;
   direction: 1 | -1;
   amount: number;
+  // Sadece direction=-1 (ödeme) satırlarında anlamlı — hangi yöntemle
+  // (Nakit/POS/Nazım Hesap/vb.) tahsil edildiği. Sipariş listesindeki
+  // "Cari (Ödendi - <yöntem>)" rozeti için (bkz. OrderLedgerStatus.paidVia).
+  paymentType: string | null;
 }
 
 // remainingAmount: bu siparişin borcundan hâlâ karşılanmamış kısım (0 =
 // tamamen ödendi, originalAmount ile aynıysa hiç dokunulmamış, arası bir
 // değerse KISMEN ödenmiş — bkz. Sipariş listesindeki "Cari (₺X kaldı)"
-// rozeti, business kararıyla eklendi).
+// rozeti, business kararıyla eklendi). paidVia: bu siparişin borcuna
+// katkıda bulunan ödeme(ler)in yöntemi — tek bir yöntemse o yöntem, birden
+// fazla FARKLI yöntem karıştıysa "Karışık" (business kararı).
 export interface OrderLedgerStatus {
   originalAmount: number;
   remainingAmount: number;
+  paidVia: string | null;
 }
 
 export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]): Map<number, OrderLedgerStatus> {
   const queue: { orderId: number | null; remaining: number }[] = [];
   const statusByOrderId = new Map<number, OrderLedgerStatus>();
+  const paymentTypesByOrderId = new Map<number, Set<string>>();
 
   for (const entry of entriesChronological) {
     if (entry.direction === 1) {
       queue.push({ orderId: entry.orderId, remaining: entry.amount });
       if (entry.orderId != null) {
-        statusByOrderId.set(entry.orderId, { originalAmount: entry.amount, remainingAmount: entry.amount });
+        statusByOrderId.set(entry.orderId, { originalAmount: entry.amount, remainingAmount: entry.amount, paidVia: null });
       }
       continue;
     }
     let credit = entry.amount;
     while (credit > 0.009 && queue.length > 0) {
       const front = queue[0];
+      const applied = Math.min(front.remaining, credit);
       if (front.remaining <= credit + 0.009) {
         credit -= front.remaining;
         front.remaining = 0;
@@ -227,8 +236,20 @@ export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]
       if (front.orderId != null) {
         const status = statusByOrderId.get(front.orderId);
         if (status) status.remainingAmount = Math.max(0, front.remaining);
+        if (applied > 0.009 && entry.paymentType) {
+          let types = paymentTypesByOrderId.get(front.orderId);
+          if (!types) paymentTypesByOrderId.set(front.orderId, (types = new Set()));
+          types.add(entry.paymentType);
+        }
       }
     }
+  }
+
+  for (const [orderId, status] of Array.from(statusByOrderId)) {
+    const types = paymentTypesByOrderId.get(orderId);
+    if (!types || types.size === 0) status.paidVia = null;
+    else if (types.size === 1) status.paidVia = Array.from(types)[0];
+    else status.paidVia = "Karışık";
   }
 
   return statusByOrderId;

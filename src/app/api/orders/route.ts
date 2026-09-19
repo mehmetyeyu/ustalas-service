@@ -83,8 +83,8 @@ export async function GET(request: NextRequest) {
     const orderIds = Array.from(new Set(result.rows.map((r) => r.id as number)));
     const statusByOrderId = new Map<number, OrderLedgerStatus>();
     if (orderIds.length > 0) {
-      const ledgerResult = await pool.query<{ customer_id: number; order_id: number | null; direction: 1 | -1; amount: number }>(
-        `SELECT cle.customer_id, cle.order_id, cle.direction, cle.amount::float AS amount
+      const ledgerResult = await pool.query<{ customer_id: number; order_id: number | null; direction: 1 | -1; amount: number; payment_type: string | null }>(
+        `SELECT cle.customer_id, cle.order_id, cle.direction, cle.amount::float AS amount, cle.payment_type
          FROM customer_ledger_entries cle
          WHERE cle.tenant_id = $1
            AND cle.customer_id IN (
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
           currentCustomerId = row.customer_id;
           currentGroup = [];
         }
-        currentGroup.push({ orderId: row.order_id, direction: row.direction, amount: row.amount });
+        currentGroup.push({ orderId: row.order_id, direction: row.direction, amount: row.amount, paymentType: row.payment_type });
       }
       flushGroup();
     }
@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
         cari_remaining_amount: status && status.remainingAmount > 0.009 && status.remainingAmount < status.originalAmount - 0.009
           ? status.remainingAmount
           : null,
+        cari_paid_via: status && status.remainingAmount <= 0.009 ? status.paidVia : null,
       };
     });
 
