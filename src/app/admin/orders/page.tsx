@@ -1163,9 +1163,7 @@ export default function OrdersPage() {
                       {visibleCols.payment_type && (
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                           {r.payment_type === "Cari" && r.cari_settled
-                            ? r.cari_paid_via
-                              ? `Cari (Ödendi - ${r.cari_paid_via})`
-                              : "Cari (Ödendi)"
+                            ? r.cari_paid_via || "Cari (Ödendi)"
                             : r.payment_type === "Cari" && r.cari_remaining_amount != null
                             ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
                             : r.payment_type || "-"}
