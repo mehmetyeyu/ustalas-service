@@ -311,6 +311,34 @@ export async function upgradeSubscription(
   });
 }
 
+// docs.iyzico.com ile doğrulanmadı ama gerçek bir sandbox denemesiyle
+// doğrulandı — ?page=/&count= gibi sorgu parametreleri eklemek bu uca özgü
+// dokümante edilmemiş bir tuhaflıkla 401 ile başarısız oluyor, bu yüzden
+// PARAMETRESİZ çağrılıyor ve kullanım ölçeğimizdeki (birkaç düzine) tüm
+// abonelikleri tek seferde döndürüyor. /api/super-admin/consistency-check
+// bunu, bayat (UPGRADED) bir referansın parentReferenceCode'u altındaki
+// GERÇEK aktif kardeş aboneliği bulmak için kullanıyor — tenant sayısı
+// ciddi büyürse sayfalama/filtreleme sorunu ayrıca çözülmeli.
+export interface SubscriptionSearchItem {
+  referenceCode: string;
+  parentReferenceCode?: string;
+  pricingPlanName?: string;
+  pricingPlanReferenceCode?: string;
+  customerReferenceCode?: string;
+  customerEmail?: string;
+  subscriptionStatus?: string;
+  orders?: SubscriptionOrder[];
+}
+
+export async function listSubscriptions(): Promise<{
+  totalCount: number;
+  currentPage: number;
+  pageCount: number;
+  items: SubscriptionSearchItem[];
+}> {
+  return iyzicoRequest("GET", "/v2/subscription/subscriptions");
+}
+
 // --- Webhook imza doğrulaması (bkz. /api/webhooks/iyzico) ---
 // X-IYZ-SIGNATURE-V3 header'ı — iyzico entegrasyon ekibi hesapta AÇMADIĞI
 // sürece bu header hiç gelmez; env IYZICO_WEBHOOK_SIGNATURE_ENABLED=true

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getUsdTryRate, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
-import { createPricingPlan, upgradeSubscription } from "@/lib/iyzico";
+import { createPricingPlan, upgradeSubscription, getPricingPlan } from "@/lib/iyzico";
 import { logBillingEvent } from "@/lib/billingEvents";
 
 const PRODUCT_REF = process.env.IYZICO_PRODUCT_REF;
@@ -50,9 +50,10 @@ export async function GET(request: NextRequest) {
     id: number;
     plan: string | null;
     billing_subscription_ref: string;
+    billing_pricing_plan_ref: string | null;
     billing_period_ends_at: string;
   }>(
-    `SELECT id, plan, billing_subscription_ref, billing_period_ends_at
+    `SELECT id, plan, billing_subscription_ref, billing_pricing_plan_ref, billing_period_ends_at
      FROM tenants
      WHERE billing_status = 'active'
        AND billing_cancel_at_period_end = false
@@ -71,6 +72,21 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10);
 
     try {
+      // iyzico, hedef planı sadece kaynak aboneliğiyle AYNI ürüne ait bir
+      // plana upgrade etmeye izin veriyor (iyzico destek ekibiyle teyit
+      // edildi). Yeni plan her zaman PRODUCT_REF altında oluşturulduğundan,
+      // tenant'ın MEVCUT planı farklı bir ürüne aitse (ör. yanlış/eski bir
+      // env değeriyle oluşturulmuş) upgrade çağrısı iyzico'dan belirsiz bir
+      // hatayla başarısız olurdu — burada erken ve net bir hata verilir.
+      if (tenant.billing_pricing_plan_ref) {
+        const currentPlan = await getPricingPlan(tenant.billing_pricing_plan_ref);
+        if (currentPlan.productReferenceCode !== PRODUCT_REF) {
+          throw new Error(
+            `Mevcut ödeme planı farklı bir ürüne ait (plan ürünü: ${currentPlan.productReferenceCode}, beklenen: ${PRODUCT_REF}) — upgrade atlandı.`
+          );
+        }
+      }
+
       // iyzico plan isimlerinin benzersiz olması gerekiyor — sadece tarih
       // yeterli değil (aynı gün ikinci bir çalıştırma/tenant "Ödeme planı
       // zaten var" hatasıyla çakışır, gerçek bir denemede saptandı). Tenant

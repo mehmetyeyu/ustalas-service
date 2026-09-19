@@ -6,6 +6,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { USD_REFERENCE_PRICING, formatTry } from "@/lib/exchangeRate";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
+import type { ConsistencyCheckResult } from "@/app/api/super-admin/consistency-check/route";
 
 // paymentStatus'un tam değer haritası iyzico tarafından dokümante edilmemiş
 // — gerçek başarılı ödemelerde gözlemlenen tek değer "SUCCESS" (bkz.
@@ -46,6 +47,7 @@ const BILLING_EVENT_LABELS: Record<string, { label: string; className: string }>
   ifn_tenant_not_found: { label: "Eşleşmeyen IFN", className: "bg-amber-100 text-amber-700" },
   reprice_success: { label: "Repricing başarılı", className: "bg-blue-100 text-blue-700" },
   reprice_failure: { label: "Repricing başarısız", className: "bg-red-100 text-red-700" },
+  consistency_fixed: { label: "Tutarlılık düzeltildi", className: "bg-blue-100 text-blue-700" },
 };
 
 interface Tenant {
@@ -129,6 +131,15 @@ export default function SuperAdminPage() {
   // panelde de görünmesi için.
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [billingEventsLoading, setBillingEventsLoading] = useState(true);
+
+  // DB↔iyzico abonelik tutarlılık denetimi — bkz. /api/super-admin/
+  // consistency-check. Otomatik çalışmaz, sadece "Tutarlılığı Kontrol Et"
+  // butonuyla isteğe bağlı tetiklenir (her tetiklemede aktif tenant sayısı
+  // kadar canlı iyzico çağrısı yapıyor).
+  const [showConsistencyModal, setShowConsistencyModal] = useState(false);
+  const [consistencyResults, setConsistencyResults] = useState<ConsistencyCheckResult[] | null>(null);
+  const [consistencyLoading, setConsistencyLoading] = useState(false);
+  const [fixingTenantId, setFixingTenantId] = useState<number | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [tenantName, setTenantName] = useState("");
@@ -235,6 +246,60 @@ export default function SuperAdminPage() {
     }
   }
 
+  async function handleConsistencyCheck() {
+    setShowConsistencyModal(true);
+    setConsistencyResults(null);
+    setConsistencyLoading(true);
+    try {
+      const res = await fetch("/api/super-admin/consistency-check");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Tutarlılık denetimi başarısız.");
+      const results: ConsistencyCheckResult[] = Array.isArray(data.results) ? data.results : [];
+      setConsistencyResults(results);
+      const mismatchCount = results.filter((r) => !r.ok).length;
+      if (mismatchCount === 0) {
+        toast.success(`${results.length} firma kontrol edildi, uyumsuzluk bulunamadı.`);
+      } else {
+        toast.error(`${results.length} firmadan ${mismatchCount} tanesinde uyumsuzluk bulundu.`);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+      setShowConsistencyModal(false);
+    } finally {
+      setConsistencyLoading(false);
+    }
+  }
+
+  async function handleFixConsistency(r: ConsistencyCheckResult) {
+    if (!r.suggestedFix) return;
+    setFixingTenantId(r.tenantId);
+    try {
+      const res = await fetch("/api/super-admin/consistency-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId: r.tenantId,
+          subscriptionRef: r.suggestedFix.subscriptionRef,
+          pricingPlanRef: r.suggestedFix.pricingPlanRef,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Düzeltme başarısız.");
+      toast.success(`${r.tenantName} için referans düzeltildi.`);
+      setConsistencyResults((prev) =>
+        (prev ?? []).map((item) =>
+          item.tenantId === r.tenantId
+            ? { ...item, ok: true, iyzicoStatus: "ACTIVE", subscriptionRef: r.suggestedFix!.subscriptionRef, suggestedFix: undefined }
+            : item
+        )
+      );
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setFixingTenantId(null);
+    }
+  }
+
   function openAddModal() {
     setTenantName("");
     setAdminUsername("");
@@ -301,12 +366,20 @@ export default function SuperAdminPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-gray-800">Firmalar</h2>
-        <button
-          onClick={openAddModal}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
-        >
-          + Yeni Firma Ekle
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleConsistencyCheck}
+            className="border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            Tutarlılığı Kontrol Et
+          </button>
+          <button
+            onClick={openAddModal}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            + Yeni Firma Ekle
+          </button>
+        </div>
       </div>
 
       {!loading && tenants.length > 0 && (
@@ -708,6 +781,70 @@ export default function SuperAdminPage() {
                       <td></td>
                     </tr>
                   </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showConsistencyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">DB↔iyzico Tutarlılık Denetimi</h2>
+              <button
+                onClick={() => setShowConsistencyModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-sm font-medium"
+              >
+                Kapat
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {consistencyLoading ? (
+                <div className="text-center text-gray-400 py-12">Kontrol ediliyor...</div>
+              ) : !consistencyResults || consistencyResults.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">Kontrol edilecek aktif abonelik bulunamadı.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Firma</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bizdeki Referans</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">iyzico Durumu</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Sonuç</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {consistencyResults.map((r) => (
+                      <tr key={r.tenantId} className={r.ok ? "" : "bg-red-50"}>
+                        <td className="px-3 py-2 text-gray-800 font-medium whitespace-nowrap">{r.tenantName}</td>
+                        <td className="px-3 py-2 text-gray-500 font-mono text-xs whitespace-nowrap">{r.subscriptionRef}</td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.iyzicoStatus ?? r.error ?? "—"}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {r.ok ? (
+                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Uyumlu</span>
+                          ) : (
+                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">Uyumsuz</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {!r.ok && r.suggestedFix && (
+                            <button
+                              onClick={() => handleFixConsistency(r)}
+                              disabled={fixingTenantId === r.tenantId}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-40"
+                            >
+                              {fixingTenantId === r.tenantId ? "Düzeltiliyor..." : "Düzelt"}
+                            </button>
+                          )}
+                          {!r.ok && !r.suggestedFix && !r.error && (
+                            <span className="text-xs text-gray-400">Otomatik düzeltme bulunamadı</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
               )}
             </div>
