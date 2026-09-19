@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { buildCustomerFromTenant, cancelSubscription, initializeCheckoutForm } from "@/lib/iyzico";
+import { isInvoiceInfoComplete } from "@/lib/billing";
 
 const PLAN_REFS: Record<string, string | undefined> = {
   monthly: process.env.IYZICO_PLAN_MONTHLY_REF,
@@ -45,11 +46,14 @@ export async function POST(request: NextRequest) {
     const claimResult = await pool.query<{
       name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
       billing_subscription_ref: string | null; billing_cancel_at_period_end: boolean;
+      billing_entity_type: string | null; billing_tax_id: string | null; billing_tax_office: string | null;
+      billing_invoice_title: string | null; billing_city: string | null; billing_district: string | null; billing_address: string | null;
     }>(
       `UPDATE tenants SET billing_checkout_lock_at = now()
        WHERE id = $1
          AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
-       RETURNING name, contact_name, contact_email, contact_phone, billing_subscription_ref, billing_cancel_at_period_end`,
+       RETURNING name, contact_name, contact_email, contact_phone, billing_subscription_ref, billing_cancel_at_period_end,
+                 billing_entity_type, billing_tax_id, billing_tax_office, billing_invoice_title, billing_city, billing_district, billing_address`,
       [user.tenantId]
     );
     const tenant = claimResult.rows[0];
@@ -60,6 +64,11 @@ export async function POST(request: NextRequest) {
         { error: "Devam eden bir ödeme işlemi var. Birkaç dakika sonra tekrar deneyin." },
         { status: 400 }
       );
+    }
+    // bkz. /api/billing/checkout — aynı VUK gerekçesi.
+    if (!isInvoiceInfoComplete(tenant)) {
+      await pool.query("UPDATE tenants SET billing_checkout_lock_at = NULL WHERE id = $1", [user.tenantId]);
+      return NextResponse.json({ error: "Devam etmeden önce fatura bilgilerinizi tamamlamanız gerekiyor." }, { status: 400 });
     }
 
     try {

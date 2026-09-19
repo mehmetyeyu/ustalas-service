@@ -40,3 +40,41 @@ export function trialDaysLeft(trialEndsAt: string | Date | null): number {
   const ms = new Date(trialEndsAt).getTime() - Date.now();
   return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
+
+// Fatura bilgileri — VUK md. 231/5 (ilk tahsilattan itibaren 7 gün içinde
+// e-Fatura/e-Arşiv kesme zorunluluğu) gereği checkout/switch-plan'dan ÖNCE
+// tam olmaları gerekiyor (bkz. database/schema.sql tenants.billing_* notu).
+// TEK doğruluk kaynağı burası — hem /api/billing/invoice-info (kaydetme),
+// hem /api/billing/checkout ve switch-plan (ödeme öncesi zorunlu kontrol)
+// aynı fonksiyonu kullanır.
+export interface InvoiceInfo {
+  billing_entity_type: string | null;
+  billing_tax_id: string | null;
+  billing_tax_office: string | null;
+  billing_invoice_title: string | null;
+  billing_city: string | null;
+  billing_district: string | null;
+  billing_address: string | null;
+}
+
+const TCKN_RE = /^\d{11}$/;
+const VKN_RE = /^\d{10}$/;
+
+export function isInvoiceInfoComplete(info: InvoiceInfo): boolean {
+  if (
+    !info.billing_entity_type ||
+    !info.billing_invoice_title?.trim() ||
+    !info.billing_city?.trim() ||
+    !info.billing_district?.trim() ||
+    !info.billing_address?.trim()
+  ) {
+    return false;
+  }
+  if (info.billing_entity_type === "individual") {
+    return TCKN_RE.test(info.billing_tax_id ?? "");
+  }
+  if (info.billing_entity_type === "company") {
+    return VKN_RE.test(info.billing_tax_id ?? "") && !!info.billing_tax_office?.trim();
+  }
+  return false;
+}

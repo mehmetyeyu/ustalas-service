@@ -1228,3 +1228,24 @@ CREATE TABLE IF NOT EXISTS billing_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_billing_events_created_at ON billing_events(created_at DESC);
+
+-- Fatura bilgileri — VUK md. 231/5 gereği ilk tahsilattan itibaren 7 gün
+-- içinde e-Fatura/e-Arşiv kesme zorunluluğu var (bkz. görüşme notları,
+-- İşNet Nettefatura entegrasyonu planı) ama bunun için gereken hiçbir alan
+-- daha önce toplanmıyordu — checkout'a giden adres bile gerçek değildi
+-- (bkz. src/lib/iyzico.ts buildCustomerFromTenant, sabit "İstanbul,
+-- Türkiye" placeholder'ı SADECE iyzico'nun kendi zorunlu alanı içindi,
+-- fatura için kullanılamaz). billing_entity_type ('individual'|'company')
+-- hangi kimlik alanının isteneceğini belirler: bireyselde billing_tax_id
+-- TCKN (11 hane), şirkette VKN (10 hane) + billing_tax_office zorunlu.
+-- billing_invoice_title, faturadaki resmi unvan/ad soyad — tenants.name
+-- (görünen firma adı) ile AYNI olmak zorunda değil. Alıcının e-Fatura
+-- mükellefi olup olmadığı burada AYRICA tutulmaz — VKN ile mükellefiyet
+-- sorgulama API'siyle fatura kesilirken anlık öğrenilir.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_entity_type VARCHAR(20);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_tax_id VARCHAR(11);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_tax_office VARCHAR(100);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_invoice_title VARCHAR(200);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_city VARCHAR(100);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_district VARCHAR(100);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_address TEXT;

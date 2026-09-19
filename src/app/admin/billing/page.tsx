@@ -7,6 +7,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { trialDaysLeft } from "@/lib/billing";
 import { formatTry2, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
+import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 
 interface PlanInfo {
   referenceCode: string;
@@ -63,6 +64,14 @@ function BillingPageContent() {
   // önce bu container'ın render edilmiş olması gerektiğinden state+effect ile
   // sıralanıyor (aşağıya bkz.).
   const [pendingFormContent, setPendingFormContent] = useState<string | null>(null);
+
+  // Fatura bilgileri — VUK md. 231/5 gereği ödemeden ÖNCE tamamlanmış
+  // olmaları gerekiyor (bkz. src/lib/billing.ts isInvoiceInfoComplete,
+  // /api/billing/checkout ve switch-plan aynı kontrolü sunucu tarafında da
+  // zorunlu kılıyor — buradaki gate sadece UX, asıl güvenlik orada). Form
+  // kendisi InvoiceInfoForm'da (bkz. src/components/) — /admin/profile'da
+  // da AYNI bileşen kullanılıyor, tek doğruluk kaynağı orta.
+  const [invoiceComplete, setInvoiceComplete] = useState(false);
 
   useEffect(() => {
     const result = searchParams.get("result");
@@ -295,8 +304,16 @@ function BillingPageContent() {
           {/* isActive && !canSwitchPlanNow durumunda hiçbir kart aksiyon
               butonu göstermiyor (mevcut plan "Mevcut Planınız" düz metni,
               diğeri "yenileme tarihine yakın" bilgi metni) — bu yüzden
-              onay kutusu da o durumda gizlenir, aksi halde hiçbir düğmeye
-              bağlı olmadan anlamsızca ekranda kalırdı. */}
+              fatura formu/onay kutusu da o durumda gizlenir, aksi halde
+              hiçbir düğmeye bağlı olmadan anlamsızca ekranda kalırdı. */}
+          {(!isActive || canSwitchPlanNow) && (
+            <div className="mb-6">
+              <InvoiceInfoForm
+                description="Yasal olarak ödemeden önce tamamlanması gerekiyor — abonelik/plan değişikliği faturası bu bilgilerle kesilecek. Profil sayfanızdan da güncelleyebilirsiniz."
+                onStatusChange={setInvoiceComplete}
+              />
+            </div>
+          )}
           {(!isActive || canSwitchPlanNow) && (
           <label className="flex items-start gap-2.5 text-sm text-gray-600 mb-4">
             <input
@@ -347,7 +364,7 @@ function BillingPageContent() {
                   ) : isActive && canSwitchPlanNow ? (
                     <button
                       onClick={() => switchPlan(key)}
-                      disabled={submitting !== null || !acceptedTerms}
+                      disabled={submitting !== null || !acceptedTerms || !invoiceComplete}
                       className="w-full border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                     >
                       {submitting === key ? "İşleniyor..." : "Bu Plana Geç"}
@@ -359,7 +376,7 @@ function BillingPageContent() {
                   ) : (
                     <button
                       onClick={() => startCheckout(key)}
-                      disabled={submitting !== null || !acceptedTerms}
+                      disabled={submitting !== null || !acceptedTerms || !invoiceComplete}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg disabled:opacity-50"
                     >
                       {submitting === key ? "Yönlendiriliyor..." : "Abone Ol"}

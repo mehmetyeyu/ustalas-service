@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { trialDaysLeft } from "@/lib/billing";
+import { trialDaysLeft, isInvoiceInfoComplete } from "@/lib/billing";
 import { buildCustomerFromTenant, cancelSubscription, initializeCheckoutForm } from "@/lib/iyzico";
 
 const PLAN_REFS: Record<string, string | undefined> = {
@@ -54,12 +54,15 @@ export async function POST(request: NextRequest) {
     const claimResult = await pool.query<{
       name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
       billing_status: string | null; trial_ends_at: string | null; billing_subscription_ref: string | null;
+      billing_entity_type: string | null; billing_tax_id: string | null; billing_tax_office: string | null;
+      billing_invoice_title: string | null; billing_city: string | null; billing_district: string | null; billing_address: string | null;
     }>(
       `UPDATE tenants SET billing_checkout_lock_at = now()
        WHERE id = $1
          AND (billing_status IS DISTINCT FROM 'active' OR billing_cancel_at_period_end = true)
          AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
-       RETURNING name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at, billing_subscription_ref`,
+       RETURNING name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at, billing_subscription_ref,
+                 billing_entity_type, billing_tax_id, billing_tax_office, billing_invoice_title, billing_city, billing_district, billing_address`,
       [user.tenantId]
     );
     const tenant = claimResult.rows[0];
@@ -70,6 +73,14 @@ export async function POST(request: NextRequest) {
         { error: "Zaten aktif bir aboneliğiniz var ya da devam eden bir ödeme işlemi var. Birkaç dakika sonra tekrar deneyin." },
         { status: 400 }
       );
+    }
+    // VUK md. 231/5 gereği ilk tahsilattan itibaren 7 gün içinde fatura
+    // kesme zorunluluğu var (bkz. src/lib/billing.ts isInvoiceInfoComplete
+    // notu) — kilit ALINDIKTAN sonra kontrol edilir, aksi halde eksikse her
+    // "Abone Ol" denemesi kilidi boşuna claim edip serbest bırakırdı.
+    if (!isInvoiceInfoComplete(tenant)) {
+      await pool.query("UPDATE tenants SET billing_checkout_lock_at = NULL WHERE id = $1", [user.tenantId]);
+      return NextResponse.json({ error: "Devam etmeden önce fatura bilgilerinizi tamamlamanız gerekiyor." }, { status: 400 });
     }
 
     try {
