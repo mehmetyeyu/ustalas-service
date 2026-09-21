@@ -1,3 +1,5 @@
+const { withSentryConfig } = require("@sentry/nextjs/config");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
@@ -52,7 +54,12 @@ const nextConfig = {
         // karakter gerekiyor, tek bir sabit domain yeterli değil.
         "img-src 'self' data: https://*.iyzipay.com https://*.public.blob.vercel-storage.com",
         "font-src 'self'",
-        "connect-src 'self' https://*.iyzipay.com",
+        // *.ingest.us.sentry.io: hata izleme (Sentry) client SDK'sının
+        // tarayıcıdan doğrudan gönderdiği event istekleri — bkz.
+        // src/instrumentation-client.ts. Bu olmadan Sentry sessizce CSP'ye
+        // takılıp hiç event göndermez (Vercel Blob img-src'de yaşanan
+        // sorunla aynı sınıf hata, önceden düzeltildi).
+        "connect-src 'self' https://*.iyzipay.com https://*.ingest.us.sentry.io",
         "frame-src 'self' https://*.iyzipay.com",
         "base-uri 'self'",
         "form-action 'self'",
@@ -77,4 +84,17 @@ const nextConfig = {
     ];
   },
 };
-module.exports = nextConfig;
+module.exports = withSentryConfig(nextConfig, {
+  org: "yeyu",
+  project: "javascript-nextjs",
+  silent: !process.env.CI,
+  // Source map yüklemek için SENTRY_AUTH_TOKEN gerekiyor (henüz eklenmedi) —
+  // token yoksa build sadece uyarı verir, başarısız olmaz.
+  widenClientFileUpload: true,
+  webpack: {
+    treeshake: { removeDebugLogging: true },
+    // Vercel Cron job monitörü (reprice-subscriptions) ayrı bir özellik,
+    // şimdilik kapsamda değil.
+    automaticVercelMonitors: false,
+  },
+});

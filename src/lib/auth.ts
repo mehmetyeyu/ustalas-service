@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import * as Sentry from "@sentry/nextjs";
 import pool from "./db";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
@@ -74,7 +75,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
 
   const result = await pool.query(
     `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
-            u.tenant_id, t.is_active AS tenant_is_active,
+            u.tenant_id, t.name AS tenant_name, t.is_active AS tenant_is_active,
             t.billing_status, t.trial_ends_at, t.plan,
             t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error
      FROM users u
@@ -102,6 +103,15 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
   ) {
     return null;
   }
+
+  // Sentry'de hataları firma bazında filtreleyebilmek için — tek merkezden
+  // (bu fonksiyondan) etiketlendiği için her route'a ayrı ayrı eklenmesi
+  // gerekmiyor. Sadece bu isteğin izole scope'unu etiketler, global durum
+  // değiştirmez (bkz. @sentry/nextjs'in Next.js için otomatik istek
+  // izolasyonu).
+  Sentry.setTag("tenant_id", user.tenant_id ?? "yok");
+  Sentry.setTag("tenant_name", user.tenant_name ?? "yok");
+  Sentry.setUser({ id: String(payload.userId), username: user.username });
 
   return {
     userId: payload.userId,
