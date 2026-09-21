@@ -1261,3 +1261,13 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_address TEXT;
 -- yüklemesinde tam taramaya dönüşürdü.
 CREATE INDEX IF NOT EXISTS customer_ledger_entries_tenant_order_idx
   ON customer_ledger_entries(tenant_id, order_id);
+
+-- Rakip firma karşılaştırmasında (Firma Bilgileri ekranı) eksik bulundu —
+-- mevcut contact_phone "Yetkili Cep Telefon"a karşılık geliyordu, ayrı bir
+-- sabit hat alanı yoktu; web sitesi de hiç yoktu. contact_name/email/phone
+-- ile AYNI yerde (Genel Ayarlar > Şirket Bilgisi) yaşıyorlar — o bölüm
+-- Paylaşılan Stok eşleşmesinde karşı firmaya gösterilen, düşük riskli
+-- iletişim bilgileri kategorisi; Vergi Dairesi/VKN gibi hassas alanlar
+-- KASITLI OLARAK buraya eklenmedi (cross-tenant görünür olurdu).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS landline_phone VARCHAR(30);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS website VARCHAR(200);

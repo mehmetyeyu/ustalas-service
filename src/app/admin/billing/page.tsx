@@ -69,8 +69,9 @@ function BillingPageContent() {
   // olmaları gerekiyor (bkz. src/lib/billing.ts isInvoiceInfoComplete,
   // /api/billing/checkout ve switch-plan aynı kontrolü sunucu tarafında da
   // zorunlu kılıyor — buradaki gate sadece UX, asıl güvenlik orada). Form
-  // kendisi InvoiceInfoForm'da (bkz. src/components/) — /admin/profile'da
-  // da AYNI bileşen kullanılıyor, tek doğruluk kaynağı orta.
+  // kendisi InvoiceInfoForm'da (bkz. src/components/) — /admin/settings'te
+  // (Genel Ayarlar, firma çapında bir bilgi olduğundan Profil'den DEĞİL
+  // oradan yönetiliyor) da AYNI bileşen kullanılıyor, tek doğruluk kaynağı.
   const [invoiceComplete, setInvoiceComplete] = useState(false);
 
   useEffect(() => {
@@ -309,7 +310,7 @@ function BillingPageContent() {
           {(!isActive || canSwitchPlanNow) && (
             <div className="mb-6">
               <InvoiceInfoForm
-                description="Yasal olarak ödemeden önce tamamlanması gerekiyor — abonelik/plan değişikliği faturası bu bilgilerle kesilecek. Profil sayfanızdan da güncelleyebilirsiniz."
+                description="Yasal olarak ödemeden önce tamamlanması gerekiyor — abonelik/plan değişikliği faturası bu bilgilerle kesilecek. Genel Ayarlar sayfanızdan da güncelleyebilirsiniz."
                 onStatusChange={setInvoiceComplete}
               />
             </div>

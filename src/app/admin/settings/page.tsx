@@ -7,6 +7,7 @@ import { CopyBox } from "@/components/CopyBox";
 import { useToast } from "@/components/ToastProvider";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { formatTurkishPhoneInput } from "@/lib/phone";
+import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 
 export default function GeneralSettingsPage() {
   const toast = useToast();
@@ -40,6 +41,8 @@ export default function GeneralSettingsPage() {
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+  const [landlinePhone, setLandlinePhone] = useState("");
+  const [website, setWebsite] = useState("");
   const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState<string | null>(null);
   const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState<string | null>(null);
   const [whatsappTemplateName, setWhatsappTemplateName] = useState<string | null>(null);
@@ -81,6 +84,8 @@ export default function GeneralSettingsPage() {
         setContactName(data.contact_name ?? "");
         setContactEmail(data.contact_email ?? "");
         setContactPhone(data.contact_phone ?? "");
+        setLandlinePhone(data.landline_phone ?? "");
+        setWebsite(data.website ?? "");
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : "Ayarlar yüklenemedi.");
       } finally {
@@ -151,6 +156,8 @@ export default function GeneralSettingsPage() {
           contact_name: contactName.trim(),
           contact_email: contactEmail.trim(),
           contact_phone: contactPhone.trim(),
+          landline_phone: landlinePhone.trim(),
+          website: website.trim(),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
@@ -182,21 +189,6 @@ export default function GeneralSettingsPage() {
         </div>
 
         <CopyBox compact label="Firma Kodu (giriş için)" value={code} />
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Depoda Bekleme Uyarı Eşiği (ay)</label>
-          <input
-            type="number"
-            min={1}
-            max={60}
-            value={overdueMonths}
-            onChange={(e) => setOverdueMonths(e.target.value)}
-            className="w-32 border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            Depolama listesinde bu süreden uzun süredir bekleyen lastikler uyarı olarak vurgulanır.
-          </p>
-        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -225,8 +217,8 @@ export default function GeneralSettingsPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Telefon (Cep)</label>
           <input
             type="tel"
             value={contactPhone}
@@ -235,6 +227,33 @@ export default function GeneralSettingsPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Sabit Telefon</label>
+          <input
+            type="tel"
+            value={landlinePhone}
+            onChange={(e) => setLandlinePhone(formatTurkishPhoneInput(e.target.value))}
+            placeholder="0212 000 00 00"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Web Sitesi</label>
+          <input
+            type="text"
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+            placeholder="www.firmaniz.com"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      {/* Şirket Bilgisi kartından KASITLI olarak ayrı — o kart Paylaşılan
+          Stok eşleşmesinde karşı firmaya gösterilir, buradaki (VKN/Vergi
+          Dairesi) ASLA cross-tenant görünmemeli. */}
+      <div className="mb-6">
+        <InvoiceInfoForm description="Fatura kesimi için kullanılan bilgiler — Abonelik sayfasında ödemeden önce de tamamlanması zorunludur." />
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -339,6 +358,22 @@ export default function GeneralSettingsPage() {
         </select>
         <p className="text-xs text-gray-400 mt-1">
           Sipariş Listesi sayfası açıldığında bu tarih aralığı varsayılan olarak uygulanır.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Depolama</h2>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Depoda Bekleme Uyarı Eşiği (ay)</label>
+        <input
+          type="number"
+          min={1}
+          max={60}
+          value={overdueMonths}
+          onChange={(e) => setOverdueMonths(e.target.value)}
+          className="w-32 border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          Depolama listesinde bu süreden uzun süredir bekleyen lastikler uyarı olarak vurgulanır.
         </p>
       </div>
 

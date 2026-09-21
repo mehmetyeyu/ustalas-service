@@ -16,8 +16,11 @@ export async function GET() {
   // "Embed Kodu" bölümünün doğru /randevu/<slug> URL'ini gösterebilmesi,
   // code ise Genel Ayarlar'ın girişte kullanılan Firma Kodu'nu gösterebilmesi
   // için burada ayrıca ekleniyor.
-  const tenantResult = await pool.query<{ slug: string; code: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null }>(
-    "SELECT slug, code, contact_name, contact_email, contact_phone FROM tenants WHERE id = $1",
+  const tenantResult = await pool.query<{
+    slug: string; code: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
+    landline_phone: string | null; website: string | null;
+  }>(
+    "SELECT slug, code, contact_name, contact_email, contact_phone, landline_phone, website FROM tenants WHERE id = $1",
     [user.tenantId]
   );
   // whatsapp_access_token asla ham haliyle client'a dönmez — sadece kayıtlı
@@ -32,6 +35,8 @@ export async function GET() {
     contact_name: tenantResult.rows[0]?.contact_name ?? null,
     contact_email: tenantResult.rows[0]?.contact_email ?? null,
     contact_phone: tenantResult.rows[0]?.contact_phone ?? null,
+    landline_phone: tenantResult.rows[0]?.landline_phone ?? null,
+    website: tenantResult.rows[0]?.website ?? null,
   });
 }
 
@@ -85,6 +90,14 @@ export async function PUT(request: NextRequest) {
     if (contactPhoneRaw && !contact_phone) {
       return NextResponse.json({ error: "Geçersiz telefon numarası." }, { status: 400 });
     }
+    // Sabit hat — normalizeTurkishPhone mobil/sabit ayrımı yapmıyor (bkz.
+    // src/lib/phone.ts), aynı doğrulama/biçim burada da geçerli.
+    const landlinePhoneRaw = body.landline_phone ? String(body.landline_phone).trim() : "";
+    const landline_phone = landlinePhoneRaw ? normalizeTurkishPhone(landlinePhoneRaw) : null;
+    if (landlinePhoneRaw && !landline_phone) {
+      return NextResponse.json({ error: "Geçersiz sabit telefon numarası." }, { status: 400 });
+    }
+    const website = body.website ? String(body.website).trim().slice(0, 200) || null : null;
 
     if (!business_name) {
       return NextResponse.json({ error: "İşletme adı zorunludur." }, { status: 400 });
@@ -171,8 +184,8 @@ export async function PUT(request: NextRequest) {
     // firma adı eskisi olarak kalır (bkz. gerçek bir müşteri raporu: XXX ->
     // Yeyu Lastik yeniden adlandırılınca Süper Admin'de görünmedi).
     await pool.query(
-      "UPDATE tenants SET name=$1, contact_name=$2, contact_email=$3, contact_phone=$4 WHERE id=$5",
-      [business_name, contact_name, contact_email, contact_phone, user.tenantId]
+      "UPDATE tenants SET name=$1, contact_name=$2, contact_email=$3, contact_phone=$4, landline_phone=$5, website=$6 WHERE id=$7",
+      [business_name, contact_name, contact_email, contact_phone, landline_phone, website, user.tenantId]
     );
 
     invalidateBookingConfigCache(user.tenantId!);
@@ -186,7 +199,7 @@ export async function PUT(request: NextRequest) {
       auto_register_customers, orders_default_date_filter,
       whatsapp_enabled, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
       shared_stock_enabled,
-      contact_name, contact_email, contact_phone,
+      contact_name, contact_email, contact_phone, landline_phone, website,
     });
   } catch (error) {
     console.error(error);

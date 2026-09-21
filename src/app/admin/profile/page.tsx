@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
-import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Yönetici",
@@ -115,12 +114,6 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
-
-      {role === "admin" && (
-        <div className="mb-6">
-          <InvoiceInfoForm description="Fatura kesimi için kullanılan bilgiler — Abonelik sayfasından da güncelleyebilirsiniz." />
-        </div>
-      )}
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <h2 className="text-sm font-semibold text-gray-500 mb-4">Kullanıcı Adını Değiştir</h2>
