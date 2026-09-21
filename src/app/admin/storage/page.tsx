@@ -193,13 +193,23 @@ function isOverdue(islem_tarihi: string | null, thresholdMonths: number): boolea
   return stored < threshold;
 }
 
-function printLabel(item: StorageItem) {
+// Genel Ayarlar > Marka'da yüklenmişse (bkz. src/app/admin/orders/[id]/page.tsx
+// printWorkOrder'daki AYNI desen) firma logosu etikette de gösterilir —
+// yazdırmadan hemen önce çekilir, ayrı bir state/prop olarak taşınmaz.
+async function printLabel(item: StorageItem) {
   const date = item.islem_tarihi
     ? new Date(item.islem_tarihi).toLocaleDateString("tr-TR")
     : new Date().toLocaleDateString("tr-TR");
 
+  let logoUrl: string | null = null;
+  try {
+    const res = await fetch("/api/company-info");
+    if (res.ok) logoUrl = (await res.json()).logoUrl ?? null;
+  } catch { /* logo olmadan da yazdırılabilir, sessizce devam */ }
+
   const labelHtml = `
     <div class="label">
+      ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="" />` : ""}
       <div class="plate">${item.plate ?? "—"}</div>
       <table>
         <tr><td class="lbl">Sıra No</td><td class="val sira">${item.depo_no ?? "—"}</td></tr>
@@ -226,13 +236,19 @@ function printLabel(item: StorageItem) {
     width: 148.5mm;
     height: 210mm;
     border: 1px dashed #aaa;
-    padding: 14mm 12mm;
+    /* Üst padding daralt (14mm -> 8mm) — büyüyen logoya yer açmak için;
+       alt padding aynı (14mm) kalıyor. */
+    padding: 8mm 12mm 14mm;
     font-family: Arial, sans-serif;
     display: flex;
     flex-direction: column;
-    gap: 10mm;
   }
   .label:first-child { border-right: 2px dashed #aaa; }
+  /* Sabit 210mm yükseklikli sayfaya logo eklenince taşıp ikinci sayfaya
+     düşmesin diye gap yerine (logo yokken TAM olarak eskisiyle aynı
+     görünüm kalsın diye) sadece logo VARSA devreye giren, üçü de EŞİT
+     (5mm) boşluklar kullanılıyor: logo üstü, logo altı, plaka altı. */
+  .logo { max-height: 17mm; max-width: 100%; object-fit: contain; align-self: center; margin-top: 5mm; margin-bottom: 5mm; }
   .plate {
     font-size: 36pt;
     font-weight: bold;
@@ -241,6 +257,7 @@ function printLabel(item: StorageItem) {
     border: 3px solid #000;
     padding: 6mm;
     border-radius: 4mm;
+    margin-bottom: 5mm;
   }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 3.5mm 2mm; border-bottom: 1px solid #eee; font-size: 14pt; }
