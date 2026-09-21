@@ -45,7 +45,12 @@ const nextConfig = {
         // gerektirdiği görülürse burası genişletilmeli.
         "script-src 'self' 'unsafe-inline' https://*.iyzipay.com",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: https://*.iyzipay.com",
+        // *.public.blob.vercel-storage.com: Firma Logosu/Panel Logosu/Kaşe
+        // (bkz. src/app/api/company-info/assets/route.ts) — her Vercel Blob
+        // store'u kendi rastgele alt alan adını kullanıyor (ör.
+        // rxi4mvrnlkr1y2pv.public.blob.vercel-storage.com), o yüzden joker
+        // karakter gerekiyor, tek bir sabit domain yeterli değil.
+        "img-src 'self' data: https://*.iyzipay.com https://*.public.blob.vercel-storage.com",
         "font-src 'self'",
         "connect-src 'self' https://*.iyzipay.com",
         "frame-src 'self' https://*.iyzipay.com",
