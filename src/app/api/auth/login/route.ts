@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import pool from "@/lib/db";
-import { signToken } from "@/lib/auth";
+import { signToken, REMEMBER_ME_EXPIRES_IN, REMEMBER_ME_MAX_AGE_SECONDS } from "@/lib/auth";
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
 export async function POST(request: NextRequest) {
   try {
-    const { code, username, password } = await request.json();
+    const { code, username, password, rememberMe } = await request.json();
 
     if (!code || !username || !password) {
       return NextResponse.json(
@@ -85,11 +85,12 @@ export async function POST(request: NextRequest) {
       [user.id]
     );
 
-    const token = await signToken({
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-    });
+    // "Beni Hatırla" — bkz. src/lib/auth.ts REMEMBER_ME_* notu, işaretlenmezse
+    // davranış hiç değişmez (JWT_EXPIRES_IN + 12 saatlik cookie).
+    const token = await signToken(
+      { userId: user.id, username: user.username, role: user.role },
+      rememberMe === true ? REMEMBER_ME_EXPIRES_IN : undefined
+    );
 
     const response = NextResponse.json({
       success: true,
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       // JWT_EXPIRES_IN (lib/auth.ts) ile aynı süre olmalı, cookie ömrü token'ı
       // aşarsa geçersiz token tarayıcıda gereksiz yere tutulur.
-      maxAge: 60 * 60 * 12,
+      maxAge: rememberMe === true ? REMEMBER_ME_MAX_AGE_SECONDS : 60 * 60 * 12,
       path: "/",
     });
 

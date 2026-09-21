@@ -4,6 +4,13 @@ import pool from "./db";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "8h";
+// "Beni Hatırla" — giriş formundaki opsiyonel kutu işaretlenirse (bkz.
+// /api/auth/login, admin/login/page.tsx) hem JWT'nin hem cookie'nin ömrü
+// bununla değiştirilir; işaretlenmezse mevcut davranış (JWT_EXPIRES_IN +
+// 12 saatlik cookie) hiç değişmeden kalır. İkisi TEK yerden (burada)
+// türetildiği için birbirinden asla sapmaz.
+export const REMEMBER_ME_EXPIRES_IN = "30d";
+export const REMEMBER_ME_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 export interface JwtPayload {
   userId: number;
@@ -30,14 +37,14 @@ export interface JwtPayload {
   iatMs?: number;
 }
 
-export async function signToken(payload: JwtPayload): Promise<string> {
+export async function signToken(payload: JwtPayload, expiresIn: string = JWT_EXPIRES_IN): Promise<string> {
   // iat (jose/JWT standardı) saniyeye yuvarlanır — zorla oturum sonlandırma
   // (tokens_invalid_before) kontrolü milisaniye hassasiyeti gerektirdiğinden
   // ayrıca iatMs de gömülür (bkz. getAuthUser).
   return await new SignJWT({ ...payload, iatMs: Date.now() })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRES_IN)
+    .setExpirationTime(expiresIn)
     .sign(JWT_SECRET);
 }
 

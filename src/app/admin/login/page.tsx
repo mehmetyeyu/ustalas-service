@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [businessName, setBusinessName] = useState(DEFAULT_BUSINESS_NAME);
 
@@ -46,7 +47,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, username, password }),
+        body: JSON.stringify({ code, username, password, rememberMe }),
       });
 
       const data = await res.json();
@@ -114,6 +115,16 @@ export default function LoginPage() {
                 className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Beni Hatırla
+            </label>
 
             <button
               type="submit"
