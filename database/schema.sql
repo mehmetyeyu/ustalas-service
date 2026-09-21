@@ -1249,3 +1249,15 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_invoice_title VARCHAR(200);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_city VARCHAR(100);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_district VARCHAR(100);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_address TEXT;
+
+-- Sipariş listesindeki Cari uzlaşma sorgusunun (bkz. src/app/api/orders/
+-- route.ts computeOrderLedgerStatus çağrısı) "bu sayfadaki siparişlere ait
+-- customer_id'ler kimler" alt sorgusu WHERE tenant_id=? AND order_id=ANY(...)
+-- kullanıyor — customer_ledger_entries_order_siparis_unique PARÇALI bir
+-- index (sadece entry_type='SIPARIS'), bu sorguda entry_type filtresi
+-- olmadığından planlayıcı onu kullanamıyor (EXPLAIN ile Seq Scan olarak
+-- doğrulandı). Tablo şu an küçük olduğundan fark etmiyor ama paylaşımlı
+-- (tüm tenant'lar) bir tablo olduğundan büyüdükçe her sipariş listesi
+-- yüklemesinde tam taramaya dönüşürdü.
+CREATE INDEX IF NOT EXISTS customer_ledger_entries_tenant_order_idx
+  ON customer_ledger_entries(tenant_id, order_id);
