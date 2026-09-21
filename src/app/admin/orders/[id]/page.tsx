@@ -447,6 +447,103 @@ function OrderDetailPageInner() {
   // (Lastik/Jant/İkinci El) satırı varsa gösterilir — işçilik satırlarında girilmez.
   const hasProductSaleLine = editLines.some((l) => PRODUCT_SALE_SERVICES.has(l.service_name.trim()));
 
+  // İş Emri yazdırma — src/app/admin/storage/page.tsx'teki printLabel ile
+  // AYNI desen (HTML string, window.open + document.write + window.print(),
+  // hiçbir kütüphane/sunucu round-trip'i yok). Firma bilgisi (adres/telefon/
+  // vergi no) sipariş anında değil, YAZDIRMA anında çekilir — /api/company-info
+  // rol kısıtı olmadan (bkz. o dosyanın yorumu) herkese açık, ekstra bir
+  // yetki kontrolüne gerek yok. Logo/kaşe için görsel yükleme altyapısı
+  // henüz yok (bkz. görüşme notları) — o alan şimdilik boş bir kutu.
+  async function printWorkOrder() {
+    if (!order) return;
+    let company: {
+      name: string; phone: string | null; taxIdLabel: string; taxId: string | null;
+      taxOffice: string | null; address: string | null;
+    } | null = null;
+    try {
+      const res = await fetch("/api/company-info");
+      if (res.ok) company = await res.json();
+    } catch { /* firma bilgisi olmadan da yazdırılabilir, sessizce devam */ }
+
+    const rowsHtml = order.services.map((s) => `
+      <tr>
+        <td>${s.name}</td>
+        <td class="c">${s.quantity}</td>
+        <td class="r">${formatCurrency(s.unit_price)}</td>
+        <td class="r">${formatCurrency(s.unit_price * s.quantity)}</td>
+      </tr>`).join("");
+
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>İş Emri - ${order.plate}</title>
+<style>
+  @page { size: A4 portrait; margin: 15mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; color: #222; font-size: 11pt; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 8mm; margin-bottom: 8mm; }
+  .company h1 { font-size: 16pt; margin: 0 0 2mm; }
+  .company div { font-size: 9pt; color: #555; }
+  .title { text-align: right; }
+  .title h2 { font-size: 20pt; margin: 0; }
+  .title div { font-size: 9pt; color: #555; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 8mm; font-size: 10pt; }
+  .info-grid .lbl { color: #777; font-size: 8.5pt; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8mm; }
+  th, td { padding: 3mm 2mm; border-bottom: 1px solid #ddd; text-align: left; font-size: 10pt; }
+  th { border-bottom: 2px solid #222; font-size: 9pt; color: #555; text-transform: uppercase; }
+  td.c, th.c { text-align: center; }
+  td.r, th.r { text-align: right; }
+  .total-row td { border-bottom: none; font-weight: bold; font-size: 12pt; padding-top: 4mm; }
+  .notes { margin-bottom: 12mm; font-size: 10pt; }
+  .notes .lbl { color: #777; font-size: 8.5pt; }
+  .footer { display: flex; justify-content: space-between; margin-top: 20mm; }
+  .sign-box { width: 60mm; text-align: center; }
+  .sign-line { border-top: 1px solid #222; margin-top: 18mm; padding-top: 2mm; font-size: 9pt; color: #555; }
+</style>
+</head><body>
+  <div class="header">
+    <div class="company">
+      <h1>${company?.name ?? ""}</h1>
+      <div>${company?.address ?? ""}</div>
+      <div>${company?.phone ? "Tel: " + company.phone : ""}${company?.taxOffice ? " · " + company.taxOffice : ""}${company?.taxId ? " · " + company.taxIdLabel + ": " + company.taxId : ""}</div>
+    </div>
+    <div class="title">
+      <h2>İŞ EMRİ</h2>
+      <div>Sipariş #${order.id}</div>
+      <div>${formatDate(order.created_at)}</div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div><div class="lbl">Plaka</div>${order.plate}</div>
+    <div><div class="lbl">Müşteri</div>${order.customer_name || "—"}</div>
+    <div><div class="lbl">Telefon</div>${order.customer_phone || "—"}</div>
+    <div><div class="lbl">Durum</div>${order.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Hizmet</th><th class="c">Adet</th><th class="r">Birim Fiyat</th><th class="r">Tutar</th></tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+      <tr class="total-row"><td colspan="3">Toplam</td><td class="r">${formatCurrency(order.total_amount)}</td></tr>
+    </tbody>
+  </table>
+
+  ${order.notes ? `<div class="notes"><div class="lbl">Not</div>${order.notes}</div>` : ""}
+
+  <div class="footer">
+    <div class="sign-box"><div class="sign-line">Firma Kaşesi</div></div>
+    <div class="sign-box"><div class="sign-line">Müşteri İmza</div></div>
+  </div>
+
+  <script>window.onload=()=>{window.print();}<\/script>
+</body></html>`);
+    win.document.close();
+  }
+
   function openEdit() {
     if (!order) return;
     setEditPlate(order.plate);
@@ -1307,6 +1404,12 @@ function OrderDetailPageInner() {
                 <p className="text-gray-500 text-sm mt-1">Sipariş #{order.id}</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={printWorkOrder}
+                  className="px-3 py-1 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
+                >
+                  İş Emri Yazdır
+                </button>
                 {canEdit && (
                   <button
                     onClick={openEdit}
