@@ -267,6 +267,12 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [totalKar, setTotalKar] = useState(0);
+  // Ortalama günlük tutar/kâr için — bkz. /api/orders GET. workingDaySpan,
+  // Randevu Ayarları'ndaki GERÇEK çalışma günlerine göre hesaplanır (ör.
+  // Pazar kapalıysa sayılmaz); workingHoursConfigured false ise bu ayar hiç
+  // doldurulmamış demektir, ortalama YANLIŞ bir varsayımla gösterilmez.
+  const [workingHoursConfigured, setWorkingHoursConfigured] = useState(true);
+  const [workingDaySpan, setWorkingDaySpan] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
@@ -460,6 +466,8 @@ export default function OrdersPage() {
     setTotal(data.total ?? 0);
     setTotalAmount(data.totalAmount ?? 0);
     setTotalKar(data.totalKar ?? 0);
+    setWorkingHoursConfigured(data.workingHoursConfigured ?? true);
+    setWorkingDaySpan(data.workingDaySpan ?? 0);
     setLoading(false);
     // Gösterilen satırlar değiştiğinden (filtre/sayfa değişikliği veya toplu
     // işlem sonrası yenileme) önceki seçim artık geçerli satırlara karşılık
@@ -631,6 +639,15 @@ export default function OrdersPage() {
     (statusFilter ? 1 : 0) + (dateFilter ? 1 : 0) +
     Object.values(fieldFilters).filter((v) => Array.isArray(v) ? v.length > 0 : v.trim()).length;
 
+  // Ortalama Günlük Tutar/Kâr — Ustalas'ın isteği: toplamın yanında, aktif
+  // filtrelerle eşleşen siparişlerin GERÇEK çalışma gününe (Randevu
+  // Ayarları'ndaki Çalışma Saatleri — ör. Pazar kapalıysa sayılmaz)
+  // bölünmüş hâli de görünsün. workingDaySpan/workingHoursConfigured
+  // sunucudan gelir (bkz. /api/orders GET, src/lib/appointmentSlots.ts
+  // countWorkingDays).
+  const avgDailyAmount = workingDaySpan > 0 ? totalAmount / workingDaySpan : 0;
+  const avgDailyKar = workingDaySpan > 0 ? totalKar / workingDaySpan : 0;
+
   // + 2: her zaman görünen Statü ve İşlemler sütunları.
   const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 2 + (canEdit ? 1 : 0);
 
@@ -801,15 +818,65 @@ export default function OrdersPage() {
           <div className="shrink-0 flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
             <div>
               <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Toplam Tutar</div>
-              <div className="text-xs sm:text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(totalAmount)}</div>
+              {loading ? (
+                <div className="h-4 w-16 bg-gray-200 rounded animate-pulse mt-0.5" />
+              ) : (
+                <div className="text-xs sm:text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(totalAmount)}</div>
+              )}
             </div>
             <div className="w-px h-6 sm:h-7 bg-gray-200" />
             <div>
               <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Kâr</div>
-              <div className={`text-xs sm:text-sm font-semibold whitespace-nowrap ${totalKar >= 0 ? "text-green-600" : "text-red-500"}`}>
-                {formatCurrency(totalKar)}
-              </div>
+              {loading ? (
+                <div className="h-4 w-16 bg-gray-200 rounded animate-pulse mt-0.5" />
+              ) : (
+                <div className={`text-xs sm:text-sm font-semibold whitespace-nowrap ${totalKar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                  {formatCurrency(totalKar)}
+                </div>
+              )}
             </div>
+            {loading ? (
+              <>
+                <div className="w-px h-6 sm:h-7 bg-gray-200" />
+                <div>
+                  <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Ort. Günlük Tutar</div>
+                  <div className="h-4 w-16 bg-gray-200 rounded animate-pulse mt-0.5" />
+                </div>
+                <div className="w-px h-6 sm:h-7 bg-gray-200" />
+                <div>
+                  <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Ort. Günlük Kâr</div>
+                  <div className="h-4 w-16 bg-gray-200 rounded animate-pulse mt-0.5" />
+                </div>
+              </>
+            ) : workingDaySpan > 0 ? (
+              <>
+                <div className="w-px h-6 sm:h-7 bg-gray-200" />
+                <div>
+                  <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Ort. Günlük Tutar ({workingDaySpan} gün)</div>
+                  <div className="text-xs sm:text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(avgDailyAmount)}</div>
+                </div>
+                <div className="w-px h-6 sm:h-7 bg-gray-200" />
+                <div>
+                  <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Ort. Günlük Kâr ({workingDaySpan} gün)</div>
+                  <div className={`text-xs sm:text-sm font-semibold whitespace-nowrap ${avgDailyKar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    {formatCurrency(avgDailyKar)}
+                  </div>
+                </div>
+              </>
+            ) : !workingHoursConfigured ? (
+              <>
+                <div className="w-px h-6 sm:h-7 bg-gray-200" />
+                <div className="flex items-center">
+                  <Link
+                    href="/admin/appointments/ayarlar"
+                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 underline whitespace-nowrap"
+                    title="Ort. Günlük Tutar/Kâr gösterebilmek için Çalışma Saatlerinizi girin"
+                  >
+                    Ort. Günlük için Çalışma Saatlerini girin
+                  </Link>
+                </div>
+              </>
+            ) : null}
           </div>
           <div className="relative shrink-0 flex">
             <button

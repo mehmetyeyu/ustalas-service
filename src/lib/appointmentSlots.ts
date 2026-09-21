@@ -35,6 +35,32 @@ function getDayWindow(workingHours: WorkingHours | null | undefined, dateStr: st
   return workingHours[dayKeyForDate(dateStr)] ?? null;
 }
 
+// En az bir gün için pencere tanımlı mı — Randevu Ayarları hiç
+// doldurulmamışsa (ya da tüm günler kapalıysa) "iş günü" kavramı
+// anlamsızdır, çağıran taraf (bkz. src/app/api/orders/route.ts Ort.
+// Günlük Tutar/Kâr) bunu kullanıcıya bu ayarı doldurması gerektiğini
+// söylemek için kullanır.
+export function hasAnyWorkingDay(workingHours: WorkingHours | null | undefined): boolean {
+  return !!workingHours && Object.values(workingHours).some((w) => w != null);
+}
+
+// fromDateStr..toDateStr aralığındaki (ikisi dahil) GERÇEK çalışma
+// günlerinin sayısı — takvim gün sayısından farklı olarak, workingHours'ta
+// kapalı işaretlenmiş günler (ör. Pazar) sayılmaz. Ustalas'ın isteği:
+// "Ortalama Günlük Tutar/Kâr" ham takvim gününe değil GERÇEK çalışma
+// gününe bölünsün.
+export function countWorkingDays(workingHours: WorkingHours | null | undefined, fromDateStr: string, toDateStr: string): number {
+  if (!hasAnyWorkingDay(workingHours)) return 0;
+  const from = istanbulLocalToUTC(fromDateStr, 12, 0).getTime();
+  const to = istanbulLocalToUTC(toDateStr, 12, 0).getTime();
+  let count = 0;
+  for (let t = from; t <= to; t += 24 * 60 * 60 * 1000) {
+    const key = DAY_KEYS[new Date(t).getUTCDay()];
+    if (workingHours?.[key]) count++;
+  }
+  return count;
+}
+
 // UTC bir Date'i Istanbul yerel (YYYY-MM-DD, gece yarısından bu yana dakika)
 // bileşenlerine çevirir — istanbulLocalToUTC'nin tersi.
 function toIstanbulLocalParts(date: Date): { dateStr: string; minutesSinceMidnight: number } {

@@ -8,6 +8,7 @@ import { buildOrderQuery } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
 import { getAutoRegisterCustomers } from "@/lib/settings";
 import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
+import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
 
 interface OrderLineInput {
   service_name: string;
@@ -68,13 +69,41 @@ export async function GET(request: NextRequest) {
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS total,
               COALESCE(SUM(os.unit_price), 0)::float AS total_amount,
-              COALESCE(SUM(os.unit_price - os.cost_price), 0)::float AS total_kar
+              COALESCE(SUM(os.unit_price - os.cost_price), 0)::float AS total_kar,
+              -- Ortalama GÜNLÜK tutar/kâr için (bkz. admin/orders/page.tsx özet
+              -- kutusu) — aktif filtrelerle eşleşen siparişlerin GERÇEKTE hangi
+              -- gün aralığına yayıldığı. "Tümü" (tarih filtresi yokken) dahil
+              -- her durumda çalışır, ayrı bir filtre-özel hesaplamaya gerek
+              -- kalmaz — Europe/Istanbul yerel günü kullanılır (reports.ts'teki
+              -- AT TIME ZONE deseniyle aynı, sargable olmasa da bu sorgu zaten
+              -- WHERE'e göre az sayıda satır tarıyor).
+              MIN((o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date)::text AS first_order_date,
+              MAX((o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date)::text AS last_order_date
        ${fromClause}`,
       values
     );
     const total: number = countResult.rows[0].total;
     const totalAmount: number = countResult.rows[0].total_amount;
     const totalKar: number = countResult.rows[0].total_kar;
+    const firstOrderDate: string | null = countResult.rows[0].first_order_date;
+    const lastOrderDate: string | null = countResult.rows[0].last_order_date;
+
+    // Ustalas'ın isteği: Ort. Günlük Tutar/Kâr, ham takvim gününe değil
+    // Randevu Ayarları'ndaki GERÇEK çalışma günlerine (ör. Pazar kapalıysa
+    // sayılmaz) bölünsün — bkz. src/lib/appointmentSlots.ts countWorkingDays.
+    // Bu ayar hiç doldurulmamışsa (çoğu tenant randevu özelliğini hiç
+    // kullanmıyor olabilir) ortalama YANLIŞ bir varsayımla (ör. hep 7 gün
+    // açık) hesaplanmasın diye workingHoursConfigured=false dönülür, istemci
+    // bunun yerine "Çalışma Saatlerinizi girin" ipucu gösterir.
+    const workingHoursResult = await pool.query<{ booking_working_hours: WorkingHours | null }>(
+      "SELECT booking_working_hours FROM app_settings WHERE tenant_id = $1",
+      [user.tenantId]
+    );
+    const workingHours = workingHoursResult.rows[0]?.booking_working_hours ?? null;
+    const workingHoursConfigured = hasAnyWorkingDay(workingHours);
+    const workingDaySpan = workingHoursConfigured && firstOrderDate && lastOrderDate
+      ? countWorkingDays(workingHours, firstOrderDate, lastOrderDate)
+      : 0;
 
     // FIFO Cari uzlaşma — bkz. src/lib/customerLedger.ts computeOrderLedgerStatus.
     // Bu sayfadaki siparişlerin bağlı olduğu müşterilerin TAM geçmişi
@@ -125,7 +154,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ items, total, totalAmount, totalKar, page, limit });
+    return NextResponse.json({
+      items, total, totalAmount, totalKar, firstOrderDate, lastOrderDate,
+      workingHoursConfigured, workingDaySpan, page, limit,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
