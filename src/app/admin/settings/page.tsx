@@ -8,6 +8,7 @@ import { useToast } from "@/components/ToastProvider";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { formatTurkishPhoneInput } from "@/lib/phone";
 import InvoiceInfoForm from "@/components/InvoiceInfoForm";
+import ImageUploadField from "@/components/ImageUploadField";
 
 export default function GeneralSettingsPage() {
   const toast = useToast();
@@ -43,6 +44,9 @@ export default function GeneralSettingsPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [landlinePhone, setLandlinePhone] = useState("");
   const [website, setWebsite] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [panelLogoUrl, setPanelLogoUrl] = useState<string | null>(null);
+  const [stampUrl, setStampUrl] = useState<string | null>(null);
   const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState<string | null>(null);
   const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState<string | null>(null);
   const [whatsappTemplateName, setWhatsappTemplateName] = useState<string | null>(null);
@@ -86,6 +90,9 @@ export default function GeneralSettingsPage() {
         setContactPhone(data.contact_phone ?? "");
         setLandlinePhone(data.landline_phone ?? "");
         setWebsite(data.website ?? "");
+        setLogoUrl(data.logo_url ?? null);
+        setPanelLogoUrl(data.panel_logo_url ?? null);
+        setStampUrl(data.stamp_url ?? null);
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : "Ayarlar yüklenemedi.");
       } finally {
@@ -245,6 +252,36 @@ export default function GeneralSettingsPage() {
             onChange={(e) => setWebsite(e.target.value)}
             placeholder="www.firmaniz.com"
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-1">Marka</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          Logo panel header&apos;ında, kaşe İş Emri çıktısında, firma logosu ise belgelerin başlığında gösterilir.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <ImageUploadField
+            label="Firma Logosu"
+            type="logo"
+            value={logoUrl}
+            onChange={setLogoUrl}
+            hint="İş Emri gibi belgelerin başlığında gösterilir."
+          />
+          <ImageUploadField
+            label="Panel Logosu"
+            type="panel_logo"
+            value={panelLogoUrl}
+            onChange={setPanelLogoUrl}
+            hint="Admin panel header'ında firma adı yerine gösterilir."
+          />
+          <ImageUploadField
+            label="Firma Kaşesi"
+            type="stamp"
+            value={stampUrl}
+            onChange={setStampUrl}
+            hint="İş Emri çıktısındaki kaşe kutusunda gösterilir."
           />
         </div>
       </div>

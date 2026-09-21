@@ -19,8 +19,11 @@ export async function GET() {
   const tenantResult = await pool.query<{
     slug: string; code: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
     landline_phone: string | null; website: string | null;
+    logo_url: string | null; panel_logo_url: string | null; stamp_url: string | null;
   }>(
-    "SELECT slug, code, contact_name, contact_email, contact_phone, landline_phone, website FROM tenants WHERE id = $1",
+    `SELECT slug, code, contact_name, contact_email, contact_phone, landline_phone, website,
+            logo_url, panel_logo_url, stamp_url
+     FROM tenants WHERE id = $1`,
     [user.tenantId]
   );
   // whatsapp_access_token asla ham haliyle client'a dönmez — sadece kayıtlı
@@ -37,6 +40,9 @@ export async function GET() {
     contact_phone: tenantResult.rows[0]?.contact_phone ?? null,
     landline_phone: tenantResult.rows[0]?.landline_phone ?? null,
     website: tenantResult.rows[0]?.website ?? null,
+    logo_url: tenantResult.rows[0]?.logo_url ?? null,
+    panel_logo_url: tenantResult.rows[0]?.panel_logo_url ?? null,
+    stamp_url: tenantResult.rows[0]?.stamp_url ?? null,
   });
 }
 

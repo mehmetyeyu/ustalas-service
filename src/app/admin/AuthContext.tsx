@@ -9,6 +9,7 @@ interface AuthUser {
   role: string;
   permissions: string[];
   businessName: string;
+  panelLogoUrl: string | null;
   // Faturalandırma (bkz. src/lib/billing.ts, /admin/billing) — deneme
   // geri sayımı banner'ı ve kilit sayfası bunları kullanır.
   billingStatus: string | null;
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           user: data
             ? {
                 username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "",
+                panelLogoUrl: data.panel_logo_url ?? null,
                 billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
                 billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
                 billingLastPaymentError: data.billing_last_payment_error ?? null,

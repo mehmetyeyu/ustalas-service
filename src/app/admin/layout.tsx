@@ -12,6 +12,16 @@ import { trialDaysLeft } from "@/lib/billing";
 // firmasının işletme adı gösterilir (bkz. /api/auth/me, AuthContext).
 const DEFAULT_BUSINESS_NAME = "Lastik Servis Paneli";
 
+// Panel Logosu ayarlanmışsa (bkz. Genel Ayarlar > Marka) business_name
+// metni yerine bu gösterilir — ayarlanmamışsa eskisi gibi metin.
+function BrandMark({ businessName, panelLogoUrl, className }: { businessName: string; panelLogoUrl: string | null; className: string }) {
+  if (panelLogoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- Blob URL'i harici bir host, next/image domain izni istiyor
+    return <img src={panelLogoUrl} alt={businessName || DEFAULT_BUSINESS_NAME} className="h-8 max-w-[180px] object-contain" />;
+  }
+  return <span className={className}>{businessName || DEFAULT_BUSINESS_NAME}</span>;
+}
+
 // `resource: null` → her authenticated kullanıcıya (admin da staff da) her
 // zaman görünür. staff için görünürlük ilgili "<resource>.view" iznine bağlı
 // — bkz. src/lib/permissions.ts (aynı kaynak/aksiyon taksonomisi).
@@ -118,12 +128,14 @@ function MobileMenu({
   navItems,
   settingsItems,
   businessName,
+  panelLogoUrl,
 }: {
   pathname: string;
   onLogout: () => void;
   navItems: readonly NavItem[];
   settingsItems: readonly NavItem[];
   businessName: string;
+  panelLogoUrl: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -134,7 +146,7 @@ function MobileMenu({
   return (
     <div className="sm:hidden">
       <div className="flex items-center justify-between">
-        <span className="text-lg font-bold text-white truncate">{businessName || DEFAULT_BUSINESS_NAME}</span>
+        <BrandMark businessName={businessName} panelLogoUrl={panelLogoUrl} className="text-lg font-bold text-white truncate" />
         <button
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Menüyü kapat" : "Menüyü aç"}
@@ -282,12 +294,12 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gray-900 text-white px-4 py-3">
-        <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} businessName={user?.businessName ?? ""} />
+        <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} businessName={user?.businessName ?? ""} panelLogoUrl={user?.panelLogoUrl ?? null} />
 
         {/* Desktop: tek satır */}
         <div className="hidden sm:flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <span className="text-xl font-bold text-white whitespace-nowrap">{user?.businessName || DEFAULT_BUSINESS_NAME}</span>
+            <BrandMark businessName={user?.businessName ?? ""} panelLogoUrl={user?.panelLogoUrl ?? null} className="text-xl font-bold text-white whitespace-nowrap" />
             <div className="flex gap-1">
               {visibleNavItems.map((item) => (
                 <Link

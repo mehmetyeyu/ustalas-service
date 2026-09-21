@@ -24,9 +24,12 @@ export async function GET() {
     billing_address: string | null;
     billing_city: string | null;
     billing_district: string | null;
+    logo_url: string | null;
+    stamp_url: string | null;
   }>(
     `SELECT name, contact_phone, landline_phone, billing_invoice_title, billing_entity_type,
-            billing_tax_id, billing_tax_office, billing_address, billing_city, billing_district
+            billing_tax_id, billing_tax_office, billing_address, billing_city, billing_district,
+            logo_url, stamp_url
      FROM tenants WHERE id = $1`,
     [user.tenantId]
   );
@@ -41,5 +44,7 @@ export async function GET() {
     taxId: t.billing_tax_id,
     taxOffice: t.billing_tax_office,
     address: [t.billing_address, t.billing_district, t.billing_city].filter(Boolean).join(", ") || null,
+    logoUrl: t.logo_url,
+    stampUrl: t.stamp_url,
   });
 }

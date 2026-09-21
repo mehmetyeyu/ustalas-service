@@ -452,13 +452,14 @@ function OrderDetailPageInner() {
   // hiçbir kütüphane/sunucu round-trip'i yok). Firma bilgisi (adres/telefon/
   // vergi no) sipariş anında değil, YAZDIRMA anında çekilir — /api/company-info
   // rol kısıtı olmadan (bkz. o dosyanın yorumu) herkese açık, ekstra bir
-  // yetki kontrolüne gerek yok. Logo/kaşe için görsel yükleme altyapısı
-  // henüz yok (bkz. görüşme notları) — o alan şimdilik boş bir kutu.
+  // yetki kontrolüne gerek yok. logoUrl/stampUrl ayarlanmışsa (Genel
+  // Ayarlar > Marka) başlıkta/kaşe kutusunda gösterilir, yoksa eskisi gibi
+  // metin/boş kutu.
   async function printWorkOrder() {
     if (!order) return;
     let company: {
       name: string; phone: string | null; taxIdLabel: string; taxId: string | null;
-      taxOffice: string | null; address: string | null;
+      taxOffice: string | null; address: string | null; logoUrl: string | null; stampUrl: string | null;
     } | null = null;
     try {
       const res = await fetch("/api/company-info");
@@ -481,7 +482,8 @@ function OrderDetailPageInner() {
   @page { size: A4 portrait; margin: 15mm; }
   * { box-sizing: border-box; }
   body { font-family: Arial, sans-serif; color: #222; font-size: 11pt; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 8mm; margin-bottom: 8mm; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; border-bottom: 2px solid #222; padding-bottom: 8mm; margin-bottom: 8mm; }
+  .logo { max-height: 18mm; max-width: 50mm; object-fit: contain; margin-bottom: 3mm; }
   .company h1 { font-size: 16pt; margin: 0 0 2mm; }
   .company div { font-size: 9pt; color: #555; }
   .title { text-align: right; }
@@ -500,10 +502,13 @@ function OrderDetailPageInner() {
   .footer { display: flex; justify-content: space-between; margin-top: 20mm; }
   .sign-box { width: 60mm; text-align: center; }
   .sign-line { border-top: 1px solid #222; margin-top: 18mm; padding-top: 2mm; font-size: 9pt; color: #555; }
+  .sign-line.tight { margin-top: 3mm; }
+  .stamp-img { max-height: 16mm; max-width: 50mm; object-fit: contain; margin-top: 6mm; }
 </style>
 </head><body>
   <div class="header">
     <div class="company">
+      ${company?.logoUrl ? `<img class="logo" src="${company.logoUrl}" alt="" />` : ""}
       <h1>${company?.name ?? ""}</h1>
       <div>${company?.address ?? ""}</div>
       <div>${company?.phone ? "Tel: " + company.phone : ""}${company?.taxOffice ? " · " + company.taxOffice : ""}${company?.taxId ? " · " + company.taxIdLabel + ": " + company.taxId : ""}</div>
@@ -535,7 +540,10 @@ function OrderDetailPageInner() {
   ${order.notes ? `<div class="notes"><div class="lbl">Not</div>${order.notes}</div>` : ""}
 
   <div class="footer">
-    <div class="sign-box"><div class="sign-line">Firma Kaşesi</div></div>
+    <div class="sign-box">
+      ${company?.stampUrl ? `<img class="stamp-img" src="${company.stampUrl}" alt="" />` : ""}
+      <div class="sign-line${company?.stampUrl ? " tight" : ""}">Firma Kaşesi</div>
+    </div>
     <div class="sign-box"><div class="sign-line">Müşteri İmza</div></div>
   </div>
 

@@ -1271,3 +1271,14 @@ CREATE INDEX IF NOT EXISTS customer_ledger_entries_tenant_order_idx
 -- KASITLI OLARAK buraya eklenmedi (cross-tenant görünür olurdu).
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS landline_phone VARCHAR(30);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS website VARCHAR(200);
+
+-- Firma Logosu / Panel Logosu / Firma Kaşesi — rakip karşılaştırmasında
+-- eksik bulunan son 3 alan (bkz. görüşme notları). Vercel Blob'da PUBLIC
+-- erişimli olarak saklanıyor (bkz. src/lib/companyAssets.ts) — bu görseller
+-- gizli değil, zaten İş Emri çıktısında/panel header'ında doğrudan
+-- gösteriliyor. logo_url: İş Emri gibi belgelerin başlığında. panel_logo_url:
+-- admin panel header'ında (business_name metninin yanında/yerine).
+-- stamp_url: İş Emri'ndeki "Firma Kaşesi" kutusunda.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS panel_logo_url TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stamp_url TEXT;
