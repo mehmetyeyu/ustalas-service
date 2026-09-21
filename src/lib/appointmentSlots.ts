@@ -134,7 +134,9 @@ async function getBusyIntervals(
   });
 }
 
-function countOverlaps(intervals: BusyInterval[], start: Date, end: Date): number {
+// export edilmiş — çakışma sayımı (double-booking'i önleyen asıl mantık)
+// doğrudan test edilebilsin diye (bkz. appointmentSlots.test.ts).
+export function countOverlaps(intervals: BusyInterval[], start: Date, end: Date): number {
   return intervals.filter((iv) => iv.start < end && iv.end > start).length;
 }
 
