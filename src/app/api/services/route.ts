@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   if (!hasPermission(user, "services.create")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { name, price, bookable, duration_minutes } = await request.json();
+    const { name, price, bookable, duration_minutes, tracks_size } = await request.json();
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
     }
@@ -41,11 +41,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await pool.query(
-      "INSERT INTO services (tenant_id, name, price, bookable, duration_minutes) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [user.tenantId, String(name).trim(), priceValue, !!bookable, durationValue]
+      "INSERT INTO services (tenant_id, name, price, bookable, duration_minutes, tracks_size) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+      [user.tenantId, String(name).trim(), priceValue, !!bookable, durationValue, !!tracks_size]
     );
     return NextResponse.json(
-      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1, bookable: !!bookable, duration_minutes: durationValue },
+      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1, bookable: !!bookable, duration_minutes: durationValue, tracks_size: !!tracks_size },
       { status: 201 }
     );
   } catch (error: unknown) {

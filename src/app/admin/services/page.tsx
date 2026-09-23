@@ -13,6 +13,7 @@ interface Service {
   is_active: number;
   bookable: boolean;
   duration_minutes: number | null;
+  tracks_size: boolean;
 }
 
 export default function ServicesPage() {
@@ -30,6 +31,7 @@ export default function ServicesPage() {
   const [price, setPrice] = useState("");
   const [bookable, setBookable] = useState(false);
   const [duration, setDuration] = useState("");
+  const [tracksSize, setTracksSize] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function fetchServices() {
@@ -52,6 +54,7 @@ export default function ServicesPage() {
     setPrice("");
     setBookable(false);
     setDuration("");
+    setTracksSize(false);
     setShowForm(true);
   }
 
@@ -61,6 +64,7 @@ export default function ServicesPage() {
     setPrice(svc.price != null ? String(svc.price) : "");
     setBookable(svc.bookable);
     setDuration(svc.duration_minutes != null ? String(svc.duration_minutes) : "");
+    setTracksSize(svc.tracks_size);
     setShowForm(true);
   }
 
@@ -77,14 +81,14 @@ export default function ServicesPage() {
         const res = await fetch(`/api/services/${editSvc.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active, bookable, duration_minutes: durationValue }),
+          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active, bookable, duration_minutes: durationValue, tracks_size: tracksSize }),
         });
         if (!res.ok) throw new Error("Güncelleme başarısız.");
       } else {
         const res = await fetch("/api/services", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue, bookable, duration_minutes: durationValue }),
+          body: JSON.stringify({ name: name.trim(), price: priceValue, bookable, duration_minutes: durationValue, tracks_size: tracksSize }),
         });
         if (!res.ok) throw new Error("Ekleme başarısız.");
       }
@@ -130,6 +134,7 @@ export default function ServicesPage() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Hizmet Adı</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Fiyat</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Randevu</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Stok Kodu/Ebat</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -145,6 +150,13 @@ export default function ServicesPage() {
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
                           Açık{svc.duration_minutes ? ` · ${svc.duration_minutes} dk` : ""}
                         </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Kapalı</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {svc.tracks_size ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Açık</span>
                       ) : (
                         <span className="text-xs text-gray-400">Kapalı</span>
                       )}
@@ -218,6 +230,20 @@ export default function ServicesPage() {
                   step="0.01"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div className="border-t border-gray-100 pt-4">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tracksSize}
+                    onChange={(e) => setTracksSize(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  Sipariş Ekranında Stok Kodu/Ebat Girilsin
+                </label>
+                <p className="text-xs text-gray-400 mt-1 ml-6">
+                  Lastik/Jant satışı gibi fiziksel bir ürün satılan hizmetlerde işaretleyin.
+                </p>
               </div>
               <div className="border-t border-gray-100 pt-4">
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">

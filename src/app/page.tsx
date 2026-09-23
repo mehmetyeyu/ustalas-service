@@ -10,6 +10,7 @@ interface Service {
   id: number;
   name: string;
   price: number | null;
+  tracks_size: boolean;
 }
 
 interface Customer {
@@ -31,10 +32,12 @@ interface OrderLine {
   quantity: string;
   unit_price: string;
   cost_price: string;
-  // "Lastik Satışı" işleminde belirli bir parti seçildiyse doldurulur — o
-  // partinin stoğundan Adet kadar düşülür. max_stock, unit_sale_price ve
-  // unit_purchase_price sadece istemcide tutulur (API'ye gönderilmez);
-  // birim fiyatlar Adet değişince Tutar/Maliyet'i yeniden hesaplamak içindir.
+  // tracks_size işaretli bir hizmette (bkz. Hizmetler ekranı — Lastik/Jant
+  // Satışı, İkinci El Lastik/Jant hepsi aynı şekilde davranır) belirli bir
+  // parti seçildiyse doldurulur — o partinin stoğundan Adet kadar düşülür.
+  // max_stock, unit_sale_price ve unit_purchase_price sadece istemcide
+  // tutulur (API'ye gönderilmez); birim fiyatlar Adet değişince Tutar/
+  // Maliyet'i yeniden hesaplamak içindir.
   product_id: number | null;
   max_stock: number | null;
   unit_sale_price: number | null;
@@ -52,14 +55,6 @@ interface StockBatch {
   avg_sale_price: string | number | null;
 }
 
-// Yalnızca bu işlem seçildiğinde Tedarikçi/Stok Kodu/Üretim Haftası-Yılı
-// akışı Ürün sayfasındaki stoğa bağlanır ve sipariş oluşunca stoktan düşülür.
-const TIRE_SALE_SERVICE = "Lastik Satışı";
-
-// Bir ürün/parça satışı temsil eden işlemler — bunlarda Tedarikçi varsayılan
-// olarak "Servis İşçiliği" gelmez (boş bırakılır, gerçek tedarikçi seçilir) ve
-// Stok Kodu alanı gösterilir. Diğer (işçilik) işlemlerde ikisi de gizlenir.
-const PRODUCT_SALE_SERVICES = new Set(["Lastik Satışı", "Jant Satışı", "İkinci El Lastik", "İkinci El Jant"]);
 
 // Başlangıç tedarikçi listesi — sunucudan gelen dinamik listeyle (daha önce
 // girilmiş tedarikçiler) birleştirilir. "Servis İşçiliği" hariç firmaya özel
@@ -179,8 +174,9 @@ function SearchableCombobox({
   );
 }
 
-// "Lastik Satışı" satırındaki Stok Kodu hücresi: kod seçilir/yazılır (seçilen
-// tedarikçide stoğu olan kodlar önerilir), kod bir partiyle eşleşince altında
+// tracks_size işaretli bir satırdaki (bkz. Hizmetler ekranı) Stok Kodu
+// hücresi: kod seçilir/yazılır (seçilen tedarikçide stoğu olan kodlar
+// önerilir), kod bir partiyle eşleşince altında
 // Üretim Haftası/Yılı seçici belirir — seçilen parti product_id + Ebat + o
 // partinin mevcut stoğunu (max_stock, sipariş ekranında anlık uyarı için) üst
 // bileşene bildirir.
@@ -242,6 +238,14 @@ function TireBatchPicker({
 export default function OrderPage() {
   const toast = useToast();
   const [services, setServices] = useState<Service[]>([]);
+  // Bir ürün/parça satışı temsil eden işlemler — bunlarda Tedarikçi varsayılan
+  // olarak "Servis İşçiliği" gelmez (boş bırakılır, gerçek tedarikçi seçilir),
+  // Stok Kodu ve Ebat alanları gösterilir. Diğer (işçilik) işlemlerinde ikisi
+  // de gizlenir. Önceden burada sabit, kod içine gömülü bir isim listesi
+  // vardı (Hizmetler'den yeni bir ürün-satışı hizmeti eklense kod bilmeden
+  // hiç göstermezdi, gerçek bir kullanıcı raporuydu) — artık services.
+  // tracks_size'a (bkz. Hizmetler ekranı) bakıyor.
+  const productSaleServiceNames = new Set(services.filter((s) => s.tracks_size).map((s) => s.name));
   const [lines, setLines] = useState<OrderLine[]>([{ ...EMPTY_LINE }]);
   const [plate, setPlate] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -260,6 +264,7 @@ export default function OrderPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
+  const [sizeOptions, setSizeOptions] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/services")
@@ -287,10 +292,15 @@ export default function OrderPage() {
         setSupplierOptions(merged);
       })
       .catch(() => { });
+
+    fetch("/api/products/sizes")
+      .then((r) => r.json())
+      .then((data: string[]) => { if (Array.isArray(data)) setSizeOptions(data); })
+      .catch(() => { });
   }, [toast]);
 
-  // "Lastik Satışı" satırında Tedarikçi seçilince, o tedarikçide stoğu olan
-  // ürün kodları (henüz önbellekte yoksa) çekilir.
+  // tracks_size işaretli bir satırda Tedarikçi seçilince, o tedarikçide
+  // stoğu olan ürün kodları (henüz önbellekte yoksa) çekilir.
   function ensureStockCodes(supplier: string) {
     if (!supplier.trim() || stockCodesBySupplier[supplier]) return;
     fetch(`/api/products/stock-codes?supplier=${encodeURIComponent(supplier)}`)
@@ -325,15 +335,15 @@ export default function OrderPage() {
         next.max_stock = null;
         next.unit_sale_price = null;
         next.unit_purchase_price = null;
-        if (trimmed !== TIRE_SALE_SERVICE) next.size_desc = "";
+        if (!productSaleServiceNames.has(trimmed)) next.size_desc = "";
         // Ürün/parça satışlarında "Servis İşçiliği" varsayılanı anlamsız —
         // gerçek tedarikçi seçilsin diye boş bırakılır. Diğer işlemlerde geri döner.
-        if (PRODUCT_SALE_SERVICES.has(trimmed)) {
+        if (productSaleServiceNames.has(trimmed)) {
           if (l.supplier === "Servis İşçiliği") next.supplier = "";
         } else if (!l.supplier.trim()) {
           next.supplier = "Servis İşçiliği";
         }
-        if (!PRODUCT_SALE_SERVICES.has(trimmed)) next.stock_code = "";
+        if (!productSaleServiceNames.has(trimmed)) next.stock_code = "";
       }
       return next;
     }));
@@ -349,7 +359,7 @@ export default function OrderPage() {
 
   // Masaüstü tablosu ve mobil kart görünümü aynı satır mantığını paylaşır.
   function handleSupplierChange(index: number, line: OrderLine, val: string) {
-    if (line.service_name.trim() === TIRE_SALE_SERVICE) {
+    if (productSaleServiceNames.has(line.service_name.trim())) {
       // Stok Kodu/Ebat yalnızca gerçek bir stok partisine bağlıysa
       // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
       // ait, artık geçersiz olur.
@@ -378,12 +388,13 @@ export default function OrderPage() {
   }
 
   const total = lines.reduce((sum, l) => sum + num(l.unit_price), 0);
-  // Ebat sütunu (başlık dahil) yalnızca en az bir "Lastik Satışı" satırı
-  // varsa gösterilir — diğer işlemlerde bu bilgi anlamsız.
-  const hasTireSaleLine = lines.some((l) => l.service_name.trim() === TIRE_SALE_SERVICE);
-  // Stok Kodu sütunu (başlık dahil) yalnızca en az bir ürün/parça satışı
-  // (Lastik/Jant/İkinci El) satırı varsa gösterilir — işçilik satırlarında girilmez.
-  const hasProductSaleLine = lines.some((l) => PRODUCT_SALE_SERVICES.has(l.service_name.trim()));
+  // Stok Kodu ve Ebat sütunları (başlık dahil) yalnızca en az bir ürün/parça
+  // satışı (Lastik/Jant/İkinci El) satırı varsa gösterilir — işçilik
+  // satırlarında bu bilgiler anlamsız. Ebat, sadece "Lastik Satışı"na değil
+  // (İkinci El Lastik dahil) hepsine anlamlıdır — daha önce sadece Lastik
+  // Satışı'na özeldi, İkinci El satışlarında ebat hiç girilemiyordu (gerçek
+  // bir kullanıcı raporuydu).
+  const hasProductSaleLine = lines.some((l) => productSaleServiceNames.has(l.service_name.trim()));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -549,7 +560,7 @@ export default function OrderPage() {
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[160px]">Yapılan İşlem</th>
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Tedarikçi</th>
                       {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Stok Kodu</th>}
-                      {hasTireSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Ebat</th>}
+                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Ebat</th>}
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-16">Adet</th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Tutar (₺)</th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Maliyet (₺)</th>
@@ -560,8 +571,7 @@ export default function OrderPage() {
                   <tbody className="divide-y divide-gray-100">
                     {lines.map((line, i) => {
                       const kar = num(line.unit_price) - num(line.cost_price);
-                      const isTireSale = line.service_name.trim() === TIRE_SALE_SERVICE;
-                      const isProductSale = PRODUCT_SALE_SERVICES.has(line.service_name.trim());
+                      const isProductSale = productSaleServiceNames.has(line.service_name.trim());
                       const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
                       return (
                         <tr key={i}>
@@ -583,7 +593,7 @@ export default function OrderPage() {
                           </td>
                           {hasProductSaleLine && (
                             <td className="px-2 py-2 align-top">
-                              {isTireSale ? (
+                              {isProductSale ? (
                                 <TireBatchPicker
                                   supplier={line.supplier}
                                   code={line.stock_code}
@@ -605,27 +615,19 @@ export default function OrderPage() {
                                     });
                                   }}
                                 />
-                              ) : isProductSale ? (
-                                <input
-                                  type="text"
-                                  value={line.stock_code}
-                                  onChange={(e) => updateLine(i, { stock_code: e.target.value })}
-                                  className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
                               ) : (
                                 <span className="text-gray-300 text-sm">—</span>
                               )}
                             </td>
                           )}
-                          {hasTireSaleLine && (
+                          {hasProductSaleLine && (
                             <td className="px-2 py-2 align-top">
-                              {isTireSale ? (
-                                <input
-                                  type="text"
+                              {isProductSale ? (
+                                <SearchableCombobox
                                   value={line.size_desc}
-                                  onChange={(e) => updateLine(i, { size_desc: e.target.value })}
+                                  onChange={(val) => updateLine(i, { size_desc: val })}
+                                  options={sizeOptions}
                                   placeholder="205/60R16"
-                                  className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <span className="text-gray-300 text-sm">—</span>
@@ -691,8 +693,7 @@ export default function OrderPage() {
               <div className="sm:hidden space-y-3">
                 {lines.map((line, i) => {
                   const kar = num(line.unit_price) - num(line.cost_price);
-                  const isTireSale = line.service_name.trim() === TIRE_SALE_SERVICE;
-                  const isProductSale = PRODUCT_SALE_SERVICES.has(line.service_name.trim());
+                  const isProductSale = productSaleServiceNames.has(line.service_name.trim());
                   const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
                   return (
                     <div key={i} className="border border-gray-200 rounded-lg bg-gray-50 p-3 space-y-3">
@@ -729,7 +730,7 @@ export default function OrderPage() {
                         />
                       </div>
 
-                      {isTireSale && (
+                      {isProductSale && (
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
                           <TireBatchPicker
@@ -755,26 +756,14 @@ export default function OrderPage() {
                           />
                         </div>
                       )}
-                      {isProductSale && !isTireSale && (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
-                          <input
-                            type="text"
-                            value={line.stock_code}
-                            onChange={(e) => updateLine(i, { stock_code: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      )}
-                      {isTireSale && (
+                      {isProductSale && (
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
-                          <input
-                            type="text"
+                          <SearchableCombobox
                             value={line.size_desc}
-                            onChange={(e) => updateLine(i, { size_desc: e.target.value })}
+                            onChange={(val) => updateLine(i, { size_desc: val })}
+                            options={sizeOptions}
                             placeholder="205/60R16"
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
                       )}

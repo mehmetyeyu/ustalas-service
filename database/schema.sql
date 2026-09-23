@@ -600,10 +600,17 @@ ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_import_ref_key;
 CREATE UNIQUE INDEX IF NOT EXISTS orders_tenant_import_ref_unique ON orders(tenant_id, import_ref);
 
 -- products: iki parti-benzersizliği index'i de tenant_id ile öne alınıyor.
+-- NOT: Bu iki index BURADA OLUŞTURULMAZ, sadece DROP edilir — asıl (location
+-- dahil, en güncel) tanım aşağıda (bkz. "Ürün Kataloğu: aynı partinin..."
+-- notu). Yukarıdaki (satır ~227) aynı sebeple: migration her deploy'da
+-- DROP+CREATE ile yeniden çalıştığından, burada ARA bir sürüm (location'sız)
+-- oluşturulursa ve iki farklı konumdaki aynı kod+tedarikçi+hafta/yılı
+-- kombinasyonu artık meşru şekilde ayrı satırlar olarak var olduğunda (bkz.
+-- Konum özelliği), bu ara sürüm migration'ı burada patlatır ve asıl (doğru,
+-- location dahil) tanıma hiç ulaşılamaz — gerçekten yaşandı, bu yüzden
+-- düzeltildi.
 DROP INDEX IF EXISTS products_code_batch_unique;
-CREATE UNIQUE INDEX IF NOT EXISTS products_code_batch_unique ON products(tenant_id, code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL;
 DROP INDEX IF EXISTS products_code_nodate_unique;
-CREATE UNIQUE INDEX IF NOT EXISTS products_code_nodate_unique ON products(tenant_id, code) WHERE production_year IS NULL;
 
 -- storage: aktif depo no artık firma başına benzersiz.
 DROP INDEX IF EXISTS storage_active_depo_no_unique;
@@ -1293,6 +1300,30 @@ DROP INDEX IF EXISTS products_code_batch_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS products_code_batch_unique ON products(tenant_id, code, production_year, production_week, COALESCE(supplier, ''), COALESCE(location, '')) WHERE production_year IS NOT NULL;
 DROP INDEX IF EXISTS products_code_nodate_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS products_code_nodate_unique ON products(tenant_id, code, COALESCE(location, '')) WHERE production_year IS NULL;
+
+-- Sipariş ekranındaki Stok Kodu/Ebat alanlarının hangi hizmette görüneceği
+-- önceden src/app/page.tsx'te sabit, kod içine gömülü bir isim listesiyle
+-- (PRODUCT_SALE_SERVICES) belirleniyordu — bir firma Hizmetler'den yeni bir
+-- "3. El Lastik" gibi bir hizmet eklese ya da mevcut birini yeniden
+-- adlandırsa, kod bilmeden bu alanları hiç göstermezdi (gerçek bir kullanıcı
+-- raporuydu: İkinci El Lastik'te Ebat hiç çıkmıyordu). Artık veri odaklı:
+-- Hizmetler ekranından işaretlenebilen bir bayrak.
+--
+-- IF NOT EXISTS koruması BİLEREK var: aşağıdaki UPDATE sadece bu sütun ilk
+-- eklendiğinde (tek seferlik geriye dönük dolum) çalışsın istiyoruz — kolon
+-- zaten varsa (ikinci ve sonraki her deploy) blok tamamen atlanır. Koruma
+-- olmadan bu UPDATE her `next build`/deploy'da çalışır ve bir kullanıcının
+-- Hizmetler ekranından bilerek kapattığı bir bayrağı sessizce tekrar açardı.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'services' AND column_name = 'tracks_size'
+  ) THEN
+    ALTER TABLE services ADD COLUMN tracks_size BOOLEAN NOT NULL DEFAULT false;
+    UPDATE services SET tracks_size = true
+      WHERE name IN ('Lastik Satışı', 'Jant Satışı', 'İkinci El Lastik', 'İkinci El Jant');
+  END IF;
+END $$;
 
 -- Aktivite Geçmişi — "bu siparişi kim sildi, bu carinin bakiyesini kim
 -- değiştirdi" sorusuna cevap vermek için (bkz. mimari değerlendirme notları).
