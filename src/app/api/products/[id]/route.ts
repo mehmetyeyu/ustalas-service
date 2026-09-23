@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { normalizeYear } from "@/lib/productsExcel";
+import { syncSingleStockEntryPrice } from "@/lib/productStock";
 
 // Sipariş Düzelt ekranında, zaten bir partiye bağlı (product_id dolu) bir
 // satırın güncel stok durumunu öğrenmek için kullanılır — stok Girişi/Çıkışı
@@ -131,27 +132,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
     }
 
-    // Alış Maliyeti (Ort.) (bkz. GET /api/products avg_purchase_price) BU
-    // alandan DEĞİL, product_stock_entries'ten hesaplanıyor — o tabloya hiç
-    // dokunulmazsa burada girilen yeni fiyat listede/ortalamada hiç
-    // yansımaz (gerçek bir üretim raporuydu: fiyat değişti ama "Ort." kısmı
-    // değişmedi). Partinin TEK bir stok girişi varsa hangi girişin
-    // güncelleneceği belirsizlik taşımaz, o girişi de senkronlarız. Birden
-    // fazla giriş varsa (farklı zamanlarda farklı fiyatlarla alınmış gerçek
-    // ayrı partiler) BİLEREK dokunulmaz — aksi halde gerçek maliyet
-    // geçmişini sessizce ezip yanlış (ve tespit edilemez) bir ortalamaya
-    // yol açardık.
+    // bkz. src/lib/productStock.ts syncSingleStockEntryPrice — tek girişte
+    // senkronlar, birden fazla giriş varsa gerçek maliyet geçmişini korumak
+    // için bilerek dokunmaz.
     if (purchase_price != null && purchase_price !== "") {
-      const entryCount = await pool.query<{ count: string }>(
-        "SELECT COUNT(*) FROM product_stock_entries WHERE product_id = $1 AND tenant_id = $2",
-        [id, user.tenantId]
-      );
-      if (Number(entryCount.rows[0].count) === 1) {
-        await pool.query(
-          "UPDATE product_stock_entries SET purchase_price = $1, sale_price = $2 WHERE product_id = $3 AND tenant_id = $4",
-          [purchase_price, sale_price ?? null, id, user.tenantId]
-        );
-      }
+      await syncSingleStockEntryPrice(pool, user.tenantId!, Number(id), Number(purchase_price), sale_price != null && sale_price !== "" ? Number(sale_price) : null);
     }
 
     return NextResponse.json(result.rows[0]);

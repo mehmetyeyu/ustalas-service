@@ -36,3 +36,33 @@ export async function restoreStock(client: QueryClient, tenantId: number, produc
   if (quantity <= 0) return;
   await client.query("UPDATE products SET stock_qty = stock_qty + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3", [quantity, productId, tenantId]);
 }
+
+// Ürün Kataloğu'ndaki "Alış Maliyeti (Ort.)"/"Satış Fiyatı (Ort.)" (bkz.
+// GET /api/products avg_purchase_price) products.purchase_price/sale_price'tan
+// DEĞİL, product_stock_entries'teki miktar ağırlıklı ortalamadan hesaplanır —
+// bu iki alan birbirinden bağımsız yaşar. "Partiyi Düzenle" ile fiyat
+// değiştirilince bu senkronizasyon olmadan "Ort." sütunu hiç değişmez
+// (gerçek bir üretim raporuydu, bkz. PATCH /api/products/[id]).
+//
+// Partinin SADECE TEK bir stok girişi varsa hangi girişin güncelleneceği
+// belirsizlik taşımaz, o girişi de senkronlar. Birden fazla giriş varsa
+// (farklı zamanlarda farklı fiyatlarla alınmış gerçek ayrı partiler) BİLEREK
+// dokunulmaz — aksi halde gerçek maliyet geçmişini sessizce ezip yanlış
+// (ve tespit edilemez) bir ortalamaya yol açardık.
+export async function syncSingleStockEntryPrice(
+  client: QueryClient,
+  tenantId: number,
+  productId: number,
+  purchasePrice: number,
+  salePrice: number | null
+): Promise<void> {
+  const entryCount = await client.query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM product_stock_entries WHERE product_id = $1 AND tenant_id = $2",
+    [productId, tenantId]
+  );
+  if (Number(entryCount.rows[0].count) !== 1) return;
+  await client.query(
+    "UPDATE product_stock_entries SET purchase_price = $1, sale_price = $2 WHERE product_id = $3 AND tenant_id = $4",
+    [purchasePrice, salePrice, productId, tenantId]
+  );
+}
