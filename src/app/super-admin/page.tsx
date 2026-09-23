@@ -5,6 +5,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { formatTry } from "@/lib/exchangeRate";
+import { CopyBox } from "@/components/CopyBox";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
 import type { ConsistencyCheckResult } from "@/app/api/super-admin/consistency-check/route";
 
@@ -66,6 +67,17 @@ interface Tenant {
   billing_cancel_at_period_end: boolean;
   billing_period_ends_at: string | null;
   billing_last_payment_error: string | null;
+  // Fatura Bilgileri (bkz. /admin/billing InvoiceInfoForm) — burada sadece
+  // GÖSTERMEK için: fatura otomasyonu yok, süper admin ödeme geldiğinde
+  // bu bilgilerle manuel olarak Nettefatura'ya girip fatura kesiyor
+  // (bkz. Ödeme Geçmişi modalı).
+  billing_entity_type: string | null;
+  billing_tax_id: string | null;
+  billing_tax_office: string | null;
+  billing_invoice_title: string | null;
+  billing_city: string | null;
+  billing_district: string | null;
+  billing_address: string | null;
 }
 
 // isBillingLocked ile AYNI mantık (bkz. src/lib/billing.ts) — burada ayrıca
@@ -814,6 +826,44 @@ export default function SuperAdminPage() {
                 Kapat
               </button>
             </div>
+            {(() => {
+              const t = viewingPaymentsTenant;
+              const hasInvoiceInfo = t.billing_entity_type && t.billing_tax_id && t.billing_invoice_title;
+              return (
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <div className="font-medium text-gray-700 mb-3 text-sm">
+                    Fatura Bilgileri{" "}
+                    <span className="text-xs font-normal text-gray-400">— Nettefatura&apos;ya girerken kopyalayın</span>
+                  </div>
+                  {!hasInvoiceInfo ? (
+                    <div className="text-gray-400 text-xs">Bu firma henüz fatura bilgilerini tamamlamamış.</div>
+                  ) : (
+                    <>
+                      <div className="text-xs text-gray-500 mb-3">
+                        Fatura Tipi:{" "}
+                        <span className="font-medium text-gray-700">
+                          {t.billing_entity_type === "company" ? "Şirket" : "Şahıs (bireysel/esnaf)"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                        <CopyBox
+                          label={t.billing_entity_type === "company" ? "VKN" : "TCKN"}
+                          value={t.billing_tax_id ?? ""}
+                          compact
+                        />
+                        {t.billing_entity_type === "company" && (
+                          <CopyBox label="Vergi Dairesi" value={t.billing_tax_office ?? ""} compact />
+                        )}
+                        <CopyBox label="Fatura Unvanı / Ad Soyad" value={t.billing_invoice_title ?? ""} compact />
+                        <CopyBox label="İl" value={t.billing_city ?? ""} compact />
+                        <CopyBox label="İlçe" value={t.billing_district ?? ""} compact />
+                      </div>
+                      <CopyBox label="Açık Adres" value={t.billing_address ?? ""} />
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <div className="overflow-y-auto flex-1">
               {paymentsLoading ? (
                 <div className="text-center text-gray-400 py-12">Yükleniyor...</div>

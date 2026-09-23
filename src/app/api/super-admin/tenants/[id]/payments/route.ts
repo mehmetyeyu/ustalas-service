@@ -40,7 +40,11 @@ export interface PaymentHistoryRow {
 // Firma kodu kullanılması bilinçli bir tercih: iyzico panelinde işlem
 // listesini gözden geçiren süper admin conversationId sütununda doğrudan
 // tanıdığı firma kodunu görsün diye — eskiden tenant id (anlamsız bir
-// sayı) gönderiliyordu.
+// sayı) gönderiliyordu. GERİYE DÖNÜK UYUMLULUK: bu değişiklikten ÖNCE
+// yapılmış ödemeler iyzico'da hâlâ ESKİ conversationId (tenant id) ile
+// kayıtlı — gerçek bir ödemede saptandı (Soyka/995987, bkz. plan). Bu
+// yüzden HER İKİ conversationId de sorgulanıp sonuçlar birleştiriliyor;
+// aksi halde o değişiklikten önceki gerçek ödemeler "yok" gibi görünürdü.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser();
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
@@ -54,7 +58,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const code = tenantResult.rows[0]?.code;
     if (!code) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
 
-    const details = await getPaymentDetailsByConversationId(code);
+    const [byCode, byOldTenantId] = await Promise.all([
+      getPaymentDetailsByConversationId(code),
+      getPaymentDetailsByConversationId(String(tenantId)),
+    ]);
+    // paymentId'ye göre benzersizleştirilir — normalde iki sorgu asla aynı
+    // ödemeyi döndürmez (bir ödemenin gerçek conversationId'si ikisinden
+    // sadece biri olabilir), ama garantiye almak için Map kullanılıyor.
+    const details = [...new Map([...byCode, ...byOldTenantId].map((p) => [p.paymentId, p])).values()];
 
     const payments: PaymentHistoryRow[] = details.map((p) => ({
       date: p.createdDate ? new Date(p.createdDate).getTime() : null,
