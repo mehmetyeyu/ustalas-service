@@ -130,6 +130,30 @@ export async function PATCH(
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
     }
+
+    // Alış Maliyeti (Ort.) (bkz. GET /api/products avg_purchase_price) BU
+    // alandan DEĞİL, product_stock_entries'ten hesaplanıyor — o tabloya hiç
+    // dokunulmazsa burada girilen yeni fiyat listede/ortalamada hiç
+    // yansımaz (gerçek bir üretim raporuydu: fiyat değişti ama "Ort." kısmı
+    // değişmedi). Partinin TEK bir stok girişi varsa hangi girişin
+    // güncelleneceği belirsizlik taşımaz, o girişi de senkronlarız. Birden
+    // fazla giriş varsa (farklı zamanlarda farklı fiyatlarla alınmış gerçek
+    // ayrı partiler) BİLEREK dokunulmaz — aksi halde gerçek maliyet
+    // geçmişini sessizce ezip yanlış (ve tespit edilemez) bir ortalamaya
+    // yol açardık.
+    if (purchase_price != null && purchase_price !== "") {
+      const entryCount = await pool.query<{ count: string }>(
+        "SELECT COUNT(*) FROM product_stock_entries WHERE product_id = $1 AND tenant_id = $2",
+        [id, user.tenantId]
+      );
+      if (Number(entryCount.rows[0].count) === 1) {
+        await pool.query(
+          "UPDATE product_stock_entries SET purchase_price = $1, sale_price = $2 WHERE product_id = $3 AND tenant_id = $4",
+          [purchase_price, sale_price ?? null, id, user.tenantId]
+        );
+      }
+    }
+
     return NextResponse.json(result.rows[0]);
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
