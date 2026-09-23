@@ -18,6 +18,7 @@ interface ProductBatch {
   size_desc: string | null;
   season: string | null;
   supplier: string | null;
+  location: string | null;
   production_week: number | null;
   production_year: number | null;
   purchase_price: string | number | null;
@@ -70,6 +71,7 @@ interface MovementRow {
 }
 
 const SEASON_OPTIONS = ["Yaz", "Kış", "Dört Mevsim"];
+const LOCATION_OPTIONS = ["Mağaza", "Depo"];
 
 // Alış Fiyatı × (1 + yüzde/100) — kâr yüzdesi girildiğinde Satış Fiyatı'nı
 // otomatik hesaplar; ikisi de boşsa mevcut değeri korur (elle de değiştirilebilir).
@@ -137,6 +139,7 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
   { key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true },
   { key: "season", label: "Mevsim", defaultVisible: true },
   { key: "supplier", label: "Tedarikçi", defaultVisible: true },
+  { key: "location", label: "Konum", defaultVisible: true },
   { key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true },
   { key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true },
 ];
@@ -144,7 +147,7 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
 // Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
 // aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
 const BATCH_SKELETON_COL_WIDTH: Record<string, string> = {
-  production_date: "w-12", season: "w-14", supplier: "w-16", purchase_price: "w-14", sale_price: "w-14",
+  production_date: "w-12", season: "w-14", supplier: "w-16", location: "w-14", purchase_price: "w-14", sale_price: "w-14",
 };
 const SKELETON_ROWS = 8;
 
@@ -154,6 +157,7 @@ const EMPTY_FORM = {
   size_desc: "",
   season: "",
   supplier: "",
+  location: "",
   production_week: "",
   production_year: "",
   purchase_price: "",
@@ -177,6 +181,21 @@ function batchLabel(item: { code: string; brand?: string | null; size_desc?: str
 function weekYearLabel(week: number | null, year: number | null): string {
   if (week == null || year == null) return "—";
   return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
+}
+
+// Bir ürün kodunun tüm partileri birden fazla konuma dağılmışsa (ör. "12
+// Mağaza, 6 Depo") grup satırında toplam stoğun altında küçük bir özet
+// gösterilir — hiçbiri konum kullanmıyorsa (yaygın durum) hiç gösterilmez.
+function locationBreakdown(batches: ProductBatch[]): string | null {
+  const byLocation = new Map<string, number>();
+  for (const b of batches) {
+    const key = b.location || "Belirtilmemiş";
+    byLocation.set(key, (byLocation.get(key) ?? 0) + (b.stock_qty ?? 0));
+  }
+  if (byLocation.size <= 1) return null;
+  return Array.from(byLocation.entries())
+    .map(([loc, qty]) => `${qty} ${loc}`)
+    .join(" · ");
 }
 
 function seasonBadge(season: string | null) {
@@ -372,6 +391,7 @@ export default function ProductsPage() {
       size_desc: f.size_desc.trim() || null,
       season: f.season.trim() || null,
       supplier: f.supplier.trim() || null,
+      location: f.location.trim() || null,
       production_week: f.production_week === "" ? null : Number(f.production_week),
       production_year: f.production_year === "" ? null : Number(f.production_year),
       purchase_price: f.purchase_price === "" ? null : Number(f.purchase_price),
@@ -423,6 +443,7 @@ export default function ProductsPage() {
       size_desc: item.size_desc ?? "",
       season: item.season ?? "",
       supplier: item.supplier ?? "",
+      location: item.location ?? "",
       production_week: item.production_week != null ? String(item.production_week) : "",
       production_year: item.production_year != null ? String(item.production_year) : "",
       purchase_price: item.purchase_price != null ? String(num(item.purchase_price)) : "",
@@ -911,6 +932,7 @@ export default function ProductsPage() {
                     {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
                     {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
                     {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
+                    {visibleCols.location && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Konum</th>}
                     {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
                     {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
                     <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
@@ -964,10 +986,15 @@ export default function ProductsPage() {
                               <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${group.total_stock === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
                                 {group.total_stock}
                               </span>
+                              {(() => {
+                                const breakdown = locationBreakdown(group.batches);
+                                return breakdown ? <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{breakdown}</div> : null;
+                              })()}
                             </td>
                             {visibleCols.production_date && <td className="px-4 py-3 text-gray-400 text-xs">{group.batches.length} parti</td>}
                             {visibleCols.season && <td className="px-4 py-3">{seasonBadge(group.season)}</td>}
                             {visibleCols.supplier && <td className="px-4 py-3"></td>}
+                            {visibleCols.location && <td className="px-4 py-3"></td>}
                             {visibleCols.purchase_price && (
                               <td className="px-4 py-3 text-right text-gray-800 font-medium">
                                 {group.avg_purchase_price != null ? formatCurrency(num(group.avg_purchase_price)) : "—"}
@@ -1027,6 +1054,7 @@ export default function ProductsPage() {
                               )}
                               {visibleCols.season && <td className="px-4 py-3"></td>}
                               {visibleCols.supplier && <td className="px-4 py-3 text-gray-500">{batch.supplier ?? "—"}</td>}
+                              {visibleCols.location && <td className="px-4 py-3 text-gray-500">{batch.location ?? "—"}</td>}
                               {visibleCols.purchase_price && <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(num(batch.avg_purchase_price ?? batch.purchase_price))}</td>}
                               {visibleCols.sale_price && <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatCurrency(num(batch.avg_sale_price ?? batch.sale_price))}</td>}
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
@@ -1203,6 +1231,10 @@ export default function ProductsPage() {
                 <SearchableCombobox value={form.supplier} onChange={(val) => setForm({ ...form, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
+                <SearchableCombobox value={form.location} onChange={(val) => setForm({ ...form, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
                 <div className="flex gap-2">
                   <input type="number" min="1" max="53" placeholder="Hafta" value={form.production_week}
@@ -1297,6 +1329,10 @@ export default function ProductsPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
                 <SearchableCombobox value={editForm.supplier} onChange={(val) => setEditForm({ ...editForm, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
+                <SearchableCombobox value={editForm.location} onChange={(val) => setEditForm({ ...editForm, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>

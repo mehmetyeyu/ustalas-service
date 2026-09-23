@@ -1283,6 +1283,17 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS panel_logo_url TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stamp_url TEXT;
 
+-- Ürün Kataloğu: aynı partinin (kod+hafta/yılı+tedarikçi) stoğu fiziksel
+-- olarak birden fazla yerde (Mağaza/Depo) durabiliyor — "18 adet var ama
+-- 6'sı depoda" (bkz. görüşme notları). Tedarikçi ile aynı mantıkla parti
+-- benzersizliğine bir boyut daha eklendi: farklı konum = ayrı parti satırı.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS location VARCHAR(50);
+
+DROP INDEX IF EXISTS products_code_batch_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS products_code_batch_unique ON products(tenant_id, code, production_year, production_week, COALESCE(supplier, ''), COALESCE(location, '')) WHERE production_year IS NOT NULL;
+DROP INDEX IF EXISTS products_code_nodate_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS products_code_nodate_unique ON products(tenant_id, code, COALESCE(location, '')) WHERE production_year IS NULL;
+
 -- Aktivite Geçmişi — "bu siparişi kim sildi, bu carinin bakiyesini kim
 -- değiştirdi" sorusuna cevap vermek için (bkz. mimari değerlendirme notları).
 -- customer_ledger_entries.created_by GİBİ tek bir tabloya özel, sadece

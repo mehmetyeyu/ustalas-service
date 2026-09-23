@@ -47,6 +47,7 @@ interface StockBatch {
   production_year: number | null;
   size_desc: string | null;
   stock_qty: number;
+  location: string | null;
   avg_purchase_price: string | number | null;
   avg_sale_price: string | number | null;
 }
@@ -229,7 +230,7 @@ function TireBatchPicker({
           <option value="">Parti (Hafta/Yıl) seç...</option>
           {batches.map((b) => (
             <option key={b.id} value={b.id}>
-              {weekYearLabel(b.production_week, b.production_year)} — Stok: {b.stock_qty}
+              {weekYearLabel(b.production_week, b.production_year)} — Stok: {b.stock_qty}{b.location ? ` (${b.location})` : ""}
             </option>
           ))}
         </select>

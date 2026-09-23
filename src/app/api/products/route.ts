@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty } = body;
+    const { code, brand, size_desc, season, supplier, location, production_week, production_year, purchase_price, sale_price, stock_qty } = body;
 
     if (!code || !String(code).trim()) {
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
@@ -177,16 +177,16 @@ export async function POST(request: NextRequest) {
     const yearVal = isDated ? normalizeYear(Number(production_year)) : null;
     const values = [
       user.tenantId, String(code).trim(), brand || null, size_desc || null, season || null, supplier || null,
-      isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty,
+      isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, location || null,
     ];
 
     const conflictClause = isDated
-      ? `ON CONFLICT (tenant_id, code, production_year, production_week, COALESCE(supplier, '')) WHERE production_year IS NOT NULL`
-      : `ON CONFLICT (tenant_id, code) WHERE production_year IS NULL`;
+      ? `ON CONFLICT (tenant_id, code, production_year, production_week, COALESCE(supplier, ''), COALESCE(location, '')) WHERE production_year IS NOT NULL`
+      : `ON CONFLICT (tenant_id, code, COALESCE(location, '')) WHERE production_year IS NULL`;
 
     const result = await pool.query(
-      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty, location)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ${conflictClause} DO UPDATE SET
          brand=EXCLUDED.brand, size_desc=EXCLUDED.size_desc, season=EXCLUDED.season,
          purchase_price=EXCLUDED.purchase_price, sale_price=EXCLUDED.sale_price,

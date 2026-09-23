@@ -45,7 +45,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty } = body;
+    const { code, brand, size_desc, season, supplier, location, production_week, production_year, purchase_price, sale_price, stock_qty } = body;
 
     if (!code || !String(code).trim()) {
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
@@ -74,19 +74,21 @@ export async function PATCH(
     const isDated = production_week != null && production_week !== "" && production_year != null && production_year !== "";
     const yearVal = isDated ? normalizeYear(Number(production_year)) : null;
     const supplierVal = supplier || null;
+    const locationVal = location || null;
     const qty = Number(stock_qty) || 0;
 
     // Düzenlenen partiyi başka bir mevcut partiyle aynı kimliğe (kod+hafta/yılı+
-    // tedarikçi) getirirseniz, iki ayrı satır olarak çakışmak yerine BİRLEŞTİRİLİR:
-    // stok toplanır, fiyat geçmişi hedef partiye taşınır, bu satır silinir.
+    // tedarikçi+konum) getirirseniz, iki ayrı satır olarak çakışmak yerine
+    // BİRLEŞTİRİLİR: stok toplanır, fiyat geçmişi hedef partiye taşınır, bu
+    // satır silinir.
     const targetResult = isDated
       ? await pool.query(
-          `SELECT * FROM products WHERE tenant_id=$1 AND code=$2 AND production_year=$3 AND production_week=$4 AND COALESCE(supplier,'')=COALESCE($5,'') AND id != $6`,
-          [user.tenantId, trimmedCode, yearVal, production_week, supplierVal, id]
+          `SELECT * FROM products WHERE tenant_id=$1 AND code=$2 AND production_year=$3 AND production_week=$4 AND COALESCE(supplier,'')=COALESCE($5,'') AND COALESCE(location,'')=COALESCE($6,'') AND id != $7`,
+          [user.tenantId, trimmedCode, yearVal, production_week, supplierVal, locationVal, id]
         )
       : await pool.query(
-          `SELECT * FROM products WHERE tenant_id=$1 AND code=$2 AND production_year IS NULL AND id != $3`,
-          [user.tenantId, trimmedCode, id]
+          `SELECT * FROM products WHERE tenant_id=$1 AND code=$2 AND production_year IS NULL AND COALESCE(location,'')=COALESCE($3,'') AND id != $4`,
+          [user.tenantId, trimmedCode, locationVal, id]
         );
 
     if (targetResult.rowCount && targetResult.rowCount > 0) {
@@ -119,11 +121,11 @@ export async function PATCH(
 
     const result = await pool.query(
       `UPDATE products SET
-        code=$1, brand=$2, size_desc=$3, season=$4, supplier=$5,
-        production_week=$6, production_year=$7, purchase_price=$8, sale_price=$9, stock_qty=$10, updated_at=CURRENT_TIMESTAMP
-       WHERE id=$11 AND tenant_id=$12 RETURNING *`,
+        code=$1, brand=$2, size_desc=$3, season=$4, supplier=$5, location=$6,
+        production_week=$7, production_year=$8, purchase_price=$9, sale_price=$10, stock_qty=$11, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$12 AND tenant_id=$13 RETURNING *`,
       [
-        trimmedCode, brand || null, size_desc || null, season || null, supplierVal,
+        trimmedCode, brand || null, size_desc || null, season || null, supplierVal, locationVal,
         isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, id, user.tenantId,
       ]
     );

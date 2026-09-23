@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     // doldurmak için — parti seçildiğinde Ürün sayfasındaki gibi miktar
     // ağırlıklı ortalama fiyat kullanılır (elle de değiştirilebilir).
     const result = await pool.query(
-      `SELECT p.id, p.production_week, p.production_year, p.size_desc, p.stock_qty,
+      `SELECT p.id, p.production_week, p.production_year, p.size_desc, p.stock_qty, p.location,
               COALESCE(avg_sub.avg_purchase_price, p.purchase_price) AS avg_purchase_price,
               COALESCE(avg_sub.avg_sale_price, p.sale_price) AS avg_sale_price
        FROM products p
