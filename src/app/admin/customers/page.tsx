@@ -23,6 +23,7 @@ interface Customer {
   phone: string | null;
   order_count: number;
   balance: number;
+  has_cari_activity: boolean;
 }
 
 interface CustomerOrder {
@@ -80,6 +81,10 @@ export default function CustomersPage() {
   const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  // Cari (en az bir cari hareketi olan) ile perakende (hiç olmayan) müşteriler
+  // aynı listede karışıyordu (bkz. görüşme notları) — has_cari_activity
+  // (bkz. GET /api/customers) üzerinden ayrılıyor, yeni bir alan gerekmedi.
+  const [activeTab, setActiveTab] = useState<"cari" | "perakende">("cari");
   const [ordersModalCustomer, setOrdersModalCustomer] = useState<Customer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -277,9 +282,12 @@ export default function CustomersPage() {
     await fetchCustomers();
   }
 
+  const cariCustomers = customers.filter((c) => c.has_cari_activity);
+  const perakendeCustomers = customers.filter((c) => !c.has_cari_activity);
+  const tabCustomers = activeTab === "cari" ? cariCustomers : perakendeCustomers;
   const filtered = search
-    ? customers.filter((c) => c.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
-    : customers;
+    ? tabCustomers.filter((c) => c.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
+    : tabCustomers;
 
   // Çalışana "git şu müşterilerden tahsil et" diye verilebilecek somut bir
   // özet — customers.view zaten sayfa girişinde şart koşulduğundan (bkz.
@@ -320,6 +328,23 @@ export default function CustomersPage() {
           <p className="text-xs text-gray-500 mb-1">Toplam Alacak (onlarda)</p>
           <p className="text-xl sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(totalCredit)}</p>
         </div>
+      </div>
+
+      {/* Sekmeler: Cari (en az bir cari hareketi olan) / Perakende (hiç
+          olmayan) — daha önce tek listede karışıyorlardı. */}
+      <div className="flex gap-1 mb-6 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab("cari")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "cari" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+        >
+          Cari Müşteriler ({cariCustomers.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("perakende")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "perakende" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+        >
+          Perakende Müşteriler ({perakendeCustomers.length})
+        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6">

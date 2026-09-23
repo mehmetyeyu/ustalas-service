@@ -29,21 +29,25 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(
       withCounts
         ? `SELECT c.id, c.name, c.phone, COUNT(DISTINCT o.id)::int AS order_count${
-            withBalance ? ", COALESCE(bal.balance, 0)::float AS balance" : ""
+            // has_cari_activity: Cari/Perakende tab ayrımı için (bkz.
+            // Müşteriler sayfası) — bakiyenin kendisi (0 olabilir, tam
+            // ödenmiş bir Cari müşteride de 0'dır) bu ayrımı yapamaz, bu
+            // yüzden ayrıca "hiç hareketi var mı" (entry_count) gerekir.
+            withBalance ? ", COALESCE(bal.balance, 0)::float AS balance, COALESCE(bal.entry_count, 0) > 0 AS has_cari_activity" : ""
           }
            FROM customers c
            LEFT JOIN orders o ON o.customer_name = c.name AND o.tenant_id = c.tenant_id${
              withBalance
                ? `
            LEFT JOIN LATERAL (
-             SELECT SUM(cle.amount * cle.direction) AS balance
+             SELECT SUM(cle.amount * cle.direction) AS balance, COUNT(*)::int AS entry_count
              FROM customer_ledger_entries cle
              WHERE cle.customer_id = c.id AND cle.tenant_id = c.tenant_id
            ) bal ON true`
                : ""
            }
            WHERE c.tenant_id = $1
-           GROUP BY c.id, c.name, c.phone${withBalance ? ", bal.balance" : ""}
+           GROUP BY c.id, c.name, c.phone${withBalance ? ", bal.balance, bal.entry_count" : ""}
            ORDER BY c.name`
         : `SELECT id, name, phone FROM customers WHERE tenant_id = $1 ORDER BY name`,
       [user.tenantId]
