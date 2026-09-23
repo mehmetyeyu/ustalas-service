@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getAuthUserByToken } from "@/lib/auth";
 import { canAccessPath, getDefaultAdminPath } from "@/lib/permissions";
 import { isBillingLocked } from "@/lib/billing";
+import { getClientIp } from "@/lib/clientIp";
+import { isRateLimited, loginRateLimit, registerRateLimit, bookingRateLimit } from "@/lib/rateLimit";
 
 // Sadece pazarlama/demo dağıtımlarında (ör. Elevire) set edilir — ayarlıysa
 // kök yol dahili sipariş aracı yerine doğrudan landing sayfasına yönlendirir.
@@ -24,6 +26,24 @@ export async function middleware(request: NextRequest) {
   // /api/super-admin/* de bu kontrolün tamamen dışındadır (kimlik
   // doğrulaması farklı veya hiç yok, tenant kavramı yok).
   if (pathname.startsWith("/api/")) {
+    // IP bazlı rate limit — sadece kimlik doğrulaması olmayan, kötüye
+    // kullanıma açık (brute-force/spam) uçlarda. Diğer tüm /api/* zaten
+    // auth arkasında olduğundan buna ihtiyaç duymaz. Redis yoksa/erişilemezse
+    // istek engellenmez (bkz. src/lib/rateLimit.ts fail-open).
+    if (request.method === "POST") {
+      const limiter =
+        pathname === "/api/auth/login" ? loginRateLimit :
+        pathname === "/api/public/register" ? registerRateLimit :
+        /^\/api\/public\/randevu\/[^/]+$/.test(pathname) ? bookingRateLimit :
+        null;
+      if (limiter && (await isRateLimited(limiter, getClientIp(request)))) {
+        return NextResponse.json(
+          { error: "Çok fazla istek gönderildi. Lütfen bir süre sonra tekrar deneyin." },
+          { status: 429 }
+        );
+      }
+    }
+
     const exempt =
       pathname.startsWith("/api/public/") ||
       pathname.startsWith("/api/auth/") ||
