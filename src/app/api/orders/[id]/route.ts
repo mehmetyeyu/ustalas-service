@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
 import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
+import { logAudit } from "@/lib/auditLog";
 
 interface EditLineInput {
   id?: number;
@@ -91,13 +92,22 @@ export async function DELETE(
         await restoreStock(client, user.tenantId!, row.product_id, row.quantity);
       }
 
-      const result = await client.query("DELETE FROM orders WHERE id = $1 AND tenant_id = $2 RETURNING id", [id, user.tenantId]);
+      const result = await client.query<{ id: number; plate: string; customer_name: string | null }>(
+        "DELETE FROM orders WHERE id = $1 AND tenant_id = $2 RETURNING id, plate, customer_name",
+        [id, user.tenantId]
+      );
       if (result.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
       }
 
       await client.query("COMMIT");
+      const deleted = result.rows[0];
+      await logAudit({
+        tenantId: user.tenantId!, userId: user.userId, username: user.username,
+        action: "order.delete", tableName: "orders", recordId: deleted.id,
+        detail: `Plaka: ${deleted.plate}${deleted.customer_name ? `, Müşteri: ${deleted.customer_name}` : ""}`,
+      });
       return NextResponse.json({ success: true });
     } catch (err) {
       await client.query("ROLLBACK");
@@ -168,8 +178,8 @@ export async function PATCH(
       // edilir — zaten TAMAMLANDI bir sipariş tekrar kapatılamaz (aksi hâlde
       // API'ye doğrudan istek atılarak mevcut ödeme kaydı sessizce ezilebilirdi;
       // arayüzdeki "Ödeme Al & Kapat" butonu da zaten yalnızca BEKLEMEDE'de görünür).
-      const orderCheck = await client.query<{ status: string; total_amount: string; customer_name: string | null }>(
-        "SELECT status, total_amount, customer_name FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      const orderCheck = await client.query<{ status: string; total_amount: string; customer_name: string | null; plate: string }>(
+        "SELECT status, total_amount, customer_name, plate FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
         [id, user.tenantId]
       );
       if (orderCheck.rows.length === 0) {
@@ -209,6 +219,11 @@ export async function PATCH(
       await syncOrderLedger(client, user.tenantId!, Number(id), orderCheck.rows[0].customer_name, user.userId);
 
       await client.query("COMMIT");
+      await logAudit({
+        tenantId: user.tenantId!, userId: user.userId, username: user.username,
+        action: "order.payment", tableName: "orders", recordId: Number(id),
+        detail: `Plaka: ${orderCheck.rows[0].plate}, Ödeme: ${summaryType}, Tutar: ${totalPaid}`,
+      });
     } catch (err) {
       await client.query("ROLLBACK");
       if (err instanceof LedgerCustomerRequiredError) {
@@ -476,6 +491,11 @@ export async function PUT(
       await syncOrderLedger(client, user.tenantId!, Number(id), customer_name, user.userId);
 
       await client.query("COMMIT");
+      await logAudit({
+        tenantId: user.tenantId!, userId: user.userId, username: user.username,
+        action: "order.update", tableName: "orders", recordId: Number(id),
+        detail: `Plaka: ${plate}${customer_name ? `, Müşteri: ${customer_name}` : ""}`,
+      });
     } catch (err) {
       await client.query("ROLLBACK");
       if (err instanceof InsufficientStockError) {

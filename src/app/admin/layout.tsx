@@ -45,6 +45,7 @@ const navItems = [
 const settingsItems = [
   { href: "/admin/profile", label: "Profil", adminOnly: false },
   { href: "/admin/users", label: "Kullanıcılar", adminOnly: true },
+  { href: "/admin/audit-log", label: "Aktivite Geçmişi", adminOnly: true },
   { href: "/admin/settings", label: "Genel Ayarlar", adminOnly: true },
   { href: "/admin/appointments/ayarlar", label: "Randevu Ayarları", adminOnly: true },
   { href: "/admin/appointments/gorunum", label: "Randevu Görünümü", adminOnly: true },

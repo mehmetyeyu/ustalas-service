@@ -66,6 +66,7 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/profile", resource: null },
   { prefix: "/admin/users", resource: "__admin_only__" },
   { prefix: "/admin/settings", resource: "__admin_only__" },
+  { prefix: "/admin/audit-log", resource: "__admin_only__" },
 ];
 
 export function canAccessPath(user: PermissionUser, pathname: string): boolean {

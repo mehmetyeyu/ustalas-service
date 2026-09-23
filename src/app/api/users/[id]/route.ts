@@ -4,6 +4,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { ALLOWED_ROLES } from "@/lib/roles";
 import { isValidPermissionKey } from "@/lib/permissions";
+import { logAudit } from "@/lib/auditLog";
 
 export async function PATCH(
   request: NextRequest,
@@ -45,10 +46,11 @@ export async function PATCH(
     }
     // Hedef kullanıcı gerçekten bu firmaya mı ait — bir tenant'ın admin'i
     // başka bir tenant'ın kullanıcısını id tahmin ederek düzenleyemesin diye.
-    const ownershipCheck = await pool.query("SELECT id FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
+    const ownershipCheck = await pool.query<{ username: string }>("SELECT username FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
     if (ownershipCheck.rowCount === 0) {
       return NextResponse.json({ error: "Kullanıcı bulunamadı." }, { status: 404 });
     }
+    const targetUsername = ownershipCheck.rows[0].username;
 
     if (Number(id) === authUser.userId) {
       if (role !== undefined) {
@@ -110,31 +112,49 @@ export async function PATCH(
       }
     }
 
+    // Aynı PATCH'te birden fazla alan birden değişebilir (ör. rol + izinler
+    // tek formda) — hepsi TEK audit_log kaydında özetlenir, alan başına ayrı
+    // kayıt yerine (bkz. src/lib/auditLog.ts).
+    const changes: string[] = [];
+
     if (role !== undefined) {
       await pool.query("UPDATE users SET role = $1 WHERE id = $2 AND tenant_id = $3", [role, id, authUser.tenantId]);
+      changes.push(`rol → ${role}`);
     }
     if (password) {
       const passwordHash = await bcrypt.hash(password, 10);
       await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3", [passwordHash, id, authUser.tenantId]);
+      changes.push("şifre sıfırlandı");
     }
     if (username !== undefined) {
       await pool.query("UPDATE users SET username = $1 WHERE id = $2 AND tenant_id = $3", [String(username).trim(), id, authUser.tenantId]);
+      changes.push(`kullanıcı adı → ${String(username).trim()}`);
     }
     if (unlock) {
       await pool.query(
         "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1 AND tenant_id = $2",
         [id, authUser.tenantId]
       );
+      changes.push("hesap kilidi kaldırıldı");
     }
     if (forceLogout) {
       await pool.query("UPDATE users SET tokens_invalid_before = NOW() WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
+      changes.push("oturumlar zorla sonlandırıldı");
     }
     if (isActive !== undefined) {
       await pool.query("UPDATE users SET is_active = $1 WHERE id = $2 AND tenant_id = $3", [isActive, id, authUser.tenantId]);
+      changes.push(isActive ? "hesap aktifleştirildi" : "hesap devre dışı bırakıldı");
     }
     if (permissions !== undefined) {
       await pool.query("UPDATE users SET permissions = $1 WHERE id = $2 AND tenant_id = $3", [permissions, id, authUser.tenantId]);
+      changes.push(`izinler güncellendi (${permissions.length} izin)`);
     }
+
+    await logAudit({
+      tenantId: authUser.tenantId!, userId: authUser.userId, username: authUser.username,
+      action: "user.update", tableName: "users", recordId: Number(id),
+      detail: `Kullanıcı: ${targetUsername} — ${changes.join(", ")}`,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -162,7 +182,10 @@ export async function DELETE(
       return NextResponse.json({ error: "Kendi hesabınızı silemezsiniz." }, { status: 400 });
     }
 
-    const target = await pool.query("SELECT role, is_primary_admin FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
+    const target = await pool.query<{ role: string; is_primary_admin: boolean; username: string }>(
+      "SELECT role, is_primary_admin, username FROM users WHERE id = $1 AND tenant_id = $2",
+      [id, authUser.tenantId]
+    );
     if (target.rows.length === 0) {
       return NextResponse.json({ error: "Kullanıcı bulunamadı." }, { status: 404 });
     }
@@ -183,6 +206,11 @@ export async function DELETE(
     }
 
     await pool.query("DELETE FROM users WHERE id = $1 AND tenant_id = $2", [id, authUser.tenantId]);
+    await logAudit({
+      tenantId: authUser.tenantId!, userId: authUser.userId, username: authUser.username,
+      action: "user.delete", tableName: "users", recordId: Number(id),
+      detail: `Kullanıcı: ${target.rows[0].username}`,
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);

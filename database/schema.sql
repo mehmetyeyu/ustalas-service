@@ -1282,3 +1282,26 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS website VARCHAR(200);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS panel_logo_url TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stamp_url TEXT;
+
+-- Aktivite Geçmişi — "bu siparişi kim sildi, bu carinin bakiyesini kim
+-- değiştirdi" sorusuna cevap vermek için (bkz. mimari değerlendirme notları).
+-- customer_ledger_entries.created_by GİBİ tek bir tabloya özel, sadece
+-- OLUŞTURMAYI kaydeden bir alan değil — DÜZENLEME/SİLME dahil, birden fazla
+-- tablo için TEK, merkezi bir iz (bkz. src/lib/auditLog.ts logBillingEvent
+-- ile aynı best-effort felsefe: bu loglama başarısız olursa asıl işlemi
+-- ASLA bloklamaz). username DENORMALIZE edilir (user_id'ye ek olarak) —
+-- kullanıcı hesabı sonradan silinse bile geçmiş kaydın "kim" bilgisi
+-- kaybolmasın diye (bkz. ON DELETE SET NULL, user_id NULL olabilir ama
+-- username hep kalır).
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         SERIAL PRIMARY KEY,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  user_id    INT REFERENCES users(id) ON DELETE SET NULL,
+  username   VARCHAR(150) NOT NULL,
+  action     VARCHAR(50) NOT NULL,
+  table_name VARCHAR(50) NOT NULL,
+  record_id  INT,
+  detail     TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS audit_log_tenant_created_idx ON audit_log(tenant_id, created_at DESC);

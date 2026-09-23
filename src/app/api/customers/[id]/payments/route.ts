@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { validateManualLedgerInput, InvalidLedgerInputError } from "@/lib/customerLedger";
 import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
+import { logAudit } from "@/lib/auditLog";
 
 // Müşteriler ekranındaki "Tahsilat Al / Borç Ekle" — bağımsız bir cari
 // hareketi (herhangi bir siparişe bağlı DEĞİL, bkz. src/lib/customerLedger.ts
@@ -37,8 +38,8 @@ export async function POST(
       throw err;
     }
 
-    const customerResult = await pool.query<{ id: number }>(
-      "SELECT id FROM customers WHERE id = $1 AND tenant_id = $2",
+    const customerResult = await pool.query<{ id: number; name: string }>(
+      "SELECT id, name FROM customers WHERE id = $1 AND tenant_id = $2",
       [id, user.tenantId]
     );
     if (customerResult.rows.length === 0) {
@@ -55,6 +56,12 @@ export async function POST(
         input.paymentType, input.entryDate, input.note, user.userId, kasaId,
       ]
     );
+
+    await logAudit({
+      tenantId: user.tenantId!, userId: user.userId, username: user.username,
+      action: "customer.ledger_add", tableName: "customer_ledger_entries", recordId: result.rows[0].id,
+      detail: `Müşteri: ${customerResult.rows[0].name}, ${input.direction === 1 ? "Borç" : "Tahsilat"}: ${input.amount} (${input.paymentType})`,
+    });
 
     return NextResponse.json({ id: result.rows[0].id }, { status: 201 });
   } catch (error) {

@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { validateManualLedgerInput, InvalidLedgerInputError } from "@/lib/customerLedger";
 import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
+import { logAudit } from "@/lib/auditLog";
 
 // Bir "Tahsilat Al / Borç Ekle" (MANUEL) kaydını düzeltir/siler — SIPARIS
 // tipi kayıtlar buradan asla elle değiştirilemez, onlar syncOrderLedger
@@ -24,8 +25,10 @@ export async function PUT(
     const { id, entryId } = await params;
     const body = await request.json();
 
-    const entryCheck = await pool.query<{ entry_type: string; payment_type: string | null }>(
-      "SELECT entry_type, payment_type FROM customer_ledger_entries WHERE id = $1 AND customer_id = $2 AND tenant_id = $3",
+    const entryCheck = await pool.query<{ entry_type: string; payment_type: string | null; customer_name: string }>(
+      `SELECT cle.entry_type, cle.payment_type, c.name AS customer_name
+       FROM customer_ledger_entries cle JOIN customers c ON c.id = cle.customer_id
+       WHERE cle.id = $1 AND cle.customer_id = $2 AND cle.tenant_id = $3`,
       [entryId, id, user.tenantId]
     );
     if (entryCheck.rows.length === 0) {
@@ -54,6 +57,12 @@ export async function PUT(
       [input.direction, input.amount, input.paymentType, input.entryDate, input.note, kasaId, entryId, id, user.tenantId]
     );
 
+    await logAudit({
+      tenantId: user.tenantId!, userId: user.userId, username: user.username,
+      action: "customer.ledger_update", tableName: "customer_ledger_entries", recordId: Number(entryId),
+      detail: `Müşteri: ${entryCheck.rows[0].customer_name}, ${input.direction === 1 ? "Borç" : "Tahsilat"}: ${input.amount} (${input.paymentType})`,
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -74,8 +83,10 @@ export async function DELETE(
   try {
     const { id, entryId } = await params;
 
-    const entryCheck = await pool.query<{ entry_type: string }>(
-      "SELECT entry_type FROM customer_ledger_entries WHERE id = $1 AND customer_id = $2 AND tenant_id = $3",
+    const entryCheck = await pool.query<{ entry_type: string; direction: 1 | -1; amount: string; customer_name: string }>(
+      `SELECT cle.entry_type, cle.direction, cle.amount, c.name AS customer_name
+       FROM customer_ledger_entries cle JOIN customers c ON c.id = cle.customer_id
+       WHERE cle.id = $1 AND cle.customer_id = $2 AND cle.tenant_id = $3`,
       [entryId, id, user.tenantId]
     );
     if (entryCheck.rows.length === 0) {
@@ -89,6 +100,12 @@ export async function DELETE(
       "DELETE FROM customer_ledger_entries WHERE id = $1 AND customer_id = $2 AND tenant_id = $3",
       [entryId, id, user.tenantId]
     );
+
+    await logAudit({
+      tenantId: user.tenantId!, userId: user.userId, username: user.username,
+      action: "customer.ledger_delete", tableName: "customer_ledger_entries", recordId: Number(entryId),
+      detail: `Müşteri: ${entryCheck.rows[0].customer_name}, ${entryCheck.rows[0].direction === 1 ? "Borç" : "Tahsilat"}: ${entryCheck.rows[0].amount}`,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

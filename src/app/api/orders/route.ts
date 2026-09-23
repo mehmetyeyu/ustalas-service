@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/permissions";
 import { getAutoRegisterCustomers } from "@/lib/settings";
 import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
 import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
+import { logAudit } from "@/lib/auditLog";
 
 interface OrderLineInput {
   service_name: string;
@@ -257,6 +258,11 @@ export async function POST(request: NextRequest) {
       }
 
       await client.query("COMMIT");
+      await logAudit({
+        tenantId: user.tenantId!, userId: user.userId, username: user.username,
+        action: "order.create", tableName: "orders", recordId: orderId,
+        detail: `Plaka: ${plate}, Tutar: ${totalAmount}`,
+      });
       return NextResponse.json({ id: orderId, total_amount: totalAmount }, { status: 201 });
     } catch (err) {
       await client.query("ROLLBACK");
