@@ -3,11 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { trialDaysLeft, isInvoiceInfoComplete } from "@/lib/billing";
 import { buildCustomerFromTenant, cancelSubscription, initializeCheckoutForm } from "@/lib/iyzico";
-
-const PLAN_REFS: Record<string, string | undefined> = {
-  monthly: process.env.IYZICO_PLAN_MONTHLY_REF,
-  yearly: process.env.IYZICO_PLAN_YEARLY_REF,
-};
+import { ensurePricingPlanRef } from "@/lib/platformPricing";
 
 // Abonelik başlatır (bkz. plan) — sadece admin (staff faturalandırma
 // yönetemez, /admin/settings ile aynı __admin_only__ deseni). Kart bilgisi
@@ -32,10 +28,10 @@ export async function POST(request: NextRequest) {
     // çağrısı başarısız olsa bile, kullanıcının bu anda onay verdiği
     // gerçeği değişmez.
     await pool.query("UPDATE tenants SET terms_accepted_at = now() WHERE id = $1", [user.tenantId]);
-    const pricingPlanRef = PLAN_REFS[plan];
-    if (!pricingPlanRef) {
+    if (plan !== "monthly" && plan !== "yearly") {
       return NextResponse.json({ error: "Geçersiz plan." }, { status: 400 });
     }
+    const { pricingPlanRef } = await ensurePricingPlanRef(plan);
 
     // initializeCheckoutForm HER çağrıldığında iyzico'da yeni bir müşteri +
     // yeni bir abonelik açar, var olan bir aboneliği hiç kontrol etmez.

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { getUsdTryRate, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
-import { createPricingPlan, upgradeSubscription, getPricingPlan } from "@/lib/iyzico";
+import { ensurePricingPlanRef } from "@/lib/platformPricing";
+import { upgradeSubscription, getPricingPlan } from "@/lib/iyzico";
 import { logBillingEvent } from "@/lib/billingEvents";
 
 const PRODUCT_REF = process.env.IYZICO_PRODUCT_REF;
@@ -17,15 +17,17 @@ function isAuthorized(request: NextRequest): boolean {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-// USD referans fiyatının TL karşılığı zamanla kur farkıyla sapar (bkz.
-// database/schema.sql notu, Mesafeli Satış Sözleşmesi'ndeki dönemsel
-// güncelleme maddesi). Her tenant'ın YENİLEME tarihinden 3 gün önce (aylık
-// ve yıllıkta aynı pencere — kullanıcı kararı, %10-15 eşiği YOK, her zaman
-// tetiklenir) o günün TCMB kuruyla yeni bir iyzico fiyat planı oluşturulup
-// /upgrade(NEXT_PERIOD) ile mevcut (zaten ödenmiş) döneme dokunmadan bir
-// sonraki tahsilata uygulanır. iyzico'da plan fiyatı DEĞİŞTİRİLEMEZ (bkz.
-// src/lib/iyzico.ts createPricingPlan notu) — bu yüzden her repricing yeni
-// bir plan nesnesi yaratır, mevcut planı güncellemez.
+// Fiyat artık USD/TCMB kuruyla değil, platform_pricing'teki SABİT TL
+// değeriyle belirlenir (bkz. database/schema.sql notu, Mesafeli Satış
+// Sözleşmesi'ndeki dönemsel güncelleme maddesi). Her tenant'ın YENİLEME
+// tarihinden 3 gün önce (aylık ve yıllıkta aynı pencere — kullanıcı kararı)
+// platform_pricing'in GÜNCEL planı ile tenant'ın hâlâ bağlı olduğu plan
+// karşılaştırılır: aynıysa (süper admin fiyatı değiştirmediyse, ki "aylıkta
+// belki 3 ayda bir belki 6 ayda bir" güncellenebilir demişti) hiçbir şey
+// yapılmaz — bu, ayrı bir "zaten repriced edildi mi" bayrağına ihtiyaç
+// duymadan doğal bir idempotency sağlar. Farklıysa /upgrade(NEXT_PERIOD)
+// ile mevcut (zaten ödenmiş) döneme dokunmadan bir sonraki tahsilata
+// uygulanır.
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -34,50 +36,45 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "IYZICO_PRODUCT_REF tanımlı değil." }, { status: 500 });
   }
 
-  const rate = await getUsdTryRate();
-  if (!rate) {
-    console.error("reprice-subscriptions — TCMB kuru alınamadı, bu çalıştırma atlandı.");
-    return NextResponse.json({ error: "Kur alınamadı, tekrar denenecek." }, { status: 503 });
-  }
-
   // billing_cancel_at_period_end=true olanlar zaten sona erecek, onları
-  // yeni bir fiyata taşımanın anlamı yok. billing_repriced_for_period_end,
-  // 3 günlük pencerede cron'un HER GÜN aynı dönem için tekrar tetiklenmesini
-  // önler (bkz. database/schema.sql notu) — bir kez başarıyla /upgrade
-  // çağrıldıktan sonra bu tenant'ın mevcut billing_period_ends_at'i ile
-  // eşleştirilir.
+  // yeni bir fiyata taşımanın anlamı yok.
   const candidates = await pool.query<{
     id: number;
     plan: string | null;
     billing_subscription_ref: string;
     billing_pricing_plan_ref: string | null;
-    billing_period_ends_at: string;
   }>(
-    `SELECT id, plan, billing_subscription_ref, billing_pricing_plan_ref, billing_period_ends_at
+    `SELECT id, plan, billing_subscription_ref, billing_pricing_plan_ref
      FROM tenants
      WHERE billing_status = 'active'
        AND billing_cancel_at_period_end = false
        AND billing_subscription_ref IS NOT NULL
        AND billing_period_ends_at IS NOT NULL
-       AND billing_period_ends_at BETWEEN now() AND now() + interval '3 days'
-       AND (billing_repriced_for_period_end IS NULL OR billing_repriced_for_period_end != billing_period_ends_at)`
+       AND billing_period_ends_at BETWEEN now() AND now() + interval '3 days'`
   );
 
-  const results: Array<{ tenantId: number; status: "repriced" | "failed"; detail?: string }> = [];
+  const results: Array<{ tenantId: number; status: "repriced" | "unchanged" | "failed"; detail?: string }> = [];
 
   for (const tenant of candidates.rows) {
     const planKey = tenant.plan === "yearly" ? "yearly" : "monthly";
-    const usdPrice = USD_REFERENCE_PRICING[planKey];
-    const tryPrice = (usdPrice * rate).toFixed(2);
-    const today = new Date().toISOString().slice(0, 10);
 
     try {
+      const { price, pricingPlanRef } = await ensurePricingPlanRef(planKey);
+
+      // Tenant zaten platform_pricing'in güncel planında — süper admin
+      // fiyatı bu tenant'ın son repricing'inden beri değiştirmemiş, yapacak
+      // bir şey yok.
+      if (tenant.billing_pricing_plan_ref === pricingPlanRef) {
+        results.push({ tenantId: tenant.id, status: "unchanged" });
+        continue;
+      }
+
       // iyzico, hedef planı sadece kaynak aboneliğiyle AYNI ürüne ait bir
       // plana upgrade etmeye izin veriyor (iyzico destek ekibiyle teyit
-      // edildi). Yeni plan her zaman PRODUCT_REF altında oluşturulduğundan,
-      // tenant'ın MEVCUT planı farklı bir ürüne aitse (ör. yanlış/eski bir
-      // env değeriyle oluşturulmuş) upgrade çağrısı iyzico'dan belirsiz bir
-      // hatayla başarısız olurdu — burada erken ve net bir hata verilir.
+      // edildi). Tenant'ın MEVCUT planı farklı bir ürüne aitse (ör.
+      // yanlış/eski bir env değeriyle oluşturulmuş) upgrade çağrısı
+      // iyzico'dan belirsiz bir hatayla başarısız olurdu — burada erken ve
+      // net bir hata verilir.
       if (tenant.billing_pricing_plan_ref) {
         const currentPlan = await getPricingPlan(tenant.billing_pricing_plan_ref);
         if (currentPlan.productReferenceCode !== PRODUCT_REF) {
@@ -87,23 +84,12 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // iyzico plan isimlerinin benzersiz olması gerekiyor — sadece tarih
-      // yeterli değil (aynı gün ikinci bir çalıştırma/tenant "Ödeme planı
-      // zaten var" hatasıyla çakışır, gerçek bir denemede saptandı). Tenant
-      // id + tam zaman damgası benzersizliği garantiler.
-      const newPlan = await createPricingPlan(PRODUCT_REF, {
-        name: `${planKey === "yearly" ? "Yıllık" : "Aylık"} (TRY) - repriced ${today} #${tenant.id}-${Date.now()}`,
-        price: tryPrice,
-        currencyCode: "TRY",
-        paymentInterval: planKey === "yearly" ? "YEARLY" : "MONTHLY",
-      });
-
       // upgrade, verilen referansı YERİNDE güncellemiyor — AYNI parent
       // altında YENİ bir abonelik nesnesi (yeni referenceCode) oluşturuyor,
       // eskisi "UPGRADED" durumuna geçiyor (gerçek bir sandbox çağrısıyla
       // saptandı, bkz. src/lib/iyzico.ts upgradeSubscription notu).
       // billing_subscription_ref MUTLAKA bu yeni referansla güncellenmeli.
-      const upgraded = await upgradeSubscription(tenant.billing_subscription_ref, newPlan.referenceCode, "NEXT_PERIOD");
+      const upgraded = await upgradeSubscription(tenant.billing_subscription_ref, pricingPlanRef, "NEXT_PERIOD");
 
       // upgrade bu noktada iyzico'da GERÇEKTEN gerçekleşti — geri alınamaz.
       // Aşağıdaki DB yazması (Neon soğuk başlangıcı, bağlantı kopması vb.)
@@ -114,19 +100,19 @@ export async function GET(request: NextRequest) {
       // olsa bile Vercel loglarında kalıcı/aranabilir bir iz bırakılıyor.
       try {
         await pool.query(
-          `UPDATE tenants SET billing_subscription_ref = $1, billing_pricing_plan_ref = $2, billing_repriced_for_period_end = $3 WHERE id = $4`,
-          [upgraded.referenceCode, newPlan.referenceCode, tenant.billing_period_ends_at, tenant.id]
+          `UPDATE tenants SET billing_subscription_ref = $1, billing_pricing_plan_ref = $2 WHERE id = $3`,
+          [upgraded.referenceCode, pricingPlanRef, tenant.id]
         );
       } catch (dbError) {
         console.error(
           "reprice-subscriptions — KRİTİK: iyzico upgrade BAŞARILI oldu ama DB yazması BAŞARISIZ, elle düzeltme gerekiyor:",
-          { tenantId: tenant.id, oldSubscriptionRef: tenant.billing_subscription_ref, newSubscriptionRef: upgraded.referenceCode, newPricingPlanRef: newPlan.referenceCode, dbError }
+          { tenantId: tenant.id, oldSubscriptionRef: tenant.billing_subscription_ref, newSubscriptionRef: upgraded.referenceCode, newPricingPlanRef: pricingPlanRef, dbError }
         );
         throw dbError;
       }
 
       results.push({ tenantId: tenant.id, status: "repriced" });
-      await logBillingEvent(tenant.id, "reprice_success", `${planKey === "yearly" ? "Yıllık" : "Aylık"} → ₺${tryPrice} (kur: ${rate.toFixed(4)})`);
+      await logBillingEvent(tenant.id, "reprice_success", `${planKey === "yearly" ? "Yıllık" : "Aylık"} → ₺${price}`);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(`reprice-subscriptions — tenant ${tenant.id} için hata:`, error);
@@ -135,5 +121,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ rate, checked: candidates.rows.length, results });
+  return NextResponse.json({ checked: candidates.rows.length, results });
 }

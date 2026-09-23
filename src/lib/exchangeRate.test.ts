@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatTry, formatTry2, USD_REFERENCE_PRICING } from "./exchangeRate";
-
-// getUsdTryRate() (ağ çağrısı, TCMB feed'i) kasıtlı olarak test edilmiyor —
-// dış servise bağımlı, mock'lu bir test gerçek API davranışını doğrulamaz.
+import { formatTry, formatTry2 } from "./exchangeRate";
 
 describe("formatTry", () => {
   it("ondalıksız, binlik ayraçlı tam sayıya yuvarlar", () => {
@@ -21,11 +18,5 @@ describe("formatTry2", () => {
 
   it("tam sayıda bile 2 ondalık basamağı zorlar", () => {
     expect(formatTry2(50)).toBe("50,00");
-  });
-});
-
-describe("USD_REFERENCE_PRICING", () => {
-  it("aylık ve yıllık vitrin fiyatlarını sabit tutar (landing ile /admin/billing'in AYNI kaynağı)", () => {
-    expect(USD_REFERENCE_PRICING).toEqual({ monthly: 25, yearly: 250 });
   });
 });

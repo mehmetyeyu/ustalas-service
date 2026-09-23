@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { USD_REFERENCE_PRICING, formatTry } from "@/lib/exchangeRate";
+import { formatTry } from "@/lib/exchangeRate";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
 import type { ConsistencyCheckResult } from "@/app/api/super-admin/consistency-check/route";
 
@@ -111,8 +111,14 @@ export default function SuperAdminPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [usdTryRate, setUsdTryRate] = useState<number | null>(null);
+  const [platformPricing, setPlatformPricing] = useState<{ monthlyPrice: number; yearlyPrice: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  // Fiyat düzenleme formu — bkz. /api/super-admin/pricing. platformPricing
+  // yüklenince bu iki input o değerlerle doldurulur (aşağıdaki useEffect).
+  const [editingPricing, setEditingPricing] = useState(false);
+  const [monthlyPriceInput, setMonthlyPriceInput] = useState("");
+  const [yearlyPriceInput, setYearlyPriceInput] = useState("");
+  const [savingPricing, setSavingPricing] = useState(false);
   // Ödeme geçmişi modalı — bkz. /api/super-admin/tenants/[id]/payments,
   // her açılışta o an canlı iyzico'dan çekilir (kendi DB'mizde tarih/tutar/
   // durum bilgisi tutulmuyor, sadece IFN eşlemesi için paymentId var).
@@ -165,9 +171,42 @@ export default function SuperAdminPage() {
       const res = await fetch("/api/super-admin/tenants", { cache: "no-store" });
       const data = await res.json();
       setTenants(Array.isArray(data?.tenants) ? data.tenants : []);
-      setUsdTryRate(typeof data?.usdTryRate === "number" ? data.usdTryRate : null);
+      if (data?.platformPricing) {
+        setPlatformPricing(data.platformPricing);
+        setMonthlyPriceInput(String(data.platformPricing.monthlyPrice));
+        setYearlyPriceInput(String(data.platformPricing.yearlyPrice));
+      }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSavePricing() {
+    const monthly = Number(monthlyPriceInput);
+    const yearly = Number(yearlyPriceInput);
+    if (!Number.isFinite(monthly) || monthly <= 0 || !Number.isFinite(yearly) || yearly <= 0) {
+      toast.error("Geçerli aylık ve yıllık fiyat girin.");
+      return;
+    }
+    if (!(await confirm({
+      message: "Mevcut aboneliklere dokunulmaz — yeni fiyat sadece bundan sonraki yeni abonelikler ve yenilemelerde geçerli olur. Devam edilsin mi?",
+    }))) return;
+    setSavingPricing(true);
+    try {
+      const res = await fetch("/api/super-admin/pricing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyPrice: monthly, yearlyPrice: yearly }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kaydetme başarısız.");
+      setPlatformPricing(data);
+      setEditingPricing(false);
+      toast.success("Fiyat güncellendi.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setSavingPricing(false);
     }
   }
 
@@ -341,14 +380,15 @@ export default function SuperAdminPage() {
     }
   }
 
-  // MRR tahmini — sadece VİTRİN fiyatı (USD_REFERENCE_PRICING) üzerinden,
-  // gerçek iyzico plan fiyatları (repricing sonrası tenant'tan tenant'a
+  // MRR tahmini — platform_pricing'teki SABİT TL fiyatı üzerinden, gerçek
+  // iyzico plan fiyatları (repricing sonrası tenant'tan tenant'a
   // farklılaşabilir) tek tek çekilmiyor. Yıllık abonelikler 12'ye bölünüp
   // aylığa normalize ediliyor.
   const activeMonthly = tenants.filter((t) => isEffectivelyActive(t) && t.plan === "monthly").length;
   const activeYearly = tenants.filter((t) => isEffectivelyActive(t) && t.plan === "yearly").length;
-  const estimatedMrrUsd = activeMonthly * USD_REFERENCE_PRICING.monthly + activeYearly * (USD_REFERENCE_PRICING.yearly / 12);
-  const estimatedMrrTry = usdTryRate != null ? estimatedMrrUsd * usdTryRate : null;
+  const estimatedMrrTry = platformPricing
+    ? activeMonthly * platformPricing.monthlyPrice + activeYearly * (platformPricing.yearlyPrice / 12)
+    : null;
 
   const filteredTenants = tenants.filter((t) => {
     const q = search.trim().toLowerCase();
@@ -410,6 +450,70 @@ export default function SuperAdminPage() {
                 : "iyzico Raporlama Servisi'nden"}
             </div>
           </div>
+        </div>
+      )}
+
+      {platformPricing && (
+        <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold text-gray-700">Platform Fiyatlandırması</h3>
+            {!editingPricing && (
+              <button
+                onClick={() => setEditingPricing(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Düzenle
+              </button>
+            )}
+          </div>
+          {editingPricing ? (
+            <div className="flex flex-wrap items-end gap-4 mt-2">
+              <label className="text-sm text-gray-600">
+                Aylık (TL)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={monthlyPriceInput}
+                  onChange={(e) => setMonthlyPriceInput(e.target.value)}
+                  className="block w-32 border border-gray-300 rounded-lg px-3 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <label className="text-sm text-gray-600">
+                Yıllık (TL)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={yearlyPriceInput}
+                  onChange={(e) => setYearlyPriceInput(e.target.value)}
+                  className="block w-32 border border-gray-300 rounded-lg px-3 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <button
+                onClick={handleSavePricing}
+                disabled={savingPricing}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+              >
+                {savingPricing ? "Kaydediliyor..." : "Kaydet"}
+              </button>
+              <button
+                onClick={() => {
+                  setEditingPricing(false);
+                  setMonthlyPriceInput(String(platformPricing.monthlyPrice));
+                  setYearlyPriceInput(String(platformPricing.yearlyPrice));
+                }}
+                disabled={savingPricing}
+                className="text-sm text-gray-500 hover:text-gray-700 font-medium px-2 py-1.5"
+              >
+                Vazgeç
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Aylık ₺{formatTry(platformPricing.monthlyPrice)} · Yıllık ₺{formatTry(platformPricing.yearlyPrice)}
+            </p>
+          )}
         </div>
       )}
 

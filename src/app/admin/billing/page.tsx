@@ -6,7 +6,7 @@ import { useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { trialDaysLeft } from "@/lib/billing";
-import { formatTry2, USD_REFERENCE_PRICING } from "@/lib/exchangeRate";
+import { formatTry2 } from "@/lib/exchangeRate";
 import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 
 interface PlanInfo {
@@ -17,14 +17,10 @@ interface PlanInfo {
   paymentInterval: "MONTHLY" | "YEARLY";
 }
 
-// USD_REFERENCE_PRICING artık src/lib/exchangeRate.ts'te — landing (/elevire)
-// ile paylaşılan TEK kaynak (iki dosyada birbirinden habersiz iki sabit
-// olma riski ortadan kalktı). Gerçek tahsilat ise TRY'dir (yerli kartlar
-// dövizle ödeme yapamıyor, bkz. iyzico-setup.mjs notu) — iyzico'daki plan
-// fiyatı (plans[key].price/currencyCode) "Kartınızdan ... tahsil
-// edilecek" satırında ayrıca gösterilir. İkisi kasıtlı olarak ayrı:
-// üstteki $ vitrin fiyatı sabit, alttaki gerçek tahsilat tutarı
-// iyzico'daki plan güncellenince değişir.
+// Fiyat artık platform_pricing'teki SABİT TL değeri — iyzico'daki gerçek
+// plan fiyatı (plans[key].price/currencyCode, bkz. /api/billing/plans) TEK
+// gösterge, ayrı bir USD vitrin fiyatı yok (landing (/elevire) de aynı
+// kaynağı kullanır).
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", TRY: "₺", EUR: "€" };
 
 function formatPlanPrice(amount: number, currencyCode: string): string {
@@ -335,9 +331,10 @@ function BillingPageContent() {
           {(["monthly", "yearly"] as const).map((key) => {
             const plan = plans[key];
             const isCurrentPlan = isActive && user?.plan === key;
-            const usdPrice = USD_REFERENCE_PRICING[key];
+            const price = Number(plan.price);
+            const monthlyPrice = Number(plans.monthly.price);
             const discountPct = key === "yearly"
-              ? Math.round((1 - USD_REFERENCE_PRICING.yearly / (USD_REFERENCE_PRICING.monthly * 12)) * 100)
+              ? Math.round((1 - price / (monthlyPrice * 12)) * 100)
               : 0;
             return (
               <div key={key} className={`relative bg-white rounded-xl shadow-sm p-6 flex flex-col ${key === "yearly" ? "ring-2 ring-blue-500" : ""}`}>
@@ -347,18 +344,15 @@ function BillingPageContent() {
                   </span>
                 )}
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{key === "monthly" ? "Aylık" : "Yıllık"}</h2>
-                <div className="text-2xl font-bold text-gray-800 mt-1">
+                <div className="text-2xl font-bold text-gray-800 mt-1 mb-6">
                   {key === "yearly" && discountPct > 0 && (
                     <span className="text-base font-normal text-gray-400 line-through mr-1.5">
-                      ${USD_REFERENCE_PRICING.monthly * 12}
+                      {formatPlanPrice(monthlyPrice * 12, plan.currencyCode)}
                     </span>
                   )}
-                  ${usdPrice}
+                  {formatPlanPrice(price, plan.currencyCode)}
                   <span className="text-sm font-normal text-gray-400"> / {key === "monthly" ? "ay" : "yıl"}</span>
                 </div>
-                <p className="text-xs text-gray-400 mb-4">
-                  Kartınızdan {formatPlanPrice(Number(plan.price), plan.currencyCode)} tahsil edilecek
-                </p>
                 <div className="mt-auto">
                   {isCurrentPlan ? (
                     <div className="text-center text-sm font-medium text-emerald-600 py-2.5">Mevcut Planınız</div>

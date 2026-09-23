@@ -1141,22 +1141,50 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cancel_at_period_end BOOLEA
 -- sonsuza kadar tutmasını önler.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_checkout_lock_at TIMESTAMPTZ;
 
--- USD referans fiyatının TL karşılığı zamanla kur farkıyla sapar (bkz.
--- src/lib/exchangeRate.ts USD_REFERENCE_PRICING notu) — Mesafeli Satış
--- Sözleşmesi'ndeki dönemsel güncelleme maddesine dayanarak, her tenant'ın
--- YENİLEME tarihinden 3 gün önce (aylık ve yıllıkta aynı pencere, kullanıcı
--- kararı) o günün kuruyla YENİ bir iyzico fiyat planı oluşturulup
--- /upgrade (upgradePeriod=NEXT_PERIOD, kart bilgisi istenmeden) ile mevcut
--- döneme dokunmadan bir SONRAKİ tahsilata uygulanır (bkz. scripts/
+-- Fiyatlandırma artık USD/TCMB kuru değil, süper adminin platform_pricing'te
+-- belirlediği SABİT TL fiyatı (bkz. platform_pricing tablosu ve
+-- src/lib/platformPricing.ts) — kullanıcıları dolar kuruyla korkutmamak
+-- için bilinçli karar. Mesafeli Satış Sözleşmesi'ndeki dönemsel güncelleme
+-- maddesine dayanarak, her tenant'ın YENİLEME tarihinden 3 gün önce
+-- platform_pricing'teki GÜNCEL plan hâlâ tenant'ınkinden farklıysa (yani
+-- süper admin fiyatı gerçekten değiştirmişse) /upgrade
+-- (upgradePeriod=NEXT_PERIOD, kart bilgisi istenmeden) ile mevcut döneme
+-- dokunmadan bir SONRAKİ tahsilata uygulanır (bkz. scripts/
 -- reprice-subscriptions cron'u). billing_pricing_plan_ref, tenant'ın o an
 -- bağlı olduğu iyzico fiyat planının referans kodu — checkout/callback
--- tarafından yazılır, cron bunu "hâlâ eski plan mı" kontrolü için okur.
--- billing_repriced_for_period_end, bir dönem için repricing'in zaten
--- tetiklendiğini işaretler (3 günlük pencere boyunca cron her gün
--- çalıştığından, aynı dönem için /upgrade'in birden fazla kez
--- çağrılmasını önler — bkz. cron route'u).
+-- tarafından yazılır, cron bunu platform_pricing'in güncel referansıyla
+-- karşılaştırıp "hâlâ eski plan mı" kontrolü için okur; fiyat
+-- değişmediğinde referans da aynı kaldığından bu karşılaştırma tek başına
+-- idempotent'tir — ayrı bir "zaten repriced edildi mi" bayrağına gerek
+-- kalmaz (eskiden billing_repriced_for_period_end vardı, bu yüzden
+-- kaldırıldı).
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_pricing_plan_ref VARCHAR(100);
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_repriced_for_period_end TIMESTAMPTZ;
+ALTER TABLE tenants DROP COLUMN IF EXISTS billing_repriced_for_period_end;
+
+-- Platform genelinde tek bir SABİT TL fiyatı — tenant'a özgü değil (bkz.
+-- tenants.billing_pricing_plan_ref yukarısı), tek satırlık singleton
+-- (id=1 CHECK'i ile garanti edilir). Süper admin panelden fiyat
+-- güncellediğinde (bkz. src/lib/platformPricing.ts updatePlatformPricing)
+-- *_price burada değişir ve aynı anda YENİ bir iyzico fiyat planı
+-- oluşturulup *_pricing_plan_ref buraya yazılır (iyzico'da plan fiyatı
+-- yerinde değiştirilemez, her zaman yeni plan — bkz. iyzico-setup.mjs
+-- notu); checkout/switch-plan/cron hepsi bu satırı okuyup güncel referansı
+-- kullanır (src/lib/platformPricing.ts ensurePricingPlanRef). Yeni
+-- kurulumda 1500/12000 ile tohumlanır, referanslar NULL kalır —
+-- ensurePricingPlanRef ilk çağrıldığında (ilk checkout/cron çalışması)
+-- kendiliğinden plan oluşturup dolduracağından süper adminin sisteme
+-- çalışmadan önce elle bir kere kaydetmesi gerekmez (self-healing).
+CREATE TABLE IF NOT EXISTS platform_pricing (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  monthly_price DECIMAL(10,2) NOT NULL,
+  yearly_price DECIMAL(10,2) NOT NULL,
+  monthly_pricing_plan_ref VARCHAR(100),
+  yearly_pricing_plan_ref VARCHAR(100),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO platform_pricing (id, monthly_price, yearly_price)
+VALUES (1, 1500, 12000)
+ON CONFLICT (id) DO NOTHING;
 
 -- subscription.order.failure webhook'unun kendisi BAŞARISIZLIK SEBEBİNİ hiç
 -- içermiyor (docs.iyzico.com/ek-bilgiler/hata-kodlari ile birlikte resmi

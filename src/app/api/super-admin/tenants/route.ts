@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { provisionTenant } from "@/lib/provisionTenant";
-import { getUsdTryRate } from "@/lib/exchangeRate";
+import { getPlatformPricing } from "@/lib/platformPricing";
 
 // Süper Admin Paneli — hiçbir gerçek müşteriye ait olmayan, tüm firmaları
 // (tenants) yönetebilen ayrı bir üst-düzey rol (bkz. src/app/super-admin/,
@@ -14,13 +14,12 @@ export async function GET() {
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    // usdTryRate, tenant listesiyle PARALEL çekilir (birbirinden bağımsız) —
-    // MRR tahmini (bkz. src/app/super-admin/page.tsx) sadece VİTRİN fiyatı
-    // (USD_REFERENCE_PRICING) üzerinden yapılıyor, her tenant için ayrı
-    // ayrı iyzico'ya sorup gerçek plan fiyatını çekmek gereksiz N+1 çağrı
-    // olurdu — landing/billing sayfalarındaki "vitrin fiyatı" mantığıyla
-    // aynı, tahmini/gösterge amaçlı bir rakam.
-    const [result, usdTryRate] = await Promise.all([
+    // platformPricing, tenant listesiyle PARALEL çekilir (birbirinden
+    // bağımsız) — MRR tahmini (bkz. src/app/super-admin/page.tsx) sadece
+    // platform_pricing'teki SABİT TL fiyatı üzerinden yapılıyor, her tenant
+    // için ayrı ayrı iyzico'ya sorup gerçek plan fiyatını çekmek gereksiz
+    // N+1 çağrı olurdu — tahmini/gösterge amaçlı bir rakam.
+    const [result, platformPricing] = await Promise.all([
       pool.query(
         `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone,
                 billing_status, trial_ends_at, plan, billing_cancel_at_period_end, billing_period_ends_at,
@@ -28,9 +27,9 @@ export async function GET() {
          FROM tenants WHERE is_platform = false
          ORDER BY created_at DESC`
       ),
-      getUsdTryRate(),
+      getPlatformPricing(),
     ]);
-    return NextResponse.json({ tenants: result.rows, usdTryRate });
+    return NextResponse.json({ tenants: result.rows, platformPricing });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

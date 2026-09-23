@@ -3,11 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { buildCustomerFromTenant, cancelSubscription, initializeCheckoutForm } from "@/lib/iyzico";
 import { isInvoiceInfoComplete } from "@/lib/billing";
-
-const PLAN_REFS: Record<string, string | undefined> = {
-  monthly: process.env.IYZICO_PLAN_MONTHLY_REF,
-  yearly: process.env.IYZICO_PLAN_YEARLY_REF,
-};
+import { ensurePricingPlanRef } from "@/lib/platformPricing";
 
 // iyzico'nun /upgrade uç noktası yalnızca AYNI ödeme periyodundaki planlar
 // arasında çalışıyor (bkz. plan, "Aylık↔Yıllık native upgrade ile
@@ -31,10 +27,10 @@ export async function POST(request: NextRequest) {
     // çağrısı başarısız olsa bile, kullanıcının bu anda onay verdiği
     // gerçeği değişmez.
     await pool.query("UPDATE tenants SET terms_accepted_at = now() WHERE id = $1", [user.tenantId]);
-    const pricingPlanRef = PLAN_REFS[plan];
-    if (!pricingPlanRef) {
+    if (plan !== "monthly" && plan !== "yearly") {
       return NextResponse.json({ error: "Geçersiz plan." }, { status: 400 });
     }
+    const { pricingPlanRef } = await ensurePricingPlanRef(plan);
 
     // bkz. /api/billing/checkout — aynı eşzamanlılık kilidi, checkout ile
     // PAYLAŞILAN aynı sütun (billing_checkout_lock_at) üzerinden: aksi halde
