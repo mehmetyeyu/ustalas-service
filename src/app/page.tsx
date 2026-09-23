@@ -261,6 +261,14 @@ export default function OrderPage() {
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
   // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
   const [panelPath, setPanelPath] = useState<string | null>(null);
+  // Bu sayfa panelin (/admin/*) DIŞINDA, kendi layout'una sahip — panelin
+  // "+ Sipariş Ekle" butonu buraya yönlendirdiğinde (admin için bile) firma
+  // logosu/adı görünmeyip jenerik "Lastik Servis" yazması, panelden tamamen
+  // ayrı bir yere gelinmiş hissi veriyordu (gerçek bir kullanıcı geri
+  // bildirimiydi). admin/layout.tsx'teki BrandMark ile aynı desen burada da
+  // uygulanıyor — aynı /api/auth/me çağrısından geldiği için ekstra istek yok.
+  const [businessName, setBusinessName] = useState("");
+  const [panelLogoUrl, setPanelLogoUrl] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
@@ -274,7 +282,12 @@ export default function OrderPage() {
 
     fetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
-      .then((user) => { if (user) setPanelPath(getDefaultAdminPath(user)); })
+      .then((user) => {
+        if (!user) return;
+        setPanelPath(getDefaultAdminPath(user));
+        setBusinessName(user.business_name || "");
+        setPanelLogoUrl(user.panel_logo_url || null);
+      })
       .catch(() => { });
 
     fetch("/api/customers")
@@ -468,17 +481,30 @@ export default function OrderPage() {
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">Lastik Servis</h1>
-              <p className="text-gray-500 text-sm mt-1">Yeni Sipariş Oluştur</p>
+              {(() => {
+                const brand = panelLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- Blob URL'i harici bir host, next/image domain izni istiyor
+                  <img src={panelLogoUrl} alt={businessName || "Lastik Servis"} className="h-8 max-w-[180px] object-contain mb-1" />
+                ) : (
+                  <h1 className="text-2xl font-bold text-gray-800">{businessName || "Lastik Servis"}</h1>
+                );
+                // Panele erişimi olmayan (hiç sayfa izni olmayan) bir staff için
+                // tıklanabilir yapılmaz — "Yönetici Paneli" metin linkiyle aynı koşul.
+                return panelPath ? <a href={panelPath}>{brand}</a> : brand;
+              })()}
+              <h2 className="text-black-700 font-bold text-lg mt-1">Yeni Sipariş Oluştur</h2>
             </div>
             <div className="flex items-center gap-3">
               {panelPath && (
                 <>
                   <a
                     href={panelPath}
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
                   >
-                    Yönetici Paneli
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                    </svg>
+                    Yönetici Paneli Geri Dön
                   </a>
                   <span className="text-gray-300">|</span>
                 </>
