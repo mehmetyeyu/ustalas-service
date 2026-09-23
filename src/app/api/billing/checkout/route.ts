@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     // abone olmaya izin veriliyor — sadece "hâlâ gerçekten aktif" durum
     // reddediliyor.
     const claimResult = await pool.query<{
-      name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
+      name: string; code: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
       billing_status: string | null; trial_ends_at: string | null; billing_subscription_ref: string | null;
       billing_entity_type: string | null; billing_tax_id: string | null; billing_tax_office: string | null;
       billing_invoice_title: string | null; billing_city: string | null; billing_district: string | null; billing_address: string | null;
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
        WHERE id = $1
          AND (billing_status IS DISTINCT FROM 'active' OR billing_cancel_at_period_end = true)
          AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
-       RETURNING name, contact_name, contact_email, contact_phone, billing_status, trial_ends_at, billing_subscription_ref,
+       RETURNING name, code, contact_name, contact_email, contact_phone, billing_status, trial_ends_at, billing_subscription_ref,
                  billing_entity_type, billing_tax_id, billing_tax_office, billing_invoice_title, billing_city, billing_district, billing_address`,
       [user.tenantId]
     );
@@ -103,8 +103,14 @@ export async function POST(request: NextRequest) {
       const remainingTrialDays = tenant.billing_status === "trialing" ? trialDaysLeft(tenant.trial_ends_at) : 0;
       const callbackUrl = new URL("/api/billing/callback", request.url).toString();
 
+      // conversationId olarak tenant id yerine firma kodu gönderilir —
+      // iyzico'nun kendi işlem listesi/panelinde bu alan görünür oluyor,
+      // süper admin firma kodunu bilerek listede ilgili işlemi bulabilsin
+      // diye (bkz. /api/super-admin/tenants/[id]/payments, aynı kodla
+      // sorgulanıyor). Tenant'ın firma kodu asla değişmediğinden bu değer
+      // her checkout/switch-plan'da sabit kalır.
       const result = await initializeCheckoutForm({
-        conversationId: String(user.tenantId),
+        conversationId: tenant.code,
         callbackUrl,
         pricingPlanReferenceCode: pricingPlanRef,
         subscriptionInitialStatus: "ACTIVE",

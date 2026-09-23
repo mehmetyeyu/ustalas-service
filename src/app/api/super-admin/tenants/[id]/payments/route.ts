@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { getPaymentDetailsByConversationId } from "@/lib/iyzico";
 
@@ -31,11 +32,15 @@ export interface PaymentHistoryRow {
 
 // Tenant'ın TÜM ödeme geçmişi — iyzico'nun Raporlama Servisi'nden
 // (bkz. src/lib/iyzico.ts getPaymentDetailsByConversationId notu)
-// conversationId = tenant id ile sorgulanıyor. Bu, /v2/subscription/*
+// conversationId = firma kodu ile sorgulanıyor. Bu, /v2/subscription/*
 // uçlarının customerReferenceCode'a bağımlı olmasından kaynaklanan eski
 // sınırlamayı (tenant zaman içinde farklı customerReferenceCode'lara sahip
 // olabiliyor, bkz. git geçmişi) ortadan kaldırıyor — conversationId her
-// checkout/switch-plan'da AYNI (tenant id) gönderiliyor, hiç değişmiyor.
+// checkout/switch-plan'da AYNI (firma kodu) gönderiliyor, hiç değişmiyor.
+// Firma kodu kullanılması bilinçli bir tercih: iyzico panelinde işlem
+// listesini gözden geçiren süper admin conversationId sütununda doğrudan
+// tanıdığı firma kodunu görsün diye — eskiden tenant id (anlamsız bir
+// sayı) gönderiliyordu.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser();
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
@@ -45,7 +50,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!Number.isInteger(tenantId)) return NextResponse.json({ error: "Geçersiz firma." }, { status: 400 });
 
   try {
-    const details = await getPaymentDetailsByConversationId(String(tenantId));
+    const tenantResult = await pool.query<{ code: string }>("SELECT code FROM tenants WHERE id = $1", [tenantId]);
+    const code = tenantResult.rows[0]?.code;
+    if (!code) return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
+
+    const details = await getPaymentDetailsByConversationId(code);
 
     const payments: PaymentHistoryRow[] = details.map((p) => ({
       date: p.createdDate ? new Date(p.createdDate).getTime() : null,

@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     // var) — sadece devam eden başka bir checkout/switch olmadığından emin
     // olunuyor.
     const claimResult = await pool.query<{
-      name: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
+      name: string; code: string; contact_name: string | null; contact_email: string | null; contact_phone: string | null;
       billing_subscription_ref: string | null; billing_cancel_at_period_end: boolean;
       billing_entity_type: string | null; billing_tax_id: string | null; billing_tax_office: string | null;
       billing_invoice_title: string | null; billing_city: string | null; billing_district: string | null; billing_address: string | null;
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       `UPDATE tenants SET billing_checkout_lock_at = now()
        WHERE id = $1
          AND (billing_checkout_lock_at IS NULL OR billing_checkout_lock_at < now() - interval '15 minutes')
-       RETURNING name, contact_name, contact_email, contact_phone, billing_subscription_ref, billing_cancel_at_period_end,
+       RETURNING name, code, contact_name, contact_email, contact_phone, billing_subscription_ref, billing_cancel_at_period_end,
                  billing_entity_type, billing_tax_id, billing_tax_office, billing_invoice_title, billing_city, billing_district, billing_address`,
       [user.tenantId]
     );
@@ -85,8 +85,10 @@ export async function POST(request: NextRequest) {
 
       const callbackUrl = new URL("/api/billing/callback", request.url).toString();
 
+      // bkz. /api/billing/checkout — conversationId olarak firma kodu
+      // gönderilir, iyzico'nun kendi işlem listesinde görünür.
       const result = await initializeCheckoutForm({
-        conversationId: String(user.tenantId),
+        conversationId: tenant.code,
         callbackUrl,
         pricingPlanReferenceCode: pricingPlanRef,
         subscriptionInitialStatus: "ACTIVE",
