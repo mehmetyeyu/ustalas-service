@@ -56,7 +56,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const groupsResult = await pool.query(
-      `SELECT code, MAX(brand) AS brand, MAX(size_desc) AS size_desc, MAX(season) AS season,
+      `SELECT code, MAX(brand) AS brand, MAX(size_desc) AS size_desc, MAX(season) AS season, MAX(barcode) AS barcode,
+              MAX(product_type) AS product_type, MAX(width_mm) AS width_mm, MAX(profile_pct) AS profile_pct, MAX(rim_diameter) AS rim_diameter,
               SUM(stock_qty)::int AS total_stock, MAX(updated_at) AS last_updated
        FROM products${where}
        GROUP BY code
@@ -132,6 +133,11 @@ export async function GET(request: NextRequest) {
       avg_sale_price: avgByCode.get(g.code)?.sale ?? null,
       size_desc: g.size_desc,
       season: g.season,
+      barcode: g.barcode,
+      product_type: g.product_type,
+      width_mm: g.width_mm,
+      profile_pct: g.profile_pct,
+      rim_diameter: g.rim_diameter,
       total_stock: g.total_stock,
       batches: batchesByCode.get(g.code) ?? [],
     }));
@@ -154,7 +160,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { code, brand, size_desc, season, supplier, location, production_week, production_year, purchase_price, sale_price, stock_qty } = body;
+    const {
+      code, brand, size_desc, season, supplier, location, barcode, production_week, production_year,
+      purchase_price, sale_price, stock_qty, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm,
+    } = body;
 
     if (!code || !String(code).trim()) {
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
@@ -178,6 +187,11 @@ export async function POST(request: NextRequest) {
     const values = [
       user.tenantId, String(code).trim(), brand || null, size_desc || null, season || null, supplier || null,
       isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, location || null,
+      barcode ? String(barcode).trim() : null, product_type || null,
+      width_mm === "" || width_mm == null ? null : Number(width_mm),
+      profile_pct === "" || profile_pct == null ? null : Number(profile_pct),
+      rim_diameter ? String(rim_diameter).trim() : null,
+      tread_depth_mm === "" || tread_depth_mm == null ? null : Number(tread_depth_mm),
     ];
 
     const conflictClause = isDated
@@ -185,12 +199,18 @@ export async function POST(request: NextRequest) {
       : `ON CONFLICT (tenant_id, code, COALESCE(location, '')) WHERE production_year IS NULL`;
 
     const result = await pool.query(
-      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty, location)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty, location, barcode, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        ${conflictClause} DO UPDATE SET
          brand=EXCLUDED.brand, size_desc=EXCLUDED.size_desc, season=EXCLUDED.season,
          purchase_price=EXCLUDED.purchase_price, sale_price=EXCLUDED.sale_price,
-         stock_qty=products.stock_qty + EXCLUDED.stock_qty, updated_at=CURRENT_TIMESTAMP
+         stock_qty=products.stock_qty + EXCLUDED.stock_qty, barcode=COALESCE(EXCLUDED.barcode, products.barcode),
+         product_type=COALESCE(EXCLUDED.product_type, products.product_type),
+         width_mm=COALESCE(EXCLUDED.width_mm, products.width_mm),
+         profile_pct=COALESCE(EXCLUDED.profile_pct, products.profile_pct),
+         rim_diameter=COALESCE(EXCLUDED.rim_diameter, products.rim_diameter),
+         tread_depth_mm=COALESCE(EXCLUDED.tread_depth_mm, products.tread_depth_mm),
+         updated_at=CURRENT_TIMESTAMP
        RETURNING *`,
       values
     );
@@ -205,6 +225,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(productRow, { status: 201 });
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      const constraint = "constraint" in error ? String(error.constraint) : "";
+      if (constraint.includes("barcode")) {
+        return NextResponse.json({ error: "Bu barkod başka bir üründe zaten kayıtlı." }, { status: 409 });
+      }
       return NextResponse.json({ error: "Bu kod, üretim haftası/yılı ve tedarikçiye sahip bir parti zaten mevcut." }, { status: 409 });
     }
     console.error(error);

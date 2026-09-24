@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
-import { parseProductRows, chunk, type ParsedProductRow } from "@/lib/productsExcel";
+import { parseProductRows, validateProductRows, chunk, SEASON_OPTIONS, type ParsedProductRow } from "@/lib/productsExcel";
+import { PRODUCT_TYPE_OPTIONS, computeCondition, type ProductType } from "@/lib/productCondition";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
@@ -14,6 +15,7 @@ const IMPORT_BATCH_SIZE = 50;
 interface ProductBatch {
   id: number;
   code: string;
+  barcode: string | null;
   brand: string | null;
   size_desc: string | null;
   season: string | null;
@@ -26,6 +28,11 @@ interface ProductBatch {
   sale_price: string | number | null;
   avg_sale_price: string | number | null;
   stock_qty: number | null;
+  product_type: string | null;
+  width_mm: number | null;
+  profile_pct: number | null;
+  rim_diameter: string | null;
+  tread_depth_mm: string | number | null;
 }
 
 interface ProductGroup {
@@ -33,6 +40,11 @@ interface ProductGroup {
   brand: string | null;
   size_desc: string | null;
   season: string | null;
+  barcode: string | null;
+  product_type: string | null;
+  width_mm: number | null;
+  profile_pct: number | null;
+  rim_diameter: string | null;
   total_stock: number;
   avg_purchase_price: string | number | null;
   avg_sale_price: string | number | null;
@@ -70,7 +82,6 @@ interface MovementRow {
   current_stock: number;
 }
 
-const SEASON_OPTIONS = ["Yaz", "Kış", "Dört Mevsim"];
 const LOCATION_OPTIONS = ["Mağaza", "Depo"];
 
 // Alış Fiyatı × (1 + yüzde/100) — kâr yüzdesi girildiğinde Satış Fiyatı'nı
@@ -142,17 +153,22 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
   { key: "location", label: "Konum", defaultVisible: true },
   { key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true },
   { key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true },
+  { key: "product_type", label: "Ürün Tipi", defaultVisible: false },
+  { key: "barcode", label: "Barkod", defaultVisible: false },
+  { key: "condition", label: "Kondisyon", defaultVisible: false },
 ];
 
 // Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
 // aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
 const BATCH_SKELETON_COL_WIDTH: Record<string, string> = {
   production_date: "w-12", season: "w-14", supplier: "w-16", location: "w-14", purchase_price: "w-14", sale_price: "w-14",
+  product_type: "w-16", barcode: "w-20", condition: "w-14",
 };
 const SKELETON_ROWS = 8;
 
 const EMPTY_FORM = {
   code: "",
+  barcode: "",
   brand: "",
   size_desc: "",
   season: "",
@@ -164,6 +180,11 @@ const EMPTY_FORM = {
   markupPercent: "",
   sale_price: "",
   stock_qty: "0",
+  product_type: "",
+  width_mm: "",
+  profile_pct: "",
+  rim_diameter: "",
+  tread_depth_mm: "",
 };
 
 function num(v: string | number | null): number {
@@ -198,6 +219,74 @@ function locationBreakdown(batches: ProductBatch[]): string | null {
     .join(" · ");
 }
 
+const PRODUCT_TYPE_BADGE_STYLE: Record<string, string> = {
+  "Lastik": "bg-slate-100 text-slate-700",
+  "Jant": "bg-purple-100 text-purple-700",
+  "İkinci El Lastik": "bg-amber-100 text-amber-700",
+  "İkinci El Jant": "bg-amber-100 text-amber-700",
+  "Aksesuar": "bg-gray-100 text-gray-600",
+};
+
+function productTypeBadge(type: string | null) {
+  if (!type) return "—";
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] leading-none font-medium ${PRODUCT_TYPE_BADGE_STYLE[type] ?? "bg-gray-100 text-gray-600"}`}>
+      {type}
+    </span>
+  );
+}
+
+function conditionBadge(condition: "Çok İyi" | "İyi" | null) {
+  if (!condition) return "—";
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] leading-none font-medium ${condition === "Çok İyi" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+      {condition}
+    </span>
+  );
+}
+
+// Formu doldururken "ürün gerçekte nasıl görünecek" sorusuna anlık cevap —
+// kullanıcı isteği: "biraz görsellik katsak, ürünün nasıl görüneceğini
+// gösteren bir önizleme gibi". Kaydedilecek veriden TÜRETİLİR, ayrı bir
+// state tutmaz — form her değiştiğinde otomatik güncellenir.
+function ProductPreviewCard({ f }: { f: typeof EMPTY_FORM }) {
+  const hasAnything = f.brand.trim() || f.size_desc.trim() || f.code.trim() || f.product_type.trim();
+  if (!hasAnything) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-200 p-4 text-xs text-gray-400 text-center">
+        Doldukça burada görünecek
+      </div>
+    );
+  }
+
+  const condition = f.product_type === "İkinci El Lastik" && f.tread_depth_mm !== ""
+    ? computeCondition(Number(f.tread_depth_mm))
+    : null;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
+      <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+        {f.product_type.trim() && productTypeBadge(f.product_type)}
+        {f.season.trim() && seasonBadge(f.season)}
+        {condition && conditionBadge(condition)}
+      </div>
+      <div className="text-base font-bold text-gray-800 leading-snug">
+        {[f.brand.trim(), f.size_desc.trim()].filter(Boolean).join(" — ") || "Marka / Ebat girilmedi"}
+      </div>
+      <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 flex-wrap">
+          {f.code.trim() && <span className="font-mono">{f.code.trim()}</span>}
+          {f.supplier.trim() && <span>· {f.supplier.trim()}</span>}
+          {f.location.trim() && <span>· {f.location.trim()}</span>}
+        </div>
+        {num(f.sale_price) > 0 && (
+          <span className="text-sm font-semibold text-gray-800">{formatCurrency(num(f.sale_price))}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function seasonBadge(season: string | null) {
   if (!season) return "—";
   return (
@@ -222,11 +311,12 @@ export default function ProductsPage() {
   // satırında hep "Fiyat Geçmişi" olduğundan bu sütunu belirleyen hep bu
   // satır tipidir) — aksi halde ör. sadece products.view izni olan bir
   // kullanıcıda sütun gereksiz boş yer kaplardı (özellikle mobilde).
-  const productActionCount = 1 + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
+  const productActionCount = 1 + (canCreate ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
   const PRODUCT_ACTIONS_WIDTH: Record<number, string> = {
     1: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[130px] sm:min-w-[130px] sm:max-w-[130px]",
     2: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[200px] sm:min-w-[200px] sm:max-w-[200px]",
     3: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]",
+    4: "w-[122px] min-w-[122px] max-w-[122px] sm:w-[330px] sm:min-w-[330px] sm:max-w-[330px]",
   };
   const productActionsWidth = PRODUCT_ACTIONS_WIDTH[productActionCount];
   const [items, setItems] = useState<ProductGroup[]>([]);
@@ -384,9 +474,41 @@ export default function ProductsPage() {
     });
   }
 
+  // Barkod okutulup alandan çıkılınca (Enter/Tab, okuyucular genelde bunu
+  // simüle eder) bu firmanın DAHA ÖNCE aynı barkodla kaydettiği bir ürün
+  // varsa Marka/Ebat/Mevsim/Tedarikçi otomatik doldurulur — sadece kullanıcı
+  // henüz o alanları elle doldurmadıysa (zaten yazılmış bir değerin üzerine
+  // sessizce yazılmaz). Fiyat/stok/konum KASITLI olarak doldurulmaz, bunlar
+  // her partide yeniden girilir (bkz. /api/products/barcode notu).
+  async function handleBarcodeLookup(setter: typeof setForm, current: typeof EMPTY_FORM) {
+    const barcode = current.barcode.trim();
+    if (!barcode) return;
+    try {
+      const res = await fetch(`/api/products/barcode?barcode=${encodeURIComponent(barcode)}`);
+      const data = await res.json();
+      if (!data.found) return;
+      setter((prev) => ({
+        ...prev,
+        code: prev.code.trim() ? prev.code : data.code ?? prev.code,
+        brand: prev.brand.trim() ? prev.brand : data.brand ?? prev.brand,
+        size_desc: prev.size_desc.trim() ? prev.size_desc : data.size_desc ?? prev.size_desc,
+        season: prev.season.trim() ? prev.season : data.season ?? prev.season,
+        supplier: prev.supplier.trim() ? prev.supplier : data.supplier ?? prev.supplier,
+        product_type: prev.product_type.trim() ? prev.product_type : data.product_type ?? prev.product_type,
+        width_mm: prev.width_mm.trim() ? prev.width_mm : data.width_mm != null ? String(data.width_mm) : prev.width_mm,
+        profile_pct: prev.profile_pct.trim() ? prev.profile_pct : data.profile_pct != null ? String(data.profile_pct) : prev.profile_pct,
+        rim_diameter: prev.rim_diameter.trim() ? prev.rim_diameter : data.rim_diameter ?? prev.rim_diameter,
+      }));
+      toast.success("Barkod eşleşti, bilinen bilgiler dolduruldu.");
+    } catch {
+      // sessizce yoksay — barkod alanı yine de elle girilmiş değeriyle kalır
+    }
+  }
+
   function buildPayload(f: typeof EMPTY_FORM) {
     return {
       code: f.code.trim(),
+      barcode: f.barcode.trim() || null,
       brand: f.brand.trim() || null,
       size_desc: f.size_desc.trim() || null,
       season: f.season.trim() || null,
@@ -397,7 +519,30 @@ export default function ProductsPage() {
       purchase_price: f.purchase_price === "" ? null : Number(f.purchase_price),
       sale_price: f.sale_price === "" ? null : Number(f.sale_price),
       stock_qty: Number(f.stock_qty) || 0,
+      product_type: f.product_type.trim() || null,
+      width_mm: f.width_mm === "" ? null : Number(f.width_mm),
+      profile_pct: f.profile_pct === "" ? null : Number(f.profile_pct),
+      rim_diameter: f.rim_diameter.trim() || null,
+      tread_depth_mm: f.tread_depth_mm === "" ? null : Number(f.tread_depth_mm),
     };
+  }
+
+  // Ebat'ı (size_desc) üç yapılandırılmış alana (Kesit Genişliği, Profil,
+  // Jant Çapı) bölme taslağı — size_desc'in YERİNE değil, YANINA (bkz. plan,
+  // 23 dosyada kullanıldığından TEK yetkili görüntüleme/arama alanı olarak
+  // kalıyor). Üçü de doluysa Ebat alanını otomatik "205 / 55 / R16"
+  // biçiminde oluşturup doldurur — kullanıcı isterse yine elle düzeltebilir,
+  // sessizce bir daha ezilmez (sadece bu üç alan değiştiğinde tetiklenir).
+  function handleStructuredSizeChange(
+    setter: typeof setForm,
+    current: typeof EMPTY_FORM,
+    patch: Partial<Pick<typeof EMPTY_FORM, "width_mm" | "profile_pct" | "rim_diameter">>
+  ) {
+    const next = { ...current, ...patch };
+    const composed = next.width_mm.trim() && next.profile_pct.trim() && next.rim_diameter.trim()
+      ? `${next.width_mm.trim()} / ${next.profile_pct.trim()} / ${next.rim_diameter.trim()}`
+      : null;
+    setter((prev) => ({ ...prev, ...patch, ...(composed ? { size_desc: composed } : {}) }));
   }
 
   async function handleSave() {
@@ -435,10 +580,40 @@ export default function ProductsPage() {
     setShowAddModal(true);
   }
 
+  // "Benzer Üründen Kopyala" — aynı model, farklı ebat gibi çok benzer bir
+  // ürün eklerken her alanı sıfırdan yazmak yerine mevcut bir partiden
+  // başlanır (bkz. plan, rakip POS/envanter yazılımlarında yaygın "Duplicate
+  // Product" kalıbı). Kod/Barkod/Üretim Haftası-Yılı/Stok KASITLI olarak
+  // KOPYALANMAZ — bunlar partiye özgüdür, aynen kopyalanırsa kullanıcı fark
+  // etmeden aynı barkod/kodu iki kez kaydedebilir. Fiyatlar kopyalanır (çoğu
+  // zaman yakın bir başlangıç noktasıdır), kullanıcı isterse düzeltir.
+  function openClone(batch: ProductBatch) {
+    setForm({
+      ...EMPTY_FORM,
+      brand: batch.brand ?? "",
+      size_desc: batch.size_desc ?? "",
+      season: batch.season ?? "",
+      supplier: batch.supplier ?? "",
+      location: batch.location ?? "",
+      purchase_price: batch.purchase_price != null ? String(num(batch.purchase_price)) : "",
+      sale_price: batch.sale_price != null ? String(num(batch.sale_price)) : "",
+      product_type: batch.product_type ?? "",
+      width_mm: batch.width_mm != null ? String(batch.width_mm) : "",
+      profile_pct: batch.profile_pct != null ? String(batch.profile_pct) : "",
+      rim_diameter: batch.rim_diameter ?? "",
+      // tread_depth_mm KASITLI kopyalanmaz — Diş Derinliği o SPESİFİK
+      // lastiğin fiziksel durumudur, "benzer" bir ürüne aynen taşınamaz.
+    });
+    setShowAddModal(true);
+    toast.success("Bilgiler kopyalandı — Ürün Kodu'nu (ve varsa Barkod'u) girip kaydedin.");
+  }
+
   function openEdit(item: ProductBatch) {
     setEditItem(item);
     setEditForm({
+      ...EMPTY_FORM,
       code: item.code ?? "",
+      barcode: item.barcode ?? "",
       brand: item.brand ?? "",
       size_desc: item.size_desc ?? "",
       season: item.season ?? "",
@@ -450,6 +625,11 @@ export default function ProductsPage() {
       markupPercent: "",
       sale_price: item.sale_price != null ? String(num(item.sale_price)) : "",
       stock_qty: String(item.stock_qty ?? 0),
+      product_type: item.product_type ?? "",
+      width_mm: item.width_mm != null ? String(item.width_mm) : "",
+      profile_pct: item.profile_pct != null ? String(item.profile_pct) : "",
+      rim_diameter: item.rim_diameter ?? "",
+      tread_depth_mm: item.tread_depth_mm != null ? String(num(item.tread_depth_mm)) : "",
     });
   }
 
@@ -564,6 +744,26 @@ export default function ProductsPage() {
         return;
       }
 
+      // Excel'in kendisine açılır liste/doğrulama koyamadığımızdan (bkz.
+      // src/lib/productsExcel.ts validateProductRows notu), yükleme
+      // BAŞLAMADAN önce burada gösterilir — kullanıcı ya kaynak dosyayı
+      // düzeltip yeniden seçer ya da bilerek "yine de devam et" der.
+      const warnings = validateProductRows(parsed.rows);
+      if (warnings.length > 0) {
+        const preview = warnings.slice(0, 8)
+          .map((w) => `Satır ${w.row} (${w.code}): ${w.message}`)
+          .join("\n");
+        const more = warnings.length > 8 ? `\n...ve ${warnings.length - 8} satır daha.` : "";
+        const proceed = await confirm({
+          title: "Tanınmayan değerler bulundu",
+          message: `${preview}${more}\n\nBu satırlar yine de girdiğiniz değerle kaydedilecek. Devam edilsin mi, yoksa dosyayı düzeltip tekrar mı deneyeceksiniz?`,
+          confirmText: "Yine de Devam Et",
+          cancelText: "Vazgeç, Dosyayı Düzelteyim",
+          variant: "danger",
+        });
+        if (!proceed) return;
+      }
+
       setImportStage("uploading");
       const batches = chunk(parsed.rows, IMPORT_BATCH_SIZE);
       setImportProgress({ current: 0, total: parsed.rows.length });
@@ -607,6 +807,16 @@ export default function ProductsPage() {
 
   // 4 sabit sütun (Ürün Kodu/Marka/Ebat/Stok) + görünür parti sütunları + işlemler.
   const visibleColCount = 4 + BATCH_COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
+
+  // Ürün Tipi'ne göre koşullu alan görünürlüğü (bkz. plan) — Jant/İkinci El
+  // Jant/Aksesuar'da Mevsim+Üretim Haftası/Yılı (lastiğe özel) anlamsız;
+  // sadece İkinci El Lastik'te Diş Derinliği/Kondisyon gösterilir. Boş/NULL
+  // product_type için bugünkü davranış (hep Mevsim/Üretim görünür, Diş
+  // Derinliği hiç görünmez) korunur.
+  const hideSeasonProduction = form.product_type === "Jant" || form.product_type === "İkinci El Jant" || form.product_type === "Aksesuar";
+  const isUsedTire = form.product_type === "İkinci El Lastik";
+  const editHideSeasonProduction = editForm.product_type === "Jant" || editForm.product_type === "İkinci El Jant" || editForm.product_type === "Aksesuar";
+  const editIsUsedTire = editForm.product_type === "İkinci El Lastik";
 
   if (!allowed) return null;
 
@@ -935,6 +1145,9 @@ export default function ProductsPage() {
                     {visibleCols.location && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Konum</th>}
                     {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
                     {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
+                    {visibleCols.product_type && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ürün Tipi</th>}
+                    {visibleCols.barcode && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Barkod</th>}
+                    {visibleCols.condition && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Diş Derinliği'nden otomatik hesaplanır">Kondisyon</th>}
                     <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
@@ -1005,6 +1218,9 @@ export default function ProductsPage() {
                                 {group.avg_sale_price != null ? formatCurrency(num(group.avg_sale_price)) : "—"}
                               </td>
                             )}
+                            {visibleCols.product_type && <td className="px-4 py-3">{productTypeBadge(group.product_type)}</td>}
+                            {visibleCols.barcode && <td className="px-4 py-3"></td>}
+                            {visibleCols.condition && <td className="px-4 py-3"></td>}
                             <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {canCreate && (
@@ -1057,6 +1273,9 @@ export default function ProductsPage() {
                               {visibleCols.location && <td className="px-4 py-3 text-gray-500">{batch.location ?? "—"}</td>}
                               {visibleCols.purchase_price && <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(num(batch.avg_purchase_price ?? batch.purchase_price))}</td>}
                               {visibleCols.sale_price && <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatCurrency(num(batch.avg_sale_price ?? batch.sale_price))}</td>}
+                              {visibleCols.product_type && <td className="px-4 py-3"></td>}
+                              {visibleCols.barcode && <td className="px-4 py-3 text-gray-500 font-mono">{batch.barcode ?? "—"}</td>}
+                              {visibleCols.condition && <td className="px-4 py-3">{conditionBadge(batch.tread_depth_mm != null && batch.tread_depth_mm !== "" ? computeCondition(Number(batch.tread_depth_mm)) : null)}</td>}
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   <button
@@ -1070,6 +1289,19 @@ export default function ProductsPage() {
                                     </svg>
                                     <span className="hidden sm:inline">Fiyat Geçmişi</span>
                                   </button>
+                                  {canCreate && (
+                                    <button
+                                      onClick={() => openClone(batch)}
+                                      title="Benzer Üründen Kopyala"
+                                      aria-label="Benzer Üründen Kopyala"
+                                      className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                      </svg>
+                                      <span className="hidden sm:inline">Kopyala</span>
+                                    </button>
+                                  )}
                                   {canEdit && (
                                     <button
                                       onClick={() => openEdit(batch)}
@@ -1203,6 +1435,25 @@ export default function ProductsPage() {
             <p className="text-xs text-gray-400 mb-5">Aynı Ürün Kodu zaten varsa, farklı bir Üretim Haftası/Yılı ve/veya Tedarikçi girerek o koda yeni bir parti eklemiş olursunuz. Kod+Hafta/Yılı+Tedarikçi mevcut bir partiyle birebir eşleşirse, girdiğiniz miktar o partinin stoğuna eklenir ve fiyat geçmişine yeni bir satır düşer.</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
+                <select value={form.product_type} onChange={(e) => setForm({ ...form, product_type: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">Seçilmedi</option>
+                  {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Barkod</label>
+                <input
+                  type="text"
+                  value={form.barcode}
+                  onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                  onBlur={() => handleBarcodeLookup(setForm, form)}
+                  placeholder="Okutun veya yazın..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu <span className="text-red-500">*</span></label>
                 <input
@@ -1222,10 +1473,28 @@ export default function ProductsPage() {
                   placeholder="205/60R16"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
-                <SearchableCombobox value={form.season} onChange={(val) => setForm({ ...form, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  veya yapılandırılmış girin <span className="text-gray-400 font-normal">(doldurunca Ebat&apos;ı otomatik oluşturur)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Kesit (ör. 205)" value={form.width_mm}
+                    onChange={(e) => handleStructuredSizeChange(setForm, form, { width_mm: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" placeholder="Profil (ör. 55)" value={form.profile_pct}
+                    onChange={(e) => handleStructuredSizeChange(setForm, form, { profile_pct: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="text" placeholder="Jant Çapı (ör. R16)" value={form.rim_diameter}
+                    onChange={(e) => handleStructuredSizeChange(setForm, form, { rim_diameter: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
+              {!hideSeasonProduction && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
+                  <SearchableCombobox value={form.season} onChange={(val) => setForm({ ...form, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
                 <SearchableCombobox value={form.supplier} onChange={(val) => setForm({ ...form, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
@@ -1234,17 +1503,35 @@ export default function ProductsPage() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
                 <SearchableCombobox value={form.location} onChange={(val) => setForm({ ...form, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
-                <div className="flex gap-2">
-                  <input type="number" min="1" max="53" placeholder="Hafta" value={form.production_week}
-                    onChange={(e) => setForm({ ...form, production_week: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" min="2000" max="2100" placeholder="Yıl" value={form.production_year}
-                    onChange={(e) => setForm({ ...form, production_year: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {!hideSeasonProduction && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                  <div className="flex gap-2">
+                    <input type="number" min="1" max="53" placeholder="Hafta" value={form.production_week}
+                      onChange={(e) => setForm({ ...form, production_week: e.target.value })}
+                      className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="number" min="2000" max="2100" placeholder="Yıl" value={form.production_year}
+                      onChange={(e) => setForm({ ...form, production_year: e.target.value })}
+                      className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
                 </div>
-              </div>
+              )}
+              {isUsedTire && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği (mm)</label>
+                  <input type="number" step="0.1" min="0" value={form.tread_depth_mm}
+                    onChange={(e) => setForm({ ...form, tread_depth_mm: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              )}
+              {isUsedTire && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Kondisyon</label>
+                  <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-600">
+                    {computeCondition(form.tread_depth_mm === "" ? null : Number(form.tread_depth_mm)) ?? "Diş Derinliği girin"}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti (Birim, ₺)</label>
                 <input type="number" step="0.01" value={form.purchase_price}
@@ -1279,6 +1566,10 @@ export default function ProductsPage() {
                 </div>
               )}
             </div>
+            <div className="mt-5">
+              <p className="text-xs font-medium text-gray-500 mb-2">Ön İzleme</p>
+              <ProductPreviewCard f={form} />
+            </div>
             </div>
 
             <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
@@ -1308,9 +1599,22 @@ export default function ProductsPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-5">Partiyi Düzenle</h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
+                <select value={editForm.product_type} onChange={(e) => setEditForm({ ...editForm, product_type: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">Seçilmedi</option>
+                  {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu</label>
                 <input type="text" value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Barkod</label>
+                <input type="text" value={editForm.barcode} onChange={(e) => setEditForm({ ...editForm, barcode: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
@@ -1322,10 +1626,28 @@ export default function ProductsPage() {
                 <input type="text" value={editForm.size_desc} onChange={(e) => setEditForm({ ...editForm, size_desc: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
-                <SearchableCombobox value={editForm.season} onChange={(val) => setEditForm({ ...editForm, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  veya yapılandırılmış girin <span className="text-gray-400 font-normal">(doldurunca Ebat&apos;ı otomatik oluşturur)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Kesit (ör. 205)" value={editForm.width_mm}
+                    onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { width_mm: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" placeholder="Profil (ör. 55)" value={editForm.profile_pct}
+                    onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { profile_pct: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="text" placeholder="Jant Çapı (ör. R16)" value={editForm.rim_diameter}
+                    onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { rim_diameter: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
+              {!editHideSeasonProduction && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
+                  <SearchableCombobox value={editForm.season} onChange={(val) => setEditForm({ ...editForm, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
                 <SearchableCombobox value={editForm.supplier} onChange={(val) => setEditForm({ ...editForm, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
@@ -1334,17 +1656,35 @@ export default function ProductsPage() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
                 <SearchableCombobox value={editForm.location} onChange={(val) => setEditForm({ ...editForm, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
-                <div className="flex gap-2">
-                  <input type="number" min="1" max="53" placeholder="Hafta" value={editForm.production_week}
-                    onChange={(e) => setEditForm({ ...editForm, production_week: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" min="2000" max="2100" placeholder="Yıl" value={editForm.production_year}
-                    onChange={(e) => setEditForm({ ...editForm, production_year: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {!editHideSeasonProduction && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                  <div className="flex gap-2">
+                    <input type="number" min="1" max="53" placeholder="Hafta" value={editForm.production_week}
+                      onChange={(e) => setEditForm({ ...editForm, production_week: e.target.value })}
+                      className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="number" min="2000" max="2100" placeholder="Yıl" value={editForm.production_year}
+                      onChange={(e) => setEditForm({ ...editForm, production_year: e.target.value })}
+                      className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
                 </div>
-              </div>
+              )}
+              {editIsUsedTire && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği (mm)</label>
+                  <input type="number" step="0.1" min="0" value={editForm.tread_depth_mm}
+                    onChange={(e) => setEditForm({ ...editForm, tread_depth_mm: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              )}
+              {editIsUsedTire && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Kondisyon</label>
+                  <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-600">
+                    {computeCondition(editForm.tread_depth_mm === "" ? null : Number(editForm.tread_depth_mm)) ?? "Diş Derinliği girin"}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti (Birim, ₺)</label>
                 <input type="number" step="0.01" value={editForm.purchase_price}
@@ -1378,6 +1718,10 @@ export default function ProductsPage() {
                   Toplam ({editForm.stock_qty} adet): Alış {formatCurrency(num(editForm.purchase_price) * num(editForm.stock_qty))} · Satış {formatCurrency(num(editForm.sale_price) * num(editForm.stock_qty))}
                 </div>
               )}
+            </div>
+            <div className="mt-5">
+              <p className="text-xs font-medium text-gray-500 mb-2">Ön İzleme</p>
+              <ProductPreviewCard f={editForm} />
             </div>
             </div>
 

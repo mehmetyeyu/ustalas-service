@@ -45,7 +45,15 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { code, brand, size_desc, season, supplier, location, production_week, production_year, purchase_price, sale_price, stock_qty } = body;
+    const {
+      code, brand, size_desc, season, supplier, location, barcode, production_week, production_year,
+      purchase_price, sale_price, stock_qty, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm,
+    } = body;
+    const productTypeVal = product_type || null;
+    const widthMmVal = width_mm === "" || width_mm == null ? null : Number(width_mm);
+    const profilePctVal = profile_pct === "" || profile_pct == null ? null : Number(profile_pct);
+    const rimDiameterVal = rim_diameter ? String(rim_diameter).trim() : null;
+    const treadDepthVal = tread_depth_mm === "" || tread_depth_mm == null ? null : Number(tread_depth_mm);
 
     if (!code || !String(code).trim()) {
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
@@ -99,9 +107,16 @@ export async function PATCH(
         const merged = await client.query(
           `UPDATE products SET
             brand=$1, size_desc=$2, season=$3, purchase_price=$4, sale_price=$5,
-            stock_qty=stock_qty + $6, updated_at=CURRENT_TIMESTAMP
-           WHERE id=$7 AND tenant_id=$8 RETURNING *`,
-          [brand || null, size_desc || null, season || null, purchase_price ?? null, sale_price ?? null, qty, target.id, user.tenantId]
+            stock_qty=stock_qty + $6, barcode=COALESCE($7, barcode),
+            product_type=COALESCE($8, product_type), width_mm=COALESCE($9, width_mm),
+            profile_pct=COALESCE($10, profile_pct), rim_diameter=COALESCE($11, rim_diameter),
+            tread_depth_mm=COALESCE($12, tread_depth_mm), updated_at=CURRENT_TIMESTAMP
+           WHERE id=$13 AND tenant_id=$14 RETURNING *`,
+          [
+            brand || null, size_desc || null, season || null, purchase_price ?? null, sale_price ?? null, qty,
+            barcode ? String(barcode).trim() : null, productTypeVal, widthMmVal, profilePctVal, rimDiameterVal, treadDepthVal,
+            target.id, user.tenantId,
+          ]
         );
         await client.query(`UPDATE product_stock_entries SET product_id=$1 WHERE product_id=$2 AND tenant_id=$3`, [target.id, id, user.tenantId]);
         // Bu partiye bağlı geçmiş satışlar da hedefe taşınır — aksi hâlde
@@ -122,11 +137,14 @@ export async function PATCH(
     const result = await pool.query(
       `UPDATE products SET
         code=$1, brand=$2, size_desc=$3, season=$4, supplier=$5, location=$6,
-        production_week=$7, production_year=$8, purchase_price=$9, sale_price=$10, stock_qty=$11, updated_at=CURRENT_TIMESTAMP
-       WHERE id=$12 AND tenant_id=$13 RETURNING *`,
+        production_week=$7, production_year=$8, purchase_price=$9, sale_price=$10, stock_qty=$11, barcode=$12,
+        product_type=$13, width_mm=$14, profile_pct=$15, rim_diameter=$16, tread_depth_mm=$17, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$18 AND tenant_id=$19 RETURNING *`,
       [
         trimmedCode, brand || null, size_desc || null, season || null, supplierVal, locationVal,
-        isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, id, user.tenantId,
+        isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty,
+        barcode ? String(barcode).trim() : null, productTypeVal, widthMmVal, profilePctVal, rimDiameterVal, treadDepthVal,
+        id, user.tenantId,
       ]
     );
 
@@ -144,6 +162,10 @@ export async function PATCH(
     return NextResponse.json(result.rows[0]);
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      const constraint = "constraint" in error ? String(error.constraint) : "";
+      if (constraint.includes("barcode")) {
+        return NextResponse.json({ error: "Bu barkod başka bir üründe zaten kayıtlı." }, { status: 409 });
+      }
       return NextResponse.json({ error: "Bu kod, üretim haftası/yılı ve tedarikçiye sahip bir parti zaten mevcut." }, { status: 409 });
     }
     console.error(error);

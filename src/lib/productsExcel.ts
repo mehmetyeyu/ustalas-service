@@ -1,6 +1,14 @@
 import { normalizeHeader, toNumber } from "@/lib/excelParsing";
 export { chunk } from "@/lib/excelParsing";
 
+// Mevsim tek, kapalı bir liste — Marka/Tedarikçi gibi serbest metin
+// DEĞİL (bkz. admin/products sayfasındaki Mevsim filtre dropdown'ı, aynı
+// listeyi kullanır). İçe aktarmada bu listenin dışındaki bir değer
+// (ör. "Yaz Lastiği" ya da bir yazım hatası) sessizce kaydedilirse Mevsim
+// filtresi o satırı bir daha hiç göstermez — validateProductRows bunu
+// yüklemeden ÖNCE yakalar.
+export const SEASON_OPTIONS = ["Yaz", "Kış", "Dört Mevsim"];
+
 export interface ParsedProductRow {
   code: string;
   brand: string | null;
@@ -134,4 +142,36 @@ export function parseProductRows(
   }
 
   return { rows: parsed, skipped };
+}
+
+export interface ProductRowWarning {
+  row: number; // 1-tabanlı, başlık satırı hariç (kullanıcının Excel'de gördüğü veri satırı sırası)
+  code: string;
+  field: string;
+  message: string;
+}
+
+// İçe aktarmadan ÖNCE (yüklemeden önce) çağrılır — Excel'in kendisine gömülü
+// bir açılır liste/doğrulama koyamadığımızdan (bkz. plan: xlsx community
+// sürümü DataValidation yazmayı desteklemiyor), aynı hedefe (kötü veri
+// fark edilmeden kaydedilmesin) burada, yükleme öncesi bir kontrolle
+// ulaşılıyor. Şimdilik sadece Mevsim kontrol ediliyor — Marka/Tedarikçi
+// serbest metin olduğundan "yanlış" bir değer tanımı yok, ama Mevsim kapalı
+// bir liste, sistemin geri kalanıyla (filtre dropdown'ı) tutarlı kalması
+// gerekiyor. Engelleyici değil — çağıran taraf kullanıcıya gösterip "yine de
+// devam et" seçeneği sunabilir.
+export function validateProductRows(rows: ParsedProductRow[]): ProductRowWarning[] {
+  const warnings: ProductRowWarning[] = [];
+  const validSeasons = new Set(SEASON_OPTIONS.map((s) => s.toLocaleLowerCase("tr-TR")));
+  rows.forEach((row, i) => {
+    if (row.season && !validSeasons.has(row.season.toLocaleLowerCase("tr-TR"))) {
+      warnings.push({
+        row: i + 1,
+        code: row.code,
+        field: "Mevsim",
+        message: `"${row.season}" tanınan bir Mevsim değil (beklenen: ${SEASON_OPTIONS.join(", ")}).`,
+      });
+    }
+  });
+  return warnings;
 }

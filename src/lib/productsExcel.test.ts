@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { parseProductRows, normalizeYear } from "./productsExcel";
+import { parseProductRows, normalizeYear, validateProductRows, type ParsedProductRow } from "./productsExcel";
+
+function row(overrides: Partial<ParsedProductRow>): ParsedProductRow {
+  return {
+    code: "A1", brand: null, size_desc: null, season: null, supplier: null,
+    production_week: null, production_year: null, purchase_price: null, sale_price: null, stock_qty: 0,
+    ...overrides,
+  };
+}
 
 describe("normalizeYear", () => {
   it("2 haneli bir yılı 2000'lere tamamlar (DOT kodu kısa yıl biçimi)", () => {
@@ -110,5 +118,36 @@ describe("parseProductRows", () => {
     const rows = [["Ürün Kodu", "Alış Fiyatı"], ["A1", "geçersiz"]];
     const { rows: parsed } = parseProductRows(rows);
     expect(parsed[0].purchase_price).toBe(null);
+  });
+});
+
+describe("validateProductRows", () => {
+  it("geçerli bir Mevsim değeri için uyarı üretmez", () => {
+    expect(validateProductRows([row({ season: "Yaz" })])).toEqual([]);
+  });
+
+  it("Mevsim hiç girilmemişse uyarı üretmez (opsiyonel alan)", () => {
+    expect(validateProductRows([row({ season: null })])).toEqual([]);
+  });
+
+  it("büyük/küçük harf farkını göz ardı eder", () => {
+    expect(validateProductRows([row({ season: "yaz" })])).toEqual([]);
+    expect(validateProductRows([row({ season: "DÖRT MEVSİM" })])).toEqual([]);
+  });
+
+  it("tanınmayan bir Mevsim değeri için satır numarası ve kodla birlikte uyarı üretir", () => {
+    const warnings = validateProductRows([row({ code: "XYZ1", season: "Yaz Lastiği" })]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ row: 1, code: "XYZ1", field: "Mevsim" });
+    expect(warnings[0].message).toContain("Yaz Lastiği");
+  });
+
+  it("birden fazla satırda 1-tabanlı satır numarasını doğru raporlar", () => {
+    const warnings = validateProductRows([
+      row({ code: "A1", season: "Yaz" }),
+      row({ code: "A2", season: "Kışın" }),
+      row({ code: "A3", season: "İlkbahar" }),
+    ]);
+    expect(warnings.map((w) => w.row)).toEqual([2, 3]);
   });
 });

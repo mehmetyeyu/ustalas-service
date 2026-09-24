@@ -1375,3 +1375,42 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS audit_log_tenant_created_idx ON audit_log(tenant_id, created_at DESC);
+
+-- Barkod — Ürün Kodu'ndan ayrı, okuyucuyla taranabilir bir alan (bkz. "Ürün
+-- Kataloğu Taslağı" — sadece bu tek alan, taslağın geri kalanı hâlâ onay
+-- bekliyor). Ürün Kodu firma içinde tutarlı bir kodlama şeması izleyebilir
+-- (ör. "PRL-CP7-2055516"), gerçek üretici barkodu bundan tamamen bağımsız
+-- bir GTIN/EAN'dır — okuyucuyla hızlı stok girişi/satış için ayrı tutulur.
+-- Opsiyonel olduğundan (mevcut ürünlerin hiçbirinde yok, geriye dönük
+-- doldurma imkansız) benzersizlik kısıtı SADECE dolu değerler için geçerli
+-- (partial index, WHERE barcode IS NOT NULL) — aksi halde tüm boş ürünler
+-- birbirine "aynı barkod" çakışması verirdi.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS products_barcode_unique ON products(tenant_id, barcode) WHERE barcode IS NOT NULL;
+
+-- Ürün Kataloğu Taslağı'nın kalan "Yüksek" öncelikli alanları — müşteri
+-- taslağı onayladı (bkz. plan). Hepsi opsiyonel/nullable, mevcut ürünler
+-- NULL kalır ve bugünkü davranış (Mevsim/Üretim Haftası her zaman görünür,
+-- Diş Derinliği hiç görünmez) NULL için korunur — geriye dönük bozulma yok.
+--
+-- product_type: Lastik/Jant/İkinci El Lastik/İkinci El Jant/Aksesuar —
+-- mevcut Hizmetler listesindeki (bkz. services.tracks_size) servis
+-- isimleriyle birebir aynı, personel zaten bu isimleri biliyor.
+--
+-- width_mm/profile_pct/rim_diameter: Ebat'ın (size_desc) yapılandırılmış
+-- bileşenleri — size_desc'in YERİNE değil, YANINA. size_desc 23 dosyada
+-- (sipariş ekranları, Paylaşılan Stok, dışa/içe aktarma, /api/products/
+-- sizes arama) kullanıldığından TEK yetkili görüntüleme/arama alanı olarak
+-- kalıyor; bu üç alan sadece formda doluyken size_desc'i otomatik
+-- "205 / 55 / R16" biçiminde oluşturmak için var (bkz. src/app/admin/
+-- products/page.tsx).
+--
+-- tread_depth_mm: İkinci El Lastik'e özel, Kondisyon'un (Çok İyi/İyi)
+-- hesaplandığı ham değer — Kondisyon'un kendisi DB'de SAKLANMAZ, saf bir
+-- fonksiyondan (bkz. src/lib/productCondition.ts computeCondition)
+-- anlık hesaplanır, çünkü taslak "elle girilmez, otomatik hesaplanır" diyor.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(30);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS width_mm SMALLINT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS profile_pct SMALLINT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS rim_diameter VARCHAR(10);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS tread_depth_mm DECIMAL(3,1);
