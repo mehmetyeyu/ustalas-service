@@ -44,6 +44,7 @@ const navItems = [
 // koşulsuz elenir.
 const settingsItems = [
   { href: "/admin/profile", label: "Profil", adminOnly: false },
+
   { href: "/admin/users", label: "Kullanıcılar", adminOnly: true },
   { href: "/admin/audit-log", label: "Aktivite Geçmişi", adminOnly: true },
   { href: "/admin/settings", label: "Genel Ayarlar", adminOnly: true },
@@ -53,6 +54,7 @@ const settingsItems = [
   // eklenenler) hiç faturalandırmaya girmez — bu firmalara "Abonelik"
   // menüsü hiç gösterilmez, bkz. görünürlük filtresi (AdminLayoutInner).
   { href: "/admin/billing", label: "Abonelik", adminOnly: true },
+    { href: "/admin/help", label: "Kullanım Kılavuzu", adminOnly: false },
 ] as const;
 
 type NavItem = { href: string; label: string; badge?: number; isNew?: boolean };
