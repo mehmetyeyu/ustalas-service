@@ -684,6 +684,21 @@ function OrderDetailPageInner() {
     updateEditLine(lineIndex, patch);
   }
 
+  // Tek satır + tek ödeme + tutarlar eşitken (bkz. useUnifiedEditPayment)
+  // fiyatı düzeltmek Ödemeler bölümünü de elle güncellemeyi gerektiriyordu —
+  // parçalı ödeme yapmayan kullanıcı için anlamsız bir çift giriş (gerçek
+  // kullanıcı raporuyla saptandı: tek satırlık bir Cari siparişte fiyatı
+  // düzeltince "Sipariş tutarını aşıyor" hatası alıp Kaydet kilitleniyordu).
+  // Bu yüzden unified modda fiyat girişi ödeme tutarını da aynı anda
+  // günceller — ikisi zaten "aynı tek ödeme" demek, ayrı düşünmenin bir
+  // anlamı yok. İkinci bir ödeme eklenip gerçek bir parçalı ödeme
+  // başladığında (useUnifiedEditPayment false'a düşer) bu otomatik
+  // senkronizasyon devre dışı kalır — o noktadan sonra tutar elle girilir.
+  function updateEditLinePrice(index: number, value: string) {
+    updateEditLine(index, { unit_price: value });
+    if (useUnifiedEditPayment) updateEditPayment(0, { amount: value });
+  }
+
   function addEditLine() {
     setEditLines((prev) => [...prev, { ...EMPTY_EDIT_LINE }]);
   }
@@ -1065,7 +1080,7 @@ function OrderDetailPageInner() {
                             min="0"
                             step="0.01"
                             value={line.unit_price}
-                            onChange={(e) => updateEditLine(i, { unit_price: e.target.value })}
+                            onChange={(e) => updateEditLinePrice(i, e.target.value)}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
@@ -1210,7 +1225,7 @@ function OrderDetailPageInner() {
                             min="0"
                             step="0.01"
                             value={line.unit_price}
-                            onChange={(e) => updateEditLine(i, { unit_price: e.target.value })}
+                            onChange={(e) => updateEditLinePrice(i, e.target.value)}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
