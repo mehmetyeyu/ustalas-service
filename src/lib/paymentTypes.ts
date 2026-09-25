@@ -10,7 +10,7 @@ export const PROTECTED_PAYMENT_TYPES = ["Nakit", "POS", "Cari", "Mail Order"];
 // Sipariş kapatma (PATCH), düzenleme (PUT) ve toplu ödeme şekli değiştirme
 // (bulk-payment-type) aynı kuralı kullanır. flatOptions Genel Ayarlar'daki
 // ödeme şekilleri listesidir ("Mail Order" hariç).
-const MAIL_ORDER_SUFFIX = " Mail Order";
+export const MAIL_ORDER_SUFFIX = " Mail Order";
 export function isValidPaymentType(v: string, flatOptions: string[]): boolean {
   if (flatOptions.includes(v)) return true;
   return v.endsWith(MAIL_ORDER_SUFFIX) && v.length > MAIL_ORDER_SUFFIX.length;

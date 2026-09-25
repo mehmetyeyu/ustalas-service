@@ -8,6 +8,7 @@ import { useViewGuard, usePermission } from "../../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
+import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 
 interface OrderDetail {
   id: number;
@@ -110,7 +111,6 @@ const PAYMENT_LABELS: Record<string, string> = {
 // Liste Genel Ayarlar'dan gelir (bkz. paymentOptions state) — bu, fetch
 // tamamlanana/başarısız olana kadarki varsayılan.
 const DEFAULT_PAYMENT_OPTIONS = ["Nakit", "POS", "Cari", "Fatura Edildi.", "Garanti Hesap", "Nazım Hesap", "Sait Hesap", "Mail Order"];
-const MAIL_ORDER_SUFFIX = " Mail Order";
 
 // "Servis İşçiliği" hariç firmaya özel tedarikçi isimleri burada tutulmaz
 // (bkz. suppliers tablosu) — bkz. src/app/page.tsx'teki aynı sabit.

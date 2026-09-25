@@ -6,16 +6,18 @@ import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { flatPaymentOptions, PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+import { PROTECTED_PAYMENT_TYPES, MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { KasaSelect } from "@/components/KasaSelect";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
 // personel için 403 döner ve gerçek liste hiç yüklenmez. Diğer sayfalar kendi
 // firmaya özel hesaplarını içeren bir varsayılan kullanıyor; burada onun yerine
-// her tenant'ta garanti var olan PROTECTED_PAYMENT_TYPES kullanılır (Cari hariç,
-// Mail Order tek başına geçersiz olduğundan flatPaymentOptions ile elenir).
-const DEFAULT_PAYMENT_OPTIONS = flatPaymentOptions(PROTECTED_PAYMENT_TYPES).filter((t) => t !== "Cari");
+// her tenant'ta garanti var olan PROTECTED_PAYMENT_TYPES kullanılır (Cari hariç
+// — "Mail Order" burada BİLEREK bare bırakılır, aşağıdaki tedarikçi seçiciyle
+// "<Tedarikçi> Mail Order" haline getirilir, bkz. orders/[id]/page.tsx'teki
+// aynı desen).
+const DEFAULT_PAYMENT_OPTIONS = PROTECTED_PAYMENT_TYPES.filter((t) => t !== "Cari");
 
 interface Customer {
   id: number;
@@ -103,6 +105,7 @@ export default function CustomersPage() {
   const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
   const [paymentKasaId, setPaymentKasaId] = useState<number | null>(null);
   const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
+  const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
   const [savingPayment, setSavingPayment] = useState(false);
 
   async function fetchCustomers() {
@@ -119,10 +122,11 @@ export default function CustomersPage() {
     fetchCustomers();
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(flatPaymentOptions(d.payment_types).filter((t: string) => t !== "Cari")); })
+      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types.filter((t: string) => t !== "Cari")); })
       .catch(() => { });
     // Nakit tahsilat her zaman TL'dir — döviz kasaları bu seçicide görünmez.
     fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
+    fetch("/api/suppliers").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setSupplierOptions(d.map((s: { name: string }) => s.name)); }).catch(() => { });
   }, []);
 
   async function openOrders(c: Customer) {
@@ -294,6 +298,12 @@ export default function CustomersPage() {
   // useViewGuard) burada ayrıca izin kontrolüne gerek yok.
   const totalDebt = customers.reduce((sum, c) => sum + (c.balance > 0.009 ? c.balance : 0), 0);
   const totalCredit = customers.reduce((sum, c) => sum + (c.balance < -0.009 ? -c.balance : 0), 0);
+
+  // "Mail Order" tek başına geçersizdir, bir tedarikçiyle birleşip
+  // "<Tedarikçi> Mail Order" olmalıdır — bkz. orders/[id]/page.tsx'teki aynı desen.
+  const isMailOrderPayment = paymentType === "Mail Order" || paymentType.endsWith(MAIL_ORDER_SUFFIX);
+  const paymentTypeBase = isMailOrderPayment ? "Mail Order" : paymentType;
+  const mailOrderSupplier = paymentType.endsWith(MAIL_ORDER_SUFFIX) ? paymentType.slice(0, -MAIL_ORDER_SUFFIX.length) : "";
 
   if (!allowed) return null;
 
@@ -743,24 +753,45 @@ export default function CustomersPage() {
               {paymentDirection === -1 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Ödeme Şekli</label>
-                  <select
-                    value={paymentType}
-                    onChange={(e) => setPaymentType(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Seçiniz</option>
-                    {/* Düzenlenen kayıt, Genel Ayarlar'dan sonradan kaldırılmış/
-                        yeniden adlandırılmış bir ödeme şekliyle oluşturulmuş
-                        olabilir — mevcut listede yoksa seçili değer görünmez
-                        olmasın diye (ve yanlışlıkla başka bir tipe değiştirilip
-                        kaydedilmesin diye) en üste eklenir. */}
-                    {paymentType && !paymentOptions.includes(paymentType) && (
-                      <option value={paymentType}>{paymentType} (artık listede yok)</option>
+                  <div className="flex gap-2">
+                    <select
+                      value={paymentTypeBase}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next === "Mail Order") {
+                          setPaymentType(mailOrderSupplier ? `${mailOrderSupplier}${MAIL_ORDER_SUFFIX}` : "Mail Order");
+                        } else {
+                          setPaymentType(next);
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Seçiniz</option>
+                      {/* Düzenlenen kayıt, Genel Ayarlar'dan sonradan kaldırılmış/
+                          yeniden adlandırılmış bir ödeme şekliyle oluşturulmuş
+                          olabilir — mevcut listede yoksa seçili değer görünmez
+                          olmasın diye (ve yanlışlıkla başka bir tipe değiştirilip
+                          kaydedilmesin diye) en üste eklenir. */}
+                      {paymentType && !isMailOrderPayment && !paymentOptions.includes(paymentType) && (
+                        <option value={paymentType}>{paymentType} (artık listede yok)</option>
+                      )}
+                      {paymentOptions.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                    {paymentTypeBase === "Mail Order" && (
+                      <select
+                        value={mailOrderSupplier}
+                        onChange={(e) => setPaymentType(e.target.value ? `${e.target.value}${MAIL_ORDER_SUFFIX}` : "Mail Order")}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Tedarikçi seç...</option>
+                        {supplierOptions.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
                     )}
-                    {paymentOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
+                  </div>
                 </div>
               )}
               {paymentDirection === -1 && paymentType === "Nakit" && kasaOptions.length > 0 && (
