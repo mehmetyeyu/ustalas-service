@@ -1414,3 +1414,14 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS width_mm SMALLINT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS profile_pct SMALLINT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS rim_diameter VARCHAR(10);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS tread_depth_mm DECIMAL(3,1);
+
+-- Panele ilk girişte gösterilen kısa tanıtım turu (bkz. src/components/
+-- OnboardingTour.tsx, src/lib/onboardingTour.ts) — tenants değil users'a
+-- ait: aynı firmaya SONRADAN eklenen personel ya da ikinci bir kullanıcı
+-- "az önce kayıt oldunuz" turunu görmemeli, bu yüzden per-tenant değil
+-- per-user bir alan. Kimin görmesi gerektiği (yalnızca kendi kendine kayıt
+-- olmuş firmanın birincil Yöneticisi) shouldShowOnboardingTour() içinde bu
+-- kolonla birlikte is_primary_admin ve tenants.trial_ends_at kullanılarak
+-- belirlenir — bkz. o dosyadaki not. Atlama da tamamlama da (ikisi de
+-- "bir daha gösterme" anlamına gelir) burayı doldurur.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_tour_completed_at TIMESTAMPTZ;

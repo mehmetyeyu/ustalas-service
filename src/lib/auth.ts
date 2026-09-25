@@ -34,6 +34,11 @@ export interface JwtPayload {
   // Son başarısız otomatik yenileme denemesinin iyzico'dan gelen (zaten
   // Türkçe) sebep mesajı — bkz. src/app/api/webhooks/iyzico/route.ts.
   billingLastPaymentError?: string | null;
+  // Onboarding turu (bkz. src/lib/onboardingTour.ts) kimin görmesi
+  // gerektiğini belirlemek için — billingStatus/trialEndsAt gibi bunlar da
+  // her istekte DB'den taze okunur, JWT'ye hiç gömülmez.
+  isPrimaryAdmin?: boolean;
+  onboardingTourCompletedAt?: string | null;
   iat?: number;
   iatMs?: number;
 }
@@ -75,6 +80,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
 
   const result = await pool.query(
     `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
+            u.is_primary_admin, u.onboarding_tour_completed_at,
             u.tenant_id, t.name AS tenant_name, t.is_active AS tenant_is_active,
             t.billing_status, t.trial_ends_at, t.plan,
             t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error
@@ -125,6 +131,8 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     billingCancelAtPeriodEnd: user.billing_cancel_at_period_end ?? null,
     billingPeriodEndsAt: user.billing_period_ends_at ?? null,
     billingLastPaymentError: user.billing_last_payment_error ?? null,
+    isPrimaryAdmin: user.is_primary_admin ?? false,
+    onboardingTourCompletedAt: user.onboarding_tour_completed_at ?? null,
   };
 }
 

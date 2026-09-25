@@ -25,5 +25,6 @@ export async function GET() {
     billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, plan: user.plan ?? null,
     billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? false, billing_period_ends_at: user.billingPeriodEndsAt ?? null,
     billing_last_payment_error: user.billingLastPaymentError ?? null,
+    is_primary_admin: user.isPrimaryAdmin ?? false, onboarding_tour_completed_at: user.onboardingTourCompletedAt ?? null,
   });
 }

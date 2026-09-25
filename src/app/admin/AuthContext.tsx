@@ -18,6 +18,10 @@ interface AuthUser {
   billingCancelAtPeriodEnd: boolean;
   billingPeriodEndsAt: string | null;
   billingLastPaymentError: string | null;
+  // Onboarding turu (bkz. src/lib/onboardingTour.ts) — admin/layout.tsx
+  // bunlarla shouldShowOnboardingTour()'u çağırır.
+  isPrimaryAdmin: boolean;
+  onboardingTourCompletedAt: string | null;
 }
 
 interface AuthState {
@@ -47,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
                 billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
                 billingLastPaymentError: data.billing_last_payment_error ?? null,
+                isPrimaryAdmin: !!data.is_primary_admin, onboardingTourCompletedAt: data.onboarding_tour_completed_at ?? null,
               }
             : null,
           loading: false,

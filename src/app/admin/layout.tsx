@@ -6,6 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { hasPermission } from "@/lib/permissions";
 import { trialDaysLeft } from "@/lib/billing";
+import { shouldShowOnboardingTour } from "@/lib/onboardingTour";
+import OnboardingTour from "@/components/OnboardingTour";
 
 // Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
 // giriyor — sabit kodlanmış tek bir logo yerine, giriş yapan kullanıcının
@@ -97,6 +99,7 @@ function SettingsMenu({ pathname, items }: { pathname: string; items: readonly N
     <div ref={containerRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
+        data-tour-target="ayarlar"
         className={`text-sm transition-colors ${
           isActive ? "text-white font-medium" : "text-gray-400 hover:text-white"
         }`}
@@ -223,6 +226,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const [pendingAppointments, setPendingAppointments] = useState(0);
   const [showTrialModal, setShowTrialModal] = useState(false);
+  const [showOnboardingTour, setShowOnboardingTour] = useState(false);
 
   // Üstteki amber banner (aşağıda) her sayfada sessizce duruyor, kolayca
   // gözden kaçabiliyor — deneme süresi devam eden (henüz abone olmamış)
@@ -247,6 +251,48 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, loading, user?.role, user?.billingStatus, user?.trialEndsAt]);
+
+  // Onboarding turu (bkz. src/lib/onboardingTour.ts) — yalnızca kendi
+  // kendine kayıt olmuş firmanın birincil Yöneticisi'ne, panelde daha önce
+  // hiç göstermediyse gösterilir. localStorage sadece hızlı bir ön-kontrol
+  // (aynı tarayıcıda anlık tekrar mount'ta API'yi beklemeden gizlemek
+  // için) — asıl kaynak her zaman sunucudaki onboarding_tour_completed_at,
+  // bu yüzden pathname değişse bile ikinci kez tetiklenmez (sadece ilk
+  // yüklemede kontrol edilir, aşağıdaki deps listesine pathname YOK).
+  useEffect(() => {
+    if (loading || !user) return;
+    if (!shouldShowOnboardingTour({
+      role: user.role,
+      isPrimaryAdmin: user.isPrimaryAdmin,
+      trialEndsAt: user.trialEndsAt,
+      onboardingTourCompletedAt: user.onboardingTourCompletedAt,
+    })) return;
+    try {
+      if (localStorage.getItem(`onboarding_tour_seen:${user.username}`)) return;
+    } catch {
+      // localStorage engellenmiş olabilir — o durumda sadece sunucu
+      // kontrolüne güvenilir, tur yine de gösterilir.
+    }
+    setShowOnboardingTour(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user?.role, user?.isPrimaryAdmin, user?.trialEndsAt, user?.onboardingTourCompletedAt, user?.username]);
+
+  function dismissOnboardingTour() {
+    setShowOnboardingTour(false);
+    if (user) {
+      try {
+        localStorage.setItem(`onboarding_tour_seen:${user.username}`, "1");
+      } catch {
+        // yoksay — sunucu tarafı zaten kalıcı kaynak.
+      }
+    }
+    // best-effort: istek başarısız olsa da kullanıcı turu kapatabilmeli —
+    // localStorage zaten aynı tarayıcı için bir daha göstermeyecek, sunucu
+    // güncellemesi kalıcı kaynak olduğundan bir sonraki cihaz/tarayıcıda
+    // (bu istek gerçekten hiç gitmediyse) tur tekrar görülebilir, ki bu
+    // "hiç kapatılmamış gibi davran" fail-safe'i tercih edilir.
+    fetch("/api/auth/onboarding-tour", { method: "POST" }).catch(() => {});
+  }
 
   // Randevu sayfasına girmeden "bekleyen randevu var mı" görülebilsin diye —
   // nav'daki rozet, kullanıcı isteği üzerine eklendi. Sayfa açılışında ve
@@ -308,6 +354,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-tour-target={item.href}
                   className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center ${
                     pathname.startsWith(item.href)
                       ? "bg-blue-600 text-white"
@@ -365,6 +412,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
+      {showOnboardingTour && <OnboardingTour onDismiss={dismissOnboardingTour} />}
     </div>
   );
 }
