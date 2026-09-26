@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeCondition } from "./productCondition";
+import { computeCondition, stockLevel } from "./productCondition";
 
 describe("computeCondition", () => {
   it("7mm ve üzeri için 'Çok İyi' döner", () => {
@@ -23,5 +23,26 @@ describe("computeCondition", () => {
 
   it("NaN için null döner", () => {
     expect(computeCondition(NaN)).toBe(null);
+  });
+});
+
+describe("stockLevel", () => {
+  it("stok 0 veya altındaysa (eşik ne olursa olsun) 'out' döner", () => {
+    expect(stockLevel(0, null)).toBe("out");
+    expect(stockLevel(0, 5)).toBe("out");
+  });
+
+  it("eşik tanımlanmamışsa stok > 0 için her zaman 'ok' döner", () => {
+    expect(stockLevel(1, null)).toBe("ok");
+    expect(stockLevel(100, null)).toBe("ok");
+  });
+
+  it("stok eşiğin altında veya eşite ise 'low' döner", () => {
+    expect(stockLevel(4, 4)).toBe("low");
+    expect(stockLevel(2, 4)).toBe("low");
+  });
+
+  it("stok eşiğin üzerindeyse 'ok' döner", () => {
+    expect(stockLevel(5, 4)).toBe("ok");
   });
 });

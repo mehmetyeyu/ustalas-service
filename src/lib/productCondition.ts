@@ -17,3 +17,21 @@ export function computeCondition(mm: number | null): "Çok İyi" | "İyi" | null
   if (mm == null || !Number.isFinite(mm) || mm < 0) return null;
   return mm >= 7 ? "Çok İyi" : "İyi";
 }
+
+// AB Lastik Etiketi (Faz 2) — Yakıt Verimliliği ve Islak Zemin Tutuşu
+// sınıfları. Güncel yönetmelik A-E kullanıyor ama dükkânda hâlâ eski
+// (2021 öncesi, F/G sınıflı) fiziksel etiketli stok olabileceğinden A-G
+// tutulur — kullanıcı elindeki gerçek etikette ne yazıyorsa onu girebilsin.
+export const EU_LABEL_CLASSES = ["A", "B", "C", "D", "E", "F", "G"] as const;
+// Dış yuvarlanma gürültüsü "ses dalgası" sembol sayısı (1-3) — yönetmelik
+// değişse de bu kademe hiç değişmedi.
+export const EU_NOISE_CLASSES = [1, 2, 3] as const;
+
+// Minimum Stok Eşiği (Faz 2) — ürün listesindeki stok rozetinin hangi
+// renkte gösterileceğine karar veren saf mantık. Eşik tanımlanmamışsa
+// ("null") sadece "tükendi/stokta var" 2 kademeli eski davranış korunur.
+export function stockLevel(totalStock: number, minThreshold: number | null): "out" | "low" | "ok" {
+  if (totalStock <= 0) return "out";
+  if (minThreshold != null && totalStock <= minThreshold) return "low";
+  return "ok";
+}

@@ -1415,6 +1415,27 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS profile_pct SMALLINT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS rim_diameter VARCHAR(10);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS tread_depth_mm DECIMAL(3,1);
 
+-- Ürün Kataloğu Taslağı'nın Orta/Düşük öncelikli alanları (Faz 2) — yine
+-- hepsi nullable, mevcut ürünler NULL kalır. model_name/min_stock_threshold
+-- Ürün Tipi'nden bağımsız her zaman anlamlıdır; load_speed_index ve
+-- eu_* (AB Lastik Etiketi) sadece Lastik/İkinci El Lastik'te, rim_size/pcd/
+-- offset_et sadece Jant/İkinci El Jant'ta forma çıkar (bkz. admin/products/
+-- page.tsx isTireType/isRimType). eu_fuel_class/eu_wet_grip_class A-G
+-- tutulur (A-E'ye daraltan güncel yönetmelikten önceki fiziksel etiketli
+-- stok da girilebilsin diye). min_stock_threshold, product_type gibi PARTİ
+-- satırına yazılır ve grup listesinde MAX() ile aggregate edilir — ayrı bir
+-- "kod ayarları" tablosu yok, mevcut desenle tutarlı.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS model_name VARCHAR(80);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS load_speed_index VARCHAR(20);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS eu_fuel_class VARCHAR(2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS eu_wet_grip_class VARCHAR(2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS eu_noise_db SMALLINT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS eu_noise_class SMALLINT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS rim_size VARCHAR(20);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS pcd VARCHAR(20);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS offset_et VARCHAR(10);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock_threshold SMALLINT;
+
 -- Panele ilk girişte gösterilen kısa tanıtım turu (bkz. src/components/
 -- OnboardingTour.tsx, src/lib/onboardingTour.ts) — tenants değil users'a
 -- ait: aynı firmaya SONRADAN eklenen personel ya da ikinci bir kullanıcı

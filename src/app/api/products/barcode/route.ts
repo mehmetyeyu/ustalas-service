@@ -21,8 +21,13 @@ export async function GET(request: NextRequest) {
     const result = await pool.query<{
       code: string; brand: string | null; size_desc: string | null; season: string | null; supplier: string | null;
       product_type: string | null; width_mm: number | null; profile_pct: number | null; rim_diameter: string | null;
+      model_name: string | null; load_speed_index: string | null; eu_fuel_class: string | null; eu_wet_grip_class: string | null;
+      eu_noise_db: number | null; eu_noise_class: number | null; rim_size: string | null; pcd: string | null;
+      offset_et: string | null; min_stock_threshold: number | null;
     }>(
-      `SELECT code, brand, size_desc, season, supplier, product_type, width_mm, profile_pct, rim_diameter
+      `SELECT code, brand, size_desc, season, supplier, product_type, width_mm, profile_pct, rim_diameter,
+              model_name, load_speed_index, eu_fuel_class, eu_wet_grip_class, eu_noise_db, eu_noise_class,
+              rim_size, pcd, offset_et, min_stock_threshold
        FROM products WHERE tenant_id = $1 AND barcode = $2
        ORDER BY updated_at DESC LIMIT 1`,
       [user.tenantId, barcode]

@@ -58,6 +58,11 @@ export async function GET(request: NextRequest) {
     const groupsResult = await pool.query(
       `SELECT code, MAX(brand) AS brand, MAX(size_desc) AS size_desc, MAX(season) AS season, MAX(barcode) AS barcode,
               MAX(product_type) AS product_type, MAX(width_mm) AS width_mm, MAX(profile_pct) AS profile_pct, MAX(rim_diameter) AS rim_diameter,
+              MAX(model_name) AS model_name, MAX(load_speed_index) AS load_speed_index,
+              MAX(eu_fuel_class) AS eu_fuel_class, MAX(eu_wet_grip_class) AS eu_wet_grip_class,
+              MAX(eu_noise_db) AS eu_noise_db, MAX(eu_noise_class) AS eu_noise_class,
+              MAX(rim_size) AS rim_size, MAX(pcd) AS pcd, MAX(offset_et) AS offset_et,
+              MAX(min_stock_threshold) AS min_stock_threshold,
               SUM(stock_qty)::int AS total_stock, MAX(updated_at) AS last_updated
        FROM products${where}
        GROUP BY code
@@ -138,6 +143,16 @@ export async function GET(request: NextRequest) {
       width_mm: g.width_mm,
       profile_pct: g.profile_pct,
       rim_diameter: g.rim_diameter,
+      model_name: g.model_name,
+      load_speed_index: g.load_speed_index,
+      eu_fuel_class: g.eu_fuel_class,
+      eu_wet_grip_class: g.eu_wet_grip_class,
+      eu_noise_db: g.eu_noise_db,
+      eu_noise_class: g.eu_noise_class,
+      rim_size: g.rim_size,
+      pcd: g.pcd,
+      offset_et: g.offset_et,
+      min_stock_threshold: g.min_stock_threshold,
       total_stock: g.total_stock,
       batches: batchesByCode.get(g.code) ?? [],
     }));
@@ -163,6 +178,8 @@ export async function POST(request: NextRequest) {
     const {
       code, brand, size_desc, season, supplier, location, barcode, production_week, production_year,
       purchase_price, sale_price, stock_qty, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm,
+      model_name, load_speed_index, eu_fuel_class, eu_wet_grip_class, eu_noise_db, eu_noise_class,
+      rim_size, pcd, offset_et, min_stock_threshold,
     } = body;
 
     if (!code || !String(code).trim()) {
@@ -192,6 +209,16 @@ export async function POST(request: NextRequest) {
       profile_pct === "" || profile_pct == null ? null : Number(profile_pct),
       rim_diameter ? String(rim_diameter).trim() : null,
       tread_depth_mm === "" || tread_depth_mm == null ? null : Number(tread_depth_mm),
+      model_name ? String(model_name).trim() : null,
+      load_speed_index ? String(load_speed_index).trim() : null,
+      eu_fuel_class ? String(eu_fuel_class).trim() : null,
+      eu_wet_grip_class ? String(eu_wet_grip_class).trim() : null,
+      eu_noise_db === "" || eu_noise_db == null ? null : Number(eu_noise_db),
+      eu_noise_class === "" || eu_noise_class == null ? null : Number(eu_noise_class),
+      rim_size ? String(rim_size).trim() : null,
+      pcd ? String(pcd).trim() : null,
+      offset_et ? String(offset_et).trim() : null,
+      min_stock_threshold === "" || min_stock_threshold == null ? null : Number(min_stock_threshold),
     ];
 
     const conflictClause = isDated
@@ -199,8 +226,8 @@ export async function POST(request: NextRequest) {
       : `ON CONFLICT (tenant_id, code, COALESCE(location, '')) WHERE production_year IS NULL`;
 
     const result = await pool.query(
-      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty, location, barcode, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      `INSERT INTO products (tenant_id, code, brand, size_desc, season, supplier, production_week, production_year, purchase_price, sale_price, stock_qty, location, barcode, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm, model_name, load_speed_index, eu_fuel_class, eu_wet_grip_class, eu_noise_db, eu_noise_class, rim_size, pcd, offset_et, min_stock_threshold)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
        ${conflictClause} DO UPDATE SET
          brand=EXCLUDED.brand, size_desc=EXCLUDED.size_desc, season=EXCLUDED.season,
          purchase_price=EXCLUDED.purchase_price, sale_price=EXCLUDED.sale_price,
@@ -210,6 +237,16 @@ export async function POST(request: NextRequest) {
          profile_pct=COALESCE(EXCLUDED.profile_pct, products.profile_pct),
          rim_diameter=COALESCE(EXCLUDED.rim_diameter, products.rim_diameter),
          tread_depth_mm=COALESCE(EXCLUDED.tread_depth_mm, products.tread_depth_mm),
+         model_name=COALESCE(EXCLUDED.model_name, products.model_name),
+         load_speed_index=COALESCE(EXCLUDED.load_speed_index, products.load_speed_index),
+         eu_fuel_class=COALESCE(EXCLUDED.eu_fuel_class, products.eu_fuel_class),
+         eu_wet_grip_class=COALESCE(EXCLUDED.eu_wet_grip_class, products.eu_wet_grip_class),
+         eu_noise_db=COALESCE(EXCLUDED.eu_noise_db, products.eu_noise_db),
+         eu_noise_class=COALESCE(EXCLUDED.eu_noise_class, products.eu_noise_class),
+         rim_size=COALESCE(EXCLUDED.rim_size, products.rim_size),
+         pcd=COALESCE(EXCLUDED.pcd, products.pcd),
+         offset_et=COALESCE(EXCLUDED.offset_et, products.offset_et),
+         min_stock_threshold=COALESCE(EXCLUDED.min_stock_threshold, products.min_stock_threshold),
          updated_at=CURRENT_TIMESTAMP
        RETURNING *`,
       values

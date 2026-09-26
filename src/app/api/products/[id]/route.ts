@@ -48,12 +48,24 @@ export async function PATCH(
     const {
       code, brand, size_desc, season, supplier, location, barcode, production_week, production_year,
       purchase_price, sale_price, stock_qty, product_type, width_mm, profile_pct, rim_diameter, tread_depth_mm,
+      model_name, load_speed_index, eu_fuel_class, eu_wet_grip_class, eu_noise_db, eu_noise_class,
+      rim_size, pcd, offset_et, min_stock_threshold,
     } = body;
     const productTypeVal = product_type || null;
     const widthMmVal = width_mm === "" || width_mm == null ? null : Number(width_mm);
     const profilePctVal = profile_pct === "" || profile_pct == null ? null : Number(profile_pct);
     const rimDiameterVal = rim_diameter ? String(rim_diameter).trim() : null;
     const treadDepthVal = tread_depth_mm === "" || tread_depth_mm == null ? null : Number(tread_depth_mm);
+    const modelNameVal = model_name ? String(model_name).trim() : null;
+    const loadSpeedIndexVal = load_speed_index ? String(load_speed_index).trim() : null;
+    const euFuelClassVal = eu_fuel_class ? String(eu_fuel_class).trim() : null;
+    const euWetGripClassVal = eu_wet_grip_class ? String(eu_wet_grip_class).trim() : null;
+    const euNoiseDbVal = eu_noise_db === "" || eu_noise_db == null ? null : Number(eu_noise_db);
+    const euNoiseClassVal = eu_noise_class === "" || eu_noise_class == null ? null : Number(eu_noise_class);
+    const rimSizeVal = rim_size ? String(rim_size).trim() : null;
+    const pcdVal = pcd ? String(pcd).trim() : null;
+    const offsetEtVal = offset_et ? String(offset_et).trim() : null;
+    const minStockThresholdVal = min_stock_threshold === "" || min_stock_threshold == null ? null : Number(min_stock_threshold);
 
     if (!code || !String(code).trim()) {
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
@@ -110,12 +122,19 @@ export async function PATCH(
             stock_qty=stock_qty + $6, barcode=COALESCE($7, barcode),
             product_type=COALESCE($8, product_type), width_mm=COALESCE($9, width_mm),
             profile_pct=COALESCE($10, profile_pct), rim_diameter=COALESCE($11, rim_diameter),
-            tread_depth_mm=COALESCE($12, tread_depth_mm), updated_at=CURRENT_TIMESTAMP
+            tread_depth_mm=COALESCE($12, tread_depth_mm),
+            model_name=COALESCE($15, model_name), load_speed_index=COALESCE($16, load_speed_index),
+            eu_fuel_class=COALESCE($17, eu_fuel_class), eu_wet_grip_class=COALESCE($18, eu_wet_grip_class),
+            eu_noise_db=COALESCE($19, eu_noise_db), eu_noise_class=COALESCE($20, eu_noise_class),
+            rim_size=COALESCE($21, rim_size), pcd=COALESCE($22, pcd), offset_et=COALESCE($23, offset_et),
+            min_stock_threshold=COALESCE($24, min_stock_threshold), updated_at=CURRENT_TIMESTAMP
            WHERE id=$13 AND tenant_id=$14 RETURNING *`,
           [
             brand || null, size_desc || null, season || null, purchase_price ?? null, sale_price ?? null, qty,
             barcode ? String(barcode).trim() : null, productTypeVal, widthMmVal, profilePctVal, rimDiameterVal, treadDepthVal,
             target.id, user.tenantId,
+            modelNameVal, loadSpeedIndexVal, euFuelClassVal, euWetGripClassVal, euNoiseDbVal, euNoiseClassVal,
+            rimSizeVal, pcdVal, offsetEtVal, minStockThresholdVal,
           ]
         );
         await client.query(`UPDATE product_stock_entries SET product_id=$1 WHERE product_id=$2 AND tenant_id=$3`, [target.id, id, user.tenantId]);
@@ -138,13 +157,18 @@ export async function PATCH(
       `UPDATE products SET
         code=$1, brand=$2, size_desc=$3, season=$4, supplier=$5, location=$6,
         production_week=$7, production_year=$8, purchase_price=$9, sale_price=$10, stock_qty=$11, barcode=$12,
-        product_type=$13, width_mm=$14, profile_pct=$15, rim_diameter=$16, tread_depth_mm=$17, updated_at=CURRENT_TIMESTAMP
+        product_type=$13, width_mm=$14, profile_pct=$15, rim_diameter=$16, tread_depth_mm=$17,
+        model_name=$20, load_speed_index=$21, eu_fuel_class=$22, eu_wet_grip_class=$23,
+        eu_noise_db=$24, eu_noise_class=$25, rim_size=$26, pcd=$27, offset_et=$28, min_stock_threshold=$29,
+        updated_at=CURRENT_TIMESTAMP
        WHERE id=$18 AND tenant_id=$19 RETURNING *`,
       [
         trimmedCode, brand || null, size_desc || null, season || null, supplierVal, locationVal,
         isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty,
         barcode ? String(barcode).trim() : null, productTypeVal, widthMmVal, profilePctVal, rimDiameterVal, treadDepthVal,
         id, user.tenantId,
+        modelNameVal, loadSpeedIndexVal, euFuelClassVal, euWetGripClassVal, euNoiseDbVal, euNoiseClassVal,
+        rimSizeVal, pcdVal, offsetEtVal, minStockThresholdVal,
       ]
     );
 

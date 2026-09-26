@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { parseProductRows, validateProductRows, chunk, SEASON_OPTIONS, type ParsedProductRow } from "@/lib/productsExcel";
-import { PRODUCT_TYPE_OPTIONS, computeCondition, type ProductType } from "@/lib/productCondition";
+import { PRODUCT_TYPE_OPTIONS, computeCondition, stockLevel, EU_LABEL_CLASSES, EU_NOISE_CLASSES, type ProductType } from "@/lib/productCondition";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
@@ -33,6 +33,16 @@ interface ProductBatch {
   profile_pct: number | null;
   rim_diameter: string | null;
   tread_depth_mm: string | number | null;
+  model_name: string | null;
+  load_speed_index: string | null;
+  eu_fuel_class: string | null;
+  eu_wet_grip_class: string | null;
+  eu_noise_db: number | null;
+  eu_noise_class: number | null;
+  rim_size: string | null;
+  pcd: string | null;
+  offset_et: string | null;
+  min_stock_threshold: number | null;
 }
 
 interface ProductGroup {
@@ -45,6 +55,16 @@ interface ProductGroup {
   width_mm: number | null;
   profile_pct: number | null;
   rim_diameter: string | null;
+  model_name: string | null;
+  load_speed_index: string | null;
+  eu_fuel_class: string | null;
+  eu_wet_grip_class: string | null;
+  eu_noise_db: number | null;
+  eu_noise_class: number | null;
+  rim_size: string | null;
+  pcd: string | null;
+  offset_et: string | null;
+  min_stock_threshold: number | null;
   total_stock: number;
   avg_purchase_price: string | number | null;
   avg_sale_price: string | number | null;
@@ -156,13 +176,14 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
   { key: "product_type", label: "Ürün Tipi", defaultVisible: false },
   { key: "barcode", label: "Barkod", defaultVisible: false },
   { key: "condition", label: "Kondisyon", defaultVisible: false },
+  { key: "min_stock", label: "Min. Stok", defaultVisible: false },
 ];
 
 // Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
 // aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
 const BATCH_SKELETON_COL_WIDTH: Record<string, string> = {
   production_date: "w-12", season: "w-14", supplier: "w-16", location: "w-14", purchase_price: "w-14", sale_price: "w-14",
-  product_type: "w-16", barcode: "w-20", condition: "w-14",
+  product_type: "w-16", barcode: "w-20", condition: "w-14", min_stock: "w-10",
 };
 const SKELETON_ROWS = 8;
 
@@ -185,6 +206,16 @@ const EMPTY_FORM = {
   profile_pct: "",
   rim_diameter: "",
   tread_depth_mm: "",
+  model_name: "",
+  load_speed_index: "",
+  eu_fuel_class: "",
+  eu_wet_grip_class: "",
+  eu_noise_db: "",
+  eu_noise_class: "",
+  rim_size: "",
+  pcd: "",
+  offset_et: "",
+  min_stock_threshold: "",
 };
 
 function num(v: string | number | null): number {
@@ -226,6 +257,16 @@ const PRODUCT_TYPE_BADGE_STYLE: Record<string, string> = {
   "İkinci El Jant": "bg-amber-100 text-amber-700",
   "Aksesuar": "bg-gray-100 text-gray-600",
 };
+
+// Stok rozeti rengi — tükendi (kırmızı) / eşiğin altına düştü (turuncu,
+// Faz 2) / stokta var (amber, eski davranış). Eşik tanımlanmamışsa (null)
+// "low" hiç dönmez, geriye dönük 2 kademeli davranış korunur.
+function stockBadgeStyle(stock: number, minThreshold: number | null): string {
+  const level = stockLevel(stock, minThreshold);
+  if (level === "out") return "bg-red-100 text-red-600";
+  if (level === "low") return "bg-orange-100 text-orange-700";
+  return "bg-amber-100 text-amber-800";
+}
 
 function productTypeBadge(type: string | null) {
   if (!type) return "—";
@@ -271,7 +312,7 @@ function ProductPreviewCard({ f }: { f: typeof EMPTY_FORM }) {
         {condition && conditionBadge(condition)}
       </div>
       <div className="text-base font-bold text-gray-800 leading-snug">
-        {[f.brand.trim(), f.size_desc.trim()].filter(Boolean).join(" — ") || "Marka / Ebat girilmedi"}
+        {[[f.brand.trim(), f.model_name.trim()].filter(Boolean).join(" "), f.size_desc.trim()].filter(Boolean).join(" — ") || "Marka / Ebat girilmedi"}
       </div>
       <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
         <div className="flex items-center gap-2 flex-wrap">
@@ -337,9 +378,16 @@ export default function ProductsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [barcodeChecking, setBarcodeChecking] = useState(false);
+  // Kesit/Profil/Jant Çapı bloğu varsayılan kapalı — çoğu kullanıcı doğrudan
+  // Ebat'a yazacağından sürekli açık durması gereksiz görsel yoğunluk
+  // yaratıyordu. Bu sadece manuel "aç" tıklamasını tutar; alanlardan biri
+  // zaten doluysa (Düzenle'de mevcut veri, Kopyala'da taşınan veri) render
+  // sırasında ayrıca kontrol edilip otomatik açık gösterilir.
+  const [sizeBuilderOpen, setSizeBuilderOpen] = useState(false);
   const [editItem, setEditItem] = useState<ProductBatch | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editBarcodeChecking, setEditBarcodeChecking] = useState(false);
+  const [editSizeBuilderOpen, setEditSizeBuilderOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [historyModalProduct, setHistoryModalProduct] = useState<ProductBatch | null>(null);
   const [historyEntries, setHistoryEntries] = useState<StockEntry[]>([]);
@@ -501,6 +549,16 @@ export default function ProductsPage() {
         width_mm: prev.width_mm.trim() ? prev.width_mm : data.width_mm != null ? String(data.width_mm) : prev.width_mm,
         profile_pct: prev.profile_pct.trim() ? prev.profile_pct : data.profile_pct != null ? String(data.profile_pct) : prev.profile_pct,
         rim_diameter: prev.rim_diameter.trim() ? prev.rim_diameter : data.rim_diameter ?? prev.rim_diameter,
+        model_name: prev.model_name.trim() ? prev.model_name : data.model_name ?? prev.model_name,
+        load_speed_index: prev.load_speed_index.trim() ? prev.load_speed_index : data.load_speed_index ?? prev.load_speed_index,
+        eu_fuel_class: prev.eu_fuel_class.trim() ? prev.eu_fuel_class : data.eu_fuel_class ?? prev.eu_fuel_class,
+        eu_wet_grip_class: prev.eu_wet_grip_class.trim() ? prev.eu_wet_grip_class : data.eu_wet_grip_class ?? prev.eu_wet_grip_class,
+        eu_noise_db: prev.eu_noise_db.trim() ? prev.eu_noise_db : data.eu_noise_db != null ? String(data.eu_noise_db) : prev.eu_noise_db,
+        eu_noise_class: prev.eu_noise_class.trim() ? prev.eu_noise_class : data.eu_noise_class != null ? String(data.eu_noise_class) : prev.eu_noise_class,
+        rim_size: prev.rim_size.trim() ? prev.rim_size : data.rim_size ?? prev.rim_size,
+        pcd: prev.pcd.trim() ? prev.pcd : data.pcd ?? prev.pcd,
+        offset_et: prev.offset_et.trim() ? prev.offset_et : data.offset_et ?? prev.offset_et,
+        min_stock_threshold: prev.min_stock_threshold.trim() ? prev.min_stock_threshold : data.min_stock_threshold != null ? String(data.min_stock_threshold) : prev.min_stock_threshold,
       }));
       toast.success("Barkod eşleşti, bilinen bilgiler dolduruldu.");
     } catch {
@@ -529,6 +587,16 @@ export default function ProductsPage() {
       profile_pct: f.profile_pct === "" ? null : Number(f.profile_pct),
       rim_diameter: f.rim_diameter.trim() || null,
       tread_depth_mm: f.tread_depth_mm === "" ? null : Number(f.tread_depth_mm),
+      model_name: f.model_name.trim() || null,
+      load_speed_index: f.load_speed_index.trim() || null,
+      eu_fuel_class: f.eu_fuel_class.trim() || null,
+      eu_wet_grip_class: f.eu_wet_grip_class.trim() || null,
+      eu_noise_db: f.eu_noise_db === "" ? null : Number(f.eu_noise_db),
+      eu_noise_class: f.eu_noise_class === "" ? null : Number(f.eu_noise_class),
+      rim_size: f.rim_size.trim() || null,
+      pcd: f.pcd.trim() || null,
+      offset_et: f.offset_et.trim() || null,
+      min_stock_threshold: f.min_stock_threshold === "" ? null : Number(f.min_stock_threshold),
     };
   }
 
@@ -544,10 +612,14 @@ export default function ProductsPage() {
     patch: Partial<Pick<typeof EMPTY_FORM, "width_mm" | "profile_pct" | "rim_diameter">>
   ) {
     const next = { ...current, ...patch };
-    const composed = next.width_mm.trim() && next.profile_pct.trim() && next.rim_diameter.trim()
-      ? `${next.width_mm.trim()} / ${next.profile_pct.trim()} / ${next.rim_diameter.trim()}`
-      : null;
-    setter((prev) => ({ ...prev, ...patch, ...(composed ? { size_desc: composed } : {}) }));
+    // Her tuşa basışta canlı güncellenir — üçünün TAMAMI dolana kadar
+    // beklemez (aksi hâlde biri boşalınca "değişmedi" sayılıp Ebat
+    // donuyordu, ör. Jant Çapı'nı tek tek silerken bir noktadan sonra
+    // Ebat'ın artık silinmemesi gibi). Sadece dolu olan parçalar birleşir.
+    const composed = [next.width_mm.trim(), next.profile_pct.trim(), next.rim_diameter.trim()]
+      .filter(Boolean)
+      .join(" / ");
+    setter((prev) => ({ ...prev, ...patch, size_desc: composed }));
   }
 
   async function handleSave() {
@@ -582,6 +654,7 @@ export default function ProductsPage() {
       brand: prefillBrand ?? "",
       size_desc: prefillSize ?? "",
     });
+    setSizeBuilderOpen(false);
     setShowAddModal(true);
   }
 
@@ -606,15 +679,27 @@ export default function ProductsPage() {
       width_mm: batch.width_mm != null ? String(batch.width_mm) : "",
       profile_pct: batch.profile_pct != null ? String(batch.profile_pct) : "",
       rim_diameter: batch.rim_diameter ?? "",
+      model_name: batch.model_name ?? "",
+      load_speed_index: batch.load_speed_index ?? "",
+      eu_fuel_class: batch.eu_fuel_class ?? "",
+      eu_wet_grip_class: batch.eu_wet_grip_class ?? "",
+      eu_noise_db: batch.eu_noise_db != null ? String(batch.eu_noise_db) : "",
+      eu_noise_class: batch.eu_noise_class != null ? String(batch.eu_noise_class) : "",
+      rim_size: batch.rim_size ?? "",
+      pcd: batch.pcd ?? "",
+      offset_et: batch.offset_et ?? "",
+      min_stock_threshold: batch.min_stock_threshold != null ? String(batch.min_stock_threshold) : "",
       // tread_depth_mm KASITLI kopyalanmaz — Diş Derinliği o SPESİFİK
       // lastiğin fiziksel durumudur, "benzer" bir ürüne aynen taşınamaz.
     });
+    setSizeBuilderOpen(false);
     setShowAddModal(true);
     toast.success("Bilgiler kopyalandı — Ürün Kodu'nu (ve varsa Barkod'u) girip kaydedin.");
   }
 
   function openEdit(item: ProductBatch) {
     setEditItem(item);
+    setEditSizeBuilderOpen(false);
     setEditForm({
       ...EMPTY_FORM,
       code: item.code ?? "",
@@ -635,6 +720,16 @@ export default function ProductsPage() {
       profile_pct: item.profile_pct != null ? String(item.profile_pct) : "",
       rim_diameter: item.rim_diameter ?? "",
       tread_depth_mm: item.tread_depth_mm != null ? String(num(item.tread_depth_mm)) : "",
+      model_name: item.model_name ?? "",
+      load_speed_index: item.load_speed_index ?? "",
+      eu_fuel_class: item.eu_fuel_class ?? "",
+      eu_wet_grip_class: item.eu_wet_grip_class ?? "",
+      eu_noise_db: item.eu_noise_db != null ? String(item.eu_noise_db) : "",
+      eu_noise_class: item.eu_noise_class != null ? String(item.eu_noise_class) : "",
+      rim_size: item.rim_size ?? "",
+      pcd: item.pcd ?? "",
+      offset_et: item.offset_et ?? "",
+      min_stock_threshold: item.min_stock_threshold != null ? String(item.min_stock_threshold) : "",
     });
   }
 
@@ -822,6 +917,13 @@ export default function ProductsPage() {
   const isUsedTire = form.product_type === "İkinci El Lastik";
   const editHideSeasonProduction = editForm.product_type === "Jant" || editForm.product_type === "İkinci El Jant" || editForm.product_type === "Aksesuar";
   const editIsUsedTire = editForm.product_type === "İkinci El Lastik";
+  // Faz 2 (Model, Yük/Hız Endeksi, AB Lastik Etiketi, Jant Ölçü/PCD/ET) —
+  // isUsedTire gibi tek bir değere değil, İkinci El dahil HER İKİ lastik/jant
+  // varyantına bağlı olduğundan ayrı bir bayrak (bkz. plan).
+  const isTireType = form.product_type === "Lastik" || form.product_type === "İkinci El Lastik";
+  const isRimType = form.product_type === "Jant" || form.product_type === "İkinci El Jant";
+  const editIsTireType = editForm.product_type === "Lastik" || editForm.product_type === "İkinci El Lastik";
+  const editIsRimType = editForm.product_type === "Jant" || editForm.product_type === "İkinci El Jant";
 
   if (!allowed) return null;
 
@@ -1153,6 +1255,7 @@ export default function ProductsPage() {
                     {visibleCols.product_type && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ürün Tipi</th>}
                     {visibleCols.barcode && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Barkod</th>}
                     {visibleCols.condition && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Diş Derinliği'nden otomatik hesaplanır">Kondisyon</th>}
+                    {visibleCols.min_stock && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Min. Stok</th>}
                     <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
@@ -1201,7 +1304,7 @@ export default function ProductsPage() {
                             <td className="px-4 py-3 text-gray-700">{group.brand || "—"}</td>
                             <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{group.size_desc || "—"}</td>
                             <td className="px-4 py-3 text-center">
-                              <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${group.total_stock === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
+                              <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(group.total_stock, group.min_stock_threshold)}`}>
                                 {group.total_stock}
                               </span>
                               {(() => {
@@ -1226,6 +1329,7 @@ export default function ProductsPage() {
                             {visibleCols.product_type && <td className="px-4 py-3">{productTypeBadge(group.product_type)}</td>}
                             {visibleCols.barcode && <td className="px-4 py-3"></td>}
                             {visibleCols.condition && <td className="px-4 py-3"></td>}
+                            {visibleCols.min_stock && <td className="px-4 py-3 text-gray-500">{group.min_stock_threshold ?? "—"}</td>}
                             <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {canCreate && (
@@ -1264,7 +1368,7 @@ export default function ProductsPage() {
                               <td className="px-4 py-3"></td>
                               <td className="px-4 py-3"></td>
                               <td className="px-4 py-3 text-center">
-                                <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${(batch.stock_qty ?? 0) === 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
+                                <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(batch.stock_qty ?? 0, batch.min_stock_threshold)}`}>
                                   {batch.stock_qty ?? 0}
                                 </span>
                               </td>
@@ -1281,6 +1385,7 @@ export default function ProductsPage() {
                               {visibleCols.product_type && <td className="px-4 py-3"></td>}
                               {visibleCols.barcode && <td className="px-4 py-3 text-gray-500 font-mono">{batch.barcode ?? "—"}</td>}
                               {visibleCols.condition && <td className="px-4 py-3">{conditionBadge(batch.tread_depth_mm != null && batch.tread_depth_mm !== "" ? computeCondition(Number(batch.tread_depth_mm)) : null)}</td>}
+                              {visibleCols.min_stock && <td className="px-4 py-3 text-gray-500">{batch.min_stock_threshold ?? "—"}</td>}
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   <button
@@ -1434,93 +1539,120 @@ export default function ProductsPage() {
       {/* Yeni Ürün / Parti Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-1">Yeni Ürün / Parti</h2>
             <p className="text-xs text-gray-400 mb-5">Aynı Ürün Kodu zaten varsa, farklı bir Üretim Haftası/Yılı ve/veya Tedarikçi girerek o koda yeni bir parti eklemiş olursunuz. Kod+Hafta/Yılı+Tedarikçi mevcut bir partiyle birebir eşleşirse, girdiğiniz miktar o partinin stoğuna eklenir ve fiyat geçmişine yeni bir satır düşer.</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
-                <select value={form.product_type} onChange={(e) => setForm({ ...form, product_type: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">Seçilmedi</option>
-                  {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Barkod</label>
-                <div className="relative">
+              <div className="sm:col-span-2 flex gap-2">
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
+                  <select value={form.product_type} onChange={(e) => setForm({ ...form, product_type: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Seçilmedi</option>
+                    {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Barkod</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.barcode}
+                      onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                      onBlur={() => handleBarcodeLookup(setForm, form, setBarcodeChecking)}
+                      placeholder="Okutun veya yazın..."
+                      className="w-full border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {barcodeChecking && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu <span className="text-red-500">*</span></label>
                   <input
                     type="text"
-                    value={form.barcode}
-                    onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                    onBlur={() => handleBarcodeLookup(setForm, form, setBarcodeChecking)}
-                    placeholder="Okutun veya yazın..."
-                    className="w-full border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={form.code}
+                    onChange={(e) => setForm({ ...form, code: e.target.value })}
+                    className="w-full border border-gray-400 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  {barcodeChecking && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-                      </svg>
-                    </div>
-                  )}
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={form.code}
-                  onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                <SearchableCombobox value={form.brand} onChange={(val) => setForm({ ...form, brand: val })} options={brandOptions} placeholder="Marka seç veya yaz..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                <input type="text" value={form.size_desc} onChange={(e) => setForm({ ...form, size_desc: e.target.value })}
-                  placeholder="205/60R16"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <div className="sm:col-span-2 flex gap-2">
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
+                  <SearchableCombobox value={form.brand} onChange={(val) => setForm({ ...form, brand: val })} options={brandOptions} placeholder="Marka seç veya yaz..." />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
+                  <input type="text" value={form.model_name} onChange={(e) => setForm({ ...form, model_name: e.target.value })}
+                    placeholder="ör. PremiumContact 6"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
+                  <input type="text" value={form.size_desc} onChange={(e) => {
+                      const size_desc = e.target.value;
+                      // Ebat tamamen silinirse yapılandırılmış 3 alan da
+                      // temizlenir — aksi hâlde eski Kesit/Profil/Jant Çapı
+                      // ilk tuşta Ebat'ı sessizce yeniden doldurup dururdu.
+                      setForm((prev) => ({ ...prev, size_desc, ...(size_desc === "" ? { width_mm: "", profile_pct: "", rim_diameter: "" } : {}) }));
+                    }}
+                    placeholder="205/60R16"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  veya yapılandırılmış girin <span className="text-gray-400 font-normal">(doldurunca Ebat&apos;ı otomatik oluşturur)</span>
-                </label>
-                <div className="flex gap-2">
-                  <input type="number" placeholder="Kesit (ör. 205)" value={form.width_mm}
-                    onChange={(e) => handleStructuredSizeChange(setForm, form, { width_mm: e.target.value })}
-                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" placeholder="Profil (ör. 55)" value={form.profile_pct}
-                    onChange={(e) => handleStructuredSizeChange(setForm, form, { profile_pct: e.target.value })}
-                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="text" placeholder="Jant Çapı (ör. R16)" value={form.rim_diameter}
-                    onChange={(e) => handleStructuredSizeChange(setForm, form, { rim_diameter: e.target.value })}
-                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                {(sizeBuilderOpen || form.width_mm || form.profile_pct || form.rim_diameter) ? (
+                  <>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      veya yapılandırılmış girin <span className="font-normal">(doldurunca Ebat&apos;ı otomatik oluşturur)</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <input type="number" placeholder="Kesit (ör. 205)" value={form.width_mm}
+                        onChange={(e) => handleStructuredSizeChange(setForm, form, { width_mm: e.target.value })}
+                        className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="number" placeholder="Profil (ör. 55)" value={form.profile_pct}
+                        onChange={(e) => handleStructuredSizeChange(setForm, form, { profile_pct: e.target.value })}
+                        className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="text" placeholder="Jant Çapı (ör. R16)" value={form.rim_diameter}
+                        onChange={(e) => handleStructuredSizeChange(setForm, form, { rim_diameter: e.target.value })}
+                        className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => setSizeBuilderOpen(true)}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2">
+                    Ebat&apos;ı parçalara bölerek de girebilirsiniz
+                  </button>
+                )}
+              </div>
+              <div className="sm:col-span-2 border-t border-gray-100 pt-4 flex gap-2">
+                {!hideSeasonProduction && (
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
+                    <SearchableCombobox value={form.season} onChange={(val) => setForm({ ...form, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
+                  </div>
+                )}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
+                  <SearchableCombobox value={form.supplier} onChange={(val) => setForm({ ...form, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
+                  <SearchableCombobox value={form.location} onChange={(val) => setForm({ ...form, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
                 </div>
               </div>
               {!hideSeasonProduction && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
-                  <SearchableCombobox value={form.season} onChange={(val) => setForm({ ...form, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
-                <SearchableCombobox value={form.supplier} onChange={(val) => setForm({ ...form, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
-                <SearchableCombobox value={form.location} onChange={(val) => setForm({ ...form, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
-              </div>
-              {!hideSeasonProduction && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
                   <div className="flex gap-2">
                     <input type="number" min="1" max="53" placeholder="Hafta" value={form.production_week}
                       onChange={(e) => setForm({ ...form, production_week: e.target.value })}
@@ -1531,6 +1663,36 @@ export default function ProductsPage() {
                   </div>
                 </div>
               )}
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Stok Miktarı / Min. Eşik</label>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Adet" value={form.stock_qty}
+                    onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
+                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" min="0" placeholder="Min. Eşik" value={form.min_stock_threshold}
+                    onChange={(e) => setForm({ ...form, min_stock_threshold: e.target.value })}
+                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div className="sm:col-span-2 border-t border-gray-100 pt-4">
+                <label className="block text-xs font-medium text-gray-400 mb-1">Alış Maliyeti / Kâr Yüzdesi / Satış Fiyatı</label>
+                <div className="flex gap-2">
+                  <input type="number" step="0.01" placeholder="Alış (₺)" value={form.purchase_price}
+                    onChange={(e) => {
+                      const purchase_price = e.target.value;
+                      setForm((prev) => ({ ...prev, purchase_price, sale_price: calcSalePrice(purchase_price, prev.markupPercent, prev.sale_price) }));
+                    }}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" step="0.01" min="0" placeholder="Kâr %" value={form.markupPercent}
+                    onChange={(e) => {
+                      const markupPercent = e.target.value;
+                      setForm((prev) => ({ ...prev, markupPercent, sale_price: calcSalePrice(prev.purchase_price, markupPercent, prev.sale_price) }));
+                    }}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" step="0.01" placeholder="Satış (₺)" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
               {isUsedTire && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği (mm)</label>
@@ -1547,34 +1709,50 @@ export default function ProductsPage() {
                   </div>
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti (Birim, ₺)</label>
-                <input type="number" step="0.01" value={form.purchase_price}
-                  onChange={(e) => {
-                    const purchase_price = e.target.value;
-                    setForm((prev) => ({ ...prev, purchase_price, sale_price: calcSalePrice(purchase_price, prev.markupPercent, prev.sale_price) }));
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Kâr Yüzdesi (%)</label>
-                <input type="number" step="0.01" min="0" value={form.markupPercent}
-                  onChange={(e) => {
-                    const markupPercent = e.target.value;
-                    setForm((prev) => ({ ...prev, markupPercent, sale_price: calcSalePrice(prev.purchase_price, markupPercent, prev.sale_price) }));
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Satış Fiyatı (Birim, ₺)</label>
-                <input type="number" step="0.01" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Stok Miktarı (Adet)</label>
-                <input type="number" value={form.stock_qty} onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
+              {isTireType && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Yük/Hız Endeksi ve AB Lastik Etiketi</label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="ör. 91H" value={form.load_speed_index}
+                      onChange={(e) => setForm({ ...form, load_speed_index: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <select value={form.eu_fuel_class} onChange={(e) => setForm({ ...form, eu_fuel_class: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Yakıt</option>
+                      {EU_LABEL_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <select value={form.eu_wet_grip_class} onChange={(e) => setForm({ ...form, eu_wet_grip_class: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Islak Tutuş</option>
+                      {EU_LABEL_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input type="number" placeholder="Gürültü (dB)" value={form.eu_noise_db}
+                      onChange={(e) => setForm({ ...form, eu_noise_db: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <select value={form.eu_noise_class} onChange={(e) => setForm({ ...form, eu_noise_class: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Ses Sınıfı</option>
+                      {EU_NOISE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              {isRimType && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Jant Bilgileri</label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Ölçü (ör. 17x7.5)" value={form.rim_size}
+                      onChange={(e) => setForm({ ...form, rim_size: e.target.value })}
+                      className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="text" placeholder="PCD (ör. 5x114.3)" value={form.pcd}
+                      onChange={(e) => setForm({ ...form, pcd: e.target.value })}
+                      className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="text" placeholder="ET (ör. +40)" value={form.offset_et}
+                      onChange={(e) => setForm({ ...form, offset_et: e.target.value })}
+                      className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              )}
               {num(form.stock_qty) > 0 && (num(form.purchase_price) > 0 || num(form.sale_price) > 0) && (
                 <div className="sm:col-span-2 text-xs text-gray-500 -mt-1">
                   Toplam ({form.stock_qty} adet): Alış {formatCurrency(num(form.purchase_price) * num(form.stock_qty))} · Satış {formatCurrency(num(form.sale_price) * num(form.stock_qty))}
@@ -1609,86 +1787,110 @@ export default function ProductsPage() {
       {/* Düzenle Modal */}
       {editItem && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Partiyi Düzenle</h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2 flex gap-2">
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
+                  <select value={editForm.product_type} onChange={(e) => setEditForm({ ...editForm, product_type: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Seçilmedi</option>
+                    {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu</label>
+                  <input type="text" value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Barkod</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={editForm.barcode}
+                      onChange={(e) => setEditForm({ ...editForm, barcode: e.target.value })}
+                      onBlur={() => handleBarcodeLookup(setEditForm, editForm, setEditBarcodeChecking)}
+                      className="w-full border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {editBarcodeChecking && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="sm:col-span-2 flex gap-2">
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
+                  <SearchableCombobox value={editForm.brand} onChange={(val) => setEditForm({ ...editForm, brand: val })} options={brandOptions} placeholder="Marka seç veya yaz..." />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
+                  <input type="text" value={editForm.model_name} onChange={(e) => setEditForm({ ...editForm, model_name: e.target.value })}
+                    placeholder="ör. PremiumContact 6"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
+                  <input type="text" value={editForm.size_desc} onChange={(e) => {
+                      const size_desc = e.target.value;
+                      setEditForm((prev) => ({ ...prev, size_desc, ...(size_desc === "" ? { width_mm: "", profile_pct: "", rim_diameter: "" } : {}) }));
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
               <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
-                <select value={editForm.product_type} onChange={(e) => setEditForm({ ...editForm, product_type: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">Seçilmedi</option>
-                  {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu</label>
-                <input type="text" value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Barkod</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={editForm.barcode}
-                    onChange={(e) => setEditForm({ ...editForm, barcode: e.target.value })}
-                    onBlur={() => handleBarcodeLookup(setEditForm, editForm, setEditBarcodeChecking)}
-                    className="w-full border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  {editBarcodeChecking && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-                      </svg>
+                {(editSizeBuilderOpen || editForm.width_mm || editForm.profile_pct || editForm.rim_diameter) ? (
+                  <>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      veya yapılandırılmış girin <span className="font-normal">(doldurunca Ebat&apos;ı otomatik oluşturur)</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <input type="number" placeholder="Kesit (ör. 205)" value={editForm.width_mm}
+                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { width_mm: e.target.value })}
+                        className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="number" placeholder="Profil (ör. 55)" value={editForm.profile_pct}
+                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { profile_pct: e.target.value })}
+                        className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="text" placeholder="Jant Çapı (ör. R16)" value={editForm.rim_diameter}
+                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { rim_diameter: e.target.value })}
+                        className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
-                  )}
+                  </>
+                ) : (
+                  <button type="button" onClick={() => setEditSizeBuilderOpen(true)}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2">
+                    Ebat&apos;ı parçalara bölerek de girebilirsiniz
+                  </button>
+                )}
+              </div>
+              <div className="sm:col-span-2 border-t border-gray-100 pt-4 flex gap-2">
+                {!editHideSeasonProduction && (
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
+                    <SearchableCombobox value={editForm.season} onChange={(val) => setEditForm({ ...editForm, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
+                  </div>
+                )}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
+                  <SearchableCombobox value={editForm.supplier} onChange={(val) => setEditForm({ ...editForm, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                <SearchableCombobox value={editForm.brand} onChange={(val) => setEditForm({ ...editForm, brand: val })} options={brandOptions} placeholder="Marka seç veya yaz..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                <input type="text" value={editForm.size_desc} onChange={(e) => setEditForm({ ...editForm, size_desc: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  veya yapılandırılmış girin <span className="text-gray-400 font-normal">(doldurunca Ebat&apos;ı otomatik oluşturur)</span>
-                </label>
-                <div className="flex gap-2">
-                  <input type="number" placeholder="Kesit (ör. 205)" value={editForm.width_mm}
-                    onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { width_mm: e.target.value })}
-                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" placeholder="Profil (ör. 55)" value={editForm.profile_pct}
-                    onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { profile_pct: e.target.value })}
-                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="text" placeholder="Jant Çapı (ör. R16)" value={editForm.rim_diameter}
-                    onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { rim_diameter: e.target.value })}
-                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
+                  <SearchableCombobox value={editForm.location} onChange={(val) => setEditForm({ ...editForm, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
                 </div>
               </div>
               {!editHideSeasonProduction && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Mevsim</label>
-                  <SearchableCombobox value={editForm.season} onChange={(val) => setEditForm({ ...editForm, season: val })} options={SEASON_OPTIONS} placeholder="Mevsim seç veya yaz..." />
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
-                <SearchableCombobox value={editForm.supplier} onChange={(val) => setEditForm({ ...editForm, supplier: val })} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Konum</label>
-                <SearchableCombobox value={editForm.location} onChange={(val) => setEditForm({ ...editForm, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
-              </div>
-              {!editHideSeasonProduction && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
                   <div className="flex gap-2">
                     <input type="number" min="1" max="53" placeholder="Hafta" value={editForm.production_week}
                       onChange={(e) => setEditForm({ ...editForm, production_week: e.target.value })}
@@ -1699,6 +1901,36 @@ export default function ProductsPage() {
                   </div>
                 </div>
               )}
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Stok Miktarı / Min. Eşik</label>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Adet" value={editForm.stock_qty}
+                    onChange={(e) => setEditForm({ ...editForm, stock_qty: e.target.value })}
+                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" min="0" placeholder="Min. Eşik" value={editForm.min_stock_threshold}
+                    onChange={(e) => setEditForm({ ...editForm, min_stock_threshold: e.target.value })}
+                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div className="sm:col-span-2 border-t border-gray-100 pt-4">
+                <label className="block text-xs font-medium text-gray-400 mb-1">Alış Maliyeti / Kâr Yüzdesi / Satış Fiyatı</label>
+                <div className="flex gap-2">
+                  <input type="number" step="0.01" placeholder="Alış (₺)" value={editForm.purchase_price}
+                    onChange={(e) => {
+                      const purchase_price = e.target.value;
+                      setEditForm((prev) => ({ ...prev, purchase_price, sale_price: calcSalePrice(purchase_price, prev.markupPercent, prev.sale_price) }));
+                    }}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" step="0.01" min="0" placeholder="Kâr %" value={editForm.markupPercent}
+                    onChange={(e) => {
+                      const markupPercent = e.target.value;
+                      setEditForm((prev) => ({ ...prev, markupPercent, sale_price: calcSalePrice(prev.purchase_price, markupPercent, prev.sale_price) }));
+                    }}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" step="0.01" placeholder="Satış (₺)" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
+                    className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
               {editIsUsedTire && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği (mm)</label>
@@ -1715,34 +1947,50 @@ export default function ProductsPage() {
                   </div>
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Alış Maliyeti (Birim, ₺)</label>
-                <input type="number" step="0.01" value={editForm.purchase_price}
-                  onChange={(e) => {
-                    const purchase_price = e.target.value;
-                    setEditForm((prev) => ({ ...prev, purchase_price, sale_price: calcSalePrice(purchase_price, prev.markupPercent, prev.sale_price) }));
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Kâr Yüzdesi (%)</label>
-                <input type="number" step="0.01" min="0" value={editForm.markupPercent}
-                  onChange={(e) => {
-                    const markupPercent = e.target.value;
-                    setEditForm((prev) => ({ ...prev, markupPercent, sale_price: calcSalePrice(prev.purchase_price, markupPercent, prev.sale_price) }));
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Satış Fiyatı (Birim, ₺)</label>
-                <input type="number" step="0.01" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Stok Miktarı (Adet)</label>
-                <input type="number" value={editForm.stock_qty} onChange={(e) => setEditForm({ ...editForm, stock_qty: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
+              {editIsTireType && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Yük/Hız Endeksi ve AB Lastik Etiketi</label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="ör. 91H" value={editForm.load_speed_index}
+                      onChange={(e) => setEditForm({ ...editForm, load_speed_index: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <select value={editForm.eu_fuel_class} onChange={(e) => setEditForm({ ...editForm, eu_fuel_class: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Yakıt</option>
+                      {EU_LABEL_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <select value={editForm.eu_wet_grip_class} onChange={(e) => setEditForm({ ...editForm, eu_wet_grip_class: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Islak Tutuş</option>
+                      {EU_LABEL_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input type="number" placeholder="Gürültü (dB)" value={editForm.eu_noise_db}
+                      onChange={(e) => setEditForm({ ...editForm, eu_noise_db: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <select value={editForm.eu_noise_class} onChange={(e) => setEditForm({ ...editForm, eu_noise_class: e.target.value })}
+                      className="w-1/5 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Ses Sınıfı</option>
+                      {EU_NOISE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              {editIsRimType && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Jant Bilgileri</label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Ölçü (ör. 17x7.5)" value={editForm.rim_size}
+                      onChange={(e) => setEditForm({ ...editForm, rim_size: e.target.value })}
+                      className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="text" placeholder="PCD (ör. 5x114.3)" value={editForm.pcd}
+                      onChange={(e) => setEditForm({ ...editForm, pcd: e.target.value })}
+                      className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="text" placeholder="ET (ör. +40)" value={editForm.offset_et}
+                      onChange={(e) => setEditForm({ ...editForm, offset_et: e.target.value })}
+                      className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              )}
               {num(editForm.stock_qty) > 0 && (num(editForm.purchase_price) > 0 || num(editForm.sale_price) > 0) && (
                 <div className="sm:col-span-2 text-xs text-gray-500 -mt-1">
                   Toplam ({editForm.stock_qty} adet): Alış {formatCurrency(num(editForm.purchase_price) * num(editForm.stock_qty))} · Satış {formatCurrency(num(editForm.sale_price) * num(editForm.stock_qty))}
