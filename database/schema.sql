@@ -1494,3 +1494,26 @@ CREATE TABLE IF NOT EXISTS support_ticket_messages (
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS support_ticket_messages_ticket_idx ON support_ticket_messages(ticket_id, created_at);
+
+-- Takvim modülü — Google Takvim benzeri, ama BİLİNÇLİ olarak randevu
+-- sisteminden (appointments) AYRI bir tablo: appointments'ın kendi kapasite/
+-- çalışma-saati/slot doğrulama mantığı (bkz. src/lib/appointmentSlots.ts) ve
+-- durum (status) CHECK enum'u bu notlarla hiç kesişmiyor, aynı tabloya
+-- karıştırmak mevcut sorguları/index'leri bulandırırdı. Randevular takvim
+-- sayfasında salt-okunur (bu tabloya hiç yazılmadan) ayrıca çekilip
+-- istemci tarafında aynı gün hücresinde birleştirilir — bkz.
+-- src/app/admin/takvim/page.tsx.
+-- note_date bilerek DATE (TIMESTAMPTZ değil): kullanıcı kararı net —
+-- "belirli bir tarihe/güne bağlı", saat/saat dilimi kayması riski olmadan
+-- düz bir takvim günü.
+CREATE TABLE IF NOT EXISTS calendar_notes (
+  id         SERIAL PRIMARY KEY,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  note_date  DATE NOT NULL,
+  title      VARCHAR(200) NOT NULL,
+  body       TEXT,
+  created_by INT REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS calendar_notes_tenant_date_idx ON calendar_notes(tenant_id, note_date);

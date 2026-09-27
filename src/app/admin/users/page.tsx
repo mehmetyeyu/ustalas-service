@@ -30,6 +30,7 @@ const ROLES = [
 
 const RESOURCE_LABELS: Record<string, string> = {
   orders: "Siparişler",
+  calendar: "Takvim",
   reports: "Raporlar",
   services: "Hizmetler",
   storage: "Depolama",

@@ -39,6 +39,7 @@ const navItems = [
   { href: "/admin/suppliers", label: "Tedarikçiler", resource: "suppliers" },
   { href: "/admin/shared-stock", label: "Paylaşılan Stok", resource: "shared_stock", isNew: true },
   { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
+  { href: "/admin/takvim", label: "Takvim", resource: "calendar", isNew: true },
 ] as const;
 
 // Kullanıcılar/Genel Ayarlar hiçbir zaman staff'a devredilemez (bkz. plan) —

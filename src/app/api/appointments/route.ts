@@ -13,12 +13,33 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const countOnly = searchParams.get("count") === "1";
+  // Takvim sayfası (bkz. src/app/admin/takvim/page.tsx), görünen ay ızgarasına
+  // (taşan günler dahil) denk gelen randevuları tek sorguda çekebilsin diye —
+  // ikisi birlikte verilmezse davranış değişmez (mevcut liste sayfası hâlâ
+  // TÜM randevuları çeker).
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
 
   const conditions: string[] = ["tenant_id = $1"];
-  const values: (string | number)[] = [user.tenantId!];
+  const values: (string | number | Date)[] = [user.tenantId!];
   if (status) {
     values.push(status);
     conditions.push(`status = $${values.length}`);
+  }
+  // Türkiye sabit UTC+3 (bkz. src/app/api/reports/route.ts'teki aynı desen) —
+  // "from"/"to" Istanbul takvim günü sınırları, sunucunun kendi saat dilimine
+  // (Postgres'in ::date cast'i onu kullanırdı) bağlı bırakılmaz.
+  function istanbulMidnightUTC(dateStr: string): Date {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, -3, 0, 0));
+  }
+  if (from && to) {
+    values.push(istanbulMidnightUTC(from));
+    conditions.push(`requested_at >= $${values.length}`);
+    const toExclusive = istanbulMidnightUTC(to);
+    toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
+    values.push(toExclusive);
+    conditions.push(`requested_at < $${values.length}`);
   }
 
   try {
