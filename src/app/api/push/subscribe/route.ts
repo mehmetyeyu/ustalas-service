@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { hasPermission } from "@/lib/permissions";
 
-// Push bildirimleri panelin genelini ilgilendiriyor (sadece admin değil,
-// appointments.view yetkisi olan herhangi bir personel) — badge poll'unun
-// (admin/layout.tsx) kullandığı aynı yetki kontrolü.
-function canSubscribe(user: { role: string; permissions?: string[] | null }): boolean {
-  return user.role === "admin" || hasPermission(user, "appointments.view");
-}
+// Eskiden sadece appointments.view izni olanlarla sınırlıydı (randevu
+// bildirimleri tek kullanım alanıydı). Destek Talepleri de push kullanıyor
+// ve hiçbir kaynak iznine bağlı değil (bkz. permissions.ts PAGE_RESOURCE,
+// "/admin/destek" → resource: null — panele giren herkes, süper admin
+// dahil, kullanabilir) — bu yüzden giriş yapmış olmak artık yeterli.
 
 // Kaydedilen endpoint daha sonra sunucu tarafından webpush.sendNotification
 // ile doğrudan çağrılıyor (bkz. src/lib/push.ts) — buradaki bir doğrulama
@@ -38,7 +36,6 @@ function isAllowedPushEndpoint(endpoint: string): boolean {
 export async function POST(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  if (!canSubscribe(user)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
     const body = await request.json();

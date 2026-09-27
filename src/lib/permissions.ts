@@ -64,6 +64,10 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/shared-stock", resource: "shared_stock" },
   { prefix: "/admin/billing", resource: null },
   { prefix: "/admin/profile", resource: null },
+  // Destek Talepleri, herhangi bir kaynak iznine bağlı değil — panele giren
+  // her kullanıcı (Yönetici veya Personel) bir destek talebi açabilmeli,
+  // sorunu ilk fark eden genelde personeldir (kullanıcı kararı).
+  { prefix: "/admin/destek", resource: null },
   { prefix: "/admin/users", resource: "__admin_only__" },
   { prefix: "/admin/settings", resource: "__admin_only__" },
   { prefix: "/admin/audit-log", resource: "__admin_only__" },

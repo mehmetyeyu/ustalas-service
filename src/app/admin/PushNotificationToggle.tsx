@@ -19,12 +19,19 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 // yalnızca tarayıcının kendi site ayarlarından elle açılabilir.
 type Status = "checking" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
 
-// Panelde yeni randevu geldiğinde (sekme kapalı/arka plandayken bile) tarayıcı
-// bildirimi — n11/Trendyol'daki kampanya bildirimleriyle aynı mekanizma (Web
-// Push API), PWA/telefon bildirimi DEĞİL. Genel Ayarlar'a konuldu (bu sayfa
-// zaten admin-only — bkz. src/lib/permissions.ts) — sadece admin kullanıcının
-// KENDİ tarayıcısı/cihazı için abonelik.
-export function PushNotificationToggle() {
+// Panelde yeni randevu (ya da Destek Talebi cevabı, bkz. admin/destek/page.tsx)
+// geldiğinde (sekme kapalı/arka plandayken bile) tarayıcı bildirimi — n11/
+// Trendyol'daki kampanya bildirimleriyle aynı mekanizma (Web Push API), PWA/
+// telefon bildirimi DEĞİL. Sadece bu kullanıcının KENDİ tarayıcısı/cihazı için
+// abonelik — title/description varsayılanı Genel Ayarlar'daki randevu
+// kullanımıyla birebir aynı, Destek gibi başka bir bağlamda özelleştirilebilir.
+export function PushNotificationToggle({
+  title = "Randevu Bildirimleri",
+  description,
+}: {
+  title?: string;
+  description?: string;
+} = {}) {
   const toast = useToast();
   const [status, setStatus] = useState<Status>("checking");
   const [busy, setBusy] = useState(false);
@@ -109,11 +116,11 @@ export function PushNotificationToggle() {
   return (
     <div className="flex items-center justify-between">
       <div>
-        <div className="text-sm font-medium text-gray-700">Randevu Bildirimleri</div>
+        <div className="text-sm font-medium text-gray-700">{title}</div>
         <p className="text-xs text-gray-400 mt-0.5">
           {status === "denied"
             ? "Tarayıcınız bu site için bildirimleri engellemiş — tarayıcı site ayarlarından elle açmanız gerekiyor."
-            : "Yeni randevu geldiğinde bu tarayıcıya bildirim gönderilsin (sadece bu cihaz için geçerli)."}
+            : description ?? "Yeni randevu geldiğinde bu tarayıcıya bildirim gönderilsin (sadece bu cihaz için geçerli)."}
         </p>
       </div>
       <Switch

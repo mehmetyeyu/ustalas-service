@@ -1456,3 +1456,41 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_tour_completed_at TIMESTAM
 -- products.brand/products.model_name ile birebir aynı.
 ALTER TABLE order_services ADD COLUMN IF NOT EXISTS brand VARCHAR(100);
 ALTER TABLE order_services ADD COLUMN IF NOT EXISTS model_name VARCHAR(80);
+
+-- Destek Talepleri — müşterinin (Yönetici veya Personel) panelden açtığı,
+-- Süper Admin'in kendi panelinden takip edip cevapladığı karşılıklı
+-- konuşma. WhatsApp/telefon yerine geçmesi amaçlanıyor (kullanıcı isteği),
+-- bu yüzden tek seferlik bir "form" değil, thread (bkz. support_ticket_messages)
+-- olarak modellenir. status ACIK/KAPALI — her iki taraf da kapatabilir,
+-- kapalı bir talebe yeni mesaj gelirse otomatik ACIK'a döner (bkz.
+-- /api/support-tickets/[id] ve /api/super-admin/support-tickets/[id]).
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id         SERIAL PRIMARY KEY,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  subject    VARCHAR(200) NOT NULL,
+  status     VARCHAR(10) NOT NULL DEFAULT 'ACIK',
+  created_by INT REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Son mesaj zamanı — liste bunun DESC'iyle sıralanır (en son hareket eden
+  -- talep en üstte), created_at ile karıştırılmamalı.
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS support_tickets_tenant_idx ON support_tickets(tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets(status, updated_at DESC);
+
+-- tenant_id burada da tutulur (support_tickets üzerinden JOIN'siz de tenant
+-- filtrelenebilsin diye, projedeki genel "işlem tablosunda tenant_id tekrar
+-- edilir" deseniyle tutarlı — bkz. order_services.tenant_id). is_super_admin_reply
+-- gönderenin süper admin mi yoksa tenant kullanıcısı mı olduğunu, sender_id
+-- silinmiş/pasif olsa bile UI'da doğru taraf hizalaması (sağ/sol balon)
+-- için kalıcı olarak taşır.
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+  id                   SERIAL PRIMARY KEY,
+  ticket_id            INT NOT NULL REFERENCES support_tickets(id),
+  tenant_id            INT NOT NULL REFERENCES tenants(id),
+  sender_id            INT REFERENCES users(id),
+  is_super_admin_reply BOOLEAN NOT NULL DEFAULT false,
+  body                 TEXT NOT NULL,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS support_ticket_messages_ticket_idx ON support_ticket_messages(ticket_id, created_at);
