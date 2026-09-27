@@ -296,7 +296,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 
   // Randevu sayfasına girmeden "bekleyen randevu var mı" görülebilsin diye —
   // nav'daki rozet, kullanıcı isteği üzerine eklendi. Sayfa açılışında ve
-  // ardından periyodik olarak (60sn) BEKLEMEDE sayısını çeker; appointments.view
+  // ardından periyodik olarak (10dk) BEKLEMEDE sayısını çeker; appointments.view
   // izni yoksa hiç denemez.
   useEffect(() => {
     if (!user) return;
@@ -315,7 +315,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       } catch { /* sessizce yoksay — bu sadece bir rozet, sayfayı bloklamamalı */ }
     }
     fetchPending();
-    const interval = setInterval(fetchPending, 60000);
+    const interval = setInterval(fetchPending, 600000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [user]);
 
