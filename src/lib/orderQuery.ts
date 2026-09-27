@@ -26,6 +26,8 @@ const SORTABLE_COLUMNS: Record<string, string> = {
   supplier: "os.supplier",
   stock_code: "os.stock_code",
   size_desc: "os.size_desc",
+  brand: "os.brand",
+  model_name: "os.model_name",
   quantity: "os.quantity",
   unit_price: "os.unit_price",
   cost_price: "os.cost_price",
@@ -52,6 +54,8 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
   const suppliers = searchParams.getAll("supplier");
   const stockCode = searchParams.get("stock_code");
   const sizeDesc = searchParams.get("size_desc");
+  const brand = searchParams.get("brand");
+  const modelName = searchParams.get("model_name");
   const paymentTypes = searchParams.getAll("payment_type");
   const sortBy = searchParams.get("sortBy");
   const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
@@ -95,6 +99,14 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
     values.push(`%${escapeLike(sizeDesc)}%`, `%${escapeLike(sizeDesc.replace(/\//g, ""))}%`);
     conditions.push(`(os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length})`);
   }
+  if (brand) {
+    values.push(`%${escapeLike(brand)}%`);
+    conditions.push(`os.brand ILIKE $${values.length}`);
+  }
+  if (modelName) {
+    values.push(`%${escapeLike(modelName)}%`);
+    conditions.push(`os.model_name ILIKE $${values.length}`);
+  }
   if (paymentTypes.length > 0) {
     values.push(paymentTypes);
     conditions.push(`COALESCE(os.payment_type, o.payment_type) = ANY($${values.length})`);
@@ -102,7 +114,7 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
   if (search) {
     values.push(`%${escapeLike(search)}%`, `%${escapeLike(search.replace(/\//g, ""))}%`);
     conditions.push(
-      `(o.plate ILIKE $${values.length - 1} OR o.customer_name ILIKE $${values.length - 1} OR os.supplier ILIKE $${values.length - 1} OR os.stock_code ILIKE $${values.length - 1} OR os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length})`
+      `(o.plate ILIKE $${values.length - 1} OR o.customer_name ILIKE $${values.length - 1} OR os.supplier ILIKE $${values.length - 1} OR os.stock_code ILIKE $${values.length - 1} OR os.size_desc ILIKE $${values.length - 1} OR REPLACE(os.size_desc, '/', '') ILIKE $${values.length} OR os.brand ILIKE $${values.length - 1} OR os.model_name ILIKE $${values.length - 1})`
     );
   }
 

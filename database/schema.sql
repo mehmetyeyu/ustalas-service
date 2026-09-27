@@ -1446,3 +1446,13 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock_threshold SMALLINT;
 -- belirlenir — bkz. o dosyadaki not. Atlama da tamamlama da (ikisi de
 -- "bir daha gösterme" anlamına gelir) burayı doldurur.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_tour_completed_at TIMESTAMPTZ;
+
+-- Sipariş satırındaki Marka/Model — supplier/stock_code/size_desc ile AYNI
+-- desende: stoktan bir parti seçilince otomatik dolar ama serbest metindir,
+-- elle de girilebilir/değiştirilebilir. Bunun gerekçesi: sipariş anında
+-- satılan ürün her zaman takip edilen stokta olmayabilir (ör. özel sipariş,
+-- stoksuz satış) — o durumda Marka/Model'i products tablosundan türetecek
+-- bir kayıt yoktur, kullanıcının kendisinin yazabilmesi gerekir. Uzunluklar
+-- products.brand/products.model_name ile birebir aynı.
+ALTER TABLE order_services ADD COLUMN IF NOT EXISTS brand VARCHAR(100);
+ALTER TABLE order_services ADD COLUMN IF NOT EXISTS model_name VARCHAR(80);

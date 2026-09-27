@@ -17,6 +17,8 @@ interface EditLineInput {
   supplier?: string | null;
   stock_code?: string | null;
   size_desc?: string | null;
+  brand?: string | null;
+  model_name?: string | null;
   quantity?: number | null;
   unit_price: number;
   cost_price?: number | null;
@@ -45,7 +47,7 @@ export async function GET(
 
     const servicesResult = await pool.query(
       `SELECT s.id, os.id AS line_id, s.name, os.unit_price, os.quantity, os.cost_price,
-              os.supplier, os.stock_code, os.size_desc, os.payment_type, os.product_id, os.kasa_id
+              os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.payment_type, os.product_id, os.kasa_id
        FROM order_services os
        JOIN services s ON os.service_id = s.id
        WHERE os.order_id = $1 AND os.tenant_id = $2
@@ -437,17 +439,18 @@ export async function PUT(
           await client.query(
             `UPDATE order_services
              SET service_id = $1, unit_price = $2, quantity = $3, cost_price = $4,
-                 supplier = $5, stock_code = $6, size_desc = $7, payment_type = $8, product_id = $9, kasa_id = $10
-             WHERE id = $11 AND order_id = $12 AND tenant_id = $13`,
-            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.kasa_id ?? null, l.id, id, user.tenantId]
+                 supplier = $5, stock_code = $6, size_desc = $7, brand = $8, model_name = $9,
+                 payment_type = $10, product_id = $11, kasa_id = $12
+             WHERE id = $13 AND order_id = $14 AND tenant_id = $15`,
+            [serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.brand || null, l.model_name || null, l.payment_type || null, productId, l.kasa_id ?? null, l.id, id, user.tenantId]
           );
         } else {
           if (productId) await deductStock(client, user.tenantId!, productId, quantity);
           await client.query(
             `INSERT INTO order_services
-               (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type, product_id, kasa_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.payment_type || null, productId, l.kasa_id ?? null]
+               (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, brand, model_name, payment_type, product_id, kasa_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+            [user.tenantId, id, serviceId, unitPrice, quantity, costPrice, l.supplier || null, l.stock_code || null, l.size_desc || null, l.brand || null, l.model_name || null, l.payment_type || null, productId, l.kasa_id ?? null]
           );
         }
       }

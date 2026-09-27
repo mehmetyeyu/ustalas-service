@@ -148,6 +148,8 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "supplier", label: "Tedarikçi", defaultVisible: true },
   { key: "stock_code", label: "Stok Kodu", defaultVisible: false },
   { key: "size_desc", label: "Ebat/Ürün", defaultVisible: false },
+  { key: "brand", label: "Marka", defaultVisible: false },
+  { key: "model_name", label: "Model", defaultVisible: false },
   { key: "quantity", label: "Adet", defaultVisible: true },
   { key: "unit_price", label: "Tutar", defaultVisible: true },
   { key: "cost_price", label: "Maliyet", defaultVisible: false },
@@ -162,6 +164,7 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
 const SKELETON_COL_WIDTH: Record<string, string> = {
   order_no: "w-10", date: "w-16", customer_name: "w-28", plate: "w-16",
   service_name: "w-24", supplier: "w-20", stock_code: "w-16", size_desc: "w-28",
+  brand: "w-16", model_name: "w-20",
   quantity: "w-6", unit_price: "w-14", cost_price: "w-14", kar: "w-14",
   payment_type: "w-20", notes: "w-32",
 };
@@ -180,6 +183,8 @@ interface OrderRow {
   supplier: string | null;
   stock_code: string | null;
   size_desc: string | null;
+  brand: string | null;
+  model_name: string | null;
   quantity: number | null;
   unit_price: number | null;
   cost_price: number | null;
@@ -205,7 +210,7 @@ function toLocalDate(d: Date): string {
 const TODAY = toLocalDate(new Date());
 
 type SortKey = "order_no" | "date" | "customer_name" | "plate" | "service_name" | "supplier"
-  | "stock_code" | "size_desc" | "quantity" | "unit_price" | "cost_price" | "kar" | "payment_type" | "notes" | "status";
+  | "stock_code" | "size_desc" | "brand" | "model_name" | "quantity" | "unit_price" | "cost_price" | "kar" | "payment_type" | "notes" | "status";
 type SortDir = "asc" | "desc";
 
 function getDateRange(filter: string): { dateFrom: string; dateTo: string } {
@@ -240,10 +245,12 @@ interface FieldFilters {
   supplier: string[];
   stock_code: string;
   size_desc: string;
+  brand: string;
+  model_name: string;
   payment_type: string[];
 }
 const EMPTY_FIELD_FILTERS: FieldFilters = {
-  customer_name: "", plate: "", service_name: [], supplier: [], stock_code: "", size_desc: "", payment_type: [],
+  customer_name: "", plate: "", service_name: [], supplier: [], stock_code: "", size_desc: "", brand: "", model_name: "", payment_type: [],
 };
 
 export default function OrdersPage() {
@@ -449,6 +456,8 @@ export default function OrdersPage() {
     fieldFilters.supplier.forEach((v) => params.append("supplier", v));
     if (fieldFilters.stock_code) params.set("stock_code", fieldFilters.stock_code);
     if (fieldFilters.size_desc) params.set("size_desc", fieldFilters.size_desc);
+    if (fieldFilters.brand) params.set("brand", fieldFilters.brand);
+    if (fieldFilters.model_name) params.set("model_name", fieldFilters.model_name);
     fieldFilters.payment_type.forEach((v) => params.append("payment_type", v));
     if (sortKey) { params.set("sortBy", sortKey); params.set("sortDir", sortDir); }
     return params;
@@ -1042,6 +1051,26 @@ export default function OrdersPage() {
               </div>
 
               <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Marka</label>
+                <input
+                  type="text"
+                  value={fieldFilters.brand}
+                  onChange={(e) => setFieldFilters((f) => ({ ...f, brand: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Model</label>
+                <input
+                  type="text"
+                  value={fieldFilters.model_name}
+                  onChange={(e) => setFieldFilters((f) => ({ ...f, model_name: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Ödeme Şekli</label>
                 <MultiSelectDropdown
                   options={paymentTypeOptions}
@@ -1124,6 +1153,8 @@ export default function OrdersPage() {
                 {visibleCols.supplier && <SortTh sortK="supplier" label="Tedarikçi" />}
                 {visibleCols.stock_code && <SortTh sortK="stock_code" label="Stok Kodu" />}
                 {visibleCols.size_desc && <SortTh sortK="size_desc" label="Ebat/Ürün" />}
+                {visibleCols.brand && <SortTh sortK="brand" label="Marka" />}
+                {visibleCols.model_name && <SortTh sortK="model_name" label="Model" />}
                 {visibleCols.quantity && <SortTh sortK="quantity" label="Adet" align="right" />}
                 {visibleCols.unit_price && <SortTh sortK="unit_price" label="Tutar" align="right" />}
                 {visibleCols.cost_price && <SortTh sortK="cost_price" label="Maliyet" align="right" />}
@@ -1211,6 +1242,8 @@ export default function OrdersPage() {
                       {visibleCols.supplier && <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.supplier || "-"}</td>}
                       {visibleCols.stock_code && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.stock_code || "-"}</td>}
                       {visibleCols.size_desc && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.size_desc || "-"}</td>}
+                      {visibleCols.brand && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.brand || "-"}</td>}
+                      {visibleCols.model_name && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.model_name || "-"}</td>}
                       {visibleCols.quantity && <td className="px-4 py-3 text-right text-gray-600">{r.quantity ?? "-"}</td>}
                       {visibleCols.unit_price && (
                         <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">

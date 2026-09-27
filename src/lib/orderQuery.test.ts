@@ -77,4 +77,30 @@ describe("buildOrderQuery", () => {
     expect(q.where).toBe(" WHERE o.tenant_id = $1 AND o.status = $2 AND o.plate ILIKE $3");
     expect(q.values).toEqual([7, "BEKLEMEDE", "%34 ABC%"]);
   });
+
+  it("brand filtresi ILIKE ile %...% sarmalanır (sipariş satırında elle girilen Marka)", () => {
+    const q = buildOrderQuery(1, new URLSearchParams({ brand: "Michelin" }));
+    expect(q.where).toContain("os.brand ILIKE $2");
+    expect(q.values).toEqual([1, "%Michelin%"]);
+  });
+
+  it("model_name filtresi ILIKE ile %...% sarmalanır (sipariş satırında elle girilen Model)", () => {
+    const q = buildOrderQuery(1, new URLSearchParams({ model_name: "Primacy" }));
+    expect(q.where).toContain("os.model_name ILIKE $2");
+    expect(q.values).toEqual([1, "%Primacy%"]);
+  });
+
+  it("brand/model_name whitelist'teki geçerli sortBy değerleridir", () => {
+    const q1 = buildOrderQuery(1, new URLSearchParams({ sortBy: "brand" }));
+    expect(q1.orderBy).toBe("os.brand ASC NULLS LAST, o.id ASC");
+    const q2 = buildOrderQuery(1, new URLSearchParams({ sortBy: "model_name", sortDir: "desc" }));
+    expect(q2.orderBy).toBe("os.model_name DESC NULLS LAST, o.id ASC");
+  });
+
+  it("genel arama (search) terimi brand/model_name'i de kapsar, EK parametre eklemez ($2'yi yeniden kullanır)", () => {
+    const q = buildOrderQuery(1, new URLSearchParams({ search: "Michelin" }));
+    expect(q.values).toEqual([1, "%Michelin%", "%Michelin%"]);
+    expect(q.where).toContain("os.brand ILIKE $2");
+    expect(q.where).toContain("os.model_name ILIKE $2");
+  });
 });

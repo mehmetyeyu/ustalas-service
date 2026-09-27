@@ -29,6 +29,8 @@ interface OrderLine {
   supplier: string;
   stock_code: string;
   size_desc: string;
+  brand: string;
+  model_name: string;
   quantity: string;
   unit_price: string;
   cost_price: string;
@@ -51,6 +53,8 @@ interface StockBatch {
   size_desc: string | null;
   stock_qty: number;
   location: string | null;
+  brand: string | null;
+  model_name: string | null;
   avg_purchase_price: string | number | null;
   avg_sale_price: string | number | null;
 }
@@ -65,6 +69,7 @@ const TEDARIKCI_SEED = ["Servis İşçiliği"];
 
 const EMPTY_LINE: OrderLine = {
   service_name: "", supplier: "Servis İşçiliği", stock_code: "", size_desc: "",
+  brand: "", model_name: "",
   quantity: "1", unit_price: "", cost_price: "0", product_id: null, max_stock: null,
   unit_sale_price: null, unit_purchase_price: null,
 };
@@ -214,6 +219,14 @@ function TireBatchPicker({
         options={codeOptions}
         placeholder="Ürün kodu..."
       />
+      {batches.length > 0 && (batches[0].brand || batches[0].model_name) && (
+        // Marka/Model kod bazında aynıdır (tüm partiler aynı koda ait), bu
+        // yüzden tek partinin (batches[0]) değeri hangisi seçilirse seçilsin
+        // geçerlidir — parti listesinde tekrar tekrar göstermeye gerek yok.
+        <p className="text-xs text-gray-400 truncate">
+          {[batches[0].brand, batches[0].model_name].filter(Boolean).join(" — ")}
+        </p>
+      )}
       {batches.length > 0 && (
         <select
           value={productId ?? ""}
@@ -348,7 +361,7 @@ export default function OrderPage() {
         next.max_stock = null;
         next.unit_sale_price = null;
         next.unit_purchase_price = null;
-        if (!productSaleServiceNames.has(trimmed)) next.size_desc = "";
+        if (!productSaleServiceNames.has(trimmed)) { next.size_desc = ""; next.brand = ""; next.model_name = ""; }
         // Ürün/parça satışlarında "Servis İşçiliği" varsayılanı anlamsız —
         // gerçek tedarikçi seçilsin diye boş bırakılır. Diğer işlemlerde geri döner.
         if (productSaleServiceNames.has(trimmed)) {
@@ -377,7 +390,7 @@ export default function OrderPage() {
       // (product_id doluysa) sıfırlanır — o parti eski tedarikçiye
       // ait, artık geçersiz olur.
       if (line.product_id != null) {
-        updateLine(index, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
+        updateLine(index, { supplier: val, stock_code: "", size_desc: "", brand: "", model_name: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
       } else {
         updateLine(index, { supplier: val });
       }
@@ -443,6 +456,8 @@ export default function OrderPage() {
             supplier: l.supplier.trim() || null,
             stock_code: l.stock_code.trim() || null,
             size_desc: l.size_desc.trim() || null,
+            brand: l.brand.trim() || null,
+            model_name: l.model_name.trim() || null,
             quantity: Math.max(1, Math.round(num(l.quantity)) || 1),
             unit_price: num(l.unit_price),
             cost_price: num(l.cost_price),
@@ -587,6 +602,8 @@ export default function OrderPage() {
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Tedarikçi</th>
                       {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Stok Kodu</th>}
                       {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Ebat</th>}
+                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Marka</th>}
+                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Model</th>}
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-16">Adet</th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Tutar (₺)</th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Maliyet (₺)</th>
@@ -633,6 +650,8 @@ export default function OrderPage() {
                                     updateLine(i, {
                                       product_id: batch?.id ?? null,
                                       size_desc: batch?.size_desc || line.size_desc,
+                                      brand: batch?.brand || line.brand,
+                                      model_name: batch?.model_name || line.model_name,
                                       max_stock: batch?.stock_qty ?? null,
                                       unit_sale_price: salePrice,
                                       unit_purchase_price: purchasePrice,
@@ -654,6 +673,36 @@ export default function OrderPage() {
                                   onChange={(val) => updateLine(i, { size_desc: val })}
                                   options={sizeOptions}
                                   placeholder="205/60R16"
+                                />
+                              ) : (
+                                <span className="text-gray-300 text-sm">—</span>
+                              )}
+                            </td>
+                          )}
+                          {hasProductSaleLine && (
+                            <td className="px-2 py-2 align-top">
+                              {isProductSale ? (
+                                <input
+                                  type="text"
+                                  value={line.brand}
+                                  onChange={(e) => updateLine(i, { brand: e.target.value })}
+                                  placeholder="Marka"
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              ) : (
+                                <span className="text-gray-300 text-sm">—</span>
+                              )}
+                            </td>
+                          )}
+                          {hasProductSaleLine && (
+                            <td className="px-2 py-2 align-top">
+                              {isProductSale ? (
+                                <input
+                                  type="text"
+                                  value={line.model_name}
+                                  onChange={(e) => updateLine(i, { model_name: e.target.value })}
+                                  placeholder="Model"
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <span className="text-gray-300 text-sm">—</span>
@@ -772,6 +821,8 @@ export default function OrderPage() {
                               updateLine(i, {
                                 product_id: batch?.id ?? null,
                                 size_desc: batch?.size_desc || line.size_desc,
+                                brand: batch?.brand || line.brand,
+                                model_name: batch?.model_name || line.model_name,
                                 max_stock: batch?.stock_qty ?? null,
                                 unit_sale_price: salePrice,
                                 unit_purchase_price: purchasePrice,
@@ -791,6 +842,30 @@ export default function OrderPage() {
                             options={sizeOptions}
                             placeholder="205/60R16"
                           />
+                        </div>
+                      )}
+                      {isProductSale && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Marka</label>
+                            <input
+                              type="text"
+                              value={line.brand}
+                              onChange={(e) => updateLine(i, { brand: e.target.value })}
+                              placeholder="Marka"
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Model</label>
+                            <input
+                              type="text"
+                              value={line.model_name}
+                              onChange={(e) => updateLine(i, { model_name: e.target.value })}
+                              placeholder="Model"
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
                         </div>
                       )}
 

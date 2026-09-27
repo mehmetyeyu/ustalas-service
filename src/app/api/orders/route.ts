@@ -16,6 +16,8 @@ interface OrderLineInput {
   supplier?: string | null;
   stock_code?: string | null;
   size_desc?: string | null;
+  brand?: string | null;
+  model_name?: string | null;
   quantity?: number | null;
   unit_price: number;
   cost_price?: number | null;
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
       `SELECT
          o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
          os.id AS line_id, s.name AS service_name,
-         os.supplier, os.stock_code, os.size_desc, os.quantity, os.unit_price, os.cost_price,
+         os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.quantity, os.unit_price, os.cost_price,
          COALESCE(os.payment_type, o.payment_type) AS payment_type,
          -- "Ödeme Al & Kapat" ile kapatılan HER sipariş order_payments'a en az
          -- bir satır yazar (bkz. PATCH /api/orders/[id]) — tek tipli kapatma
@@ -240,8 +242,8 @@ export async function POST(request: NextRequest) {
         if (l.product_id) await deductStock(client, user.tenantId!, l.product_id, quantity);
         await client.query(
           `INSERT INTO order_services
-             (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, product_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+             (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, brand, model_name, product_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             user.tenantId,
             orderId,
@@ -252,6 +254,8 @@ export async function POST(request: NextRequest) {
             l.supplier || null,
             l.stock_code || null,
             l.size_desc || null,
+            l.brand || null,
+            l.model_name || null,
             l.product_id || null,
           ]
         );

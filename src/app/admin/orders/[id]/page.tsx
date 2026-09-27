@@ -32,6 +32,8 @@ interface OrderDetail {
     supplier: string | null;
     stock_code: string | null;
     size_desc: string | null;
+    brand: string | null;
+    model_name: string | null;
     payment_type: string | null;
     product_id: number | null;
     kasa_id: number | null;
@@ -65,6 +67,8 @@ interface EditLine {
   supplier: string;
   stock_code: string;
   size_desc: string;
+  brand: string;
+  model_name: string;
   quantity: string;
   unit_price: string;
   cost_price: string;
@@ -88,6 +92,8 @@ interface StockBatch {
   size_desc: string | null;
   stock_qty: number;
   location: string | null;
+  brand: string | null;
+  model_name: string | null;
   avg_purchase_price: string | number | null;
   avg_sale_price: string | number | null;
 }
@@ -118,6 +124,7 @@ const TEDARIKCI_SEED = ["Servis İşçiliği"];
 
 const EMPTY_EDIT_LINE: EditLine = {
   id: null, service_name: "", supplier: "Servis İşçiliği", stock_code: "", size_desc: "",
+  brand: "", model_name: "",
   quantity: "1", unit_price: "", cost_price: "0", payment_type: "", kasa_id: null, product_id: null, max_stock: null,
   unit_sale_price: null, unit_purchase_price: null,
 };
@@ -324,6 +331,14 @@ function TireBatchPicker({
         options={codeOptions}
         placeholder="Ürün kodu..."
       />
+      {batches.length > 0 && (batches[0].brand || batches[0].model_name) && (
+        // Marka/Model kod bazında aynıdır (tüm partiler aynı koda ait), bu
+        // yüzden tek partinin (batches[0]) değeri hangisi seçilirse seçilsin
+        // geçerlidir — parti listesinde tekrar tekrar göstermeye gerek yok.
+        <p className="text-xs text-gray-400 truncate">
+          {[batches[0].brand, batches[0].model_name].filter(Boolean).join(" — ")}
+        </p>
+      )}
       {batches.length > 0 && (
         <select
           value={productId ?? ""}
@@ -568,6 +583,8 @@ function OrderDetailPageInner() {
       supplier: svc.supplier || "",
       stock_code: svc.stock_code || "",
       size_desc: svc.size_desc || "",
+      brand: svc.brand || "",
+      model_name: svc.model_name || "",
       quantity: String(svc.quantity),
       unit_price: String(svc.unit_price),
       cost_price: svc.cost_price != null ? String(svc.cost_price) : "0",
@@ -646,7 +663,7 @@ function OrderDetailPageInner() {
         next.max_stock = null;
         next.unit_sale_price = null;
         next.unit_purchase_price = null;
-        if (!productSaleServiceNames.has(trimmed)) next.size_desc = "";
+        if (!productSaleServiceNames.has(trimmed)) { next.size_desc = ""; next.brand = ""; next.model_name = ""; }
         // Ürün/parça satışlarında "Servis İşçiliği" varsayılanı anlamsız —
         // gerçek tedarikçi seçilsin diye boş bırakılır. Diğer işlemlerde geri döner.
         if (productSaleServiceNames.has(trimmed)) {
@@ -715,7 +732,7 @@ function OrderDetailPageInner() {
       // ait, artık geçersiz olur. Excel'den aktarılmış/elle girilmiş
       // (stoğa bağlı olmayan) Ebat, tedarikçi düzeltirken silinmesin.
       if (line.product_id != null) {
-        updateEditLine(index, { supplier: val, stock_code: "", size_desc: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
+        updateEditLine(index, { supplier: val, stock_code: "", size_desc: "", brand: "", model_name: "", product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null });
       } else {
         updateEditLine(index, { supplier: val });
       }
@@ -812,6 +829,8 @@ function OrderDetailPageInner() {
             supplier: l.supplier.trim() || null,
             stock_code: l.stock_code.trim() || null,
             size_desc: l.size_desc.trim() || null,
+            brand: l.brand.trim() || null,
+            model_name: l.model_name.trim() || null,
             quantity: Math.max(1, Math.round(num(l.quantity)) || 1),
             unit_price: num(l.unit_price),
             cost_price: num(l.cost_price),
@@ -981,13 +1000,15 @@ function OrderDetailPageInner() {
                 {/* table-fixed: sütun genişlikleri sabit kalır, Ödeme sütunu
                     Mail Order için ikinci bir seçici gösterse bile diğer
                     sütunlar sıkışmaz — taşma yatay kaydırmayla karşılanır. */}
-                <table className="text-sm border-collapse table-fixed" style={{ width: "1232px" }}>
+                <table className="text-sm border-collapse table-fixed" style={{ width: "1452px" }}>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[160px]">Yapılan İşlem</th>
                       <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[150px]">Tedarikçi</th>
                       {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Stok Kodu</th>}
                       {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[220px]">Ebat</th>}
+                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Marka</th>}
+                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Model</th>}
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[72px]">Adet</th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[112px]">Tutar (₺)</th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[112px]">Maliyet (₺)</th>
@@ -1033,6 +1054,8 @@ function OrderDetailPageInner() {
                                   updateEditLine(i, {
                                     product_id: batch?.id ?? null,
                                     size_desc: batch?.size_desc || line.size_desc,
+                                    brand: batch?.brand || line.brand,
+                                    model_name: batch?.model_name || line.model_name,
                                     max_stock: batch?.stock_qty ?? null,
                                     unit_sale_price: salePrice,
                                     unit_purchase_price: purchasePrice,
@@ -1054,6 +1077,36 @@ function OrderDetailPageInner() {
                                 onChange={(val) => updateEditLine(i, { size_desc: val })}
                                 options={sizeOptions}
                                 placeholder="205/60R16"
+                              />
+                            ) : (
+                              <span className="text-gray-300 text-sm">—</span>
+                            )}
+                          </td>
+                        )}
+                        {hasProductSaleLine && (
+                          <td className="px-2 py-2 align-top">
+                            {isProductSale ? (
+                              <input
+                                type="text"
+                                value={line.brand}
+                                onChange={(e) => updateEditLine(i, { brand: e.target.value })}
+                                placeholder="Marka"
+                                className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            ) : (
+                              <span className="text-gray-300 text-sm">—</span>
+                            )}
+                          </td>
+                        )}
+                        {hasProductSaleLine && (
+                          <td className="px-2 py-2 align-top">
+                            {isProductSale ? (
+                              <input
+                                type="text"
+                                value={line.model_name}
+                                onChange={(e) => updateEditLine(i, { model_name: e.target.value })}
+                                placeholder="Model"
+                                className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             ) : (
                               <span className="text-gray-300 text-sm">—</span>
@@ -1180,6 +1233,8 @@ function OrderDetailPageInner() {
                               updateEditLine(i, {
                                 product_id: batch?.id ?? null,
                                 size_desc: batch?.size_desc || line.size_desc,
+                                brand: batch?.brand || line.brand,
+                                model_name: batch?.model_name || line.model_name,
                                 max_stock: batch?.stock_qty ?? null,
                                 unit_sale_price: salePrice,
                                 unit_purchase_price: purchasePrice,
@@ -1199,6 +1254,30 @@ function OrderDetailPageInner() {
                             options={sizeOptions}
                             placeholder="205/60R16"
                           />
+                        </div>
+                      )}
+                      {isProductSale && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Marka</label>
+                            <input
+                              type="text"
+                              value={line.brand}
+                              onChange={(e) => updateEditLine(i, { brand: e.target.value })}
+                              placeholder="Marka"
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Model</label>
+                            <input
+                              type="text"
+                              value={line.model_name}
+                              onChange={(e) => updateEditLine(i, { model_name: e.target.value })}
+                              placeholder="Model"
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
                         </div>
                       )}
 
@@ -1460,6 +1539,9 @@ function OrderDetailPageInner() {
                       {svc.name}
                       {svc.quantity > 1 && <span className="text-gray-400"> ×{svc.quantity}</span>}
                       {svc.size_desc && <span className="text-gray-400"> — {svc.size_desc}</span>}
+                      {(svc.brand || svc.model_name) && (
+                        <span className="text-gray-400"> — {[svc.brand, svc.model_name].filter(Boolean).join(" ")}</span>
+                      )}
                       {svc.supplier && <span className="text-xs text-gray-400"> ({svc.supplier})</span>}
                       {svc.payment_type && (
                         <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-medium">
