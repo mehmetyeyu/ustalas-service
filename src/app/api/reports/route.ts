@@ -22,19 +22,33 @@ export async function GET(request: NextRequest) {
   const startDate = new Date(Date.UTC(year, month - 1, 1, -3, 0, 0));
   const endDate = new Date(Date.UTC(year, month, 1, -3, 0, 0));
 
-  // Hizmet Dağılımı'ndaki "Özel Tarih" (Günlük/Haftalık) — Raporlar sayfasının
-  // Dönemsel bölümüyle aynı gün/hafta aralığı, sadece bu tek sorguya uygulanır.
-  // Verilmezse (varsayılan) davranış değişmez: seçili ayın tamamı kullanılır.
+  // Raporlar sayfasındaki "Dönemsel Ciro/Maliyet/Masraf/Kâr" ve "Hizmet Dağılımı"
+  // widget'ları, üstteki Ay/Yıl seçiciden TAMAMEN BAĞIMSIZ, kendi tarih aralığını
+  // seçebilir (kullanıcı isteği: ikisi de kendi Tarih/Günlük/Haftalık/Aylık
+  // kontrolüne sahip). Bu yüzden iki AYRI, birbirinden bağımsız aralık kabul
+  // edilir — periodFrom/To Dönemsel'i, serviceFrom/To Hizmet Dağılımı'nı besler.
+  // İkisi de "to" dahil (inclusive) gönderilir, aşağıda +1 gün ile exclusive
+  // üst sınıra çevrilir (istanbulMidnightUTC ile aynı desen).
   const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const periodFromRaw = searchParams.get("periodFrom");
-  const periodToRaw = searchParams.get("periodTo");
-  const hasCustomPeriod = !!periodFromRaw && !!periodToRaw && ISO_DATE_RE.test(periodFromRaw) && ISO_DATE_RE.test(periodToRaw);
   function istanbulMidnightUTC(dateStr: string): Date {
     const [y, m, d] = dateStr.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d, -3, 0, 0));
   }
-  const serviceStatsStart = hasCustomPeriod ? istanbulMidnightUTC(periodFromRaw) : startDate;
-  const serviceStatsEnd = hasCustomPeriod ? istanbulMidnightUTC(periodToRaw) : endDate;
+  function addDayUTC(d: Date): Date {
+    return new Date(d.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  const periodFromRaw = searchParams.get("periodFrom");
+  const periodToRaw = searchParams.get("periodTo");
+  const hasPeriodRange = !!periodFromRaw && !!periodToRaw && ISO_DATE_RE.test(periodFromRaw) && ISO_DATE_RE.test(periodToRaw);
+  const periodStart = hasPeriodRange ? istanbulMidnightUTC(periodFromRaw) : null;
+  const periodEnd = hasPeriodRange ? addDayUTC(istanbulMidnightUTC(periodToRaw)) : null;
+
+  const serviceFromRaw = searchParams.get("serviceFrom");
+  const serviceToRaw = searchParams.get("serviceTo");
+  const hasServiceRange = !!serviceFromRaw && !!serviceToRaw && ISO_DATE_RE.test(serviceFromRaw) && ISO_DATE_RE.test(serviceToRaw);
+  const serviceStatsStart = hasServiceRange ? istanbulMidnightUTC(serviceFromRaw) : startDate;
+  const serviceStatsEnd = hasServiceRange ? addDayUTC(istanbulMidnightUTC(serviceToRaw)) : endDate;
 
   // expenses.expense_date bir DATE kolonu (saat/saat dilimi yok) — timestamp
   // aralık dönüşümüne gerek yok, ayın ilk günü ile bir sonraki ayın ilk günü
@@ -43,6 +57,17 @@ export async function GET(request: NextRequest) {
   const expenseNextYear = month === 12 ? year + 1 : year;
   const expenseNextMonth = month === 12 ? 1 : month + 1;
   const expenseEnd = `${expenseNextYear}-${String(expenseNextMonth).padStart(2, "0")}-01`;
+
+  // Dönemsel'in masraf toplamı da expense_date (DATE, saatsiz) üzerinden — periodTo
+  // dahil olduğundan, karşılaştırma için bir sonraki günün tarih string'i gerekir
+  // (yukarıdaki periodEnd/addDayUTC ile aynı mantık, ama DATE kolonu için timestamp
+  // yerine düz string).
+  function nextDateStr(dateStr: string): string {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + 1));
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+  }
+  const periodExpenseEnd = hasPeriodRange ? nextDateStr(periodToRaw!) : null;
 
   try {
     // Rapor tarihi, ödemenin alındığı gün (payment_date) değil, hizmetin GİRİLDİĞİ
@@ -69,6 +94,7 @@ export async function GET(request: NextRequest) {
       paymentBreakdownResult,
       unaddedRecurringResult,
       cashRegisterResult,
+      periodSummaryResult,
     ] = await Promise.all([
       pool.query(
         `SELECT
@@ -232,6 +258,23 @@ export async function GET(request: NextRequest) {
            ) combined2)::float AS expense`,
         [user.tenantId]
       ),
+      // Dönemsel Ciro/Maliyet/Masraf — üstteki Ay/Yıl'dan bağımsız, kullanıcının
+      // "Dönemsel" widget'ında seçtiği kendi tarih aralığı (Tarih/Günlük/Haftalık/
+      // Aylık). Aralık verilmemişse (hasPeriodRange=false, olmaması beklenmez ama
+      // savunmacı) sorgu hiç çalıştırılmaz, periodSummary null döner.
+      hasPeriodRange
+        ? pool.query<{ ciro: number; maliyet: number; masraf: number }>(
+            `SELECT
+               (SELECT COALESCE(SUM(COALESCE(paid_amount, total_amount)), 0) FROM orders
+                WHERE created_at >= $1 AND created_at < $2 AND tenant_id = $3)::float AS ciro,
+               (SELECT COALESCE(SUM(os.cost_price), 0) FROM order_services os
+                JOIN orders o ON os.order_id = o.id
+                WHERE o.created_at >= $1 AND o.created_at < $2 AND o.tenant_id = $3)::float AS maliyet,
+               (SELECT COALESCE(SUM(amount), 0) FROM expenses
+                WHERE expense_date >= $4::date AND expense_date < $5::date AND tenant_id = $3)::float AS masraf`,
+            [periodStart, periodEnd, user.tenantId, periodFromRaw, periodExpenseEnd]
+          )
+        : Promise.resolve(null),
     ]);
 
     // Her siparişin en az bir order_services satırı olduğundan, maliyet
@@ -267,6 +310,8 @@ export async function GET(request: NextRequest) {
     const cashIncome = cashRegisterResult.rows[0]?.income ?? 0;
     const cashExpense = cashRegisterResult.rows[0]?.expense ?? 0;
 
+    const periodSummaryRow = periodSummaryResult?.rows[0] ?? null;
+
     return NextResponse.json({
       dailyData,
       serviceStats: serviceStatsResult.rows,
@@ -274,6 +319,9 @@ export async function GET(request: NextRequest) {
       paymentBreakdown: paymentBreakdownResult.rows,
       unaddedRecurring: unaddedRecurringResult.rows,
       cashRegister: { income: cashIncome, expense: cashExpense, balance: cashIncome - cashExpense },
+      periodSummary: periodSummaryRow
+        ? { ciro: periodSummaryRow.ciro, maliyet: periodSummaryRow.maliyet, masraf: periodSummaryRow.masraf }
+        : null,
     });
   } catch (error) {
     console.error(error);
