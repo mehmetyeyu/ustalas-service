@@ -49,6 +49,32 @@ export async function restoreStock(client: QueryClient, tenantId: number, produc
 // (farklı zamanlarda farklı fiyatlarla alınmış gerçek ayrı partiler) BİLEREK
 // dokunulmaz — aksi halde gerçek maliyet geçmişini sessizce ezip yanlış
 // (ve tespit edilemez) bir ortalamaya yol açardık.
+// Minimum Stok Eşiği ürün KODU bazında bir politika değeridir (bkz. Ürün
+// Kataloğu Taslağı Faz 2) ama product_type/width_mm gibi mevcut alanlarla
+// aynı desenle her PARTİ (batch) satırına yazılır ve grup listesinde MAX()
+// ile birleştirilir. Sadece TEK bir partiyi güncellemek, o kodun diğer
+// partilerinde (özellikle satılıp listede hiç görünmeyen sıfır stoklu
+// partilerde) eskimiş/unutulmuş bir değer bırakır — MAX() bu eski değeri
+// yanlışlıkla öne çıkarıp kullanıcının göremediği/düzenleyemediği bir
+// partiden kaynaklanan yanlış "düşük stok" rozetine yol açabilir (code
+// review'da bulundu). Bu yüzden eşik her kaydedildiğinde AYNI KOD altındaki
+// TÜM partilere yazılır — tek doğru değer her zaman hepsinde aynı olur,
+// MAX() artık sadece bir güvenlik ağıdır. Aynı sebeple, parti birleştirme
+// (merge) sırasında COALESCE'in eski değeri koruyup kullanıcının bilinçli
+// "temizle" isteğini yok saydığı sorun da böylece çözülür.
+export async function syncMinStockThreshold(
+  client: QueryClient,
+  tenantId: number,
+  code: string,
+  value: number | null,
+  excludeId: number
+): Promise<void> {
+  await client.query(
+    "UPDATE products SET min_stock_threshold = $1 WHERE tenant_id = $2 AND code = $3 AND id != $4",
+    [value, tenantId, code, excludeId]
+  );
+}
+
 export async function syncSingleStockEntryPrice(
   client: QueryClient,
   tenantId: number,

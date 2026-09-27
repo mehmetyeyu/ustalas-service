@@ -4,7 +4,8 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { normalizeYear } from "@/lib/productsExcel";
-import { syncSingleStockEntryPrice } from "@/lib/productStock";
+import { syncSingleStockEntryPrice, syncMinStockThreshold } from "@/lib/productStock";
+import { toNullableNumber, toNullableText } from "@/lib/formValues";
 
 // Sipariş Düzelt ekranında, zaten bir partiye bağlı (product_id dolu) bir
 // satırın güncel stok durumunu öğrenmek için kullanılır — stok Girişi/Çıkışı
@@ -52,20 +53,20 @@ export async function PATCH(
       rim_size, pcd, offset_et, min_stock_threshold,
     } = body;
     const productTypeVal = product_type || null;
-    const widthMmVal = width_mm === "" || width_mm == null ? null : Number(width_mm);
-    const profilePctVal = profile_pct === "" || profile_pct == null ? null : Number(profile_pct);
-    const rimDiameterVal = rim_diameter ? String(rim_diameter).trim() : null;
-    const treadDepthVal = tread_depth_mm === "" || tread_depth_mm == null ? null : Number(tread_depth_mm);
-    const modelNameVal = model_name ? String(model_name).trim() : null;
-    const loadSpeedIndexVal = load_speed_index ? String(load_speed_index).trim() : null;
-    const euFuelClassVal = eu_fuel_class ? String(eu_fuel_class).trim() : null;
-    const euWetGripClassVal = eu_wet_grip_class ? String(eu_wet_grip_class).trim() : null;
-    const euNoiseDbVal = eu_noise_db === "" || eu_noise_db == null ? null : Number(eu_noise_db);
-    const euNoiseClassVal = eu_noise_class === "" || eu_noise_class == null ? null : Number(eu_noise_class);
-    const rimSizeVal = rim_size ? String(rim_size).trim() : null;
-    const pcdVal = pcd ? String(pcd).trim() : null;
-    const offsetEtVal = offset_et ? String(offset_et).trim() : null;
-    const minStockThresholdVal = min_stock_threshold === "" || min_stock_threshold == null ? null : Number(min_stock_threshold);
+    const widthMmVal = toNullableNumber(width_mm);
+    const profilePctVal = toNullableNumber(profile_pct);
+    const rimDiameterVal = toNullableText(rim_diameter);
+    const treadDepthVal = toNullableNumber(tread_depth_mm);
+    const modelNameVal = toNullableText(model_name);
+    const loadSpeedIndexVal = toNullableText(load_speed_index);
+    const euFuelClassVal = toNullableText(eu_fuel_class);
+    const euWetGripClassVal = toNullableText(eu_wet_grip_class);
+    const euNoiseDbVal = toNullableNumber(eu_noise_db);
+    const euNoiseClassVal = toNullableNumber(eu_noise_class);
+    const rimSizeVal = toNullableText(rim_size);
+    const pcdVal = toNullableText(pcd);
+    const offsetEtVal = toNullableText(offset_et);
+    const minStockThresholdVal = toNullableNumber(min_stock_threshold);
 
     if (!code || !String(code).trim()) {
       return NextResponse.json({ error: "Ürün kodu zorunludur." }, { status: 400 });
@@ -143,6 +144,7 @@ export async function PATCH(
         // o satışlar Malzeme Hareketleri'nden (INNER JOIN products) kaybolur.
         await client.query(`UPDATE order_services SET product_id=$1 WHERE product_id=$2 AND tenant_id=$3`, [target.id, id, user.tenantId]);
         await client.query(`DELETE FROM products WHERE id=$1 AND tenant_id=$2`, [id, user.tenantId]);
+        await syncMinStockThreshold(client, user.tenantId!, merged.rows[0].code, merged.rows[0].min_stock_threshold, merged.rows[0].id);
         await client.query("COMMIT");
         return NextResponse.json(merged.rows[0]);
       } catch (err) {
@@ -175,6 +177,8 @@ export async function PATCH(
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Ürün bulunamadı." }, { status: 404 });
     }
+
+    await syncMinStockThreshold(pool, user.tenantId!, result.rows[0].code, result.rows[0].min_stock_threshold, result.rows[0].id);
 
     // bkz. src/lib/productStock.ts syncSingleStockEntryPrice — tek girişte
     // senkronlar, birden fazla giriş varsa gerçek maliyet geçmişini korumak

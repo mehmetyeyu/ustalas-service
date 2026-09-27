@@ -5,6 +5,8 @@ import { hasPermission } from "@/lib/permissions";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { normalizeYear } from "@/lib/productsExcel";
 import { escapeLike } from "@/lib/sqlSafety";
+import { syncMinStockThreshold } from "@/lib/productStock";
+import { toNullableNumber, toNullableText } from "@/lib/formValues";
 
 // Liste Kod bazında GRUPLANIR: her Ürün Kodu tek bir kart/satır, altında farklı
 // Üretim Tarihli partiler (batches) yer alır. Sayfalama grup (distinct kod)
@@ -55,8 +57,12 @@ export async function GET(request: NextRequest) {
   const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
 
   try {
-    const groupsResult = await pool.query(
-      `SELECT code, MAX(brand) AS brand, MAX(size_desc) AS size_desc, MAX(season) AS season, MAX(barcode) AS barcode,
+    // groupsResult/countResult birbirinden bağımsız — sırayla değil paralel
+    // çalıştırılır (code review'da bulundu: her liste sayfası yüklemesinde
+    // gereksiz bir sıralı DB round-trip'i vardı).
+    const [groupsResult, countResult] = await Promise.all([
+      pool.query(
+        `SELECT code, MAX(brand) AS brand, MAX(size_desc) AS size_desc, MAX(season) AS season, MAX(barcode) AS barcode,
               MAX(product_type) AS product_type, MAX(width_mm) AS width_mm, MAX(profile_pct) AS profile_pct, MAX(rim_diameter) AS rim_diameter,
               MAX(model_name) AS model_name, MAX(load_speed_index) AS load_speed_index,
               MAX(eu_fuel_class) AS eu_fuel_class, MAX(eu_wet_grip_class) AS eu_wet_grip_class,
@@ -64,16 +70,17 @@ export async function GET(request: NextRequest) {
               MAX(rim_size) AS rim_size, MAX(pcd) AS pcd, MAX(offset_et) AS offset_et,
               MAX(min_stock_threshold) AS min_stock_threshold,
               SUM(stock_qty)::int AS total_stock, MAX(updated_at) AS last_updated
-       FROM products${where}
-       GROUP BY code
-       ORDER BY ${orderBy}
-       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
-      [...values, limit, offset]
-    );
-    const countResult = await pool.query(
-      `SELECT COUNT(DISTINCT code)::int AS total FROM products${where}`,
-      values
-    );
+         FROM products${where}
+         GROUP BY code
+         ORDER BY ${orderBy}
+         LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, limit, offset]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT code)::int AS total FROM products${where}`,
+        values
+      ),
+    ]);
     const total: number = countResult.rows[0].total;
 
     const codes = groupsResult.rows.map((r) => r.code);
@@ -85,23 +92,38 @@ export async function GET(request: NextRequest) {
     // kalkar — sıfır stoklu tedarikçiler listede yer kaplamasın diye. Geçmiş
     // (hangi tedarikçiden ne zaman, ne kadar alındığı) kaybolmaz; Malzeme
     // Hareketleri'nde (/api/products/movements) görülmeye devam eder.
-    const batchesResult = codes.length > 0
-      ? await pool.query(
-          `SELECT p.*, avg_sub.avg_purchase_price, avg_sub.avg_sale_price
-           FROM products p
-           LEFT JOIN (
-             SELECT product_id,
-                    SUM(quantity * purchase_price) / NULLIF(SUM(quantity) FILTER (WHERE purchase_price IS NOT NULL), 0) AS avg_purchase_price,
-                    SUM(quantity * sale_price) / NULLIF(SUM(quantity) FILTER (WHERE sale_price IS NOT NULL), 0) AS avg_sale_price
-             FROM product_stock_entries
-             WHERE tenant_id = $2
-             GROUP BY product_id
-           ) avg_sub ON avg_sub.product_id = p.id
-           WHERE p.code = ANY($1) AND p.tenant_id = $2 AND p.stock_qty > 0
-           ORDER BY p.production_year NULLS FIRST, p.production_week NULLS FIRST, p.id`,
-          [codes, user.tenantId]
-        )
-      : { rows: [] };
+    // batchesResult/codeAvgResult ikisi de sadece `codes`'a bağlı, birbirine
+    // bağlı değil — sırayla değil paralel çalıştırılır (code review'da
+    // bulundu, yukarıdaki grup/sayım çiftiyle aynı gereksiz round-trip sorunu).
+    const [batchesResult, codeAvgResult] = codes.length > 0
+      ? await Promise.all([
+          pool.query(
+            `SELECT p.*, avg_sub.avg_purchase_price, avg_sub.avg_sale_price
+             FROM products p
+             LEFT JOIN (
+               SELECT product_id,
+                      SUM(quantity * purchase_price) / NULLIF(SUM(quantity) FILTER (WHERE purchase_price IS NOT NULL), 0) AS avg_purchase_price,
+                      SUM(quantity * sale_price) / NULLIF(SUM(quantity) FILTER (WHERE sale_price IS NOT NULL), 0) AS avg_sale_price
+               FROM product_stock_entries
+               WHERE tenant_id = $2
+               GROUP BY product_id
+             ) avg_sub ON avg_sub.product_id = p.id
+             WHERE p.code = ANY($1) AND p.tenant_id = $2 AND p.stock_qty > 0
+             ORDER BY p.production_year NULLS FIRST, p.production_week NULLS FIRST, p.id`,
+            [codes, user.tenantId]
+          ),
+          pool.query(
+            `SELECT p.code,
+                    SUM(e.quantity * e.purchase_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.purchase_price IS NOT NULL), 0) AS avg_purchase_price,
+                    SUM(e.quantity * e.sale_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.sale_price IS NOT NULL), 0) AS avg_sale_price
+             FROM product_stock_entries e
+             JOIN products p ON p.id = e.product_id
+             WHERE p.code = ANY($1) AND p.tenant_id = $2
+             GROUP BY p.code`,
+            [codes, user.tenantId]
+          ),
+        ])
+      : [{ rows: [] }, { rows: [] }];
 
     const batchesByCode = new Map<string, unknown[]>();
     for (const row of batchesResult.rows) {
@@ -115,20 +137,8 @@ export async function GET(request: NextRequest) {
     // girişlerinin miktar ağırlıklı ortalamasıdır — parti bazlı ortalamaların
     // kendisinin de miktar ağırlıklı ortalamasına eşittir.
     const avgByCode = new Map<string, { purchase: number | null; sale: number | null }>();
-    if (codes.length > 0) {
-      const codeAvgResult = await pool.query(
-        `SELECT p.code,
-                SUM(e.quantity * e.purchase_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.purchase_price IS NOT NULL), 0) AS avg_purchase_price,
-                SUM(e.quantity * e.sale_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.sale_price IS NOT NULL), 0) AS avg_sale_price
-         FROM product_stock_entries e
-         JOIN products p ON p.id = e.product_id
-         WHERE p.code = ANY($1) AND p.tenant_id = $2
-         GROUP BY p.code`,
-        [codes, user.tenantId]
-      );
-      for (const row of codeAvgResult.rows) {
-        avgByCode.set(row.code, { purchase: row.avg_purchase_price, sale: row.avg_sale_price });
-      }
+    for (const row of codeAvgResult.rows) {
+      avgByCode.set(row.code, { purchase: row.avg_purchase_price, sale: row.avg_sale_price });
     }
 
     const items = groupsResult.rows.map((g) => ({
@@ -205,20 +215,20 @@ export async function POST(request: NextRequest) {
       user.tenantId, String(code).trim(), brand || null, size_desc || null, season || null, supplier || null,
       isDated ? production_week : null, yearVal, purchase_price ?? null, sale_price ?? null, qty, location || null,
       barcode ? String(barcode).trim() : null, product_type || null,
-      width_mm === "" || width_mm == null ? null : Number(width_mm),
-      profile_pct === "" || profile_pct == null ? null : Number(profile_pct),
-      rim_diameter ? String(rim_diameter).trim() : null,
-      tread_depth_mm === "" || tread_depth_mm == null ? null : Number(tread_depth_mm),
-      model_name ? String(model_name).trim() : null,
-      load_speed_index ? String(load_speed_index).trim() : null,
-      eu_fuel_class ? String(eu_fuel_class).trim() : null,
-      eu_wet_grip_class ? String(eu_wet_grip_class).trim() : null,
-      eu_noise_db === "" || eu_noise_db == null ? null : Number(eu_noise_db),
-      eu_noise_class === "" || eu_noise_class == null ? null : Number(eu_noise_class),
-      rim_size ? String(rim_size).trim() : null,
-      pcd ? String(pcd).trim() : null,
-      offset_et ? String(offset_et).trim() : null,
-      min_stock_threshold === "" || min_stock_threshold == null ? null : Number(min_stock_threshold),
+      toNullableNumber(width_mm),
+      toNullableNumber(profile_pct),
+      toNullableText(rim_diameter),
+      toNullableNumber(tread_depth_mm),
+      toNullableText(model_name),
+      toNullableText(load_speed_index),
+      toNullableText(eu_fuel_class),
+      toNullableText(eu_wet_grip_class),
+      toNullableNumber(eu_noise_db),
+      toNullableNumber(eu_noise_class),
+      toNullableText(rim_size),
+      toNullableText(pcd),
+      toNullableText(offset_et),
+      toNullableNumber(min_stock_threshold),
     ];
 
     const conflictClause = isDated
@@ -258,6 +268,18 @@ export async function POST(request: NextRequest) {
       `INSERT INTO product_stock_entries (tenant_id, product_id, quantity, purchase_price, sale_price) VALUES ($1,$2,$3,$4,$5)`,
       [user.tenantId, productRow.id, qty, purchase_price ?? null, sale_price ?? null]
     );
+
+    // PATCH'in aksine burada değer null iken senkron ATLANIR: "Yeni Ürün" formu
+    // Min. Eşik'i her zaman boş başlatır (mevcut kodun eşiğini önceden
+    // GÖSTERMEZ, bkz. openAdd), o yüzden boş bırakılması "temizle" anlamına
+    // gelmez — aynı koda yeni bir parti (ör. yeni sevkiyat) eklerken eşiği
+    // hiç görmeyen kullanıcı, farkında olmadan diğer partilerin eşiğini
+    // sessizce sıfırlamış olurdu. Düzenle/Kopyala formu ise mevcut değeri
+    // GÖSTERİP kullanıcıya bilinçli "temizle" imkânı verdiği için orada
+    // (PATCH route'unda) null da koşulsuz senkronlanır.
+    if (productRow.min_stock_threshold != null) {
+      await syncMinStockThreshold(pool, user.tenantId!, productRow.code, productRow.min_stock_threshold, productRow.id);
+    }
 
     return NextResponse.json(productRow, { status: 201 });
   } catch (error: unknown) {

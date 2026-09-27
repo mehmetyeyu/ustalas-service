@@ -268,6 +268,21 @@ function stockBadgeStyle(stock: number, minThreshold: number | null): string {
   return "bg-amber-100 text-amber-800";
 }
 
+// Ürün Tipi değişince, artık forma çıkmayan koşullu alanlar (ör. Lastik'ten
+// Aksesuar'a geçilince Yük/Hız Endeksi) formda görünmez olsa da state'te
+// kalıp Kaydet'te DB'ye yazılmaya devam ediyordu — code review'da bulunan
+// bir hata. Bu, hangi alanların temizleneceğine tek bir yerden karar verir.
+function clearOrphanedTypeFields(productType: string): Partial<typeof EMPTY_FORM> {
+  const isTireType = productType === "Lastik" || productType === "İkinci El Lastik";
+  const isRimType = productType === "Jant" || productType === "İkinci El Jant";
+  const isUsedTire = productType === "İkinci El Lastik";
+  return {
+    ...(isUsedTire ? {} : { tread_depth_mm: "" }),
+    ...(isTireType ? {} : { load_speed_index: "", eu_fuel_class: "", eu_wet_grip_class: "", eu_noise_db: "", eu_noise_class: "" }),
+    ...(isRimType ? {} : { rim_size: "", pcd: "", offset_et: "" }),
+  };
+}
+
 function productTypeBadge(type: string | null) {
   if (!type) return "—";
   return (
@@ -384,10 +399,20 @@ export default function ProductsPage() {
   // zaten doluysa (Düzenle'de mevcut veri, Kopyala'da taşınan veri) render
   // sırasında ayrıca kontrol edilip otomatik açık gösterilir.
   const [sizeBuilderOpen, setSizeBuilderOpen] = useState(false);
+  // Ebat'ın yapılandırılmış alanlardan (Kesit/Profil/Jant Çapı) CANLI
+  // olarak yeniden oluşturulmasını, üçü de en az bir kez tam dolduruluncaya
+  // kadar ERTELER — aksi hâlde barkoddan/elle gelmiş tam bir Ebat değeri
+  // (ör. "225/45R17 XL"), builder'a tek bir karakter yazılır yazılmaz kısmi
+  // bir değerle sessizce ezilirdi (gerçek veri kaybı — code review'da 4 ayrı
+  // ajanın bağımsız bulduğu hata). Üçü bir kez tam dolunca artık Ebat bu
+  // alanların "sahibi" sayılır ve sonraki her tuşta (silme dahil) canlı
+  // güncellenir — donma sorunu da böylece çözülmüş olur.
+  const [sizeComposedOnce, setSizeComposedOnce] = useState(false);
   const [editItem, setEditItem] = useState<ProductBatch | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editBarcodeChecking, setEditBarcodeChecking] = useState(false);
   const [editSizeBuilderOpen, setEditSizeBuilderOpen] = useState(false);
+  const [editSizeComposedOnce, setEditSizeComposedOnce] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [historyModalProduct, setHistoryModalProduct] = useState<ProductBatch | null>(null);
   const [historyEntries, setHistoryEntries] = useState<StockEntry[]>([]);
@@ -609,13 +634,24 @@ export default function ProductsPage() {
   function handleStructuredSizeChange(
     setter: typeof setForm,
     current: typeof EMPTY_FORM,
-    patch: Partial<Pick<typeof EMPTY_FORM, "width_mm" | "profile_pct" | "rim_diameter">>
+    patch: Partial<Pick<typeof EMPTY_FORM, "width_mm" | "profile_pct" | "rim_diameter">>,
+    composedOnce: boolean,
+    setComposedOnce: (v: boolean) => void
   ) {
     const next = { ...current, ...patch };
-    // Her tuşa basışta canlı güncellenir — üçünün TAMAMI dolana kadar
-    // beklemez (aksi hâlde biri boşalınca "değişmedi" sayılıp Ebat
-    // donuyordu, ör. Jant Çapı'nı tek tek silerken bir noktadan sonra
-    // Ebat'ın artık silinmemesi gibi). Sadece dolu olan parçalar birleşir.
+    const allThreeFilled = !!(next.width_mm.trim() && next.profile_pct.trim() && next.rim_diameter.trim());
+    if (allThreeFilled) setComposedOnce(true);
+    // Üçü daha önce bir kez tam dolmadıysa (composedOnce=false) VE şu an da
+    // tam değilse, Ebat'a dokunulmaz — barkoddan/elle gelmiş tam bir Ebat
+    // değerinin, builder'a atılan ilk (tek) karakterle sessizce ezilmesini
+    // önler. Üçü bir kez tam dolduktan SONRA (composedOnce=true) artık Ebat
+    // bu alanların sahibi sayılır — her tuşta (silme dahil) canlı güncellenir,
+    // aksi hâlde biri boşalınca Ebat'ın güncellenmeyi durdurduğu (donduğu)
+    // eski hata geri gelir.
+    if (!composedOnce && !allThreeFilled) {
+      setter((prev) => ({ ...prev, ...patch }));
+      return;
+    }
     const composed = [next.width_mm.trim(), next.profile_pct.trim(), next.rim_diameter.trim()]
       .filter(Boolean)
       .join(" / ");
@@ -655,6 +691,7 @@ export default function ProductsPage() {
       size_desc: prefillSize ?? "",
     });
     setSizeBuilderOpen(false);
+    setSizeComposedOnce(false);
     setShowAddModal(true);
   }
 
@@ -665,7 +702,15 @@ export default function ProductsPage() {
   // KOPYALANMAZ — bunlar partiye özgüdür, aynen kopyalanırsa kullanıcı fark
   // etmeden aynı barkod/kodu iki kez kaydedebilir. Fiyatlar kopyalanır (çoğu
   // zaman yakın bir başlangıç noktasıdır), kullanıcı isterse düzeltir.
-  function openClone(batch: ProductBatch) {
+  //
+  // Yük/Hız Endeksi, AB Lastik Etiketi (Yakıt/Islak Tutuş/Gürültü) ve Jant
+  // Ölçüsü/PCD/ET de KASITLI kopyalanmaz — tread_depth_mm gibi bunlar da
+  // EBADA göre değişir (aynı "model" farklı ebatta farklı yük endeksine,
+  // farklı gürültü değerine, farklı PCD/ET'ye sahip olabilir); code review'da
+  // bulundu — eski Ebat'ın değerlerini yeni ebada aynen taşımak yanlış veri
+  // üretirdi. Model/Ürün Hattı ve Minimum Stok Eşiği ise ebattan bağımsız
+  // (kod/politika düzeyinde) oldukları için kopyalanmaya devam eder.
+  function openClone(batch: ProductBatch, groupThreshold: number | null = batch.min_stock_threshold) {
     setForm({
       ...EMPTY_FORM,
       brand: batch.brand ?? "",
@@ -680,26 +725,26 @@ export default function ProductsPage() {
       profile_pct: batch.profile_pct != null ? String(batch.profile_pct) : "",
       rim_diameter: batch.rim_diameter ?? "",
       model_name: batch.model_name ?? "",
-      load_speed_index: batch.load_speed_index ?? "",
-      eu_fuel_class: batch.eu_fuel_class ?? "",
-      eu_wet_grip_class: batch.eu_wet_grip_class ?? "",
-      eu_noise_db: batch.eu_noise_db != null ? String(batch.eu_noise_db) : "",
-      eu_noise_class: batch.eu_noise_class != null ? String(batch.eu_noise_class) : "",
-      rim_size: batch.rim_size ?? "",
-      pcd: batch.pcd ?? "",
-      offset_et: batch.offset_et ?? "",
-      min_stock_threshold: batch.min_stock_threshold != null ? String(batch.min_stock_threshold) : "",
-      // tread_depth_mm KASITLI kopyalanmaz — Diş Derinliği o SPESİFİK
-      // lastiğin fiziksel durumudur, "benzer" bir ürüne aynen taşınamaz.
+      // Kodun GRUP (aggregate) eşiği kullanılır, tıklanan partinin kendi
+      // ham sütun değeri DEĞİL — bir partinin kendi değeri null olabilir
+      // (ör. eşiksiz eklenmiş yeni bir parti, bkz. POST route'taki
+      // syncMinStockThreshold null-guard'ı) ve o zaman gerçek politika
+      // değerini yanlışlıkla boşaltırdı.
+      min_stock_threshold: groupThreshold != null ? String(groupThreshold) : "",
+      // tread_depth_mm, load_speed_index, eu_fuel_class, eu_wet_grip_class,
+      // eu_noise_db, eu_noise_class, rim_size, pcd, offset_et KASITLI
+      // kopyalanmaz — yukarıdaki nota bkz.
     });
     setSizeBuilderOpen(false);
+    setSizeComposedOnce(!!(batch.width_mm && batch.profile_pct && batch.rim_diameter));
     setShowAddModal(true);
     toast.success("Bilgiler kopyalandı — Ürün Kodu'nu (ve varsa Barkod'u) girip kaydedin.");
   }
 
-  function openEdit(item: ProductBatch) {
+  function openEdit(item: ProductBatch, groupThreshold: number | null = item.min_stock_threshold) {
     setEditItem(item);
     setEditSizeBuilderOpen(false);
+    setEditSizeComposedOnce(!!(item.width_mm && item.profile_pct && item.rim_diameter));
     setEditForm({
       ...EMPTY_FORM,
       code: item.code ?? "",
@@ -729,7 +774,12 @@ export default function ProductsPage() {
       rim_size: item.rim_size ?? "",
       pcd: item.pcd ?? "",
       offset_et: item.offset_et ?? "",
-      min_stock_threshold: item.min_stock_threshold != null ? String(item.min_stock_threshold) : "",
+      // Kodun GRUP eşiği kullanılır (openClone'daki aynı gerekçeyle) — bu
+      // partinin kendi ham sütun değeri null olabilir ("eşiksiz eklenmiş
+      // yeni bir parti"), o zaman diğer partilerdeki gerçek eşiği Düzenle
+      // formunda yokmuş gibi göstermek, dokunulmamış bir alanın kaydedilince
+      // TÜM partileri sessizce sıfırlamasına yol açardı.
+      min_stock_threshold: groupThreshold != null ? String(groupThreshold) : "",
     });
   }
 
@@ -1347,7 +1397,7 @@ export default function ProductsPage() {
                                 )}
                                 {canEdit && (
                                   <button
-                                    onClick={() => group.batches.length === 1 ? openEdit(group.batches[0]) : toggleExpand(group.code)}
+                                    onClick={() => group.batches.length === 1 ? openEdit(group.batches[0], group.min_stock_threshold) : toggleExpand(group.code)}
                                     title="Düzenle"
                                     aria-label="Düzenle"
                                     className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium whitespace-nowrap"
@@ -1401,7 +1451,7 @@ export default function ProductsPage() {
                                   </button>
                                   {canCreate && (
                                     <button
-                                      onClick={() => openClone(batch)}
+                                      onClick={() => openClone(batch, group.min_stock_threshold)}
                                       title="Benzer Üründen Kopyala"
                                       aria-label="Benzer Üründen Kopyala"
                                       className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium"
@@ -1414,7 +1464,7 @@ export default function ProductsPage() {
                                   )}
                                   {canEdit && (
                                     <button
-                                      onClick={() => openEdit(batch)}
+                                      onClick={() => openEdit(batch, group.min_stock_threshold)}
                                       title="Düzenle"
                                       aria-label="Düzenle"
                                       className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium"
@@ -1548,7 +1598,7 @@ export default function ProductsPage() {
               <div className="sm:col-span-2 flex gap-2">
                 <div className="w-1/3">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
-                  <select value={form.product_type} onChange={(e) => setForm({ ...form, product_type: e.target.value })}
+                  <select value={form.product_type} onChange={(e) => setForm({ ...form, product_type: e.target.value, ...clearOrphanedTypeFields(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Seçilmedi</option>
                     {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -1603,6 +1653,9 @@ export default function ProductsPage() {
                       // Ebat tamamen silinirse yapılandırılmış 3 alan da
                       // temizlenir — aksi hâlde eski Kesit/Profil/Jant Çapı
                       // ilk tuşta Ebat'ı sessizce yeniden doldurup dururdu.
+                      // composedOnce de sıfırlanır — Ebat artık bu 3 alandan
+                      // türetilmiyor, bir daha "tek tuş ezer" koruması devreye girsin.
+                      if (size_desc === "") setSizeComposedOnce(false);
                       setForm((prev) => ({ ...prev, size_desc, ...(size_desc === "" ? { width_mm: "", profile_pct: "", rim_diameter: "" } : {}) }));
                     }}
                     placeholder="205/60R16"
@@ -1617,13 +1670,13 @@ export default function ProductsPage() {
                     </label>
                     <div className="flex gap-2">
                       <input type="number" placeholder="Kesit (ör. 205)" value={form.width_mm}
-                        onChange={(e) => handleStructuredSizeChange(setForm, form, { width_mm: e.target.value })}
+                        onChange={(e) => handleStructuredSizeChange(setForm, form, { width_mm: e.target.value }, sizeComposedOnce, setSizeComposedOnce)}
                         className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       <input type="number" placeholder="Profil (ör. 55)" value={form.profile_pct}
-                        onChange={(e) => handleStructuredSizeChange(setForm, form, { profile_pct: e.target.value })}
+                        onChange={(e) => handleStructuredSizeChange(setForm, form, { profile_pct: e.target.value }, sizeComposedOnce, setSizeComposedOnce)}
                         className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       <input type="text" placeholder="Jant Çapı (ör. R16)" value={form.rim_diameter}
-                        onChange={(e) => handleStructuredSizeChange(setForm, form, { rim_diameter: e.target.value })}
+                        onChange={(e) => handleStructuredSizeChange(setForm, form, { rim_diameter: e.target.value }, sizeComposedOnce, setSizeComposedOnce)}
                         className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </>
@@ -1795,7 +1848,7 @@ export default function ProductsPage() {
               <div className="sm:col-span-2 flex gap-2">
                 <div className="w-1/3">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Tipi</label>
-                  <select value={editForm.product_type} onChange={(e) => setEditForm({ ...editForm, product_type: e.target.value })}
+                  <select value={editForm.product_type} onChange={(e) => setEditForm({ ...editForm, product_type: e.target.value, ...clearOrphanedTypeFields(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Seçilmedi</option>
                     {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -1842,6 +1895,7 @@ export default function ProductsPage() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
                   <input type="text" value={editForm.size_desc} onChange={(e) => {
                       const size_desc = e.target.value;
+                      if (size_desc === "") setEditSizeComposedOnce(false);
                       setEditForm((prev) => ({ ...prev, size_desc, ...(size_desc === "" ? { width_mm: "", profile_pct: "", rim_diameter: "" } : {}) }));
                     }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1855,13 +1909,13 @@ export default function ProductsPage() {
                     </label>
                     <div className="flex gap-2">
                       <input type="number" placeholder="Kesit (ör. 205)" value={editForm.width_mm}
-                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { width_mm: e.target.value })}
+                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { width_mm: e.target.value }, editSizeComposedOnce, setEditSizeComposedOnce)}
                         className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       <input type="number" placeholder="Profil (ör. 55)" value={editForm.profile_pct}
-                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { profile_pct: e.target.value })}
+                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { profile_pct: e.target.value }, editSizeComposedOnce, setEditSizeComposedOnce)}
                         className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       <input type="text" placeholder="Jant Çapı (ör. R16)" value={editForm.rim_diameter}
-                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { rim_diameter: e.target.value })}
+                        onChange={(e) => handleStructuredSizeChange(setEditForm, editForm, { rim_diameter: e.target.value }, editSizeComposedOnce, setEditSizeComposedOnce)}
                         className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </>
