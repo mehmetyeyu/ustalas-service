@@ -71,20 +71,23 @@ const CSS = `
     font-size: 0.82rem; font-style: italic; color: var(--ink-soft);
     border-left: 3px solid var(--accent-2); padding: 10px 16px; margin: 24px 0;
   }
-  .elevire-legal footer { border-top: 1px solid var(--line); padding: 24px 0; }
+  .elevire-legal footer {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    background: #0b0b0c;
+    padding: 24px 0 32px;
+  }
   .elevire-legal footer .wrap {
     max-width: 760px; margin: 0 auto; padding: 0 24px;
-    display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;
+    display: flex; flex-direction: column; gap: 16px;
   }
-  .elevire-legal .legal-nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; }
-  .elevire-legal .payment-badges { display: flex; align-items: center; }
-  .elevire-legal .payment-badge-dark { display: none; }
-  @media (prefers-color-scheme: dark) {
-    .elevire-legal:not([data-theme="light"]) .payment-badge-light { display: none; }
-    .elevire-legal:not([data-theme="light"]) .payment-badge-dark { display: block; }
+  .elevire-legal footer .legal-nav { display: flex; flex-wrap: wrap; gap: 18px; font-size: 0.85rem; }
+  .elevire-legal footer .legal-nav a { color: #91948f; }
+  .elevire-legal footer .legal-nav a:hover { color: #ffffff; }
+  .elevire-legal footer .footer-bottom {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
   }
-  .elevire-legal[data-theme="dark"] .payment-badge-light { display: none; }
-  .elevire-legal[data-theme="dark"] .payment-badge-dark { display: block; }
+  .elevire-legal footer .footer-copyright { font-size: 0.85rem; color: #ffffff; }
+  .elevire-legal footer .payment-badges { display: flex; align-items: center; }
 `;
 
 export default function ElevireLegalLayout({ children }: { children: React.ReactNode }) {
@@ -106,9 +109,11 @@ export default function ElevireLegalLayout({ children }: { children: React.React
               <a key={l.href} href={l.href}>{l.label}</a>
             ))}
           </nav>
-          <div className="payment-badges">
-            <img src="/payment-logos/logo-band-colored.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" className="payment-badge-light" height={18} />
-            <img src="/payment-logos/logo-band-white.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" className="payment-badge-dark" height={18} />
+          <div className="footer-bottom">
+            <span className="footer-copyright">© 2026 Elevire. Tüm hakları saklıdır.</span>
+            <div className="payment-badges">
+              <img src="/payment-logos/logo-band-white.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" height={20} />
+            </div>
           </div>
         </div>
       </footer>
