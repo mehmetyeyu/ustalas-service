@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import * as Sentry from "@sentry/nextjs";
 import pool from "./db";
 
@@ -136,7 +136,27 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
   };
 }
 
+// middleware.ts (Edge, /api/* için) doğrulamayı ZATEN bir kez yapıp sonucu
+// "x-auth-user" header'ında bu fonksiyona taşıyor — burada varsa doğrudan
+// kullanılır, JWT'yi tekrar çözmez, "users JOIN tenants" sorgusunu tekrar
+// atmaz (82 API route'unun her isteğinde çifte iş yapılıyordu, gerçek bir
+// Vercel kullanım incelemesiyle saptandı). Header'ı SADECE middleware
+// yazabilir — istemciden gelen herhangi bir "x-auth-user" middleware
+// tarafından koşulsuz silinip yeniden yazılır, bu yüzden burada güvenle
+// güvenilir. Header yoksa (ör. middleware'in kapsamadığı bir çağrı yolu,
+// test ortamı) eskisi gibi tam doğrulamaya düşülür.
 export async function getAuthUser(): Promise<JwtPayload | null> {
+  const headerStore = await headers();
+  const forwarded = headerStore.get("x-auth-user");
+  if (forwarded != null) {
+    try {
+      return forwarded === "null" ? null : (JSON.parse(forwarded) as JwtPayload);
+    } catch {
+      // Beklenmeyen/bozuk içerik — güvenli tarafta kal, aşağıdaki tam
+      // doğrulamaya düş.
+    }
+  }
+
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value;
   if (!token) return null;

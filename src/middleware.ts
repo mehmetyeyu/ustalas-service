@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken, getAuthUserByToken } from "@/lib/auth";
+import { verifyToken, getAuthUserByToken, type JwtPayload } from "@/lib/auth";
 import { canAccessPath, getDefaultAdminPath } from "@/lib/permissions";
 import { isBillingLocked } from "@/lib/billing";
 import { getClientIp } from "@/lib/clientIp";
@@ -50,21 +50,46 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith("/api/billing/") ||
       pathname.startsWith("/api/webhooks/") ||
       pathname.startsWith("/api/super-admin/");
-    if (!exempt && token) {
-      const user = await getAuthUserByToken(token);
-      if (
-        user &&
-        user.role !== "super_admin" &&
-        user.tenantId != null &&
-        isBillingLocked({ billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, billing_cancel_at_period_end: user.billingCancelAtPeriodEnd, billing_period_ends_at: user.billingPeriodEndsAt })
-      ) {
-        return NextResponse.json(
-          { error: "Aboneliğinizin süresi doldu. Devam etmek için Genel Ayarlar > Abonelik üzerinden yeniden abone olun." },
-          { status: 402 }
-        );
-      }
+
+    // Her API route handler'ı kendi başına getAuthUser() çağırıp AYNI JWT
+    // doğrulamasını + AYNI "users JOIN tenants" sorgusunu burada zaten
+    // yapılmışken bir daha yapıyordu — 82 route'un HER isteğinde çifte iş
+    // (gerçek bir Vercel kullanım incelemesinde saptandı: Fluid Active CPU,
+    // çağrı sayısına oranla beklenenden yüksekti). Burada BİR KEZ doğrulanan
+    // kullanıcı, bir header ile route handler'a taşınır (bkz. src/lib/auth.ts
+    // getAuthUser) — handler artık DB'ye/JWT doğrulamasına tekrar gitmez.
+    // "x-auth-user", istemcinin taklit ederek kimlik doğrulamayı atlatmasını
+    // engellemek için gelen istekten HER ZAMAN silinip yalnızca burada
+    // doğrulanan değerle (varsa) yeniden yazılır — asla istemciden geleni
+    // olduğu gibi geçirmez.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("x-auth-user");
+
+    // /api/public/* (kimliksiz, ör. randevu formu) ve /api/webhooks/* (sunucu-
+    // sunucu) handler'larının HİÇBİRİ getAuthUser() çağırmıyor (doğrulandı) —
+    // orada hesaplamak, sırf bu iki yol için gereksiz bir DB sorgusu eklerdi
+    // (ör. giriş yapmış bir personelin tarayıcısı kendi randevu formunu
+    // ziyaret ettiğinde).
+    const needsAuthForward = !pathname.startsWith("/api/public/") && !pathname.startsWith("/api/webhooks/");
+    let verifiedUser: JwtPayload | null = null;
+    if (needsAuthForward && token) {
+      verifiedUser = await getAuthUserByToken(token);
+      requestHeaders.set("x-auth-user", JSON.stringify(verifiedUser));
     }
-    return NextResponse.next();
+
+    if (
+      !exempt &&
+      verifiedUser &&
+      verifiedUser.role !== "super_admin" &&
+      verifiedUser.tenantId != null &&
+      isBillingLocked({ billing_status: verifiedUser.billingStatus ?? null, trial_ends_at: verifiedUser.trialEndsAt ?? null, billing_cancel_at_period_end: verifiedUser.billingCancelAtPeriodEnd, billing_period_ends_at: verifiedUser.billingPeriodEndsAt })
+    ) {
+      return NextResponse.json(
+        { error: "Aboneliğinizin süresi doldu. Devam etmek için Genel Ayarlar > Abonelik üzerinden yeniden abone olun." },
+        { status: 402 }
+      );
+    }
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // Login sayfası — zaten giriş yapmışsa yönlendir
