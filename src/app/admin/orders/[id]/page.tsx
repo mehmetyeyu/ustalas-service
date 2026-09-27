@@ -9,6 +9,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
+import { escapeHtml } from "@/lib/htmlEscape";
 
 interface OrderDetail {
   id: number;
@@ -487,7 +488,7 @@ function OrderDetailPageInner() {
 
     const rowsHtml = order.services.map((s) => `
       <tr>
-        <td>${s.name}</td>
+        <td>${escapeHtml(s.name)}</td>
         <td class="c">${s.quantity}</td>
         <td class="r">${formatCurrency(s.unit_price)}</td>
         <td class="r">${formatCurrency(s.unit_price * s.quantity)}</td>
@@ -496,7 +497,7 @@ function OrderDetailPageInner() {
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>İş Emri - ${order.plate}</title>
+<html><head><meta charset="UTF-8"><title>İş Emri - ${escapeHtml(order.plate)}</title>
 <style>
   @page { size: A4 portrait; margin: 15mm; }
   * { box-sizing: border-box; }
@@ -527,10 +528,10 @@ function OrderDetailPageInner() {
 </head><body>
   <div class="header">
     <div class="company">
-      ${company?.logoUrl ? `<img class="logo" src="${company.logoUrl}" alt="" />` : ""}
-      <h1>${company?.name ?? ""}</h1>
-      <div>${company?.address ?? ""}</div>
-      <div>${company?.phone ? "Tel: " + company.phone : ""}${company?.taxOffice ? " · " + company.taxOffice : ""}${company?.taxId ? " · " + company.taxIdLabel + ": " + company.taxId : ""}</div>
+      ${company?.logoUrl ? `<img class="logo" src="${escapeHtml(company.logoUrl)}" alt="" />` : ""}
+      <h1>${escapeHtml(company?.name) || ""}</h1>
+      <div>${escapeHtml(company?.address)}</div>
+      <div>${company?.phone ? "Tel: " + escapeHtml(company.phone) : ""}${company?.taxOffice ? " · " + escapeHtml(company.taxOffice) : ""}${company?.taxId ? " · " + escapeHtml(company.taxIdLabel) + ": " + escapeHtml(company.taxId) : ""}</div>
     </div>
     <div class="title">
       <h2>İŞ EMRİ</h2>
@@ -540,9 +541,9 @@ function OrderDetailPageInner() {
   </div>
 
   <div class="info-grid">
-    <div><div class="lbl">Plaka</div>${order.plate}</div>
-    <div><div class="lbl">Müşteri</div>${order.customer_name || "—"}</div>
-    <div><div class="lbl">Telefon</div>${order.customer_phone || "—"}</div>
+    <div><div class="lbl">Plaka</div>${escapeHtml(order.plate)}</div>
+    <div><div class="lbl">Müşteri</div>${escapeHtml(order.customer_name) || "—"}</div>
+    <div><div class="lbl">Telefon</div>${escapeHtml(order.customer_phone) || "—"}</div>
     <div><div class="lbl">Durum</div>${order.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}</div>
   </div>
 
@@ -556,11 +557,11 @@ function OrderDetailPageInner() {
     </tbody>
   </table>
 
-  ${order.notes ? `<div class="notes"><div class="lbl">Not</div>${order.notes}</div>` : ""}
+  ${order.notes ? `<div class="notes"><div class="lbl">Not</div>${escapeHtml(order.notes)}</div>` : ""}
 
   <div class="footer">
     <div class="sign-box">
-      ${company?.stampUrl ? `<img class="stamp-img" src="${company.stampUrl}" alt="" />` : ""}
+      ${company?.stampUrl ? `<img class="stamp-img" src="${escapeHtml(company.stampUrl)}" alt="" />` : ""}
       <div class="sign-line${company?.stampUrl ? " tight" : ""}">Firma Kaşesi</div>
     </div>
     <div class="sign-box"><div class="sign-line">Müşteri İmza</div></div>

@@ -5,6 +5,7 @@ import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { escapeHtml } from "@/lib/htmlEscape";
 
 interface StorageItem {
   id: number;
@@ -209,17 +210,17 @@ async function printLabel(item: StorageItem) {
 
   const labelHtml = `
     <div class="label">
-      ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="" />` : ""}
-      <div class="plate">${item.plate ?? "—"}</div>
+      ${logoUrl ? `<img class="logo" src="${escapeHtml(logoUrl)}" alt="" />` : ""}
+      <div class="plate">${escapeHtml(item.plate) || "—"}</div>
       <table>
         <tr><td class="lbl">Sıra No</td><td class="val sira">${item.depo_no ?? "—"}</td></tr>
-        <tr><td class="lbl">Müşteri</td><td class="val">${item.customer_name ?? "—"}</td></tr>
-        <tr><td class="lbl">Telefon</td><td class="val">${item.phone ?? "—"}</td></tr>
-        <tr><td class="lbl">Ebat</td><td class="val">${item.ebat ?? "—"}</td></tr>
-        <tr><td class="lbl">Marka</td><td class="val">${item.marka ?? "—"}</td></tr>
-        <tr><td class="lbl">Diş Derinliği</td><td class="val">${item.dis_derinligi ?? "—"}</td></tr>
+        <tr><td class="lbl">Müşteri</td><td class="val">${escapeHtml(item.customer_name) || "—"}</td></tr>
+        <tr><td class="lbl">Telefon</td><td class="val">${escapeHtml(item.phone) || "—"}</td></tr>
+        <tr><td class="lbl">Ebat</td><td class="val">${escapeHtml(item.ebat) || "—"}</td></tr>
+        <tr><td class="lbl">Marka</td><td class="val">${escapeHtml(item.marka) || "—"}</td></tr>
+        <tr><td class="lbl">Diş Derinliği</td><td class="val">${escapeHtml(item.dis_derinligi) || "—"}</td></tr>
         <tr><td class="lbl">Adet</td><td class="val">${item.adet ?? "—"}</td></tr>
-        <tr><td class="lbl">Mevsim</td><td class="val">${item.mevsim ?? "—"}</td></tr>
+        <tr><td class="lbl">Mevsim</td><td class="val">${escapeHtml(item.mevsim) || "—"}</td></tr>
         <tr><td class="lbl">İşlem Tarihi</td><td class="val">${date}</td></tr>
       </table>
     </div>`;
@@ -227,7 +228,7 @@ async function printLabel(item: StorageItem) {
   const win = window.open("", "_blank");
   if (!win) return;
   win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Etiket - ${item.plate}</title>
+<html><head><meta charset="UTF-8"><title>Etiket - ${escapeHtml(item.plate)}</title>
 <style>
   @page { size: A4 landscape; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
