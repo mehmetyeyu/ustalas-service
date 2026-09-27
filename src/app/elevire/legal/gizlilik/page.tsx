@@ -23,13 +23,23 @@ export default function GizlilikPage() {
         {COMPANY.urunAdi} hizmetini kullanan firma yetkilileri ve
         kullanıcılarının kişisel verilerinin nasıl işlendiğini açıklar.
       </p>
+      <p>
+        Firmanızın {COMPANY.urunAdi} üzerinden KENDİ müşterilerine ait olarak
+        girdiği veriler (sipariş, randevu, cari vb. — bkz. Madde 2) bakımından
+        veri sorumlusu sıfatı firmanıza aittir; {COMPANY.unvan} bu veriler için
+        yalnızca KVKK m.3 anlamında &ldquo;veri işleyen&rdquo; sıfatıyla, hizmetin
+        teknik altyapısını sağlar. Bu tür verilerin ilgili kişilere (firmanızın
+        müşterilerine) yönelik KVKK yükümlülükleri (aydınlatma, açık rıza vb.)
+        firmanıza aittir.
+      </p>
 
       <h2>2. Toplanan Veriler</h2>
       <ul>
         <li>Kayıt sırasında: ad soyad, işletme adı, e-posta, telefon numarası.</li>
         <li>Hizmet kullanımı sırasında: firmanızın kendi girdiği sipariş, müşteri, stok ve muhasebe verileri.</li>
+        <li>Randevu talebi sırasında: halka açık randevu formunu dolduran son müşterilerin ad, telefon ve randevu bilgileri; kötüye kullanımı (spam) önlemek amacıyla IP adresi.</li>
         <li>Abonelik/ödeme sırasında: yalnızca abonelik durumu ve plan bilgisi — kart bilgileriniz bizim sunucularımıza hiç ulaşmaz, doğrudan ödeme kuruluşu iyzico&apos;nun güvenli altyapısında işlenir.</li>
-        <li>Teknik veriler: oturum/güvenlik amaçlı IP adresi ve temel kullanım logları.</li>
+        <li>Teknik veriler: oturum/güvenlik amaçlı IP adresi, temel kullanım logları ve (etkinleştirdiyseniz) tarayıcı bildirimi aboneliği bilgileri.</li>
       </ul>
 
       <h2>3. İşleme Amaçları ve Hukuki Sebep</h2>
@@ -49,9 +59,17 @@ export default function GizlilikPage() {
       </p>
       <ul>
         <li><strong>iyzico</strong> — abonelik/ödeme işlemlerinin yürütülmesi için.</li>
+        <li><strong>Meta (WhatsApp Business API)</strong> — yalnızca firmanız WhatsApp randevu bildirimini etkinleştirdiyse, müşterinize randevu onay mesajı iletilebilmesi için (ad, telefon, plaka, randevu tarihi/saati).</li>
+        <li>Hata izleme/performans aracı (Sentry) — teknik hataların tespit edilip giderilmesi için; kullanıcı adı ve firma bilgisi düzeyinde sınırlı veri işlenir, ekran kaydı veya form içeriği asla gönderilmez.</li>
+        <li>Push bildirim servisleri (Google FCM / Mozilla) — yalnızca tarayıcı bildirimine abone olduysanız, bildirimlerin cihazınıza iletilmesi için.</li>
         <li>Sunucu/altyapı sağlayıcıları — hizmetin barındırılması için (veriler şifreli bağlantılar üzerinden işlenir).</li>
       </ul>
-      <p>Verileriniz, yukarıdakiler dışında hiçbir üçüncü tarafa satılmaz veya kiralanmaz.</p>
+      <p>
+        Verileriniz, yukarıdakiler dışında hiçbir üçüncü tarafa satılmaz veya
+        kiralanmaz. Yukarıdaki hizmet sağlayıcılarından bir kısmı yurt dışında
+        yerleşik olabilir; bu durumda aktarım KVKK ve ilgili mevzuatın öngördüğü
+        şartlara uygun şekilde gerçekleştirilir.
+      </p>
 
       <h2>5. Saklama Süresi</h2>
       <p>
@@ -63,8 +81,12 @@ export default function GizlilikPage() {
 
       <h2>6. Çerezler</h2>
       <p>
-        Hizmetimiz, oturumunuzu açık tutmak (giriş bilgisi) için zorunlu
-        çerezler kullanır. Pazarlama/reklam amaçlı üçüncü taraf çerezleri
+        Hizmetimiz, oturumunuzu açık tutmak (giriş bilgisi) için tek bir
+        zorunlu çerez kullanır. Ayrıca tarayıcınızın yerel depolama alanında
+        (localStorage/sessionStorage), sunucuya hiç gönderilmeyen, tamamen
+        işlevsel bazı tercihler tutulur (ör. listelerde hangi sütunların
+        görüneceği, tanıtım turunun gösterilip gösterilmediği). Pazarlama/
+        reklam amaçlı üçüncü taraf çerezi veya izleme teknolojisi
         kullanılmamaktadır.
       </p>
 
