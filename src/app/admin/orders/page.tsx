@@ -366,11 +366,15 @@ export default function OrdersPage() {
   // sütun genişliği görünen buton sayısına göre daralır, aksi halde izni
   // olmayan kullanıcılarda (ör. sadece orders.view) sütun boş yer kaplardı
   // (özellikle mobilde fark ediliyordu).
-  const orderActionCount = 1 + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
+  // Detay ve Kopyala izinsiz her zaman gösterilir (Kopyala salt navigasyon —
+  // gerçek oluşturma izni POST /api/orders'ta ayrıca kontrol edilir, bkz. o
+  // route'un izin gerektirmeme notu); Düzenle/Sil izne göre eklenir.
+  const orderActionCount = 2 + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
   const ORDER_ACTIONS_WIDTH: Record<number, { cell: string; statusOffset: string }> = {
     1: { cell: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[90px] sm:min-w-[90px] sm:max-w-[90px]", statusOffset: "sm:right-[90px]" },
     2: { cell: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[155px] sm:min-w-[155px] sm:max-w-[155px]", statusOffset: "sm:right-[155px]" },
     3: { cell: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]", statusOffset: "sm:right-[220px]" },
+    4: { cell: "w-[122px] min-w-[122px] max-w-[122px] sm:w-[285px] sm:min-w-[285px] sm:max-w-[285px]", statusOffset: "sm:right-[285px]" },
   };
   const orderActionsWidth = ORDER_ACTIONS_WIDTH[orderActionCount];
   const [rows, setRows] = useState<OrderRow[]>([]);
@@ -1447,6 +1451,17 @@ export default function OrdersPage() {
                               <span className="hidden sm:inline">Düzenle</span>
                             </Link>
                           )}
+                          <Link
+                            href={`/?copyFrom=${r.id}`}
+                            title="Aynı müşteri/işlem satırlarıyla, sadece plakayı değiştirerek yeni bir sipariş oluştur"
+                            aria-label="Kopyala"
+                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium whitespace-nowrap"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                            </svg>
+                            <span className="hidden sm:inline">Kopyala</span>
+                          </Link>
                           {canDelete && (
                             <button
                               onClick={() => deleteOrder(r.id)}

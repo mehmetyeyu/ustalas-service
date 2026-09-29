@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { formatCurrency } from "@/lib/format";
@@ -248,8 +249,11 @@ function TireBatchPicker({
   );
 }
 
-export default function OrderPage() {
+function OrderPageInner() {
   const toast = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const plateInputRef = useRef<HTMLInputElement>(null);
   const [services, setServices] = useState<Service[]>([]);
   // Bir ürün/parça satışı temsil eden işlemler — bunlarda Tedarikçi varsayılan
   // olarak "Servis İşçiliği" gelmez (boş bırakılır, gerçek tedarikçi seçilir),
@@ -330,6 +334,46 @@ export default function OrderPage() {
       .then((data: string[]) => { if (Array.isArray(data)) setSizeOptions(data); })
       .catch(() => { });
   }, [toast]);
+
+  // "Kopyala" (bkz. Sipariş Detayı) — aynı müşteri altında birden fazla
+  // araç için hemen hemen aynı işlem satırlarıyla tekrar tekrar sipariş
+  // girilmesi gereken durumlarda (ör. bir filo müşterisi), her seferinde
+  // baştan yazmak yerine önceki siparişin satırlarını/müşterisini kopyalar —
+  // sadece Plaka BİLEREK boş bırakılır (asıl amaç bu). Stok/parti bağlantısı
+  // (product_id) kasıtlı olarak TAŞINMAZ: kopyalanan sipariş bir stok
+  // partisine bağlıysa, o partinin miktarı o zamandan beri değişmiş/tükenmiş
+  // olabilir — kullanıcı isterse Stok Kodu alanından güncel partiyi yeniden
+  // seçer, aksi halde stok sessizce yanlış/eski bir partiden düşerdi.
+  useEffect(() => {
+    const copyFrom = searchParams.get("copyFrom");
+    if (!copyFrom) return;
+    fetch(`/api/orders/${copyFrom}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((order: {
+        id: number; custom_order_no: string | null; customer_name: string | null; customer_phone: string | null;
+        services: { name: string; supplier: string | null; stock_code: string | null; size_desc: string | null; brand: string | null; model_name: string | null; quantity: number; unit_price: number; cost_price: number | null }[];
+      }) => {
+        setCustomerName(order.customer_name || "");
+        setCustomerPhone(order.customer_phone || "");
+        setLines(order.services.map((svc) => ({
+          service_name: svc.name,
+          supplier: svc.supplier || "",
+          stock_code: svc.stock_code || "",
+          size_desc: svc.size_desc || "",
+          brand: svc.brand || "",
+          model_name: svc.model_name || "",
+          quantity: String(svc.quantity),
+          unit_price: String(svc.unit_price),
+          cost_price: svc.cost_price != null ? String(svc.cost_price) : "0",
+          product_id: null, max_stock: null, unit_sale_price: null, unit_purchase_price: null,
+        })));
+        toast.success(`Sipariş ${order.custom_order_no || `#${order.id}`} kopyalandı — plakayı girip kaydedin.`);
+        plateInputRef.current?.focus();
+      })
+      .catch(() => toast.error("Kopyalanacak sipariş bulunamadı."))
+      .finally(() => router.replace("/"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // tracks_size işaretli bir satırda Tedarikçi seçilince, o tedarikçide
   // stoğu olan ürün kodları (henüz önbellekte yoksa) çekilir.
@@ -552,6 +596,7 @@ export default function OrderPage() {
                   Araç Plakası <span className="text-red-500">*</span>
                 </label>
                 <input
+                  ref={plateInputRef}
                   type="text"
                   value={plate}
                   onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
@@ -1004,5 +1049,13 @@ export default function OrderPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function OrderPage() {
+  return (
+    <Suspense fallback={null}>
+      <OrderPageInner />
+    </Suspense>
   );
 }
