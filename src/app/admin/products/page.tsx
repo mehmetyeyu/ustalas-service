@@ -177,6 +177,14 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
   { key: "barcode", label: "Barkod", defaultVisible: false },
   { key: "condition", label: "Kondisyon", defaultVisible: false },
   { key: "min_stock", label: "Min. Stok", defaultVisible: false },
+  { key: "model", label: "Model", defaultVisible: false },
+  { key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false },
+  { key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false },
+  { key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false },
+  { key: "eu_noise", label: "Gürültü", defaultVisible: false },
+  { key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false },
+  { key: "pcd", label: "PCD", defaultVisible: false },
+  { key: "offset_et", label: "ET (Ofset)", defaultVisible: false },
 ];
 
 // Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
@@ -184,6 +192,8 @@ const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] =
 const BATCH_SKELETON_COL_WIDTH: Record<string, string> = {
   production_date: "w-12", season: "w-14", supplier: "w-16", location: "w-14", purchase_price: "w-14", sale_price: "w-14",
   product_type: "w-16", barcode: "w-20", condition: "w-14", min_stock: "w-10",
+  model: "w-16", load_speed_index: "w-12", eu_fuel_class: "w-8", eu_wet_grip_class: "w-8",
+  eu_noise: "w-14", rim_size: "w-14", pcd: "w-14", offset_et: "w-10",
 };
 const SKELETON_ROWS = 8;
 
@@ -1306,6 +1316,14 @@ export default function ProductsPage() {
                     {visibleCols.barcode && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Barkod</th>}
                     {visibleCols.condition && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Diş Derinliği'nden otomatik hesaplanır">Kondisyon</th>}
                     {visibleCols.min_stock && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Min. Stok</th>}
+                    {visibleCols.model && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Model</th>}
+                    {visibleCols.load_speed_index && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yük/Hız Endeksi</th>}
+                    {visibleCols.eu_fuel_class && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yakıt Sınıfı</th>}
+                    {visibleCols.eu_wet_grip_class && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Islak Tutuş</th>}
+                    {visibleCols.eu_noise && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Gürültü</th>}
+                    {visibleCols.rim_size && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Jant Ölçüsü</th>}
+                    {visibleCols.pcd && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">PCD</th>}
+                    {visibleCols.offset_et && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">ET (Ofset)</th>}
                     <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
@@ -1380,6 +1398,14 @@ export default function ProductsPage() {
                             {visibleCols.barcode && <td className="px-4 py-3"></td>}
                             {visibleCols.condition && <td className="px-4 py-3"></td>}
                             {visibleCols.min_stock && <td className="px-4 py-3 text-gray-500">{group.min_stock_threshold ?? "—"}</td>}
+                            {visibleCols.model && <td className="px-4 py-3 text-gray-500">{group.model_name ?? "—"}</td>}
+                            {visibleCols.load_speed_index && <td className="px-4 py-3"></td>}
+                            {visibleCols.eu_fuel_class && <td className="px-4 py-3"></td>}
+                            {visibleCols.eu_wet_grip_class && <td className="px-4 py-3"></td>}
+                            {visibleCols.eu_noise && <td className="px-4 py-3"></td>}
+                            {visibleCols.rim_size && <td className="px-4 py-3"></td>}
+                            {visibleCols.pcd && <td className="px-4 py-3"></td>}
+                            {visibleCols.offset_et && <td className="px-4 py-3"></td>}
                             <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {canCreate && (
@@ -1436,6 +1462,20 @@ export default function ProductsPage() {
                               {visibleCols.barcode && <td className="px-4 py-3 text-gray-500 font-mono">{batch.barcode ?? "—"}</td>}
                               {visibleCols.condition && <td className="px-4 py-3">{conditionBadge(batch.tread_depth_mm != null && batch.tread_depth_mm !== "" ? computeCondition(Number(batch.tread_depth_mm)) : null)}</td>}
                               {visibleCols.min_stock && <td className="px-4 py-3 text-gray-500">{batch.min_stock_threshold ?? "—"}</td>}
+                              {visibleCols.model && <td className="px-4 py-3 text-gray-500">{batch.model_name ?? "—"}</td>}
+                              {visibleCols.load_speed_index && <td className="px-4 py-3 text-gray-500">{batch.load_speed_index ?? "—"}</td>}
+                              {visibleCols.eu_fuel_class && <td className="px-4 py-3 text-gray-500">{batch.eu_fuel_class ?? "—"}</td>}
+                              {visibleCols.eu_wet_grip_class && <td className="px-4 py-3 text-gray-500">{batch.eu_wet_grip_class ?? "—"}</td>}
+                              {visibleCols.eu_noise && (
+                                <td className="px-4 py-3 text-gray-500">
+                                  {batch.eu_noise_db != null
+                                    ? `${batch.eu_noise_db} dB${batch.eu_noise_class != null ? ` (Sınıf ${batch.eu_noise_class})` : ""}`
+                                    : "—"}
+                                </td>
+                              )}
+                              {visibleCols.rim_size && <td className="px-4 py-3 text-gray-500">{batch.rim_size ?? "—"}</td>}
+                              {visibleCols.pcd && <td className="px-4 py-3 text-gray-500">{batch.pcd ?? "—"}</td>}
+                              {visibleCols.offset_et && <td className="px-4 py-3 text-gray-500">{batch.offset_et ?? "—"}</td>}
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   <button
