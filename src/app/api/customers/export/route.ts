@@ -28,7 +28,9 @@ export async function GET() {
            MIN(cle.entry_date) FILTER (WHERE cle.direction = 1) AS first_debt_date,
            MAX(cle.entry_date) AS last_activity_date,
            STRING_AGG(
-             '#' || cle.order_id::text || ' (' || COALESCE((
+             -- Manuel Sipariş Numarası açıksa o değer, aksi halde diğer tüm
+             -- yüzeylerle (liste, detay, İş Emri) aynı #id fallback'i.
+             COALESCE(o.custom_order_no, '#' || cle.order_id::text) || ' (' || COALESCE((
                SELECT STRING_AGG(DISTINCT s.name, ', ')
                FROM order_services os JOIN services s ON s.id = os.service_id
                WHERE os.order_id = cle.order_id AND os.tenant_id = cle.tenant_id
@@ -36,6 +38,7 @@ export async function GET() {
              '; ' ORDER BY cle.order_id
            ) FILTER (WHERE cle.entry_type = 'SIPARIS') AS order_details
          FROM customer_ledger_entries cle
+         LEFT JOIN orders o ON o.id = cle.order_id AND o.tenant_id = cle.tenant_id
          WHERE cle.customer_id = c.id AND cle.tenant_id = c.tenant_id
        ) bal ON true
        WHERE c.tenant_id = $1 AND COALESCE(bal.balance, 0) <> 0

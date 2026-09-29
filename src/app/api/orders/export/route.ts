@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await pool.query(
       `SELECT
-         o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
+         o.id, o.custom_order_no, o.plate, o.customer_name, o.notes, o.status, o.created_at,
          s.name AS service_name,
          os.supplier, os.stock_code, os.size_desc, os.quantity, os.unit_price, os.cost_price,
          COALESCE(os.payment_type, o.payment_type) AS payment_type
@@ -33,7 +33,10 @@ export async function GET(request: NextRequest) {
     );
 
     const rows = result.rows.map((r) => sanitizeExcelRow({
-      "Sipariş No":     r.id,
+      // Manuel Sipariş Numarası açık bir firmada girilmişse o değer, aksi
+      // halde diğer tüm yüzeylerle (liste, detay, İş Emri, Cari) aynı
+      // #id fallback'i (bkz. admin/orders/page.tsx order_no hücresi).
+      "Sipariş No":     r.custom_order_no || `#${r.id}`,
       "Tarih":          r.created_at ? new Date(r.created_at).toLocaleDateString("tr-TR") : "",
       "Müşteri":        r.customer_name ?? "",
       "Plaka":          r.plate ?? "",
