@@ -39,6 +39,11 @@ export interface AppSettings {
   whatsapp_template_name: string | null;
   shared_stock_enabled: boolean;
   custom_order_no_enabled: boolean;
+  // true (varsayılan) — mevcut/tarihsel davranış: Plaka her zaman zorunlu.
+  // false — düz ürün satışında (araca bağlı olmayan, bkz. #955 vakası) Plaka
+  // boş bırakılabilir; bu durumda Plaka/Müşteri Adı'ndan en az biri zorunlu
+  // olur (bkz. POST/PUT /api/orders).
+  plate_required: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -68,6 +73,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   whatsapp_template_name: null,
   shared_stock_enabled: false,
   custom_order_no_enabled: false,
+  plate_required: true,
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -80,7 +86,7 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_radius, booking_widget_density, booking_widget_heading_size,
             auto_register_customers, orders_default_date_filter, whatsapp_enabled, whatsapp_access_token,
             whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
-            shared_stock_enabled, custom_order_no_enabled
+            shared_stock_enabled, custom_order_no_enabled, plate_required
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -114,6 +120,18 @@ export async function getCustomOrderNoEnabled(tenantId: number): Promise<boolean
     [tenantId]
   );
   return result.rows[0]?.custom_order_no_enabled ?? false;
+}
+
+// POST/PUT /api/orders'ın her istekte ihtiyaç duyduğu — Plaka'nın zorunlu mu
+// (tarihsel/varsayılan davranış) yoksa opsiyonel mi (#955 vakası, Genel
+// Ayarlar'dan kapatılmışsa) olduğu. getAutoRegisterCustomers ile aynı desen;
+// varsayılan true — ayar hiç ayarlanmamış bir firmada davranış değişmez.
+export async function getPlateRequired(tenantId: number): Promise<boolean> {
+  const result = await pool.query<{ plate_required: boolean }>(
+    "SELECT plate_required FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
+  );
+  return result.rows[0]?.plate_required ?? true;
 }
 
 // /api/auth/me gibi çok sık çağrılan yollarda (her admin sayfası mount'unda,

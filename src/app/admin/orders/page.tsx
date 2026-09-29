@@ -184,7 +184,7 @@ const COLUMNS: OrderColumnDef[] = [
   {
     key: "plate", label: "Plaka", defaultVisible: true, skeletonWidth: "w-16",
     tdClassName: "px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap",
-    cell: (r) => r.plate,
+    cell: (r) => r.plate || "—",
   },
   {
     key: "service_name", label: "Yapılan İşlem", defaultVisible: true, skeletonWidth: "w-24",
@@ -270,7 +270,7 @@ const SKELETON_ROWS = 8;
 interface OrderRow {
   id: number;
   custom_order_no: string | null;
-  plate: string;
+  plate: string | null;
   customer_name: string | null;
   notes: string | null;
   payment_note: string | null;

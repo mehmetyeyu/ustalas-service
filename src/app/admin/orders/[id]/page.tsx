@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
-import { useViewGuard, usePermission } from "../../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
@@ -16,7 +16,7 @@ interface OrderDetail {
   custom_order_no: string | null;
   custom_order_no_enabled: boolean;
   payment_note: string | null;
-  plate: string;
+  plate: string | null;
   customer_name: string | null;
   customer_phone: string | null;
   notes: string | null;
@@ -370,6 +370,11 @@ function OrderDetailPageInner() {
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canApprove = usePermission("orders.approve");
+  // Genel Ayarlar'daki "Araç Plakası Zorunlu" (bkz. database/schema.sql
+  // plate_required notu) — auth.user null iken (ilk render) güvenli
+  // varsayılan olarak true (tarihsel davranış).
+  const { user: authUser } = useAuth();
+  const plateRequired = authUser?.plateRequired ?? true;
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -506,7 +511,7 @@ function OrderDetailPageInner() {
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>İş Emri - ${escapeHtml(order.plate)}</title>
+<html><head><meta charset="UTF-8"><title>İş Emri - ${escapeHtml(order.plate || "Plakasız Satış")}</title>
 <style>
   @page { size: A4 portrait; margin: 15mm; }
   * { box-sizing: border-box; }
@@ -550,7 +555,7 @@ function OrderDetailPageInner() {
   </div>
 
   <div class="info-grid">
-    <div><div class="lbl">Plaka</div>${escapeHtml(order.plate)}</div>
+    <div><div class="lbl">Plaka</div>${escapeHtml(order.plate || "—")}</div>
     <div><div class="lbl">Müşteri</div>${escapeHtml(order.customer_name) || "—"}</div>
     <div><div class="lbl">Telefon</div>${escapeHtml(order.customer_phone) || "—"}</div>
     <div><div class="lbl">Durum</div>${order.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}</div>
@@ -583,7 +588,7 @@ function OrderDetailPageInner() {
 
   function openEdit() {
     if (!order) return;
-    setEditPlate(order.plate);
+    setEditPlate(order.plate || "");
     // Bu sipariş ayar KAPALIYKEN oluşturulmuşsa custom_order_no null'dur —
     // ama sonradan ayar açılıp bu siparişi düzenlemeye çalışınca alan boş VE
     // zorunlu gelir, kullanıcı hiçbir şey yazmadan kaydedemez (gerçek bir
@@ -807,12 +812,19 @@ function OrderDetailPageInner() {
   }
 
   async function handleSaveEdit() {
-    if (!editPlate.trim()) {
+    if (order?.custom_order_no_enabled && !editCustomOrderNo.trim()) {
+      toast.error("Sipariş numarası zorunludur.");
+      return;
+    }
+    // Genel Ayarlar'dan Plaka zorunlu tutuluyorsa doğrudan Plaka aranır;
+    // kapalıysa ikisi BİRDEN boş olmasın yeter (bkz. POST /api/orders'taki
+    // aynı kontrol).
+    if (plateRequired && !editPlate.trim()) {
       toast.error("Araç plakası zorunludur.");
       return;
     }
-    if (order?.custom_order_no_enabled && !editCustomOrderNo.trim()) {
-      toast.error("Sipariş numarası zorunludur.");
+    if (!plateRequired && !editPlate.trim() && !editCustomerName.trim()) {
+      toast.error("Plaka veya müşteri adından en az biri girilmelidir.");
       return;
     }
     const validLines = editLines.filter((l) => l.service_name.trim());
@@ -826,6 +838,10 @@ function OrderDetailPageInner() {
       return;
     }
     const editTotalAmount = validLines.reduce((sum, l) => sum + num(l.unit_price), 0);
+    if (editTotalAmount <= 0) {
+      toast.error("Sipariş tutarı 0'dan büyük olmalıdır.");
+      return;
+    }
     // Ödemeler bölümü yalnızca sipariş daha önce kapatıldıysa gösterilir
     // (bkz. openEdit) — o durumda en az bir geçerli giriş zorunludur.
     const validEditPayments = editPayments.filter((p) => p.payment_type && Number(p.amount) > 0);
@@ -988,12 +1004,15 @@ function OrderDetailPageInner() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Araç Plakası <span className="text-red-500">*</span>
+                  Araç Plakası {plateRequired
+                    ? <span className="text-red-500">*</span>
+                    : <span className="text-gray-400 font-normal">(opsiyonel)</span>}
                 </label>
                 <input
                   type="text"
                   value={editPlate}
                   onChange={(e) => setEditPlate(e.target.value.replace(/\s+/g, ""))}
+                  placeholder={plateRequired ? undefined : "Araca bağlı değilse boş bırakın"}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1550,7 +1569,7 @@ function OrderDetailPageInner() {
       <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="text-3xl font-bold font-mono text-gray-800">{order.plate}</h1>
+                <h1 className="text-3xl font-bold font-mono text-gray-800">{order.plate || "Plakasız Satış"}</h1>
                 <p className="text-gray-500 text-sm mt-1">Sipariş {order.custom_order_no || `#${order.id}`}</p>
               </div>
               <div className="flex items-center gap-2">

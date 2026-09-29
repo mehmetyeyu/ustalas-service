@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
-import { getAppSettings, getCustomOrderNoEnabled } from "@/lib/settings";
+import { getAppSettings, getCustomOrderNoEnabled, getPlateRequired } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
@@ -101,7 +101,7 @@ export async function DELETE(
         await restoreStock(client, user.tenantId!, row.product_id, row.quantity);
       }
 
-      const result = await client.query<{ id: number; plate: string; customer_name: string | null }>(
+      const result = await client.query<{ id: number; plate: string | null; customer_name: string | null }>(
         "DELETE FROM orders WHERE id = $1 AND tenant_id = $2 RETURNING id, plate, customer_name",
         [id, user.tenantId]
       );
@@ -115,7 +115,7 @@ export async function DELETE(
       await logAudit({
         tenantId: user.tenantId!, userId: user.userId, username: user.username,
         action: "order.delete", tableName: "orders", recordId: deleted.id,
-        detail: `Plaka: ${deleted.plate}${deleted.customer_name ? `, Müşteri: ${deleted.customer_name}` : ""}`,
+        detail: `Plaka: ${deleted.plate || "—"}${deleted.customer_name ? `, Müşteri: ${deleted.customer_name}` : ""}`,
       });
       return NextResponse.json({ success: true });
     } catch (err) {
@@ -191,7 +191,7 @@ export async function PATCH(
       // edilir — zaten TAMAMLANDI bir sipariş tekrar kapatılamaz (aksi hâlde
       // API'ye doğrudan istek atılarak mevcut ödeme kaydı sessizce ezilebilirdi;
       // arayüzdeki "Ödeme Al & Kapat" butonu da zaten yalnızca BEKLEMEDE'de görünür).
-      const orderCheck = await client.query<{ status: string; total_amount: string; customer_name: string | null; plate: string }>(
+      const orderCheck = await client.query<{ status: string; total_amount: string; customer_name: string | null; plate: string | null }>(
         "SELECT status, total_amount, customer_name, plate FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
         [id, user.tenantId]
       );
@@ -240,7 +240,7 @@ export async function PATCH(
       await logAudit({
         tenantId: user.tenantId!, userId: user.userId, username: user.username,
         action: "order.payment", tableName: "orders", recordId: Number(id),
-        detail: `Plaka: ${orderCheck.rows[0].plate}, Ödeme: ${summaryType}, Tutar: ${totalPaid}`,
+        detail: `Plaka: ${orderCheck.rows[0].plate || "—"}, Ödeme: ${summaryType}, Tutar: ${totalPaid}`,
       });
     } catch (err) {
       await client.query("ROLLBACK");
@@ -277,8 +277,19 @@ export async function PUT(
     const { id } = await params;
     const { plate, customer_name, customer_phone, notes, lines, payments, custom_order_no, payment_note } = await request.json();
 
-    if (!plate || !Array.isArray(lines) || lines.length === 0) {
-      return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return NextResponse.json({ error: "En az bir satır zorunludur." }, { status: 400 });
+    }
+    // Plaka, Genel Ayarlar'dan kapatılmadıkça zorunlu kalır (bkz. POST
+    // /api/orders'taki aynı kontrol, #955 vakası).
+    const plateValue: string | null = String(plate ?? "").replace(/\s+/g, "").toUpperCase().slice(0, 20) || null;
+    const customerNameTrimmed = String(customer_name ?? "").trim();
+    const plateRequired = await getPlateRequired(user.tenantId!);
+    if (plateRequired && !plateValue) {
+      return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
+    }
+    if (!plateRequired && !plateValue && !customerNameTrimmed) {
+      return NextResponse.json({ error: "Plaka veya müşteri adından en az biri girilmelidir." }, { status: 400 });
     }
 
     // Sipariş gerçekten bu firmaya mı ait — bu kontrol olmadan da
@@ -356,6 +367,9 @@ export async function PUT(
     }
 
     const totalAmount = (lines as EditLineInput[]).reduce((sum, l) => sum + Number(l.unit_price || 0), 0);
+    if (totalAmount <= 0) {
+      return NextResponse.json({ error: "Sipariş tutarı 0'dan büyük olmalıdır." }, { status: 400 });
+    }
 
     // Parçalı ödeme (order_payments) düzeltmesi: yalnızca sipariş daha önce
     // "Ödeme Al & Kapat" ile kapatılmışsa (Düzelt ekranı bu bölümü o zaman
@@ -442,7 +456,7 @@ export async function PUT(
         `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
                             total_amount = $5, paid_amount = $6, custom_order_no = $9, payment_note = $10
          WHERE id = $7 AND tenant_id = $8`,
-        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo, paymentNote]
+        [plateValue, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo, paymentNote]
       );
 
       const existingResult = await client.query<{ id: number; product_id: number | null; quantity: number }>(

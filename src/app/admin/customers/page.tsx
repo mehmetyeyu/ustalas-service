@@ -31,7 +31,7 @@ interface Customer {
 interface CustomerOrder {
   id: number;
   custom_order_no: string | null;
-  plate: string;
+  plate: string | null;
   total_amount: number | null;
   paid_amount: number | null;
   status: "BEKLEMEDE" | "TAMAMLANDI";
@@ -551,7 +551,7 @@ export default function CustomersPage() {
                       <tr key={o.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 font-mono font-semibold text-gray-800 whitespace-nowrap">{o.custom_order_no || `#${o.id}`}</td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(o.created_at)}</td>
-                        <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">{o.plate}</td>
+                        <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">{o.plate || "—"}</td>
                         <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">
                           {formatCurrency(Number((o.paid_amount ?? o.total_amount) || 0))}
                         </td>

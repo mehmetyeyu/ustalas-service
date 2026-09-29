@@ -278,6 +278,10 @@ function OrderPageInner() {
   // zorunlu elle Sipariş No — orders.id'ye hiç dokunmaz, ayrı görüntüleme
   // alanıdır (bkz. database/schema.sql).
   const [customOrderNoEnabled, setCustomOrderNoEnabled] = useState(false);
+  // Genel Ayarlar'daki "Araç Plakası Zorunlu" (bkz. database/schema.sql
+  // plate_required notu) — varsayılan true (tarihsel davranış), ayar hiç
+  // çekilmeden önceki ilk render'da bile Plaka zorunlu görünsün diye.
+  const [plateRequired, setPlateRequired] = useState(true);
   const [customOrderNo, setCustomOrderNo] = useState("");
   const [loading, setLoading] = useState(false);
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
@@ -310,6 +314,7 @@ function OrderPageInner() {
         setBusinessName(user.business_name || "");
         setPanelLogoUrl(user.panel_logo_url || null);
         setCustomOrderNoEnabled(!!user.custom_order_no_enabled);
+        setPlateRequired(user.plate_required !== false);
       })
       .catch(() => { });
 
@@ -475,17 +480,29 @@ function OrderPageInner() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!plate.trim()) {
+    if (customOrderNoEnabled && !customOrderNo.trim()) {
+      toast.error("Sipariş numarası zorunludur.");
+      return;
+    }
+    // Genel Ayarlar'dan Plaka zorunlu tutuluyorsa (varsayılan/tarihsel
+    // davranış) doğrudan Plaka aranır; kapalıysa ikisi BİRDEN boş olmasın
+    // yeter — sipariş hiçbir şeyle tanımlanamaz bir kayıt olmasın diye
+    // (gerçek bir kullanıcı raporuyla bulundu).
+    if (plateRequired && !plate.trim()) {
       toast.error("Araç plakası zorunludur.");
       return;
     }
-    if (customOrderNoEnabled && !customOrderNo.trim()) {
-      toast.error("Sipariş numarası zorunludur.");
+    if (!plateRequired && !plate.trim() && !customerName.trim()) {
+      toast.error("Plaka veya müşteri adından en az biri girilmelidir.");
       return;
     }
     const validLines = lines.filter((l) => l.service_name.trim());
     if (validLines.length === 0) {
       toast.error("En az bir işlem satırı giriniz.");
+      return;
+    }
+    if (validLines.reduce((sum, l) => sum + num(l.unit_price), 0) <= 0) {
+      toast.error("Sipariş tutarı 0'dan büyük olmalıdır.");
       return;
     }
     const overStock = validLines.find((l) => l.product_id && l.max_stock != null && Math.round(num(l.quantity)) > l.max_stock);
@@ -593,14 +610,16 @@ function OrderPageInner() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Araç Plakası <span className="text-red-500">*</span>
+                  Araç Plakası {plateRequired
+                    ? <span className="text-red-500">*</span>
+                    : <span className="text-gray-400 font-normal">(opsiyonel)</span>}
                 </label>
                 <input
                   ref={plateInputRef}
                   type="text"
                   value={plate}
                   onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
-                  placeholder="34 ABC 123"
+                  placeholder={plateRequired ? "34 ABC 123" : "Araca bağlı değilse boş bırakın"}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

@@ -85,6 +85,7 @@ export async function PUT(request: NextRequest) {
     const whatsapp_template_name = body.whatsapp_template_name ? String(body.whatsapp_template_name).trim().slice(0, 100) : null;
     const shared_stock_enabled = !!body.shared_stock_enabled;
     const custom_order_no_enabled = !!body.custom_order_no_enabled;
+    const plate_required = !!body.plate_required;
     const contact_name = body.contact_name ? String(body.contact_name).trim().slice(0, 150) || null : null;
     const contact_email = body.contact_email ? String(body.contact_email).trim().slice(0, 150) || null : null;
     // İyzico faturalandırma akışı (bkz. src/lib/iyzico.ts:normalizeGsmNumber)
@@ -165,7 +166,7 @@ export async function PUT(request: NextRequest) {
            orders_default_date_filter=$19,
            whatsapp_enabled=$20, whatsapp_access_token=CASE WHEN $21 = '' THEN whatsapp_access_token ELSE $21 END,
            whatsapp_phone_number_id=$22, whatsapp_business_account_id=$23, whatsapp_template_name=$24,
-           shared_stock_enabled=$25, custom_order_no_enabled=$26,
+           shared_stock_enabled=$25, custom_order_no_enabled=$26, plate_required=$28,
            updated_at=CURRENT_TIMESTAMP
        WHERE tenant_id=$27`,
       [
@@ -179,7 +180,7 @@ export async function PUT(request: NextRequest) {
         whatsapp_enabled, whatsapp_access_token_input,
         whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
         shared_stock_enabled, custom_order_no_enabled,
-        user.tenantId,
+        user.tenantId, plate_required,
       ]
     );
 
@@ -205,7 +206,7 @@ export async function PUT(request: NextRequest) {
       booking_widget_radius, booking_widget_density, booking_widget_heading_size,
       auto_register_customers, orders_default_date_filter,
       whatsapp_enabled, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
-      shared_stock_enabled, custom_order_no_enabled,
+      shared_stock_enabled, custom_order_no_enabled, plate_required,
       contact_name, contact_email, contact_phone, landline_phone, website,
     });
   } catch (error) {

@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       "Sipariş No":     r.custom_order_no || `#${r.id}`,
       "Tarih":          r.created_at ? new Date(r.created_at).toLocaleDateString("tr-TR") : "",
       "Müşteri":        r.customer_name ?? "",
-      "Plaka":          r.plate ?? "",
+      "Plaka":          r.plate || "—",
       "Yapılan İşlem":  r.service_name ?? "",
       "Tedarikçi":      r.supplier ?? "",
       "Stok Kodu":      r.stock_code ?? "",

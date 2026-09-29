@@ -26,6 +26,10 @@ interface AuthUser {
   // custom_order_no notu) — Randevular'daki "Siparişe Dönüştür" gibi
   // /api/orders POST'un DIŞINDA sipariş oluşturan ekranların bunu bilmesi için.
   customOrderNoEnabled: boolean;
+  // Genel Ayarlar'daki "Araç Plakası Zorunlu" (bkz. database/schema.sql
+  // plate_required notu) — Sipariş Detayı/Düzelt ekranının Plaka alanını
+  // zorunlu mu gösterileceğini bilmesi için.
+  plateRequired: boolean;
 }
 
 interface AuthState {
@@ -57,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 billingLastPaymentError: data.billing_last_payment_error ?? null,
                 isPrimaryAdmin: !!data.is_primary_admin, onboardingTourCompletedAt: data.onboarding_tour_completed_at ?? null,
                 customOrderNoEnabled: !!data.custom_order_no_enabled,
+                plateRequired: data.plate_required !== false,
               }
             : null,
           loading: false,

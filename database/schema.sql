@@ -16,7 +16,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS services_name_unique ON services(name);
 -- Siparişler
 CREATE TABLE IF NOT EXISTS orders (
   id             SERIAL PRIMARY KEY,
-  plate          VARCHAR(20) NOT NULL,
+  -- NOT NULL değil: düz ürün satışında (ör. "4 lastik al git", araca hiç
+  -- bağlı değil) plaka anlamsız — boş bırakılabilir (bkz. aşağıdaki ALTER
+  -- TABLE, mevcut kurulumlar için). Plaka null ise UI'da "—" / Sipariş
+  -- Detayı başlığında sabit "Plakasız Satış" gösterilir.
+  plate          VARCHAR(20),
   customer_name  VARCHAR(100),
   customer_phone VARCHAR(20),
   notes          TEXT,
@@ -1572,3 +1576,19 @@ END $$;
 -- (kapatırken VEYA sonradan Düzelt ekranından) — orders.custom_order_no ile
 -- aynı "opsiyonel, geriye dönük etkisiz" desenidir.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_note TEXT;
+
+-- Plaka artık zorunlu değil — düz ürün satışında (araca bağlı olmayan, ör.
+-- "4 lastik al git") kullanıcı sahte bir plaka ("PLAKASIZ1" vb.) uydurmak
+-- zorunda kalmasın diye (gerçek bir kullanıcı ihtiyacı — bkz. yukarıdaki
+-- CREATE TABLE yorumu). DROP NOT NULL zaten nullable bir sütunda no-op'tur,
+-- tekrar çalıştırmak güvenlidir.
+ALTER TABLE orders ALTER COLUMN plate DROP NOT NULL;
+
+-- Plaka Zorunluluğu — DB kısıtı kaldırıldı ama firma bazında hâlâ zorunlu
+-- tutulabilsin diye Genel Ayarlar'dan açılıp kapatılabilir bir anahtar.
+-- DEFAULT true: mevcut TÜM firmalarda (bu ayarı hiç değiştirmemiş) davranış
+-- aynen sürer — Plaka zorunlu kalır, hiçbir tarihsel siparişte/akışta bir şey
+-- değişmez. Sadece bilerek kapatan bir firmada (bkz. #955 vakası — plaka
+-- opsiyonel özelliğinin ilk kullanıcı raporu) Plaka opsiyonel olur (bu
+-- durumda Plaka/Müşteri Adı'ndan en az biri zorunlu, bkz. POST/PUT /api/orders).
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS plate_required BOOLEAN NOT NULL DEFAULT true;

@@ -34,6 +34,7 @@ export default function GeneralSettingsPage() {
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
   const [ordersDefaultDateFilter, setOrdersDefaultDateFilter] = useState("");
   const [customOrderNoEnabled, setCustomOrderNoEnabled] = useState(false);
+  const [plateRequired, setPlateRequired] = useState(true);
   // Randevu Ayarları sayfasının düzenlediği WhatsApp alanları — aynı sebeple
   // (yukarıdaki widget yorumuna bkz.) burada da olduğu gibi korunması
   // gerekiyor. Token burada hiç tutulmuyor/gönderilmiyor — boş string PUT'ta
@@ -82,6 +83,7 @@ export default function GeneralSettingsPage() {
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setOrdersDefaultDateFilter(data.orders_default_date_filter ?? "");
         setCustomOrderNoEnabled(!!data.custom_order_no_enabled);
+        setPlateRequired(data.plate_required !== false);
         setWhatsappEnabled(!!data.whatsapp_enabled);
         setSharedStockEnabled(!!data.shared_stock_enabled);
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
@@ -158,6 +160,7 @@ export default function GeneralSettingsPage() {
           auto_register_customers: autoRegisterCustomers,
           orders_default_date_filter: ordersDefaultDateFilter,
           custom_order_no_enabled: customOrderNoEnabled,
+          plate_required: plateRequired,
           whatsapp_enabled: whatsappEnabled,
           shared_stock_enabled: sharedStockEnabled,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
@@ -411,6 +414,19 @@ export default function GeneralSettingsPage() {
             </p>
           </div>
           <Switch checked={customOrderNoEnabled} onClick={() => setCustomOrderNoEnabled((v) => !v)} />
+        </div>
+
+        <div className="flex items-center justify-between mt-5 pt-5 border-t border-gray-100">
+          <div>
+            <div className="text-sm font-medium text-gray-700">Araç Plakası Zorunlu</div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Açıksa (varsayılan) yeni sipariş oluştururken Plaka her zaman zorunludur. Kapatırsanız,
+              araca bağlı olmayan düz ürün satışlarında (ör. &ldquo;4 lastik al git&rdquo;) Plaka boş
+              bırakılabilir — bu durumda Plaka veya Müşteri Adı&rsquo;ndan en az biri girilmek
+              zorundadır. Daha önce girilmiş siparişler bundan etkilenmez.
+            </p>
+          </div>
+          <Switch checked={plateRequired} onClick={() => setPlateRequired((v) => !v)} />
         </div>
       </div>
 

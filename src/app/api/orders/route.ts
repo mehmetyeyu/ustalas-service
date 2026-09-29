@@ -6,7 +6,7 @@ import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
 import { buildOrderQuery } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
-import { getAutoRegisterCustomers, getCustomOrderNoEnabled } from "@/lib/settings";
+import { getAutoRegisterCustomers, getCustomOrderNoEnabled, getPlateRequired } from "@/lib/settings";
 import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
 import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
 import { logAudit } from "@/lib/auditLog";
@@ -183,11 +183,25 @@ export async function POST(request: NextRequest) {
   try {
     const { plate, customer_name, customer_phone, notes, lines, order_date, custom_order_no } = await request.json();
 
-    if (!plate || !Array.isArray(lines) || lines.length === 0) {
+    if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json(
-        { error: "Plaka ve en az bir satır zorunludur." },
+        { error: "En az bir satır zorunludur." },
         { status: 400 }
       );
+    }
+    // Plaka, Genel Ayarlar'dan kapatılmadıkça (plate_required, varsayılan
+    // true — bkz. database/schema.sql notu) zorunlu kalır. Kapatılmışsa düz
+    // ürün satışında (araca bağlı olmayan) boş bırakılabilir — ama ikisi
+    // BİRDEN boşsa sipariş hiçbir şeyle tanımlanamaz bir "hayalet" kayıt olur
+    // (gerçek bir kullanıcı raporuyla bulundu — #955), en az biri zorunlu.
+    const plateValue: string | null = String(plate ?? "").replace(/\s+/g, "").toUpperCase().slice(0, 20) || null;
+    const customerNameTrimmed = String(customer_name ?? "").trim();
+    const plateRequired = await getPlateRequired(user.tenantId!);
+    if (plateRequired && !plateValue) {
+      return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
+    }
+    if (!plateRequired && !plateValue && !customerNameTrimmed) {
+      return NextResponse.json({ error: "Plaka veya müşteri adından en az biri girilmelidir." }, { status: 400 });
     }
     // Manuel Sipariş No (bkz. database/schema.sql notu) — sadece firma bunu
     // Genel Ayarlar'dan açtıysa zorunlu; kapalıyken istemciden gelen herhangi
@@ -230,6 +244,9 @@ export async function POST(request: NextRequest) {
       (sum, l) => sum + Number(l.unit_price || 0),
       0
     );
+    if (totalAmount <= 0) {
+      return NextResponse.json({ error: "Sipariş tutarı 0'dan büyük olmalıdır." }, { status: 400 });
+    }
 
     const autoRegisterCustomers = await getAutoRegisterCustomers(user.tenantId!);
 
@@ -250,7 +267,7 @@ export async function POST(request: NextRequest) {
       const orderResult = await client.query(
         `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, created_at, custom_order_no)
          VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', COALESCE($7, CURRENT_TIMESTAMP), $8) RETURNING id`,
-        [user.tenantId, plate, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt, customOrderNo]
+        [user.tenantId, plateValue, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt, customOrderNo]
       );
 
       const orderId = orderResult.rows[0].id;
@@ -285,7 +302,7 @@ export async function POST(request: NextRequest) {
       await logAudit({
         tenantId: user.tenantId!, userId: user.userId, username: user.username,
         action: "order.create", tableName: "orders", recordId: orderId,
-        detail: `Plaka: ${plate}, Tutar: ${totalAmount}`,
+        detail: `Plaka: ${plateValue || "—"}, Tutar: ${totalAmount}`,
       });
       return NextResponse.json({ id: orderId, total_amount: totalAmount }, { status: 201 });
     } catch (err) {
