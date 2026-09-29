@@ -6,7 +6,7 @@ import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
 import { buildOrderQuery } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
-import { getAutoRegisterCustomers } from "@/lib/settings";
+import { getAutoRegisterCustomers, getCustomOrderNoEnabled } from "@/lib/settings";
 import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
 import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
 import { logAudit } from "@/lib/auditLog";
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await pool.query(
       `SELECT
-         o.id, o.plate, o.customer_name, o.notes, o.status, o.created_at,
+         o.id, o.custom_order_no, o.plate, o.customer_name, o.notes, o.status, o.created_at,
          os.id AS line_id, s.name AS service_name,
          os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.quantity, os.unit_price, os.cost_price,
          COALESCE(os.payment_type, o.payment_type) AS payment_type,
@@ -172,13 +172,24 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    const { plate, customer_name, customer_phone, notes, lines, order_date } = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, order_date, custom_order_no } = await request.json();
 
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json(
         { error: "Plaka ve en az bir satır zorunludur." },
         { status: 400 }
       );
+    }
+    // Manuel Sipariş No (bkz. database/schema.sql notu) — sadece firma bunu
+    // Genel Ayarlar'dan açtıysa zorunlu; kapalıyken istemciden gelen herhangi
+    // bir değer YOK sayılır (istemciye güvenilmez, ayar her zaman sunucudan
+    // taze okunur). orders.id'ye hiç dokunulmaz, bu tamamen ayrı bir alan.
+    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
+    const customOrderNo = customOrderNoEnabled
+      ? String(custom_order_no ?? "").trim().slice(0, 50)
+      : null;
+    if (customOrderNoEnabled && !customOrderNo) {
+      return NextResponse.json({ error: "Sipariş numarası zorunludur." }, { status: 400 });
     }
     // Geçmişe dönük giriş (ör. "2 gün önce girmeyi unuttuğum sipariş") —
     // gönderilmezse mevcut davranış (CURRENT_TIMESTAMP) aynen sürer. Gelecek
@@ -228,9 +239,9 @@ export async function POST(request: NextRequest) {
       }
 
       const orderResult = await client.query(
-        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', COALESCE($7, CURRENT_TIMESTAMP)) RETURNING id`,
-        [user.tenantId, plate, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt]
+        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, created_at, custom_order_no)
+         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', COALESCE($7, CURRENT_TIMESTAMP), $8) RETURNING id`,
+        [user.tenantId, plate, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt, customOrderNo]
       );
 
       const orderId = orderResult.rows[0].id;
@@ -272,6 +283,11 @@ export async function POST(request: NextRequest) {
       await client.query("ROLLBACK");
       if (err instanceof InsufficientStockError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      // orders_tenant_custom_order_no_unique — aynı firmada aynı Sipariş No
+      // ikinci kez kullanılmaya çalışıldı (bkz. database/schema.sql).
+      if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+        return NextResponse.json({ error: "Bu sipariş numarası zaten kullanılıyor." }, { status: 409 });
       }
       throw err;
     } finally {

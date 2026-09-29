@@ -33,6 +33,7 @@ export default function GeneralSettingsPage() {
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
   const [ordersDefaultDateFilter, setOrdersDefaultDateFilter] = useState("");
+  const [customOrderNoEnabled, setCustomOrderNoEnabled] = useState(false);
   // Randevu Ayarları sayfasının düzenlediği WhatsApp alanları — aynı sebeple
   // (yukarıdaki widget yorumuna bkz.) burada da olduğu gibi korunması
   // gerekiyor. Token burada hiç tutulmuyor/gönderilmiyor — boş string PUT'ta
@@ -80,6 +81,7 @@ export default function GeneralSettingsPage() {
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setOrdersDefaultDateFilter(data.orders_default_date_filter ?? "");
+        setCustomOrderNoEnabled(!!data.custom_order_no_enabled);
         setWhatsappEnabled(!!data.whatsapp_enabled);
         setSharedStockEnabled(!!data.shared_stock_enabled);
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
@@ -155,6 +157,7 @@ export default function GeneralSettingsPage() {
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
           auto_register_customers: autoRegisterCustomers,
           orders_default_date_filter: ordersDefaultDateFilter,
+          custom_order_no_enabled: customOrderNoEnabled,
           whatsapp_enabled: whatsappEnabled,
           shared_stock_enabled: sharedStockEnabled,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
@@ -396,6 +399,19 @@ export default function GeneralSettingsPage() {
         <p className="text-xs text-gray-400 mt-1">
           Sipariş Listesi sayfası açıldığında bu tarih aralığı varsayılan olarak uygulanır.
         </p>
+
+        <div className="flex items-center justify-between mt-5 pt-5 border-t border-gray-100">
+          <div>
+            <div className="text-sm font-medium text-gray-700">Sipariş Numarasını Elle Gir</div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Açarsanız yeni sipariş oluştururken &ldquo;Sipariş No&rdquo; alanı zorunlu olarak elle
+              girilir (ör. kendi eski numaralandırma sisteminizden gelen bir numara) ve listede/
+              belgelerde o gösterilir. Kapatırsanız (varsayılan) sistem otomatik numara (#id) atamaya
+              devam eder. Daha önce girilmiş siparişler bundan etkilenmez.
+            </p>
+          </div>
+          <Switch checked={customOrderNoEnabled} onClick={() => setCustomOrderNoEnabled((v) => !v)} />
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">

@@ -270,6 +270,11 @@ export default function OrderPage() {
   // bkz. src/app/api/reports/route.ts) bu tek başına doğru güne düşmesi
   // için yeterli.
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Genel Ayarlar'dan açılan firmalarda (bkz. /api/auth/me, admin/settings)
+  // zorunlu elle Sipariş No — orders.id'ye hiç dokunmaz, ayrı görüntüleme
+  // alanıdır (bkz. database/schema.sql).
+  const [customOrderNoEnabled, setCustomOrderNoEnabled] = useState(false);
+  const [customOrderNo, setCustomOrderNo] = useState("");
   const [loading, setLoading] = useState(false);
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
   // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
@@ -300,6 +305,7 @@ export default function OrderPage() {
         setPanelPath(getDefaultAdminPath(user));
         setBusinessName(user.business_name || "");
         setPanelLogoUrl(user.panel_logo_url || null);
+        setCustomOrderNoEnabled(!!user.custom_order_no_enabled);
       })
       .catch(() => { });
 
@@ -429,6 +435,10 @@ export default function OrderPage() {
       toast.error("Araç plakası zorunludur.");
       return;
     }
+    if (customOrderNoEnabled && !customOrderNo.trim()) {
+      toast.error("Sipariş numarası zorunludur.");
+      return;
+    }
     const validLines = lines.filter((l) => l.service_name.trim());
     if (validLines.length === 0) {
       toast.error("En az bir işlem satırı giriniz.");
@@ -447,6 +457,7 @@ export default function OrderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plate: plate.replace(/\s+/g, "").toUpperCase(),
+          custom_order_no: customOrderNoEnabled ? customOrderNo.trim() : undefined,
           customer_name: customerName.trim() || null,
           customer_phone: customerPhone.trim() || null,
           notes: notes.trim() || null,
@@ -473,6 +484,7 @@ export default function OrderPage() {
 
       toast.success("Sipariş başarıyla kaydedildi!");
       setPlate("");
+      setCustomOrderNo("");
       setCustomerName("");
       setCustomerPhone("");
       setNotes("");
@@ -547,6 +559,20 @@ export default function OrderPage() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {customOrderNoEnabled && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sipariş No <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={customOrderNo}
+                    onChange={(e) => setCustomOrderNo(e.target.value)}
+                    placeholder="Kendi sipariş numaranız"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Tarih

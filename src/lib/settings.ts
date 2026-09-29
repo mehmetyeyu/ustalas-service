@@ -38,6 +38,7 @@ export interface AppSettings {
   whatsapp_business_account_id: string | null;
   whatsapp_template_name: string | null;
   shared_stock_enabled: boolean;
+  custom_order_no_enabled: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -66,6 +67,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   whatsapp_business_account_id: null,
   whatsapp_template_name: null,
   shared_stock_enabled: false,
+  custom_order_no_enabled: false,
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -78,7 +80,7 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_radius, booking_widget_density, booking_widget_heading_size,
             auto_register_customers, orders_default_date_filter, whatsapp_enabled, whatsapp_access_token,
             whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
-            shared_stock_enabled
+            shared_stock_enabled, custom_order_no_enabled
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -101,6 +103,17 @@ export async function getAutoRegisterCustomers(tenantId: number): Promise<boolea
     [tenantId]
   );
   return result.rows[0]?.auto_register_customers ?? true;
+}
+
+// POST/PUT /api/orders'ın her istekte ihtiyaç duyduğu — Sipariş No'nun elle mi
+// girileceği (custom_order_no zorunlu) yoksa otomatik mi (#id) kalacağı.
+// getAutoRegisterCustomers ile aynı "tek kolonluk ucuz sorgu" deseni.
+export async function getCustomOrderNoEnabled(tenantId: number): Promise<boolean> {
+  const result = await pool.query<{ custom_order_no_enabled: boolean }>(
+    "SELECT custom_order_no_enabled FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
+  );
+  return result.rows[0]?.custom_order_no_enabled ?? false;
 }
 
 // /api/auth/me gibi çok sık çağrılan yollarda (her admin sayfası mount'unda,

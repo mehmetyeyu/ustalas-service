@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { parseOrderRows } from "./ordersExcel";
 
 // Sütun sırası: Tarih, Müşteri, Plaka, Yapılan İşlem, Tedarikçi, Stok Kodu,
-// Ebat, Adet, Tutar, Maliyet, Ödeme Şekli, Açıklama.
-const HEADER = ["Tarih", "Müşteri", "Plaka", "Yapılan İşlem", "Tedarikçi", "Stok Kodu", "Ebat", "Adet", "Tutar", "Maliyet", "Ödeme Şekli", "Açıklama"];
+// Ebat, Adet, Tutar, Maliyet, Ödeme Şekli, Açıklama, Sipariş No.
+const HEADER = ["Tarih", "Müşteri", "Plaka", "Yapılan İşlem", "Tedarikçi", "Stok Kodu", "Ebat", "Adet", "Tutar", "Maliyet", "Ödeme Şekli", "Açıklama", "Sipariş No"];
 
 // 46235 = 2026-08-01, 46236 = 2026-08-02 (Excel seri tarihi, dosya başındaki
 // yorumla ve bu oturumda gerçek bir hesapla doğrulandı).
@@ -13,12 +13,13 @@ const DAY2 = 46236;
 function row(fields: {
   date?: number; customer?: string; plate?: string; service?: string; supplier?: string;
   stockCode?: string; size?: string; qty?: number | string; amount?: number; cost?: number;
-  paymentType?: string; note?: string;
+  paymentType?: string; note?: string; customOrderNo?: string;
 }): unknown[] {
   return [
     fields.date ?? "", fields.customer ?? "", fields.plate ?? "", fields.service ?? "",
     fields.supplier ?? "", fields.stockCode ?? "", fields.size ?? "", fields.qty ?? "",
     fields.amount ?? "", fields.cost ?? "", fields.paymentType ?? "", fields.note ?? "",
+    fields.customOrderNo ?? "",
   ];
 }
 
@@ -154,5 +155,33 @@ describe("parseOrderRows", () => {
     ];
     const { orders } = parseOrderRows(rows, FLAT_TYPES);
     expect(orders).toHaveLength(2);
+  });
+
+  it("'Sipariş No' sütunu doluysa custom_order_no'ya yazar", () => {
+    const rows = [HEADER, row({ date: DAY1, customer: "Ahmet", plate: "34 ABC 1", service: "Balans", amount: 500, customOrderNo: "FB-1001" })];
+    const { orders } = parseOrderRows(rows, FLAT_TYPES);
+    expect(orders[0].custom_order_no).toBe("FB-1001");
+  });
+
+  it("'Sipariş No' sütunu boşsa veya yoksa custom_order_no null kalır", () => {
+    const rows = [HEADER, row({ date: DAY1, customer: "Ahmet", plate: "34 ABC 1", service: "Balans", amount: 500 })];
+    const { orders } = parseOrderRows(rows, FLAT_TYPES);
+    expect(orders[0].custom_order_no).toBeNull();
+
+    const noColumnHeader = HEADER.slice(0, -1);
+    const noColumnRow = row({ date: DAY1, customer: "Ahmet", plate: "34 ABC 1", service: "Balans", amount: 500 }).slice(0, -1);
+    const { orders: orders2 } = parseOrderRows([noColumnHeader, noColumnRow], FLAT_TYPES);
+    expect(orders2[0].custom_order_no).toBeNull();
+  });
+
+  it("aynı gruptaki ilk satırın 'Sipariş No' değerini kullanır, sonraki satırlarda tekrar okumaz", () => {
+    const rows = [
+      HEADER,
+      row({ date: DAY1, customer: "Ahmet", plate: "34 ABC 1", service: "Balans", amount: 500, customOrderNo: "FB-1002" }),
+      row({ date: DAY1, customer: "Ahmet", plate: "34 ABC 1", service: "Rot Ayarı", amount: 300 }),
+    ];
+    const { orders } = parseOrderRows(rows, FLAT_TYPES);
+    expect(orders).toHaveLength(1);
+    expect(orders[0].custom_order_no).toBe("FB-1002");
   });
 });

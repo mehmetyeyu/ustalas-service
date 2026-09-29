@@ -22,6 +22,10 @@ interface AuthUser {
   // bunlarla shouldShowOnboardingTour()'u çağırır.
   isPrimaryAdmin: boolean;
   onboardingTourCompletedAt: string | null;
+  // Genel Ayarlar'daki "Sipariş Numarasını Elle Gir" (bkz. database/schema.sql
+  // custom_order_no notu) — Randevular'daki "Siparişe Dönüştür" gibi
+  // /api/orders POST'un DIŞINDA sipariş oluşturan ekranların bunu bilmesi için.
+  customOrderNoEnabled: boolean;
 }
 
 interface AuthState {
@@ -52,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
                 billingLastPaymentError: data.billing_last_payment_error ?? null,
                 isPrimaryAdmin: !!data.is_primary_admin, onboardingTourCompletedAt: data.onboarding_tour_completed_at ?? null,
+                customOrderNoEnabled: !!data.custom_order_no_enabled,
               }
             : null,
           loading: false,

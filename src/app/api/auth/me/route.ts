@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
-import { getBusinessName } from "@/lib/settings";
+import { getBusinessName, getCustomOrderNoEnabled } from "@/lib/settings";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -12,6 +12,10 @@ export async function GET() {
   // çok sık çağrıldığından (her admin sayfası mount'unda) getAppSettings()'in
   // 22 kolonluk sorgusu yerine tek kolonluk ucuz bir sorgu kullanılıyor.
   const business_name = await getBusinessName(user.tenantId!);
+  // "/" Karşılama Görevlisi ekranı, admin-only /api/settings'i çağıramayan
+  // (personel) kullanıcılar için bu Sipariş No zorunluluğunu buradan
+  // öğrenir — bu uç zaten her sayfa mount'unda çekiliyor, ekstra istek yok.
+  const custom_order_no_enabled = await getCustomOrderNoEnabled(user.tenantId!);
   // panel_logo_url ayarlanmışsa header'da business_name metni yerine bu
   // gösterilir (bkz. admin/layout.tsx) — tenants tablosunda (app_settings
   // değil), tek kolonluk ayrı ama yine ucuz bir sorgu.
@@ -26,5 +30,6 @@ export async function GET() {
     billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? false, billing_period_ends_at: user.billingPeriodEndsAt ?? null,
     billing_last_payment_error: user.billingLastPaymentError ?? null,
     is_primary_admin: user.isPrimaryAdmin ?? false, onboarding_tour_completed_at: user.onboardingTourCompletedAt ?? null,
+    custom_order_no_enabled,
   });
 }

@@ -13,6 +13,8 @@ import { escapeHtml } from "@/lib/htmlEscape";
 
 interface OrderDetail {
   id: number;
+  custom_order_no: string | null;
+  custom_order_no_enabled: boolean;
   plate: string;
   customer_name: string | null;
   customer_phone: string | null;
@@ -383,6 +385,7 @@ function OrderDetailPageInner() {
   // Düzenleme
   const [editing, setEditing] = useState(false);
   const [editPlate, setEditPlate] = useState("");
+  const [editCustomOrderNo, setEditCustomOrderNo] = useState("");
   const [editCustomerName, setEditCustomerName] = useState("");
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
@@ -535,7 +538,7 @@ function OrderDetailPageInner() {
     </div>
     <div class="title">
       <h2>İŞ EMRİ</h2>
-      <div>Sipariş #${order.id}</div>
+      <div>Sipariş ${order.custom_order_no ? escapeHtml(order.custom_order_no) : "#" + order.id}</div>
       <div>${formatDate(order.created_at)}</div>
     </div>
   </div>
@@ -575,6 +578,18 @@ function OrderDetailPageInner() {
   function openEdit() {
     if (!order) return;
     setEditPlate(order.plate);
+    // Bu sipariş ayar KAPALIYKEN oluşturulmuşsa custom_order_no null'dur —
+    // ama sonradan ayar açılıp bu siparişi düzenlemeye çalışınca alan boş VE
+    // zorunlu gelir, kullanıcı hiçbir şey yazmadan kaydedemez (gerçek bir
+    // kullanıcı geri bildirimiyle bulundu). Çıplak id'yi (# İŞARETSİZ) ön
+    // dolgu yaparak kullanıcı hiçbir şey değiştirmeden kaydedebilir — elle
+    // girilen gerçek numaralarla (ör. "FB-2024-001") aynı temiz formatta
+    // kalır, başında yapay bir "#" olmaz. Bunun bedeli: değiştirmeden
+    // kaydedilirse görünüm "#id"den "id"ye döner (hash işareti kaybolur) —
+    // bilinçli bir tercih. Alan zaten custom_order_no VEYA ayar açık
+    // değilse hiç gösterilmiyor (bkz. JSX), o yüzden burada koşulsuz id'ye
+    // düşmek güvenli.
+    setEditCustomOrderNo(order.custom_order_no || String(order.id));
     setEditCustomerName(order.customer_name || "");
     setEditCustomerPhone(order.customer_phone || "");
     setEditNotes(order.notes || "");
@@ -789,6 +804,10 @@ function OrderDetailPageInner() {
       toast.error("Araç plakası zorunludur.");
       return;
     }
+    if (order?.custom_order_no_enabled && !editCustomOrderNo.trim()) {
+      toast.error("Sipariş numarası zorunludur.");
+      return;
+    }
     const validLines = editLines.filter((l) => l.service_name.trim());
     if (validLines.length === 0) {
       toast.error("En az bir işlem satırı giriniz.");
@@ -821,6 +840,7 @@ function OrderDetailPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plate: editPlate.replace(/\s+/g, "").toUpperCase(),
+          custom_order_no: (order?.custom_order_no_enabled || order?.custom_order_no) ? editCustomOrderNo.trim() : undefined,
           customer_name: editCustomerName.trim() || null,
           customer_phone: editCustomerPhone.trim() || null,
           notes: editNotes.trim() || null,
@@ -952,7 +972,7 @@ function OrderDetailPageInner() {
             </button>
 
             <div className="flex items-center justify-between mb-6">
-              <h1 className="text-xl font-bold text-gray-800">Sipariş #{order.id} — Düzelt</h1>
+              <h1 className="text-xl font-bold text-gray-800">Sipariş {order.custom_order_no || `#${order.id}`} — Düzelt</h1>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
@@ -967,6 +987,25 @@ function OrderDetailPageInner() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {/* Ayar sonradan kapatılmış olsa bile, bu sipariş zaten bir
+                  numaraya sahipse alan yine gösterilir — kullanıcı
+                  düzeltebilir veya bilerek boşaltıp #id'ye döndürebilir
+                  (bkz. PUT /api/orders/[id] notu). Zorunluluk sadece firma
+                  ayarı gerçekten açıkken geçerli, o yüzden yıldız da ona bağlı. */}
+              {(order.custom_order_no_enabled || order.custom_order_no) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sipariş No {order.custom_order_no_enabled && <span className="text-red-500">*</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={editCustomOrderNo}
+                    onChange={(e) => setEditCustomOrderNo(e.target.value)}
+                    placeholder={order.custom_order_no_enabled ? undefined : "Boş bırakılırsa otomatik #id kullanılır"}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Müşteri Adı</label>
                 <SearchableCombobox
@@ -1489,7 +1528,7 @@ function OrderDetailPageInner() {
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h1 className="text-3xl font-bold font-mono text-gray-800">{order.plate}</h1>
-                <p className="text-gray-500 text-sm mt-1">Sipariş #{order.id}</p>
+                <p className="text-gray-500 text-sm mt-1">Sipariş {order.custom_order_no || `#${order.id}`}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button

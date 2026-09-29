@@ -161,9 +161,13 @@ const COLUMNS: OrderColumnDef[] = [
   {
     key: "order_no", label: "Sipariş No", defaultVisible: true, narrow: true, skeletonWidth: "w-10",
     tdClassName: "px-2 py-3 whitespace-nowrap",
+    // custom_order_no doluysa (bkz. database/schema.sql — firma Genel
+    // Ayarlar'dan elle numara girişini açtıysa) o gösterilir, aksi halde
+    // hep otomatik #id — eski siparişlerde bu alan boş olduğundan görünüm
+    // hiç değişmez.
     cell: (r) => (
       <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
-        #{r.id}
+        {r.custom_order_no || `#${r.id}`}
       </Link>
     ),
   },
@@ -259,6 +263,7 @@ const SKELETON_ROWS = 8;
 
 interface OrderRow {
   id: number;
+  custom_order_no: string | null;
   plate: string;
   customer_name: string | null;
   notes: string | null;
@@ -740,6 +745,7 @@ export default function OrdersPage() {
       let duplicates = 0;
       let changedDuplicates = 0;
       let productsAdded = 0;
+      let duplicateOrderNo = 0;
       for (const batch of batches) {
         const res = await fetch("/api/orders/import", {
           method: "POST",
@@ -760,6 +766,7 @@ export default function OrdersPage() {
         duplicates += data.duplicates ?? 0;
         changedDuplicates += data.changedDuplicates ?? 0;
         productsAdded += data.productsAdded ?? 0;
+        duplicateOrderNo += data.duplicateOrderNo ?? 0;
         setImportProgress((prev) => ({ ...prev, current: Math.min(prev.total, prev.current + batch.length) }));
       }
 
@@ -769,10 +776,13 @@ export default function OrdersPage() {
         (changedDuplicates
           ? ` DİKKAT: bunlardan ${changedDuplicates} tanesinde şu anki dosyadaki satır sayısı kayıtlı siparişten farklı — dosyaya sonradan satır eklenmiş olabilir, bu satırlar aktarılmadı, elle kontrol edin.`
           : "") +
+        (duplicateOrderNo
+          ? ` DİKKAT: ${duplicateOrderNo} sipariş, Sipariş No sütunundaki numara başka bir siparişte zaten kullanıldığı için aktarılamadı.`
+          : "") +
         (parsed.skipped ? ` ${parsed.skipped} satır tarih/işlem bilgisi olmadığı için atlandı.` : "") +
         (productsAdded ? ` Ürün kataloğuna eksik olan ${productsAdded} ürün kodu eklendi.` : "")
       );
-      setImportHasWarning(changedDuplicates > 0);
+      setImportHasWarning(changedDuplicates > 0 || duplicateOrderNo > 0);
       setPage(1);
       await fetchOrders(1);
     } catch {

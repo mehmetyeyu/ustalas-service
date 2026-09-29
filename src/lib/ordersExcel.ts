@@ -19,6 +19,12 @@ export interface ParsedOrder {
   customer_name: string | null;
   payment_type: string | null;
   notes: string | null;
+  // Yalnızca kaynak dosyada "Sipariş No" sütunu VE değeri doluysa set edilir —
+  // firma Genel Ayarlar'dan elle numara girişini açmamışsa (veya bu geçmiş
+  // satırda numara bilinmiyorsa) null kalır, o zaman içe aktarılan sipariş
+  // her yerde olduğu gibi otomatik #id ile görünür (bkz. database/schema.sql
+  // custom_order_no notu — sunucu tarafı da ayrıca doğrular, /api/orders/import).
+  custom_order_no: string | null;
   lines: ParsedOrderLine[];
 }
 
@@ -45,6 +51,7 @@ const HEADER_MAP: Record<string, string> = {
   "maliyet": "cost_price",
   "ödeme şekli": "payment_type",
   "açıklama": "note",
+  "sipariş no": "custom_order_no",
 };
 
 function toText(val: unknown): string {
@@ -124,6 +131,7 @@ export function parseOrderRows(
         customer_name: customerName || null,
         payment_type: null,
         notes: null,
+        custom_order_no: colIndex.custom_order_no !== undefined ? toText(r[colIndex.custom_order_no]) || null : null,
         lines: [],
       };
       groups.set(groupKey, order);

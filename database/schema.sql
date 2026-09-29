@@ -1517,3 +1517,46 @@ CREATE TABLE IF NOT EXISTS calendar_notes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS calendar_notes_tenant_date_idx ON calendar_notes(tenant_id, note_date);
+
+-- Manuel Sipariş Numarası — bazı firmalar (ör. FB Lastik) sipariş numarasını
+-- kendi eski sistemlerinden/kağıt takibinden geldiği gibi elle girmek
+-- istiyor. Bilinçli olarak `orders.id` (otomatik artan birincil anahtar,
+-- tüm ilişkiler/route'lar/URL'ler bunu kullanır) DEĞİŞTİRİLMEDİ — onun
+-- yerine tamamen ayrı, opsiyonel bir görüntüleme alanı eklendi. Varsayılan
+-- (custom_order_no_enabled=false) davranışta bu sütun hep NULL kalır ve
+-- her yerde "#id" gösterimi aynen sürer — hem diğer firmalar hem de bu
+-- özelliği SONRADAN açan bir firmanın DAHA ÖNCEKİ siparişleri hiç
+-- etkilenmez (bkz. src/app/admin/orders/page.tsx, [id]/page.tsx —
+-- custom_order_no null ise fallback #id).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS custom_order_no VARCHAR(50);
+-- Benzersizlik SADECE aynı firma içinde aranır (tenant_id, custom_order_no)
+-- — ve sadece dolu olan satırlar arasında (WHERE ... IS NOT NULL), aksi
+-- halde NULL/NULL çiftleri (özelliği hiç kullanmayan tüm firmalar) birbirine
+-- çakışırdı (Postgres normalde NULL'ları zaten eşit saymaz ama açıkça
+-- filtrelemek niyeti nettleştiriyor).
+CREATE UNIQUE INDEX IF NOT EXISTS orders_tenant_custom_order_no_unique
+  ON orders(tenant_id, custom_order_no) WHERE custom_order_no IS NOT NULL;
+
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS custom_order_no_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- Bir sipariş silinirken, randevu üzerinden dönüştürülmüşse appointments.
+-- order_id hâlâ o siparişe işaret ettiğinden FK ihlaliyle SİLME BAŞARISIZ
+-- oluyordu (gerçek bir test sırasında bulundu — Sipariş No özelliğiyle
+-- ilgisiz, önceden beri var olan bir hata). Randevu kaydının kendisi
+-- (müşterinin randevu talebi) anlamlı bir geçmiş kaydı — sipariş silinince
+-- CASCADE ile o da kaybolmamalı, sadece "dönüştürülmüş" bağlantısı (order_id)
+-- kopmalı; bu yüzden CASCADE değil SET NULL. status alanı bilerek
+-- TAMAMLANDI'da kalır (otomatik geri alma bir tetikleyici gerektirir, bu
+-- fazın kapsamı sadece silmenin artık BAŞARILI olmasıdır).
+ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_order_id_fkey;
+ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_order_tenant_fk;
+DO $$ BEGIN
+  ALTER TABLE appointments ADD CONSTRAINT appointments_order_id_fkey
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE appointments ADD CONSTRAINT appointments_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

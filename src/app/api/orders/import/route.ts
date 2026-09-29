@@ -5,7 +5,7 @@ import { ParsedOrder } from "@/lib/ordersExcel";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { hasPermission } from "@/lib/permissions";
-import { getAutoRegisterCustomers } from "@/lib/settings";
+import { getAutoRegisterCustomers, getCustomOrderNoEnabled } from "@/lib/settings";
 
 const MAX_BATCH_SIZE = 20;
 
@@ -28,11 +28,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Firma bunu açtıysa (bkz. database/schema.sql custom_order_no notu)
+    // Excel'deki "Sipariş No" sütunu kullanılır — ama bu TOPLU/geçmiş veri
+    // aktarımı olduğundan, Sipariş Oluşturma ekranındaki gibi KATI bir
+    // zorunluluk uygulanmaz: numarası olmayan/boş satırlar yine de içe
+    // aktarılır (o siparişler her yerdeki gibi #id'ye düşer), tüm parti tek
+    // bir eksik hücre yüzünden reddedilmez. Ayar kapalıysa istemciden gelen
+    // olası bir değer YOK sayılır (istemciye güvenilmez, diğer uçlarla aynı desen).
+    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
+
     const client = await pool.connect();
     let imported = 0;
     let duplicates = 0;
     let changedDuplicates = 0;
     let productsAdded = 0;
+    let duplicateOrderNo = 0;
     try {
       const allLines = orders.flatMap((o) => o.lines);
       const serviceIdByName = await resolveServiceIds(client, user.tenantId!, allLines);
@@ -92,13 +102,14 @@ export async function POST(request: NextRequest) {
           const paidAmount = isPending ? null : totalAmount;
           const paymentDate = isPending ? null : order.date;
 
+          const customOrderNo = customOrderNoEnabled ? (order.custom_order_no || null) : null;
           const orderResult = await client.query<{ id: number }>(
             `INSERT INTO orders
-               (tenant_id, plate, customer_name, notes, total_amount, paid_amount, status, payment_type, payment_date, created_at, import_ref)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               (tenant_id, plate, customer_name, notes, total_amount, paid_amount, status, payment_type, payment_date, created_at, import_ref, custom_order_no)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              ON CONFLICT (tenant_id, import_ref) DO NOTHING
              RETURNING id`,
-            [user.tenantId, order.plate, order.customer_name, order.notes, totalAmount, paidAmount, status, order.payment_type, paymentDate, order.date, order.import_ref]
+            [user.tenantId, order.plate, order.customer_name, order.notes, totalAmount, paidAmount, status, order.payment_type, paymentDate, order.date, order.import_ref, customOrderNo]
           );
 
           if (orderResult.rows.length === 0) {
@@ -138,6 +149,14 @@ export async function POST(request: NextRequest) {
           imported++;
         } catch (err) {
           await client.query("ROLLBACK");
+          // orders_tenant_custom_order_no_unique — kaynak dosyada aynı Sipariş
+          // No'ya sahip iki farklı grup var, ya da bu numara başka bir siparişte
+          // zaten kullanılıyor. Tüm partiyi durdurmak yerine bu siparişi atlayıp
+          // devam edilir (importCount'a değil ayrı bir sayaca yansır).
+          if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+            duplicateOrderNo++;
+            continue;
+          }
           throw err;
         }
       }
@@ -145,7 +164,7 @@ export async function POST(request: NextRequest) {
       client.release();
     }
 
-    return NextResponse.json({ imported, duplicates, changedDuplicates, productsAdded });
+    return NextResponse.json({ imported, duplicates, changedDuplicates, productsAdded, duplicateOrderNo });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

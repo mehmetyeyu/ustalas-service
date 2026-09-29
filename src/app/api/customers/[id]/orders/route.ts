@@ -31,7 +31,7 @@ export async function GET(
     }
 
     const ordersResult = await pool.query(
-      `SELECT id, plate, total_amount, paid_amount, status, payment_type, created_at
+      `SELECT id, custom_order_no, plate, total_amount, paid_amount, status, payment_type, created_at
        FROM orders WHERE customer_name = $1 AND tenant_id = $2
        ORDER BY created_at DESC`,
       [customerResult.rows[0].name, user.tenantId]

@@ -19,6 +19,17 @@ export class AppointmentAlreadyConvertedError extends Error {
   }
 }
 
+// Firma Genel Ayarlar'dan "Sipariş Numarasını Elle Gir"i açtıysa (bkz.
+// database/schema.sql custom_order_no notu), /api/orders POST'takiyle aynı
+// kural bu YOLDAN oluşan siparişler için de geçerli — aksi halde Randevu
+// üzerinden dönüştürülen siparişler sessizce numaralandırmanın dışında kalırdı.
+export class CustomOrderNoRequiredError extends Error {
+  constructor() {
+    super("Sipariş numarası zorunludur.");
+    this.name = "CustomOrderNoRequiredError";
+  }
+}
+
 // Onaylanmış bir randevuyu, mevcut Sipariş Oluşturma akışıyla (bkz.
 // POST /api/orders) aynı deseni izleyerek tek satırlı, BEKLEMEDE statülü bir
 // siparişe dönüştürür — paralel bir sipariş-oluşturma mantığı yazılmaz.
@@ -28,7 +39,8 @@ export class AppointmentAlreadyConvertedError extends Error {
 export async function convertAppointmentToOrder(
   client: QueryClient,
   tenantId: number,
-  appointmentId: number
+  appointmentId: number,
+  customOrderNo?: string | null
 ): Promise<number> {
   const apptResult = await client.query<{
     id: number;
@@ -46,6 +58,18 @@ export async function convertAppointmentToOrder(
   const appt = apptResult.rows[0];
   if (!appt) throw new AppointmentNotFoundError();
   if (appt.order_id != null) throw new AppointmentAlreadyConvertedError();
+
+  // Ayar sunucudan taze okunur (çağırana/istemciye güvenilmez) — POST
+  // /api/orders'taki aynı desen.
+  const settingsResult = await client.query<{ custom_order_no_enabled: boolean }>(
+    "SELECT custom_order_no_enabled FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
+  );
+  const customOrderNoEnabled = settingsResult.rows[0]?.custom_order_no_enabled ?? false;
+  const resolvedCustomOrderNo = customOrderNoEnabled ? String(customOrderNo ?? "").trim().slice(0, 50) : null;
+  if (customOrderNoEnabled && !resolvedCustomOrderNo) {
+    throw new CustomOrderNoRequiredError();
+  }
 
   let serviceId: number;
   let unitPrice = 0;
@@ -84,9 +108,9 @@ export async function convertAppointmentToOrder(
   }
 
   const orderResult = await client.query<{ id: number }>(
-    `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE') RETURNING id`,
-    [tenantId, appt.plate, appt.customer_name, appt.customer_phone, appt.notes, unitPrice]
+    `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, custom_order_no)
+     VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', $7) RETURNING id`,
+    [tenantId, appt.plate, appt.customer_name, appt.customer_phone, appt.notes, unitPrice, resolvedCustomOrderNo]
   );
   const orderId = orderResult.rows[0].id;
 

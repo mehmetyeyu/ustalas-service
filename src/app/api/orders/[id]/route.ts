@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
-import { getAppSettings } from "@/lib/settings";
+import { getAppSettings, getCustomOrderNoEnabled } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
@@ -63,7 +63,14 @@ export async function GET(
       [id, user.tenantId]
     );
 
-    return NextResponse.json({ ...orderResult.rows[0], services: servicesResult.rows, payments: paymentsResult.rows });
+    // Düzelt ekranının Sipariş No alanını göstermesi/zorunlu kılması için —
+    // ayrı bir /api/settings çağrısına gerek kalmadan aynı yanıtta gider.
+    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
+
+    return NextResponse.json({
+      ...orderResult.rows[0], services: servicesResult.rows, payments: paymentsResult.rows,
+      custom_order_no_enabled: customOrderNoEnabled,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
@@ -259,7 +266,7 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { plate, customer_name, customer_phone, notes, lines, payments } = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, payments, custom_order_no } = await request.json();
 
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
@@ -268,9 +275,32 @@ export async function PUT(
     // Sipariş gerçekten bu firmaya mı ait — bu kontrol olmadan da
     // order_services'teki composite FK (tenant_id, order_id) yanlış firmaya
     // yazmayı engeller, ama o zaman düzgün bir 404 yerine 500 dönerdi.
-    const ownershipCheck = await pool.query("SELECT id FROM orders WHERE id = $1 AND tenant_id = $2", [id, user.tenantId]);
+    const ownershipCheck = await pool.query<{ id: number; custom_order_no: string | null }>(
+      "SELECT id, custom_order_no FROM orders WHERE id = $1 AND tenant_id = $2",
+      [id, user.tenantId]
+    );
     if (ownershipCheck.rowCount === 0) {
       return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
+    }
+
+    // Manuel Sipariş No — bkz. POST /api/orders'taki aynı gerekçe/desen, artı
+    // bir farkla: ayar SONRADAN kapatılmış olsa bile, bu sipariş zaten bir
+    // numaraya sahipse istemci (Düzelt ekranı) o alanı hâlâ gösterir/gönderir
+    // — kullanıcı isterse düzeltebilir, isterse bilerek boşaltıp #id'ye
+    // döndürebilir. Alan hiç gönderilmediyse (custom_order_no === undefined,
+    // yani bu siparişte hiç numara yoktu VE ayar da kapalıydı) mevcut değere
+    // (zaten null) dokunulmaz.
+    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
+    let customOrderNo: string | null;
+    if (customOrderNoEnabled) {
+      customOrderNo = String(custom_order_no ?? "").trim().slice(0, 50);
+      if (!customOrderNo) {
+        return NextResponse.json({ error: "Sipariş numarası zorunludur." }, { status: 400 });
+      }
+    } else if (custom_order_no !== undefined) {
+      customOrderNo = String(custom_order_no ?? "").trim().slice(0, 50) || null;
+    } else {
+      customOrderNo = ownershipCheck.rows[0].custom_order_no;
     }
 
     // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
@@ -387,11 +417,15 @@ export async function PUT(
         ? editedPaymentsTotal
         : (oldPaid == null ? null : (oldPaid === oldTotal ? totalAmount : oldPaid));
 
+      // customOrderNo yukarıda zaten doğru şekilde çözüldü (ayar açıksa yeni
+      // doğrulanmış değer; kapalıyken alan gönderildiyse kullanıcının
+      // düzenlediği/bilerek boşalttığı değer; hiç gönderilmediyse mevcut
+      // değer) — burada doğrudan yazılır, ayrıca bir CASE'e gerek yok.
       await client.query(
         `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
-                            total_amount = $5, paid_amount = $6
+                            total_amount = $5, paid_amount = $6, custom_order_no = $9
          WHERE id = $7 AND tenant_id = $8`,
-        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId]
+        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo]
       );
 
       const existingResult = await client.query<{ id: number; product_id: number | null; quantity: number }>(
@@ -506,6 +540,9 @@ export async function PUT(
       }
       if (err instanceof LedgerCustomerRequiredError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+        return NextResponse.json({ error: "Bu sipariş numarası zaten kullanılıyor." }, { status: 409 });
       }
       throw err;
     } finally {

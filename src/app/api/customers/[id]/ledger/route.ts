@@ -40,7 +40,8 @@ export async function GET(
     const entriesResult = await pool.query(
       `SELECT cle.id, cle.entry_type, cle.direction, cle.amount::float AS amount, cle.payment_type,
               cle.entry_date::text AS entry_date, cle.note, cle.order_id, cle.kasa_id,
-              o.plate AS order_plate, o.total_amount::float AS order_total_amount,
+              o.plate AS order_plate, o.custom_order_no AS order_custom_order_no,
+              o.total_amount::float AS order_total_amount,
               o.paid_amount::float AS order_paid_amount, o.notes AS order_notes,
               (SELECT json_agg(json_build_object(
                  'name', s.name, 'quantity', os.quantity, 'size_desc', os.size_desc,

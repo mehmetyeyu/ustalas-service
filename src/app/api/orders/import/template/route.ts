@@ -12,11 +12,15 @@ export async function GET() {
   // eşleşme başlık metnine göre yapılır) — bkz. src/lib/ordersExcel.ts.
   // Aynı Tarih+Müşteri+Plaka'ya sahip satırlar tek siparişte gruplanır (her
   // satır bir işlem/ürün kalemidir); Tarih, Plaka ve Yapılan İşlem zorunludur.
+  // "Sipariş No" tamamen opsiyoneldir — yalnızca Genel Ayarlar'dan "Sipariş
+  // Numarasını Elle Gir"i açmış firmalar için anlamlıdır (bkz.
+  // database/schema.sql custom_order_no notu); boş bırakılırsa (çoğu firma)
+  // içe aktarılan sipariş her zamanki gibi otomatik #id ile görünür.
   const buffer = buildTemplateBuffer(
     "Sipariş Şablonu",
-    ["Tarih", "Müşteri", "Plaka", "Yapılan İşlem", "Tedarikçi", "Stok Kodu", "Ebat", "Adet", "Tutar", "Maliyet", "Ödeme Şekli", "Açıklama"],
-    [new Date(), "Örnek Müşteri", "00ORNEK00", "Lastik Değişimi", "ABC Lastik", "ORNEK0001", "205/55R16", 4, 3648, 3040, "Nakit", ""],
-    [12, 18, 12, 18, 16, 12, 12, 6, 10, 10, 14, 20]
+    ["Tarih", "Müşteri", "Plaka", "Yapılan İşlem", "Tedarikçi", "Stok Kodu", "Ebat", "Adet", "Tutar", "Maliyet", "Ödeme Şekli", "Açıklama", "Sipariş No"],
+    [new Date(), "Örnek Müşteri", "00ORNEK00", "Lastik Değişimi", "ABC Lastik", "ORNEK0001", "205/55R16", 4, 3648, 3040, "Nakit", "", ""],
+    [12, 18, 12, 18, 16, 12, 12, 6, 10, 10, 14, 20, 14]
   );
 
   return new NextResponse(buffer, {

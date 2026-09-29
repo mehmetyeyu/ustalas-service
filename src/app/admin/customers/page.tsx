@@ -30,6 +30,7 @@ interface Customer {
 
 interface CustomerOrder {
   id: number;
+  custom_order_no: string | null;
   plate: string;
   total_amount: number | null;
   paid_amount: number | null;
@@ -47,6 +48,7 @@ interface LedgerEntry {
   entry_date: string;
   note: string | null;
   order_id: number | null;
+  order_custom_order_no: string | null;
   order_plate: string | null;
   order_lines: OrderLedgerLine[] | null;
   order_total_amount: number | null;
@@ -547,7 +549,7 @@ export default function CustomersPage() {
                   <tbody className="divide-y divide-gray-100">
                     {customerOrders.map((o) => (
                       <tr key={o.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 font-mono font-semibold text-gray-800 whitespace-nowrap">#{o.id}</td>
+                        <td className="px-3 py-2 font-mono font-semibold text-gray-800 whitespace-nowrap">{o.custom_order_no || `#${o.id}`}</td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(o.created_at)}</td>
                         <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">{o.plate}</td>
                         <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">
@@ -630,7 +632,7 @@ export default function CustomersPage() {
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap align-top">{formatDate(e.entry_date)}</td>
                         <td className="px-3 py-2 text-gray-700 whitespace-nowrap align-top">
                           {e.entry_type === "SIPARIS"
-                            ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">#{e.order_id}</Link>
+                            ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">{e.order_custom_order_no || `#${e.order_id}`}</Link>
                             : "—"}
                         </td>
                         <td className="px-3 py-2 text-gray-700 whitespace-nowrap align-top">

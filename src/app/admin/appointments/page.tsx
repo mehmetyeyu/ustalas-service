@@ -56,6 +56,13 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  // Firma Genel Ayarlar'dan "Sipariş Numarasını Elle Gir"i açtıysa (bkz.
+  // database/schema.sql custom_order_no notu), tek tıkla dönüştürme yerine
+  // önce bu numarayı soran küçük bir modal açılır — Sipariş Oluşturma
+  // ekranındaki zorunluluğun bu yoldan gelen siparişler için de geçerli
+  // kalması için.
+  const [convertModalId, setConvertModalId] = useState<number | null>(null);
+  const [convertOrderNoInput, setConvertOrderNoInput] = useState("");
 
   async function fetchItems() {
     setLoading(true);
@@ -89,11 +96,25 @@ export default function AppointmentsPage() {
     }
   }
 
-  async function convertToOrder(id: number) {
+  function openConvert(id: number) {
+    if (user?.customOrderNoEnabled) {
+      setConvertOrderNoInput("");
+      setConvertModalId(id);
+    } else {
+      convertToOrder(id);
+    }
+  }
+
+  async function convertToOrder(id: number, customOrderNo?: string) {
     setBusyId(id);
     try {
-      const res = await fetch(`/api/appointments/${id}/convert`, { method: "POST" });
+      const res = await fetch(`/api/appointments/${id}/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ custom_order_no: customOrderNo }),
+      });
       if (!res.ok) throw new Error((await res.json()).error || "Dönüştürme başarısız.");
+      setConvertModalId(null);
       await fetchItems();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -207,7 +228,7 @@ export default function AppointmentsPage() {
                             <>
                               <button
                                 disabled={busy}
-                                onClick={() => convertToOrder(a.id)}
+                                onClick={() => openConvert(a.id)}
                                 className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-40"
                               >
                                 Siparişe Dönüştür
@@ -242,6 +263,46 @@ export default function AppointmentsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {convertModalId != null && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setConvertModalId(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold text-gray-800 mb-1">Sipariş Numarası</h2>
+            <p className="text-xs text-gray-400 mb-3">
+              Bu firmada sipariş numaraları elle giriliyor — dönüştürülecek siparişin numarasını girin.
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={convertOrderNoInput}
+              onChange={(e) => setConvertOrderNoInput(e.target.value)}
+              placeholder="Kendi sipariş numaranız"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setConvertModalId(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Vazgeç
+              </button>
+              <button
+                disabled={!convertOrderNoInput.trim() || busyId === convertModalId}
+                onClick={() => convertToOrder(convertModalId, convertOrderNoInput.trim())}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-40"
+              >
+                Dönüştür
+              </button>
+            </div>
           </div>
         </div>
       )}
