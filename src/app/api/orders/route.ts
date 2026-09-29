@@ -61,7 +61,16 @@ export async function GET(request: NextRequest) {
          EXISTS (
            SELECT 1 FROM order_payments op WHERE op.order_id = o.id AND op.tenant_id = o.tenant_id
            GROUP BY op.order_id HAVING COUNT(DISTINCT op.payment_type) > 1
-         ) AS has_split_payment
+         ) AS has_split_payment,
+         -- "Ödeme Al & Kapat" ile hiç kapatılmamış (order_payments'ta hiç satırı
+         -- olmayan) bir siparişin ödeme şekli toplu araçla değiştirilebilirse,
+         -- sipariş "Fatura Edildi." vb. görünüp status hâlâ BEKLEMEDE kalabilir
+         -- (kafa karıştırıcı, gerçek bir tahsilat kaydı yok) — bu bayrak toplu
+         -- araçtaki seçilebilirlik filtresiyle birebir aynı olmalı (bkz.
+         -- bulk-payment-type route).
+         EXISTS (
+           SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id AND op2.tenant_id = o.tenant_id
+         ) AS has_payment_record
        ${fromClause}
        ORDER BY ${orderBy}
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,

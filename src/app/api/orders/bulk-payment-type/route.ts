@@ -84,6 +84,16 @@ export async function PATCH(request: NextRequest) {
          UPDATE order_services os SET payment_type = $1, kasa_id = $4
          WHERE os.id = ANY($2) AND os.tenant_id = $3
            AND os.order_id NOT IN (SELECT order_id FROM mixed_orders)
+           -- Bu araç zaten "Ödeme Al & Kapat" ile kapatılmış siparişlerin ödeme
+           -- ETİKETİNİ düzeltmek içindir, ona ödeme atamak için değil — hiç
+           -- kapatılmamış (order_payments'ta hiç satırı olmayan) bir siparişin
+           -- satırı seçilirse payment_type "Fatura Edildi." gibi görünüp status
+           -- hâlâ BEKLEMEDE kalırdı (gerçek tahsilat kaydı olmadan). Frontend'deki
+           -- has_payment_record filtresiyle (bkz. admin/orders/page.tsx) birebir
+           -- aynı olmalı.
+           AND EXISTS (
+             SELECT 1 FROM order_payments op3 WHERE op3.order_id = os.order_id AND op3.tenant_id = os.tenant_id
+           )
          RETURNING os.order_id`,
         [paymentType, lineIds, user.tenantId, resolvedKasaId]
       );

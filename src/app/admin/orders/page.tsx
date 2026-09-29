@@ -281,6 +281,10 @@ interface OrderRow {
   unit_price: number | null;
   cost_price: number | null;
   has_split_payment: boolean;
+  // Toplu "Ödeme Şeklini Değiştir" için seçilebilirlik koşulu — sadece "Ödeme
+  // Al & Kapat" ile gerçekten kapatılmış (order_payments'ta satırı olan)
+  // siparişler seçilebilir (bkz. visibleSelectableIds ve bulk-payment-type route).
+  has_payment_record: boolean;
   // FIFO Cari uzlaşma sonucu — bkz. /api/orders GET. Sadece payment_type
   // "Cari" olan satırlar için anlamlı; müşterinin sonraki bir ödemesi
   // (parçalı/toplu, en eski borçtan başlayarak) bu siparişin borcunu
@@ -816,12 +820,17 @@ export default function OrdersPage() {
   // + 2: her zaman görünen Statü ve İşlemler sütunları.
   const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 2 + (canEdit ? 1 : 0);
 
-  // Parçalı ödemesi olan (order_payments'ta kaydı olan) siparişlerin satırları
-  // toplu ödeme şekli değiştirmeye dahil edilemez (bkz. bulk-payment-type
-  // route'undaki NOT EXISTS filtresi) — seçilemeyeceklerini kullanıcı işaretlemeyi
-  // denemeden önce görsün diye burada da hariç tutulur.
+  // Parçalı ödemesi olan (order_payments'ta birden fazla farklı tipi kayıtlı)
+  // siparişlerin satırları toplu ödeme şekli değiştirmeye dahil edilemez (bkz.
+  // bulk-payment-type route'undaki mixed_orders filtresi). Ayrıca hiç "Ödeme Al
+  // & Kapat" ile kapatılmamış (order_payments'ta hiç satırı olmayan, hâlâ
+  // BEKLEMEDE) siparişler de hariç tutulur — bu araç sadece zaten kapatılmış bir
+  // siparişin ödeme ETİKETİNİ düzeltmek içindir; aksi halde sipariş "Fatura
+  // Edildi." gibi görünüp status BEKLEMEDE kalabilir (bkz. #933 vakası). Her iki
+  // koşul da bulk-payment-type route'undaki EXISTS/NOT IN filtreleriyle birebir
+  // aynı olmalı — seçilemeyeceklerini kullanıcı işaretlemeyi denemeden önce görsün.
   const visibleSelectableIds = rows
-    .filter((r) => r.line_id != null && !r.has_split_payment)
+    .filter((r) => r.line_id != null && !r.has_split_payment && r.has_payment_record)
     .map((r) => r.line_id as number);
   const allVisibleSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selectedLineIds.has(id));
 
@@ -1364,6 +1373,15 @@ export default function OrdersPage() {
                                   disabled
                                   className="w-4 h-4 accent-gray-300 cursor-not-allowed"
                                   aria-label={`#${r.id} parçalı ödemeli, seçilemez`}
+                                />
+                              </Tooltip>
+                            ) : !r.has_payment_record ? (
+                              <Tooltip align="left" text="Henüz 'Ödeme Al & Kapat' ile kapatılmamış sipariş toplu ödeme şekli değişikliğine dahil edilemez — önce siparişi kapatın.">
+                                <input
+                                  type="checkbox"
+                                  disabled
+                                  className="w-4 h-4 accent-gray-300 cursor-not-allowed"
+                                  aria-label={`#${r.id} henüz kapatılmamış, seçilemez`}
                                 />
                               </Tooltip>
                             ) : (
