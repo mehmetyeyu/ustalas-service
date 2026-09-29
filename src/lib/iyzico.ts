@@ -135,13 +135,28 @@ export async function getPricingPlan(pricingPlanReferenceCode: string): Promise<
 
 // --- Checkout (bkz. /api/billing/checkout, /api/billing/switch-plan, /api/billing/callback) ---
 
+interface IyzicoAddress {
+  contactName: string;
+  city: string;
+  country: string;
+  address: string;
+  zipCode: string;
+}
+
 export interface IyzicoCustomer {
   name: string;
   surname: string;
   email: string;
   gsmNumber?: string;
   identityNumber: string;
-  billingAddress: { contactName: string; city: string; country: string; address: string };
+  billingAddress: IyzicoAddress;
+  // shippingAddress olmadan sandbox'ta "Müşteri telefon numarası zorunlu
+  // alandır" hatası alınıyordu — telefon (gsmNumber) aslında doluydu, gerçek
+  // eksik alan buydu (entegrasyon@iyzico.com'a sorulup doğrulandı, bkz.
+  // [[iyzico_production_golive_checklist]]). billingAddress ile birebir aynı
+  // içerikle gönderilen bir shippingAddress, gerçek bir sandbox çağrısıyla
+  // doğrulanan tek düzeltme — zorunlu, opsiyonel bırakılmadı.
+  shippingAddress: IyzicoAddress;
 }
 
 // iyzico E.164 bekliyor (ör. "+905555555555") — kayıt formlarımızdan gelen
@@ -177,11 +192,22 @@ export function buildCustomerFromTenant(tenant: {
     // TC/vergi no yerine bu placeholder kullanılıyor — sandbox'ta gerçek
     // bir çağrıyla bunun kabul edilip edilmediği doğrulanmalı (bkz. plan).
     identityNumber: "11111111111",
+    // address/zipCode de identityNumber gibi bir yer tutucu — gerçek bir
+    // sokak adresi/posta kodu toplamıyoruz (B2B SaaS aboneliği, kargo yok),
+    // iyzico'nun API'si bu alanları yine de zorunlu tutuyor.
     billingAddress: {
       contactName: tenant.contact_name || tenant.name,
       city: "İstanbul",
       country: "Türkiye",
       address: tenant.name,
+      zipCode: "34000",
+    },
+    shippingAddress: {
+      contactName: tenant.contact_name || tenant.name,
+      city: "İstanbul",
+      country: "Türkiye",
+      address: tenant.name,
+      zipCode: "34000",
     },
   };
 }
