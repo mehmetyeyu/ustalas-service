@@ -7,7 +7,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { formatTry } from "@/lib/exchangeRate";
 import { CopyBox } from "@/components/CopyBox";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
-import type { ConsistencyCheckResult } from "@/app/api/super-admin/consistency-check/route";
+import type { ConsistencyCheckResult, OrphanedSubscription } from "@/app/api/super-admin/consistency-check/route";
 
 // paymentStatus'un tam değer haritası iyzico tarafından dokümante edilmemiş
 // — gerçek başarılı ödemelerde gözlemlenen tek değer "SUCCESS" (bkz.
@@ -156,8 +156,14 @@ export default function SuperAdminPage() {
   // kadar canlı iyzico çağrısı yapıyor).
   const [showConsistencyModal, setShowConsistencyModal] = useState(false);
   const [consistencyResults, setConsistencyResults] = useState<ConsistencyCheckResult[] | null>(null);
+  // "Yetim ödeme" — iyzico'da ACTIVE ama bizde hiç referansı olmayan
+  // abonelikler (bkz. route'un OrphanedSubscription notu) — tarayıcı
+  // callback'e dönmeden kapanırsa oluşur, mevcut mismatch taramasının
+  // hiç kapsamadığı ayrı bir durum.
+  const [orphanedResults, setOrphanedResults] = useState<OrphanedSubscription[] | null>(null);
   const [consistencyLoading, setConsistencyLoading] = useState(false);
   const [fixingTenantId, setFixingTenantId] = useState<number | null>(null);
+  const [fixingOrphanRef, setFixingOrphanRef] = useState<string | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [tenantName, setTenantName] = useState("");
@@ -300,18 +306,24 @@ export default function SuperAdminPage() {
   async function handleConsistencyCheck() {
     setShowConsistencyModal(true);
     setConsistencyResults(null);
+    setOrphanedResults(null);
     setConsistencyLoading(true);
     try {
       const res = await fetch("/api/super-admin/consistency-check");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Tutarlılık denetimi başarısız.");
       const results: ConsistencyCheckResult[] = Array.isArray(data.results) ? data.results : [];
+      const orphaned: OrphanedSubscription[] = Array.isArray(data.orphaned) ? data.orphaned : [];
       setConsistencyResults(results);
+      setOrphanedResults(orphaned);
       const mismatchCount = results.filter((r) => !r.ok).length;
-      if (mismatchCount === 0) {
+      if (mismatchCount === 0 && orphaned.length === 0) {
         toast.success(`${results.length} firma kontrol edildi, uyumsuzluk bulunamadı.`);
       } else {
-        toast.error(`${results.length} firmadan ${mismatchCount} tanesinde uyumsuzluk bulundu.`);
+        const parts = [];
+        if (mismatchCount > 0) parts.push(`${mismatchCount} uyumsuzluk`);
+        if (orphaned.length > 0) parts.push(`${orphaned.length} yetim ödeme`);
+        toast.error(`${results.length} firma kontrol edildi — ${parts.join(", ")} bulundu.`);
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -348,6 +360,30 @@ export default function SuperAdminPage() {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
       setFixingTenantId(null);
+    }
+  }
+
+  async function handleFixOrphan(o: OrphanedSubscription) {
+    if (!o.suggestedFix) return;
+    setFixingOrphanRef(o.subscriptionRef);
+    try {
+      const res = await fetch("/api/super-admin/consistency-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId: o.suggestedFix.tenantId,
+          subscriptionRef: o.subscriptionRef,
+          pricingPlanRef: o.pricingPlanRef,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Düzeltme başarısız.");
+      toast.success(`${o.suggestedFix.tenantName} için abonelik bağlandı.`);
+      setOrphanedResults((prev) => (prev ?? []).filter((item) => item.subscriptionRef !== o.subscriptionRef));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setFixingOrphanRef(null);
     }
   }
 
@@ -956,50 +992,100 @@ export default function SuperAdminPage() {
             <div className="overflow-y-auto flex-1">
               {consistencyLoading ? (
                 <div className="text-center text-gray-400 py-12">Kontrol ediliyor...</div>
-              ) : !consistencyResults || consistencyResults.length === 0 ? (
+              ) : (!consistencyResults || consistencyResults.length === 0) && (!orphanedResults || orphanedResults.length === 0) ? (
                 <div className="text-center text-gray-400 py-12">Kontrol edilecek aktif abonelik bulunamadı.</div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                    <tr>
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Firma</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bizdeki Referans</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">iyzico Durumu</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Sonuç</th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {consistencyResults.map((r) => (
-                      <tr key={r.tenantId} className={r.ok ? "" : "bg-red-50"}>
-                        <td className="px-3 py-2 text-gray-800 font-medium whitespace-nowrap">{r.tenantName}</td>
-                        <td className="px-3 py-2 text-gray-500 font-mono text-xs whitespace-nowrap">{r.subscriptionRef}</td>
-                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.iyzicoStatus ?? r.error ?? "—"}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          {r.ok ? (
-                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Uyumlu</span>
-                          ) : (
-                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">Uyumsuz</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">
-                          {!r.ok && r.suggestedFix && (
-                            <button
-                              onClick={() => handleFixConsistency(r)}
-                              disabled={fixingTenantId === r.tenantId}
-                              className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-40"
-                            >
-                              {fixingTenantId === r.tenantId ? "Düzeltiliyor..." : "Düzelt"}
-                            </button>
-                          )}
-                          {!r.ok && !r.suggestedFix && !r.error && (
-                            <span className="text-xs text-gray-400">Otomatik düzeltme bulunamadı</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <>
+                  {consistencyResults && consistencyResults.length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Firma</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Bizdeki Referans</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">iyzico Durumu</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Sonuç</th>
+                          <th className="px-3 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {consistencyResults.map((r) => (
+                          <tr key={r.tenantId} className={r.ok ? "" : "bg-red-50"}>
+                            <td className="px-3 py-2 text-gray-800 font-medium whitespace-nowrap">{r.tenantName}</td>
+                            <td className="px-3 py-2 text-gray-500 font-mono text-xs whitespace-nowrap">{r.subscriptionRef}</td>
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.iyzicoStatus ?? r.error ?? "—"}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {r.ok ? (
+                                <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Uyumlu</span>
+                              ) : (
+                                <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">Uyumsuz</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {!r.ok && r.suggestedFix && (
+                                <button
+                                  onClick={() => handleFixConsistency(r)}
+                                  disabled={fixingTenantId === r.tenantId}
+                                  className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-40"
+                                >
+                                  {fixingTenantId === r.tenantId ? "Düzeltiliyor..." : "Düzelt"}
+                                </button>
+                              )}
+                              {!r.ok && !r.suggestedFix && !r.error && (
+                                <span className="text-xs text-gray-400">Otomatik düzeltme bulunamadı</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {orphanedResults && orphanedResults.length > 0 && (
+                    <div className={consistencyResults && consistencyResults.length > 0 ? "mt-6" : ""}>
+                      <div className="px-3 py-2">
+                        <h3 className="text-sm font-semibold text-gray-700">Yetim Ödemeler</h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          iyzico&apos;da aktif ama bizde hiç kaydı olmayan abonelikler — ödeme sonrası tarayıcı callback&apos;e
+                          dönmeden kapanmış olabilir.
+                        </p>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Abonelik Referansı</th>
+                            <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Müşteri E-posta</th>
+                            <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">Eşleşen Firma</th>
+                            <th className="px-3 py-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {orphanedResults.map((o) => (
+                            <tr key={o.subscriptionRef} className="bg-amber-50">
+                              <td className="px-3 py-2 text-gray-500 font-mono text-xs whitespace-nowrap">{o.subscriptionRef}</td>
+                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{o.customerEmail ?? "—"}</td>
+                              <td className="px-3 py-2 text-gray-800 whitespace-nowrap">
+                                {o.suggestedFix ? o.suggestedFix.tenantName : <span className="text-gray-400">Eşleşme yok</span>}
+                              </td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                {o.suggestedFix ? (
+                                  <button
+                                    onClick={() => handleFixOrphan(o)}
+                                    disabled={fixingOrphanRef === o.subscriptionRef}
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-40"
+                                  >
+                                    {fixingOrphanRef === o.subscriptionRef ? "Bağlanıyor..." : "Firmaya Bağla"}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-gray-400">Elle çözülmeli</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
