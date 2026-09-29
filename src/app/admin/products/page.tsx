@@ -175,9 +175,22 @@ interface BatchColumnDef {
   key: string;
   label: string;
   defaultVisible: boolean;
-  align?: "right";
+  // Ürün Kodu/Marka/Ebat/Stok — tablonun ana kimlik sütunları — sürükle-
+  // bırakla yeri değiştirilebilir ama Sütunlar menüsünden GİZLENEMEZ
+  // (checkbox hiç gösterilmez, bkz. JSX) — yanlışlıkla tabloyu işe yaramaz
+  // hale getirme riski olmasın diye kullanıcı isteğiyle böyle karar verildi.
+  hideable: boolean;
+  align?: "right" | "center";
   headerTitle?: string;
+  // Doluysa başlık SortTh (tıklayınca sıralanan) olarak render edilir, boşsa
+  // düz <th> — bugüne kadar sadece Kod/Marka/Ebat/Stok sıralanabiliyordu,
+  // artık sıralama sütun tanımının bir parçası (istenirse başka sütunlara
+  // da eklenebilir).
+  sortK?: string;
   skeletonWidth: string;
+  // Varsayılan iskelet basit bir çubuktur (skeletonWidth) — Stok gibi farklı
+  // bir şekle (yuvarlak rozet) ihtiyaç duyan sütunlar bunu override eder.
+  renderSkeleton?: () => ReactNode;
   // group/batch bazı alanlarda (ör. Yük/Hız Endeksi, AB Etiketi, Jant
   // bilgileri) bilinçli olarak null döner — bu alanlar EBADA göre değişebilir,
   // grup satırında tek bir "temsili" değer göstermek yanıltıcı olurdu (bkz.
@@ -187,82 +200,116 @@ interface BatchColumnDef {
   batch: (b: ProductBatch) => ReactNode;
 }
 
-const BATCH_COLUMNS: BatchColumnDef[] = [
+// STATIC_BATCH_COLUMNS: component state'e ihtiyaç duymayan sütunlar — modül
+// seviyesinde kalabilir. Ürün Kodu sütunu (aç/kapa oku için expandedCodes/
+// toggleExpand'e ihtiyaç duyduğundan) component içinde ayrıca tanımlanıp bu
+// listenin BAŞINA eklenir (bkz. aşağıdaki BATCH_COLUMNS = [...]).
+const STATIC_BATCH_COLUMNS: BatchColumnDef[] = [
   {
-    key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, skeletonWidth: "w-12",
+    key: "brand", label: "Marka", defaultVisible: true, hideable: false, sortK: "brand", skeletonWidth: "w-16",
+    group: (g) => <span className="text-gray-700">{g.brand || "—"}</span>,
+    batch: () => null,
+  },
+  {
+    key: "size_desc", label: "Ebat", defaultVisible: true, hideable: false, sortK: "size_desc", skeletonWidth: "w-24",
+    group: (g) => <span className="text-gray-700 whitespace-nowrap">{g.size_desc || "—"}</span>,
+    batch: () => null,
+  },
+  {
+    key: "total_stock", label: "Stok", defaultVisible: true, hideable: false, sortK: "total_stock", align: "center", skeletonWidth: "w-10",
+    renderSkeleton: () => <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" />,
+    group: (g) => (
+      <>
+        <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(g.total_stock, g.min_stock_threshold)}`}>
+          {g.total_stock}
+        </span>
+        {(() => {
+          const breakdown = locationBreakdown(g.batches);
+          return breakdown ? <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{breakdown}</div> : null;
+        })()}
+      </>
+    ),
+    batch: (b) => (
+      <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(b.stock_qty ?? 0, b.min_stock_threshold)}`}>
+        {b.stock_qty ?? 0}
+      </span>
+    ),
+  },
+  {
+    key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, hideable: true, skeletonWidth: "w-12",
     group: (g) => <span className="text-gray-400 text-xs">{g.batches.length} parti</span>,
     batch: (b) => <span className="text-gray-700 font-mono">{weekYearLabel(b.production_week, b.production_year)}</span>,
   },
   {
-    key: "season", label: "Mevsim", defaultVisible: true, skeletonWidth: "w-14",
+    key: "season", label: "Mevsim", defaultVisible: true, hideable: true, skeletonWidth: "w-14",
     group: (g) => seasonBadge(g.season),
     batch: () => null,
   },
   {
-    key: "supplier", label: "Tedarikçi", defaultVisible: true, skeletonWidth: "w-16",
+    key: "supplier", label: "Tedarikçi", defaultVisible: true, hideable: true, skeletonWidth: "w-16",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.supplier ?? "—"}</span>,
   },
   {
-    key: "location", label: "Konum", defaultVisible: true, skeletonWidth: "w-14",
+    key: "location", label: "Konum", defaultVisible: true, hideable: true, skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.location ?? "—"}</span>,
   },
   {
-    key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true, align: "right", skeletonWidth: "w-14",
+    key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true, hideable: true, align: "right", skeletonWidth: "w-14",
     headerTitle: "Stoktaki tüm girişlerin miktar ağırlıklı ortalaması",
     group: (g) => <span className="text-gray-800 font-medium">{g.avg_purchase_price != null ? formatCurrency(num(g.avg_purchase_price)) : "—"}</span>,
     batch: (b) => <span className="text-gray-700">{formatCurrency(num(b.avg_purchase_price ?? b.purchase_price))}</span>,
   },
   {
-    key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true, align: "right", skeletonWidth: "w-14",
+    key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true, hideable: true, align: "right", skeletonWidth: "w-14",
     headerTitle: "Stoktaki tüm girişlerin miktar ağırlıklı ortalaması",
     group: (g) => <span className="text-gray-800 font-medium">{g.avg_sale_price != null ? formatCurrency(num(g.avg_sale_price)) : "—"}</span>,
     batch: (b) => <span className="text-gray-700 font-medium">{formatCurrency(num(b.avg_sale_price ?? b.sale_price))}</span>,
   },
   {
-    key: "product_type", label: "Ürün Tipi", defaultVisible: false, skeletonWidth: "w-16",
+    key: "product_type", label: "Ürün Tipi", defaultVisible: false, hideable: true, skeletonWidth: "w-16",
     group: (g) => productTypeBadge(g.product_type),
     batch: () => null,
   },
   {
-    key: "barcode", label: "Barkod", defaultVisible: false, skeletonWidth: "w-20",
+    key: "barcode", label: "Barkod", defaultVisible: false, hideable: true, skeletonWidth: "w-20",
     group: () => null,
     batch: (b) => <span className="text-gray-500 font-mono">{b.barcode ?? "—"}</span>,
   },
   {
-    key: "condition", label: "Kondisyon", defaultVisible: false, skeletonWidth: "w-14",
+    key: "condition", label: "Kondisyon", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
     headerTitle: "Diş Derinliği'nden otomatik hesaplanır",
     group: () => null,
     batch: (b) => conditionBadge(b.tread_depth_mm != null && b.tread_depth_mm !== "" ? computeCondition(Number(b.tread_depth_mm)) : null),
   },
   {
-    key: "min_stock", label: "Min. Stok", defaultVisible: false, skeletonWidth: "w-10",
+    key: "min_stock", label: "Min. Stok", defaultVisible: false, hideable: true, skeletonWidth: "w-10",
     group: (g) => <span className="text-gray-500">{g.min_stock_threshold ?? "—"}</span>,
     batch: (b) => <span className="text-gray-500">{b.min_stock_threshold ?? "—"}</span>,
   },
   {
-    key: "model", label: "Model", defaultVisible: false, skeletonWidth: "w-16",
+    key: "model", label: "Model", defaultVisible: false, hideable: true, skeletonWidth: "w-16",
     group: (g) => <span className="text-gray-500">{g.model_name ?? "—"}</span>,
     batch: (b) => <span className="text-gray-500">{b.model_name ?? "—"}</span>,
   },
   {
-    key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false, skeletonWidth: "w-12",
+    key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false, hideable: true, skeletonWidth: "w-12",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.load_speed_index ?? "—"}</span>,
   },
   {
-    key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false, skeletonWidth: "w-8",
+    key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false, hideable: true, skeletonWidth: "w-8",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.eu_fuel_class ?? "—"}</span>,
   },
   {
-    key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false, skeletonWidth: "w-8",
+    key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false, hideable: true, skeletonWidth: "w-8",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.eu_wet_grip_class ?? "—"}</span>,
   },
   {
-    key: "eu_noise", label: "Gürültü", defaultVisible: false, skeletonWidth: "w-14",
+    key: "eu_noise", label: "Gürültü", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => (
       <span className="text-gray-500">
@@ -271,25 +318,21 @@ const BATCH_COLUMNS: BatchColumnDef[] = [
     ),
   },
   {
-    key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false, skeletonWidth: "w-14",
+    key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.rim_size ?? "—"}</span>,
   },
   {
-    key: "pcd", label: "PCD", defaultVisible: false, skeletonWidth: "w-14",
+    key: "pcd", label: "PCD", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.pcd ?? "—"}</span>,
   },
   {
-    key: "offset_et", label: "ET (Ofset)", defaultVisible: false, skeletonWidth: "w-10",
+    key: "offset_et", label: "ET (Ofset)", defaultVisible: false, hideable: true, skeletonWidth: "w-10",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.offset_et ?? "—"}</span>,
   },
 ];
-
-const BATCH_COLUMNS_BY_KEY: Record<string, BatchColumnDef> = Object.fromEntries(
-  BATCH_COLUMNS.map((c) => [c.key, c])
-);
 
 const SKELETON_ROWS = 8;
 
@@ -530,6 +573,36 @@ export default function ProductsPage() {
   const [importing, setImporting] = useState(false);
   const [importStage, setImportStage] = useState<"reading" | "uploading" | "">("");
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+
+  // Ürün Kodu sütunu, aç/kapa okunun dönüş animasyonu için expandedCodes'a ve
+  // tıklama işleyicisi için toggleExpand'e (aşağıda tanımlı — fonksiyon
+  // deklarasyonları component gövdesi içinde de hoisted olduğundan, burada
+  // henüz "tanımlanmamış" görünse de çağrılabilir) ihtiyaç duyar — bu yüzden
+  // STATIC_BATCH_COLUMNS'un aksine modül seviyesinde DEĞİL, component içinde
+  // tanımlanır. Diğer 18 sütun component state'ine ihtiyaç duymadığından
+  // STATIC_BATCH_COLUMNS'tan (modül seviyesi) aynen alınıp başa eklenir.
+  const BATCH_COLUMNS: BatchColumnDef[] = [
+    {
+      key: "code", label: "Ürün Kodu", defaultVisible: true, hideable: false, sortK: "code", skeletonWidth: "w-16",
+      group: (g) => (
+        <button onClick={() => toggleExpand(g.code)} className="flex items-center gap-2 font-mono font-semibold text-gray-800 whitespace-nowrap">
+          <svg
+            className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expandedCodes.has(g.code) ? "rotate-90" : ""}`}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          {g.code}
+        </button>
+      ),
+      batch: (b) => <span className="pl-10 inline-block text-gray-300 text-xs">#{b.id}</span>,
+    },
+    ...STATIC_BATCH_COLUMNS,
+  ];
+  const BATCH_COLUMNS_BY_KEY: Record<string, BatchColumnDef> = Object.fromEntries(
+    BATCH_COLUMNS.map((c) => [c.key, c])
+  );
+
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
     () => Object.fromEntries(BATCH_COLUMNS.map((c) => [c.key, c.defaultVisible]))
   );
@@ -626,7 +699,24 @@ export default function ProductsPage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("products_visible_cols_v2");
-      if (saved) setVisibleCols(JSON.parse(saved));
+      if (saved) {
+        // ÜZERİNE YAZMAK yerine BİRLEŞTİRME: kayıtlı değer bu güncellemeden
+        // ÖNCE (Ürün Kodu/Marka/Ebat/Stok henüz BATCH_COLUMNS'a dahil
+        // değilken) kaydedilmiş olabilir — o anahtarlar kayıtlı objede hiç
+        // yoktur, doğrudan atama yapılsaydı visibleCols[key] undefined
+        // (falsy) kalıp bu ana kimlik sütunları YOK OLURDU. Ayrıca
+        // hideable:false sütunlar, kayıtlı değerde ne yazarsa yazsın
+        // koşulsuz true'ya zorlanır — Sütunlar menüsünde zaten hiç
+        // checkbox'ları yok, gizlenmeleri hiçbir zaman istenmez.
+        const parsed = JSON.parse(saved);
+        setVisibleCols((prev) => {
+          const merged = { ...prev, ...parsed };
+          for (const c of BATCH_COLUMNS) {
+            if (!c.hideable) merged[c.key] = true;
+          }
+          return merged;
+        });
+      }
     } catch { }
     try {
       const savedOrder = localStorage.getItem("products_col_order_v1");
@@ -643,6 +733,11 @@ export default function ProductsPage() {
         }
       }
     } catch { }
+    // BATCH_COLUMNS her render'da yeniden oluşturulan bir dizi (bkz.
+    // yukarıdaki tanım) — bağımlılık olarak eklenirse bu "yalnızca mount'ta
+    // çalışsın" efekti her render'da tekrar tetiklenirdi. Sadece anahtar
+    // KÜMESİ (üye sayısı/isimleri) önemli, o da uygulama boyunca sabit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1131,7 +1226,7 @@ export default function ProductsPage() {
   }
 
   // 4 sabit sütun (Ürün Kodu/Marka/Ebat/Stok) + görünür parti sütunları + işlemler.
-  const visibleColCount = 4 + BATCH_COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
+  const visibleColCount = BATCH_COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
 
   // Ürün Tipi'ne göre koşullu alan görünürlüğü (bkz. plan) — Jant/İkinci El
   // Jant/Aksesuar'da Mevsim+Üretim Haftası/Yılı (lastiğe özel) anlamsız;
@@ -1306,7 +1401,7 @@ export default function ProductsPage() {
               </button>
               {showColPicker && (
                 <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56" onClick={(e) => e.stopPropagation()}>
-                  <p className="text-xs text-gray-400 px-2 mb-1">Parti (üretim tarihi) sütunları — sürükleyerek sırala</p>
+                  <p className="text-xs text-gray-400 px-2 mb-1">Sütunlar — sürükleyerek sırala</p>
                   {menuColumns.map((col) => (
                     <div
                       key={col.key}
@@ -1320,19 +1415,29 @@ export default function ProductsPage() {
                       <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
                       </svg>
-                      <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
-                        <input
-                          type="checkbox"
-                          checked={visibleCols[col.key]}
-                          onChange={(e) => setVisibleCols((prev) => {
-                            const next = { ...prev, [col.key]: e.target.checked };
-                            try { localStorage.setItem("products_visible_cols_v2", JSON.stringify(next)); } catch { }
-                            return next;
-                          })}
-                          className="accent-blue-600"
-                        />
-                        {col.label}
-                      </label>
+                      {col.hideable ? (
+                        <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
+                          <input
+                            type="checkbox"
+                            checked={visibleCols[col.key]}
+                            onChange={(e) => setVisibleCols((prev) => {
+                              const next = { ...prev, [col.key]: e.target.checked };
+                              try { localStorage.setItem("products_visible_cols_v2", JSON.stringify(next)); } catch { }
+                              return next;
+                            })}
+                            className="accent-blue-600"
+                          />
+                          {col.label}
+                        </label>
+                      ) : (
+                        // Ürün Kodu/Marka/Ebat/Stok — ana kimlik sütunları, kasıtlı
+                        // olarak gizlenemez (bkz. BatchColumnDef.hideable notu);
+                        // sadece sürükleyerek yerleri değiştirilebilir.
+                        <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700 select-none">
+                          {col.label}
+                          <span className="text-[10px] text-gray-400">(her zaman görünür)</span>
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1480,19 +1585,19 @@ export default function ProductsPage() {
               <table className="w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <SortTh sortK="code" label="Ürün Kodu" />
-                    <SortTh sortK="brand" label="Marka" />
-                    <SortTh sortK="size_desc" label="Ebat" />
-                    <SortTh sortK="total_stock" label="Stok" align="center" />
-                    {visibleOrderedColumns.map((c) => (
-                      <th
-                        key={c.key}
-                        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`}
-                        title={c.headerTitle}
-                      >
-                        {c.label}
-                      </th>
-                    ))}
+                    {visibleOrderedColumns.map((c) =>
+                      c.sortK ? (
+                        <SortTh key={c.key} sortK={c.sortK} label={c.label} align={c.align ?? "left"} />
+                      ) : (
+                        <th
+                          key={c.key}
+                          className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left"}`}
+                          title={c.headerTitle}
+                        >
+                          {c.label}
+                        </th>
+                      )
+                    )}
                     <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
@@ -1500,13 +1605,9 @@ export default function ProductsPage() {
                   {loading ? (
                     Array.from({ length: SKELETON_ROWS }).map((_, i) => (
                       <tr key={`skeleton-${i}`}>
-                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
-                        <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
-                        <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-100 rounded animate-pulse" /></td>
-                        <td className="px-4 py-3 text-center"><div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" /></td>
                         {visibleOrderedColumns.map((c) => (
-                          <td key={c.key} className="px-4 py-3">
-                            <div className={`h-4 ${c.skeletonWidth} bg-gray-100 rounded animate-pulse`} />
+                          <td key={c.key} className={`px-4 py-3 ${c.align === "center" ? "text-center" : ""}`}>
+                            {c.renderSkeleton ? c.renderSkeleton() : <div className={`h-4 ${c.skeletonWidth} bg-gray-100 rounded animate-pulse`} />}
                           </td>
                         ))}
                         <td className="px-4 py-3">
@@ -1524,33 +1625,8 @@ export default function ProductsPage() {
                       return (
                         <Fragment key={group.code}>
                           <tr className="group hover:bg-gray-50 transition-colors bg-gray-50/40">
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <button
-                                onClick={() => toggleExpand(group.code)}
-                                className="flex items-center gap-2 font-mono font-semibold text-gray-800"
-                              >
-                                <svg
-                                  className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? "rotate-90" : ""}`}
-                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                                {group.code}
-                              </button>
-                            </td>
-                            <td className="px-4 py-3 text-gray-700">{group.brand || "—"}</td>
-                            <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{group.size_desc || "—"}</td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(group.total_stock, group.min_stock_threshold)}`}>
-                                {group.total_stock}
-                              </span>
-                              {(() => {
-                                const breakdown = locationBreakdown(group.batches);
-                                return breakdown ? <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{breakdown}</div> : null;
-                              })()}
-                            </td>
                             {visibleOrderedColumns.map((c) => (
-                              <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : ""}`}>
+                              <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""}`}>
                                 {c.group(group)}
                               </td>
                             ))}
@@ -1588,16 +1664,8 @@ export default function ProductsPage() {
                           </tr>
                           {expanded && group.batches.map((batch) => (
                             <tr key={batch.id} className="group hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3 pl-10 text-gray-300 text-xs">#{batch.id}</td>
-                              <td className="px-4 py-3"></td>
-                              <td className="px-4 py-3"></td>
-                              <td className="px-4 py-3 text-center">
-                                <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(batch.stock_qty ?? 0, batch.min_stock_threshold)}`}>
-                                  {batch.stock_qty ?? 0}
-                                </span>
-                              </td>
                               {visibleOrderedColumns.map((c) => (
-                                <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : ""}`}>
+                                <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""}`}>
                                   {c.batch(batch)}
                                 </td>
                               ))}
