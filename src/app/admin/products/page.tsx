@@ -187,6 +187,12 @@ interface BatchColumnDef {
   // artık sıralama sütun tanımının bir parçası (istenirse başka sütunlara
   // da eklenebilir).
   sortK?: string;
+  // Çoğu satırda "—" gibi kısa bir değer olsa da, bir satırda uzun bir metin
+  // (ör. çok kelimeli Model, uzun Ebat) geldiğinde tablo otomatik-genişlik
+  // hesabı sütunu dar bırakıp o hücreyi çok satıra böler — bu min-width
+  // (whitespace-nowrap ile birlikte) bunu engeller; taşan genişliği zaten
+  // sarmalayan overflow-x-auto karşılar.
+  minWidth: string;
   skeletonWidth: string;
   // Varsayılan iskelet basit bir çubuktur (skeletonWidth) — Stok gibi farklı
   // bir şekle (yuvarlak rozet) ihtiyaç duyan sütunlar bunu override eder.
@@ -206,17 +212,17 @@ interface BatchColumnDef {
 // listenin BAŞINA eklenir (bkz. aşağıdaki BATCH_COLUMNS = [...]).
 const STATIC_BATCH_COLUMNS: BatchColumnDef[] = [
   {
-    key: "brand", label: "Marka", defaultVisible: true, hideable: false, sortK: "brand", skeletonWidth: "w-16",
+    key: "brand", label: "Marka", defaultVisible: true, hideable: false, sortK: "brand", minWidth: "min-w-[90px]", skeletonWidth: "w-16",
     group: (g) => <span className="text-gray-700">{g.brand || "—"}</span>,
     batch: () => null,
   },
   {
-    key: "size_desc", label: "Ebat", defaultVisible: true, hideable: false, sortK: "size_desc", skeletonWidth: "w-24",
+    key: "size_desc", label: "Ebat", defaultVisible: true, hideable: false, sortK: "size_desc", minWidth: "min-w-[150px]", skeletonWidth: "w-24",
     group: (g) => <span className="text-gray-700 whitespace-nowrap">{g.size_desc || "—"}</span>,
     batch: () => null,
   },
   {
-    key: "total_stock", label: "Stok", defaultVisible: true, hideable: false, sortK: "total_stock", align: "center", skeletonWidth: "w-10",
+    key: "total_stock", label: "Stok", defaultVisible: true, hideable: false, sortK: "total_stock", align: "center", minWidth: "min-w-[70px]", skeletonWidth: "w-10",
     renderSkeleton: () => <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" />,
     group: (g) => (
       <>
@@ -236,80 +242,80 @@ const STATIC_BATCH_COLUMNS: BatchColumnDef[] = [
     ),
   },
   {
-    key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, hideable: true, skeletonWidth: "w-12",
+    key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, hideable: true, minWidth: "min-w-[100px]", skeletonWidth: "w-12",
     group: (g) => <span className="text-gray-400 text-xs">{g.batches.length} parti</span>,
     batch: (b) => <span className="text-gray-700 font-mono">{weekYearLabel(b.production_week, b.production_year)}</span>,
   },
   {
-    key: "season", label: "Mevsim", defaultVisible: true, hideable: true, skeletonWidth: "w-14",
+    key: "season", label: "Mevsim", defaultVisible: true, hideable: true, minWidth: "min-w-[90px]", skeletonWidth: "w-14",
     group: (g) => seasonBadge(g.season),
     batch: () => null,
   },
   {
-    key: "supplier", label: "Tedarikçi", defaultVisible: true, hideable: true, skeletonWidth: "w-16",
+    key: "supplier", label: "Tedarikçi", defaultVisible: true, hideable: true, minWidth: "min-w-[120px]", skeletonWidth: "w-16",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.supplier ?? "—"}</span>,
   },
   {
-    key: "location", label: "Konum", defaultVisible: true, hideable: true, skeletonWidth: "w-14",
+    key: "location", label: "Konum", defaultVisible: true, hideable: true, minWidth: "min-w-[90px]", skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.location ?? "—"}</span>,
   },
   {
-    key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true, hideable: true, align: "right", skeletonWidth: "w-14",
+    key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true, hideable: true, align: "right", minWidth: "min-w-[110px]", skeletonWidth: "w-14",
     headerTitle: "Stoktaki tüm girişlerin miktar ağırlıklı ortalaması",
     group: (g) => <span className="text-gray-800 font-medium">{g.avg_purchase_price != null ? formatCurrency(num(g.avg_purchase_price)) : "—"}</span>,
     batch: (b) => <span className="text-gray-700">{formatCurrency(num(b.avg_purchase_price ?? b.purchase_price))}</span>,
   },
   {
-    key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true, hideable: true, align: "right", skeletonWidth: "w-14",
+    key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true, hideable: true, align: "right", minWidth: "min-w-[110px]", skeletonWidth: "w-14",
     headerTitle: "Stoktaki tüm girişlerin miktar ağırlıklı ortalaması",
     group: (g) => <span className="text-gray-800 font-medium">{g.avg_sale_price != null ? formatCurrency(num(g.avg_sale_price)) : "—"}</span>,
     batch: (b) => <span className="text-gray-700 font-medium">{formatCurrency(num(b.avg_sale_price ?? b.sale_price))}</span>,
   },
   {
-    key: "product_type", label: "Ürün Tipi", defaultVisible: false, hideable: true, skeletonWidth: "w-16",
+    key: "product_type", label: "Ürün Tipi", defaultVisible: false, hideable: true, minWidth: "min-w-[90px]", skeletonWidth: "w-16",
     group: (g) => productTypeBadge(g.product_type),
     batch: () => null,
   },
   {
-    key: "barcode", label: "Barkod", defaultVisible: false, hideable: true, skeletonWidth: "w-20",
+    key: "barcode", label: "Barkod", defaultVisible: false, hideable: true, minWidth: "min-w-[110px]", skeletonWidth: "w-20",
     group: () => null,
     batch: (b) => <span className="text-gray-500 font-mono">{b.barcode ?? "—"}</span>,
   },
   {
-    key: "condition", label: "Kondisyon", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
+    key: "condition", label: "Kondisyon", defaultVisible: false, hideable: true, minWidth: "min-w-[90px]", skeletonWidth: "w-14",
     headerTitle: "Diş Derinliği'nden otomatik hesaplanır",
     group: () => null,
     batch: (b) => conditionBadge(b.tread_depth_mm != null && b.tread_depth_mm !== "" ? computeCondition(Number(b.tread_depth_mm)) : null),
   },
   {
-    key: "min_stock", label: "Min. Stok", defaultVisible: false, hideable: true, skeletonWidth: "w-10",
+    key: "min_stock", label: "Min. Stok", defaultVisible: false, hideable: true, minWidth: "min-w-[80px]", skeletonWidth: "w-10",
     group: (g) => <span className="text-gray-500">{g.min_stock_threshold ?? "—"}</span>,
     batch: (b) => <span className="text-gray-500">{b.min_stock_threshold ?? "—"}</span>,
   },
   {
-    key: "model", label: "Model", defaultVisible: false, hideable: true, skeletonWidth: "w-16",
+    key: "model", label: "Model", defaultVisible: false, hideable: true, minWidth: "min-w-[140px]", skeletonWidth: "w-16",
     group: (g) => <span className="text-gray-500">{g.model_name ?? "—"}</span>,
     batch: (b) => <span className="text-gray-500">{b.model_name ?? "—"}</span>,
   },
   {
-    key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false, hideable: true, skeletonWidth: "w-12",
+    key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false, hideable: true, minWidth: "min-w-[110px]", skeletonWidth: "w-12",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.load_speed_index ?? "—"}</span>,
   },
   {
-    key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false, hideable: true, skeletonWidth: "w-8",
+    key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false, hideable: true, minWidth: "min-w-[80px]", skeletonWidth: "w-8",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.eu_fuel_class ?? "—"}</span>,
   },
   {
-    key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false, hideable: true, skeletonWidth: "w-8",
+    key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false, hideable: true, minWidth: "min-w-[80px]", skeletonWidth: "w-8",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.eu_wet_grip_class ?? "—"}</span>,
   },
   {
-    key: "eu_noise", label: "Gürültü", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
+    key: "eu_noise", label: "Gürültü", defaultVisible: false, hideable: true, minWidth: "min-w-[110px]", skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => (
       <span className="text-gray-500">
@@ -318,17 +324,17 @@ const STATIC_BATCH_COLUMNS: BatchColumnDef[] = [
     ),
   },
   {
-    key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
+    key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false, hideable: true, minWidth: "min-w-[100px]", skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.rim_size ?? "—"}</span>,
   },
   {
-    key: "pcd", label: "PCD", defaultVisible: false, hideable: true, skeletonWidth: "w-14",
+    key: "pcd", label: "PCD", defaultVisible: false, hideable: true, minWidth: "min-w-[80px]", skeletonWidth: "w-14",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.pcd ?? "—"}</span>,
   },
   {
-    key: "offset_et", label: "ET (Ofset)", defaultVisible: false, hideable: true, skeletonWidth: "w-10",
+    key: "offset_et", label: "ET (Ofset)", defaultVisible: false, hideable: true, minWidth: "min-w-[80px]", skeletonWidth: "w-10",
     group: () => null,
     batch: (b) => <span className="text-gray-500">{b.offset_et ?? "—"}</span>,
   },
@@ -583,7 +589,7 @@ export default function ProductsPage() {
   // STATIC_BATCH_COLUMNS'tan (modül seviyesi) aynen alınıp başa eklenir.
   const BATCH_COLUMNS: BatchColumnDef[] = [
     {
-      key: "code", label: "Ürün Kodu", defaultVisible: true, hideable: false, sortK: "code", skeletonWidth: "w-16",
+      key: "code", label: "Ürün Kodu", defaultVisible: true, hideable: false, sortK: "code", minWidth: "min-w-[130px]", skeletonWidth: "w-16",
       group: (g) => (
         <button onClick={() => toggleExpand(g.code)} className="flex items-center gap-2 font-mono font-semibold text-gray-800 whitespace-nowrap">
           <svg
@@ -678,13 +684,13 @@ export default function ProductsPage() {
     }
   }
 
-  function SortTh({ sortK, label, align = "left" }: { sortK: string; label: string; align?: "left" | "right" | "center" }) {
+  function SortTh({ sortK, label, align = "left", minWidth = "" }: { sortK: string; label: string; align?: "left" | "right" | "center"; minWidth?: string }) {
     const active = sortBy === sortK;
     const ALIGN_CLASS = { left: "text-left", right: "text-right", center: "text-center" } as const;
     return (
       <th
         onClick={() => toggleSort(sortK)}
-        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]}`}
+        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]} ${minWidth}`}
       >
         <span className="inline-flex items-center gap-1">
           {label}
@@ -1435,7 +1441,6 @@ export default function ProductsPage() {
                         // sadece sürükleyerek yerleri değiştirilebilir.
                         <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700 select-none">
                           {col.label}
-                          <span className="text-[10px] text-gray-400">(her zaman görünür)</span>
                         </span>
                       )}
                     </div>
@@ -1587,11 +1592,11 @@ export default function ProductsPage() {
                   <tr>
                     {visibleOrderedColumns.map((c) =>
                       c.sortK ? (
-                        <SortTh key={c.key} sortK={c.sortK} label={c.label} align={c.align ?? "left"} />
+                        <SortTh key={c.key} sortK={c.sortK} label={c.label} align={c.align ?? "left"} minWidth={c.minWidth} />
                       ) : (
                         <th
                           key={c.key}
-                          className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left"}`}
+                          className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left"} ${c.minWidth}`}
                           title={c.headerTitle}
                         >
                           {c.label}
@@ -1606,7 +1611,7 @@ export default function ProductsPage() {
                     Array.from({ length: SKELETON_ROWS }).map((_, i) => (
                       <tr key={`skeleton-${i}`}>
                         {visibleOrderedColumns.map((c) => (
-                          <td key={c.key} className={`px-4 py-3 ${c.align === "center" ? "text-center" : ""}`}>
+                          <td key={c.key} className={`px-4 py-3 ${c.align === "center" ? "text-center" : ""} ${c.minWidth}`}>
                             {c.renderSkeleton ? c.renderSkeleton() : <div className={`h-4 ${c.skeletonWidth} bg-gray-100 rounded animate-pulse`} />}
                           </td>
                         ))}
@@ -1626,7 +1631,7 @@ export default function ProductsPage() {
                         <Fragment key={group.code}>
                           <tr className="group hover:bg-gray-50 transition-colors bg-gray-50/40">
                             {visibleOrderedColumns.map((c) => (
-                              <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""}`}>
+                              <td key={c.key} className={`px-4 py-3 whitespace-nowrap ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""} ${c.minWidth}`}>
                                 {c.group(group)}
                               </td>
                             ))}
@@ -1665,7 +1670,7 @@ export default function ProductsPage() {
                           {expanded && group.batches.map((batch) => (
                             <tr key={batch.id} className="group hover:bg-gray-50 transition-colors">
                               {visibleOrderedColumns.map((c) => (
-                                <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""}`}>
+                                <td key={c.key} className={`px-4 py-3 whitespace-nowrap ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""} ${c.minWidth}`}>
                                   {c.batch(batch)}
                                 </td>
                               ))}
