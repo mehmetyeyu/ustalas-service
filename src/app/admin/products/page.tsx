@@ -225,21 +225,37 @@ const STATIC_BATCH_COLUMNS: BatchColumnDef[] = [
     key: "total_stock", label: "Stok", defaultVisible: true, hideable: false, sortK: "total_stock", align: "center", minWidth: "min-w-[70px]", skeletonWidth: "w-10",
     renderSkeleton: () => <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" />,
     group: (g) => (
-      <>
-        <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(g.total_stock, g.min_stock_threshold)}`}>
-          {g.total_stock}
-        </span>
-        {(() => {
-          const breakdown = locationBreakdown(g.batches);
-          return breakdown ? <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{breakdown}</div> : null;
-        })()}
-      </>
+      <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(g.total_stock, g.min_stock_threshold)}`}>
+        {g.total_stock}
+      </span>
     ),
     batch: (b) => (
       <span className={`inline-block min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold ${stockBadgeStyle(b.stock_qty ?? 0, b.min_stock_threshold)}`}>
         {b.stock_qty ?? 0}
       </span>
     ),
+  },
+  {
+    key: "store_stock", label: "Mağaza Stok", defaultVisible: true, hideable: true, align: "center", minWidth: "min-w-[90px]", skeletonWidth: "w-10",
+    headerTitle: "Konumu \"Mağaza\" olarak girilen partilerin toplamı",
+    group: (g) => {
+      const qty = locationQty(g.batches, "Mağaza");
+      return qty > 0
+        ? <span className={`inline-block min-w-[2rem] px-2 py-0.5 rounded text-xs font-semibold ${locationBadgeStyle("Mağaza")}`}>{qty}</span>
+        : <span className="text-gray-300">—</span>;
+    },
+    batch: () => null,
+  },
+  {
+    key: "depot_stock", label: "Depo Stok", defaultVisible: true, hideable: true, align: "center", minWidth: "min-w-[90px]", skeletonWidth: "w-10",
+    headerTitle: "Konumu \"Depo\" olarak girilen partilerin toplamı",
+    group: (g) => {
+      const qty = locationQty(g.batches, "Depo");
+      return qty > 0
+        ? <span className={`inline-block min-w-[2rem] px-2 py-0.5 rounded text-xs font-semibold ${locationBadgeStyle("Depo")}`}>{qty}</span>
+        : <span className="text-gray-300">—</span>;
+    },
+    batch: () => null,
   },
   {
     key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, hideable: true, minWidth: "min-w-[100px]", skeletonWidth: "w-12",
@@ -390,19 +406,30 @@ function weekYearLabel(week: number | null, year: number | null): string {
   return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
 }
 
-// Bir ürün kodunun tüm partileri birden fazla konuma dağılmışsa (ör. "12
-// Mağaza, 6 Depo") grup satırında toplam stoğun altında küçük bir özet
-// gösterilir — hiçbiri konum kullanmıyorsa (yaygın durum) hiç gösterilmez.
-function locationBreakdown(batches: ProductBatch[]): string | null {
-  const byLocation = new Map<string, number>();
-  for (const b of batches) {
-    const key = b.location || "Belirtilmemiş";
-    byLocation.set(key, (byLocation.get(key) ?? 0) + (b.stock_qty ?? 0));
-  }
-  if (byLocation.size <= 1) return null;
-  return Array.from(byLocation.entries())
-    .map(([loc, qty]) => `${qty} ${loc}`)
-    .join(" · ");
+// Konum serbest metin (Mağaza/Depo önerilir ama başka değerler de girilebilir)
+// — sabit bir renk haritası tutmak yerine değere göre DETERMİNİSTİK bir
+// paletten renk seçilir, aynı konum her yerde hep aynı rengi alır.
+const LOCATION_BADGE_PALETTE = [
+  "bg-sky-100 text-sky-700",
+  "bg-purple-100 text-purple-700",
+  "bg-teal-100 text-teal-700",
+  "bg-rose-100 text-rose-700",
+  "bg-lime-100 text-lime-700",
+  "bg-orange-100 text-orange-700",
+];
+function locationBadgeStyle(location: string): string {
+  if (location === "Belirtilmemiş") return "bg-gray-100 text-gray-500";
+  let hash = 0;
+  for (let i = 0; i < location.length; i++) hash = (hash * 31 + location.charCodeAt(i)) >>> 0;
+  return LOCATION_BADGE_PALETTE[hash % LOCATION_BADGE_PALETTE.length];
+}
+
+// Mağaza Stok / Depo Stok sütunları için — bir ürün kodunun partilerinden
+// TAM OLARAK bu konuma sahip olanların stok toplamı. "Şube 2" gibi Mağaza/
+// Depo dışında serbest bir konum girilmişse o miktar bu iki sütunda hiç
+// görünmez (sadece genel Stok toplamına dahildir) — bkz. Konum sütunu.
+function locationQty(batches: ProductBatch[], location: string): number {
+  return batches.reduce((sum, b) => sum + (b.location === location ? (b.stock_qty ?? 0) : 0), 0);
 }
 
 const PRODUCT_TYPE_BADGE_STYLE: Record<string, string> = {
