@@ -140,7 +140,11 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { payments } = await request.json();
+    const { payments, payment_note } = await request.json();
+    // Ödeme Notu — ör. "Fatura Edildi" ile kapatırken fatura numarası gibi
+    // bir bilgi. Tamamen opsiyonel, kapatma başarısını hiç etkilemez; alan
+    // hiç gönderilmediyse (undefined) mevcut değere dokunulmaz.
+    const paymentNote = payment_note !== undefined ? (String(payment_note ?? "").trim().slice(0, 500) || null) : undefined;
 
     // Parçalı ödeme: birden fazla (ödeme tipi, tutar) girişi kabul edilir
     // (ör. 7.000 POS + 15.000 Garanti Hesap) — tek satırlık payment_type
@@ -216,11 +220,16 @@ export async function PATCH(
         );
       }
 
+      // payment_note undefined (istemci hiç göndermediyse) ile null (kullanıcı
+      // notu BİLEREK boşalttı) birbirinden ayrılmalı — COALESCE ikisini de SQL
+      // NULL'a çevirip ayırt edemezdi, o yüzden CASE + ayrı bir "gönderildi mi"
+      // bayrağı kullanılıyor.
       await client.query(
         `UPDATE orders
-         SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(), paid_amount = $3
+         SET status = 'TAMAMLANDI', payment_type = $1, payment_date = NOW(), paid_amount = $3,
+             payment_note = CASE WHEN $5 THEN $6 ELSE payment_note END
          WHERE id = $2 AND tenant_id = $4`,
-        [summaryType, id, totalPaid, user.tenantId]
+        [summaryType, id, totalPaid, user.tenantId, paymentNote !== undefined, paymentNote ?? null]
       );
 
       // Girilen kırılımda "Cari" tutar varsa müşterinin cari bakiyesine borç
@@ -266,7 +275,7 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { plate, customer_name, customer_phone, notes, lines, payments, custom_order_no } = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, payments, custom_order_no, payment_note } = await request.json();
 
     if (!plate || !Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Plaka ve en az bir satır zorunludur." }, { status: 400 });
@@ -275,8 +284,8 @@ export async function PUT(
     // Sipariş gerçekten bu firmaya mı ait — bu kontrol olmadan da
     // order_services'teki composite FK (tenant_id, order_id) yanlış firmaya
     // yazmayı engeller, ama o zaman düzgün bir 404 yerine 500 dönerdi.
-    const ownershipCheck = await pool.query<{ id: number; custom_order_no: string | null }>(
-      "SELECT id, custom_order_no FROM orders WHERE id = $1 AND tenant_id = $2",
+    const ownershipCheck = await pool.query<{ id: number; custom_order_no: string | null; payment_note: string | null }>(
+      "SELECT id, custom_order_no, payment_note FROM orders WHERE id = $1 AND tenant_id = $2",
       [id, user.tenantId]
     );
     if (ownershipCheck.rowCount === 0) {
@@ -302,6 +311,14 @@ export async function PUT(
     } else {
       customOrderNo = ownershipCheck.rows[0].custom_order_no;
     }
+
+    // Ödeme Notu — custom_order_no ile aynı desen: alan gönderildiyse (boş da
+    // olsa, kullanıcı bilerek temizlemiş olabilir) yeni değer yazılır, hiç
+    // gönderilmediyse mevcut değere dokunulmaz. Ayar/izin gerektirmez, her
+    // zaman düzenlenebilir (kapatırken veya sonradan).
+    const paymentNote: string | null = payment_note !== undefined
+      ? (String(payment_note ?? "").trim().slice(0, 500) || null)
+      : ownershipCheck.rows[0].payment_note;
 
     // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
     // tenant_id atadığından burada her zaman dolu olur.
@@ -423,9 +440,9 @@ export async function PUT(
       // değer) — burada doğrudan yazılır, ayrıca bir CASE'e gerek yok.
       await client.query(
         `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
-                            total_amount = $5, paid_amount = $6, custom_order_no = $9
+                            total_amount = $5, paid_amount = $6, custom_order_no = $9, payment_note = $10
          WHERE id = $7 AND tenant_id = $8`,
-        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo]
+        [plate, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo, paymentNote]
       );
 
       const existingResult = await client.query<{ id: number; product_id: number | null; quantity: number }>(

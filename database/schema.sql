@@ -1560,3 +1560,15 @@ DO $$ BEGIN
     FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Ödeme Notu — "Fatura Edildi" gibi bir ödeme tipiyle kapatırken (veya
+-- sonradan) fatura numarası gibi ödemeye özel bir bilgi kaydetmek için.
+-- Bilinçli olarak orders.notes'tan (oluşturma ekranındaki genel not) AYRI —
+-- ikisi farklı zamanlarda/ekranlarda girilen farklı amaçlı bilgiler, tek
+-- alanda birleştirmek ikisini de bulanıklaştırırdı. Parçalı ödemede bile
+-- (bkz. order_payments) TEK bir not yeterli kabul edildi — kapatma işleminin
+-- tamamına ait bir bilgi (ör. fatura no), belirli bir ödeme satırına değil;
+-- bu yüzden order_payments değil orders üzerinde. Her zaman düzenlenebilir
+-- (kapatırken VEYA sonradan Düzelt ekranından) — orders.custom_order_no ile
+-- aynı "opsiyonel, geriye dönük etkisiz" desenidir.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_note TEXT;

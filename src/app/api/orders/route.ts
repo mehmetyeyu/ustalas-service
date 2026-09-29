@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await pool.query(
       `SELECT
-         o.id, o.custom_order_no, o.plate, o.customer_name, o.notes, o.status, o.created_at,
+         o.id, o.custom_order_no, o.payment_note, o.plate, o.customer_name, o.notes, o.status, o.created_at,
          os.id AS line_id, s.name AS service_name,
          os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.quantity, os.unit_price, os.cost_price,
          COALESCE(os.payment_type, o.payment_type) AS payment_type,

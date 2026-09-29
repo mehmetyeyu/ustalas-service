@@ -255,6 +255,12 @@ const COLUMNS: OrderColumnDef[] = [
     title: (r) => r.notes || undefined,
     cell: (r) => r.notes || "-",
   },
+  {
+    key: "payment_note", label: "Ödeme Notu", defaultVisible: false, skeletonWidth: "w-32",
+    tdClassName: "px-4 py-3 text-gray-500 max-w-xs truncate",
+    title: (r) => r.payment_note || undefined,
+    cell: (r) => r.payment_note || "-",
+  },
 ];
 
 const COLUMNS_BY_KEY: Record<string, OrderColumnDef> = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
@@ -267,6 +273,7 @@ interface OrderRow {
   plate: string;
   customer_name: string | null;
   notes: string | null;
+  payment_note: string | null;
   payment_type: string | null;
   status: "BEKLEMEDE" | "TAMAMLANDI";
   created_at: string;
@@ -306,7 +313,7 @@ function toLocalDate(d: Date): string {
 const TODAY = toLocalDate(new Date());
 
 type SortKey = "order_no" | "date" | "customer_name" | "plate" | "service_name" | "supplier"
-  | "stock_code" | "size_desc" | "brand" | "model_name" | "quantity" | "unit_price" | "cost_price" | "kar" | "payment_type" | "notes" | "status";
+  | "stock_code" | "size_desc" | "brand" | "model_name" | "quantity" | "unit_price" | "cost_price" | "kar" | "payment_type" | "notes" | "payment_note" | "status";
 type SortDir = "asc" | "desc";
 
 function getDateRange(filter: string): { dateFrom: string; dateTo: string } {

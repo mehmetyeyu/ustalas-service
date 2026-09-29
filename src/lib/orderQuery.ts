@@ -34,6 +34,7 @@ const SORTABLE_COLUMNS: Record<string, string> = {
   kar: "(COALESCE(os.unit_price, 0) - COALESCE(os.cost_price, 0))",
   payment_type: "COALESCE(os.payment_type, o.payment_type)",
   notes: "o.notes",
+  payment_note: "o.payment_note",
   status: "o.status",
 };
 

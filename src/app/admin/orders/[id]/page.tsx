@@ -15,6 +15,7 @@ interface OrderDetail {
   id: number;
   custom_order_no: string | null;
   custom_order_no_enabled: boolean;
+  payment_note: string | null;
   plate: string;
   customer_name: string | null;
   customer_phone: string | null;
@@ -379,6 +380,10 @@ function OrderDetailPageInner() {
   // kabul eder (ör. 7.000 POS + 15.000 Garanti Hesap) — tek bir "Alınan
   // Tutar" yerine.
   const [paymentEntries, setPaymentEntries] = useState<{ payment_type: string; amount: string; kasa_id: number | null }[]>([]);
+  // Ödeme Notu — ör. "Fatura Edildi" ile kapatırken fatura numarası gibi bir
+  // bilgi kaydetmek için (bkz. database/schema.sql orders.payment_note notu).
+  // Tamamen opsiyonel; kapatırken boş bırakılırsa hiçbir şey yazılmaz.
+  const [paymentNoteInput, setPaymentNoteInput] = useState("");
   const [closing, setClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
@@ -386,6 +391,7 @@ function OrderDetailPageInner() {
   const [editing, setEditing] = useState(false);
   const [editPlate, setEditPlate] = useState("");
   const [editCustomOrderNo, setEditCustomOrderNo] = useState("");
+  const [editPaymentNote, setEditPaymentNote] = useState("");
   const [editCustomerName, setEditCustomerName] = useState("");
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
@@ -590,6 +596,7 @@ function OrderDetailPageInner() {
     // değilse hiç gösterilmiyor (bkz. JSX), o yüzden burada koşulsuz id'ye
     // düşmek güvenli.
     setEditCustomOrderNo(order.custom_order_no || String(order.id));
+    setEditPaymentNote(order.payment_note || "");
     setEditCustomerName(order.customer_name || "");
     setEditCustomerPhone(order.customer_phone || "");
     setEditNotes(order.notes || "");
@@ -841,6 +848,7 @@ function OrderDetailPageInner() {
         body: JSON.stringify({
           plate: editPlate.replace(/\s+/g, "").toUpperCase(),
           custom_order_no: (order?.custom_order_no_enabled || order?.custom_order_no) ? editCustomOrderNo.trim() : undefined,
+          payment_note: editPaymentNote.trim() || null,
           customer_name: editCustomerName.trim() || null,
           customer_phone: editCustomerPhone.trim() || null,
           notes: editNotes.trim() || null,
@@ -937,6 +945,7 @@ function OrderDetailPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           payments: validEntries.map((p) => ({ payment_type: p.payment_type, amount: Number(p.amount), kasa_id: p.kasa_id })),
+          payment_note: paymentNoteInput.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -944,6 +953,7 @@ function OrderDetailPageInner() {
         throw new Error(data.error || "İşlem başarısız.");
       }
       setShowModal(false);
+      setPaymentNoteInput("");
       await fetchOrder();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -1471,6 +1481,19 @@ function OrderDetailPageInner() {
               />
             </div>
 
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Ödeme Notu
+              </label>
+              <textarea
+                value={editPaymentNote}
+                onChange={(e) => setEditPaymentNote(e.target.value)}
+                rows={2}
+                placeholder="Örn. fatura numarası"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+
             <div className="sticky bottom-0 sm:static -mx-6 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0 bg-white sm:bg-transparent border-t border-gray-100 sm:border-t-0 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:shadow-none z-10">
               {/* Mobil: kompakt tek satır */}
               <div className="flex sm:hidden items-center gap-2">
@@ -1640,6 +1663,11 @@ function OrderDetailPageInner() {
                   ))}
                 </div>
               )}
+              {order.payment_note && (
+                <p className="pt-1 text-gray-500">
+                  <span className="text-gray-400">Ödeme Notu:</span> {order.payment_note}
+                </p>
+              )}
             </div>
 
             {/* Ödeme Al butonu */}
@@ -1736,6 +1764,19 @@ function OrderDetailPageInner() {
                   {formatCurrency(cariAmount)} tutarı {order.customer_name || "müşterinin"} cari hesabına borç olarak eklenecek.
                 </p>
               )}
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Ödeme Notu <span className="text-gray-400 font-normal">(opsiyonel)</span>
+              </label>
+              <textarea
+                value={paymentNoteInput}
+                onChange={(e) => setPaymentNoteInput(e.target.value)}
+                rows={2}
+                placeholder="Örn. fatura numarası"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+              />
             </div>
 
             <div className="flex gap-3">
