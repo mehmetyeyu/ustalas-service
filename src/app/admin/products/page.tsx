@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useRef } from "react";
+import { Fragment, useEffect, useState, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { parseProductRows, validateProductRows, chunk, SEASON_OPTIONS, type ParsedProductRow } from "@/lib/productsExcel";
@@ -164,37 +164,133 @@ function SearchableCombobox({
   );
 }
 
-// Sadece parti (batch) seviyesindeki sütunlar aç/kapa edilebilir — Kod/Marka/Ebat/
-// Toplam Stok ürün grubu satırında her zaman görünür.
-const BATCH_COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
-  { key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true },
-  { key: "season", label: "Mevsim", defaultVisible: true },
-  { key: "supplier", label: "Tedarikçi", defaultVisible: true },
-  { key: "location", label: "Konum", defaultVisible: true },
-  { key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true },
-  { key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true },
-  { key: "product_type", label: "Ürün Tipi", defaultVisible: false },
-  { key: "barcode", label: "Barkod", defaultVisible: false },
-  { key: "condition", label: "Kondisyon", defaultVisible: false },
-  { key: "min_stock", label: "Min. Stok", defaultVisible: false },
-  { key: "model", label: "Model", defaultVisible: false },
-  { key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false },
-  { key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false },
-  { key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false },
-  { key: "eu_noise", label: "Gürültü", defaultVisible: false },
-  { key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false },
-  { key: "pcd", label: "PCD", defaultVisible: false },
-  { key: "offset_et", label: "ET (Ofset)", defaultVisible: false },
+// Sadece parti (batch) seviyesindeki sütunlar aç/kapa edilebilir VE sıralanabilir
+// (Sütunlar menüsünde sürükle-bırak, bkz. moveColumn) — Kod/Marka/Ebat/Toplam
+// Stok ürün grubu satırında her zaman en başta, sabit sırada görünür. Her
+// sütunun grup (kod) satırında ve parti satırında nasıl render edileceği tek
+// bir yerde (group/batch fonksiyonları) tanımlanır — böylece başlık, iskelet,
+// grup satırı ve parti satırı hep aynı tanımdan üretilir, 4 ayrı yerde elle
+// senkron tutulmaz.
+interface BatchColumnDef {
+  key: string;
+  label: string;
+  defaultVisible: boolean;
+  align?: "right";
+  headerTitle?: string;
+  skeletonWidth: string;
+  // group/batch bazı alanlarda (ör. Yük/Hız Endeksi, AB Etiketi, Jant
+  // bilgileri) bilinçli olarak null döner — bu alanlar EBADA göre değişebilir,
+  // grup satırında tek bir "temsili" değer göstermek yanıltıcı olurdu (bkz.
+  // openClone'daki aynı gerekçe). Model ve Min. Stok ise ebattan bağımsız
+  // olduğu için grup satırında da gösterilir.
+  group: (g: ProductGroup) => ReactNode;
+  batch: (b: ProductBatch) => ReactNode;
+}
+
+const BATCH_COLUMNS: BatchColumnDef[] = [
+  {
+    key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, skeletonWidth: "w-12",
+    group: (g) => <span className="text-gray-400 text-xs">{g.batches.length} parti</span>,
+    batch: (b) => <span className="text-gray-700 font-mono">{weekYearLabel(b.production_week, b.production_year)}</span>,
+  },
+  {
+    key: "season", label: "Mevsim", defaultVisible: true, skeletonWidth: "w-14",
+    group: (g) => seasonBadge(g.season),
+    batch: () => null,
+  },
+  {
+    key: "supplier", label: "Tedarikçi", defaultVisible: true, skeletonWidth: "w-16",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.supplier ?? "—"}</span>,
+  },
+  {
+    key: "location", label: "Konum", defaultVisible: true, skeletonWidth: "w-14",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.location ?? "—"}</span>,
+  },
+  {
+    key: "purchase_price", label: "Alış Maliyeti (Ort.)", defaultVisible: true, align: "right", skeletonWidth: "w-14",
+    headerTitle: "Stoktaki tüm girişlerin miktar ağırlıklı ortalaması",
+    group: (g) => <span className="text-gray-800 font-medium">{g.avg_purchase_price != null ? formatCurrency(num(g.avg_purchase_price)) : "—"}</span>,
+    batch: (b) => <span className="text-gray-700">{formatCurrency(num(b.avg_purchase_price ?? b.purchase_price))}</span>,
+  },
+  {
+    key: "sale_price", label: "Satış Fiyatı (Ort.)", defaultVisible: true, align: "right", skeletonWidth: "w-14",
+    headerTitle: "Stoktaki tüm girişlerin miktar ağırlıklı ortalaması",
+    group: (g) => <span className="text-gray-800 font-medium">{g.avg_sale_price != null ? formatCurrency(num(g.avg_sale_price)) : "—"}</span>,
+    batch: (b) => <span className="text-gray-700 font-medium">{formatCurrency(num(b.avg_sale_price ?? b.sale_price))}</span>,
+  },
+  {
+    key: "product_type", label: "Ürün Tipi", defaultVisible: false, skeletonWidth: "w-16",
+    group: (g) => productTypeBadge(g.product_type),
+    batch: () => null,
+  },
+  {
+    key: "barcode", label: "Barkod", defaultVisible: false, skeletonWidth: "w-20",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500 font-mono">{b.barcode ?? "—"}</span>,
+  },
+  {
+    key: "condition", label: "Kondisyon", defaultVisible: false, skeletonWidth: "w-14",
+    headerTitle: "Diş Derinliği'nden otomatik hesaplanır",
+    group: () => null,
+    batch: (b) => conditionBadge(b.tread_depth_mm != null && b.tread_depth_mm !== "" ? computeCondition(Number(b.tread_depth_mm)) : null),
+  },
+  {
+    key: "min_stock", label: "Min. Stok", defaultVisible: false, skeletonWidth: "w-10",
+    group: (g) => <span className="text-gray-500">{g.min_stock_threshold ?? "—"}</span>,
+    batch: (b) => <span className="text-gray-500">{b.min_stock_threshold ?? "—"}</span>,
+  },
+  {
+    key: "model", label: "Model", defaultVisible: false, skeletonWidth: "w-16",
+    group: (g) => <span className="text-gray-500">{g.model_name ?? "—"}</span>,
+    batch: (b) => <span className="text-gray-500">{b.model_name ?? "—"}</span>,
+  },
+  {
+    key: "load_speed_index", label: "Yük/Hız Endeksi", defaultVisible: false, skeletonWidth: "w-12",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.load_speed_index ?? "—"}</span>,
+  },
+  {
+    key: "eu_fuel_class", label: "Yakıt Sınıfı", defaultVisible: false, skeletonWidth: "w-8",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.eu_fuel_class ?? "—"}</span>,
+  },
+  {
+    key: "eu_wet_grip_class", label: "Islak Tutuş", defaultVisible: false, skeletonWidth: "w-8",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.eu_wet_grip_class ?? "—"}</span>,
+  },
+  {
+    key: "eu_noise", label: "Gürültü", defaultVisible: false, skeletonWidth: "w-14",
+    group: () => null,
+    batch: (b) => (
+      <span className="text-gray-500">
+        {b.eu_noise_db != null ? `${b.eu_noise_db} dB${b.eu_noise_class != null ? ` (Sınıf ${b.eu_noise_class})` : ""}` : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "rim_size", label: "Jant Ölçüsü", defaultVisible: false, skeletonWidth: "w-14",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.rim_size ?? "—"}</span>,
+  },
+  {
+    key: "pcd", label: "PCD", defaultVisible: false, skeletonWidth: "w-14",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.pcd ?? "—"}</span>,
+  },
+  {
+    key: "offset_et", label: "ET (Ofset)", defaultVisible: false, skeletonWidth: "w-10",
+    group: () => null,
+    batch: (b) => <span className="text-gray-500">{b.offset_et ?? "—"}</span>,
+  },
 ];
 
-// Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
-// aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
-const BATCH_SKELETON_COL_WIDTH: Record<string, string> = {
-  production_date: "w-12", season: "w-14", supplier: "w-16", location: "w-14", purchase_price: "w-14", sale_price: "w-14",
-  product_type: "w-16", barcode: "w-20", condition: "w-14", min_stock: "w-10",
-  model: "w-16", load_speed_index: "w-12", eu_fuel_class: "w-8", eu_wet_grip_class: "w-8",
-  eu_noise: "w-14", rim_size: "w-14", pcd: "w-14", offset_et: "w-10",
-};
+const BATCH_COLUMNS_BY_KEY: Record<string, BatchColumnDef> = Object.fromEntries(
+  BATCH_COLUMNS.map((c) => [c.key, c])
+);
+
 const SKELETON_ROWS = 8;
 
 const EMPTY_FORM = {
@@ -437,6 +533,60 @@ export default function ProductsPage() {
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
     () => Object.fromEntries(BATCH_COLUMNS.map((c) => [c.key, c.defaultVisible]))
   );
+  // Sütun SIRASI (Sütunlar menüsünde sürükle-bırak) — visibleCols'tan ayrı
+  // tutulur çünkü görünürlük bir "hangi anahtarlar true" sözlüğüyken, sıra
+  // bir DİZİ (key listesi). Kayıtlı sırada artık var olmayan bir anahtar
+  // varsa (ör. bir sütun kaldırılırsa) filtrelenir; BATCH_COLUMNS'a yeni
+  // eklenip kayıtlı sırada henüz bulunmayan anahtarlar sona eklenir — bkz.
+  // aşağıdaki localStorage yükleme useEffect'i.
+  const [colOrder, setColOrder] = useState<string[]>(() => BATCH_COLUMNS.map((c) => c.key));
+  const orderedColumns = colOrder.map((k) => BATCH_COLUMNS_BY_KEY[k]).filter((c): c is BatchColumnDef => c != null);
+  // Görünür+sıralı sütun listesi TEK sefer hesaplanır (render başına) ve
+  // başlık/iskelet/grup satırı/parti satırında aynı referans yeniden
+  // kullanılır — her satır için ayrı ayrı filter() çağırmak (N satır × M
+  // sütun) gereksiz tekrar iş olurdu, code review'da bulundu.
+  const visibleOrderedColumns = orderedColumns.filter((c) => visibleCols[c.key]);
+
+  // Sürükle-bırak CANLI önizleme: colOrder sadece bırakma (drop) anında
+  // güncellenir, ama sürükleme SIRASINDA başka bir satırın üzerine gelince
+  // liste hemen o hedefe göre yeniden dizilir (bkz. handleColDragOver) — bu
+  // sayede kullanıcı bırakacağı yerin nerede açıldığını canlı görür, statik
+  // bir listede "nereye bırakacağım belli değil" sorunu (code review'da
+  // bulundu) ortadan kalkar. previewOrder null iken menü colOrder'ı gösterir;
+  // sürükleme bitince (drop veya iptal) her zaman null'a döner.
+  const [dragColKey, setDragColKey] = useState<string | null>(null);
+  const [previewColOrder, setPreviewColOrder] = useState<string[] | null>(null);
+  const menuColumns = (previewColOrder ?? colOrder)
+    .map((k) => BATCH_COLUMNS_BY_KEY[k])
+    .filter((c): c is BatchColumnDef => c != null);
+
+  function handleColDragOver(targetKey: string) {
+    if (!dragColKey || dragColKey === targetKey) return;
+    setPreviewColOrder((prev) => {
+      const base = prev ?? colOrder;
+      const from = base.indexOf(dragColKey);
+      const to = base.indexOf(targetKey);
+      if (from === -1 || to === -1 || from === to) return base;
+      const next = base.filter((k) => k !== dragColKey);
+      next.splice(next.indexOf(targetKey), 0, dragColKey);
+      return next;
+    });
+  }
+
+  function commitColDrag() {
+    if (previewColOrder) {
+      setColOrder(previewColOrder);
+      try { localStorage.setItem("products_col_order_v1", JSON.stringify(previewColOrder)); } catch { }
+    }
+    setPreviewColOrder(null);
+    setDragColKey(null);
+  }
+
+  function cancelColDrag() {
+    setPreviewColOrder(null);
+    setDragColKey(null);
+  }
+
   const [showColPicker, setShowColPicker] = useState(false);
   const [showMobileActions, setShowMobileActions] = useState(false);
 
@@ -477,6 +627,21 @@ export default function ProductsPage() {
     try {
       const saved = localStorage.getItem("products_visible_cols_v2");
       if (saved) setVisibleCols(JSON.parse(saved));
+    } catch { }
+    try {
+      const savedOrder = localStorage.getItem("products_col_order_v1");
+      if (savedOrder) {
+        const parsed: unknown = JSON.parse(savedOrder);
+        if (Array.isArray(parsed)) {
+          const allKeys = BATCH_COLUMNS.map((c) => c.key);
+          // Set ile tekilleştirme: bozuk/eski bir localStorage içeriğinde aynı
+          // anahtar birden fazla kez geçerse, aynı sütun tabloda iki kez
+          // render edilip React "duplicate key" uyarısı verirdi.
+          const kept = Array.from(new Set(parsed.filter((k): k is string => typeof k === "string" && allKeys.includes(k))));
+          const missing = allKeys.filter((k) => !kept.includes(k));
+          setColOrder([...kept, ...missing]);
+        }
+      }
     } catch { }
   }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1140,22 +1305,35 @@ export default function ProductsPage() {
                 Sütunlar
               </button>
               {showColPicker && (
-                <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-52" onClick={(e) => e.stopPropagation()}>
-                  <p className="text-xs text-gray-400 px-2 mb-1">Parti (üretim tarihi) sütunları</p>
-                  {BATCH_COLUMNS.map((col) => (
-                    <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={visibleCols[col.key]}
-                        onChange={(e) => setVisibleCols((prev) => {
-                          const next = { ...prev, [col.key]: e.target.checked };
-                          try { localStorage.setItem("products_visible_cols_v2", JSON.stringify(next)); } catch { }
-                          return next;
-                        })}
-                        className="accent-blue-600"
-                      />
-                      {col.label}
-                    </label>
+                <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56" onClick={(e) => e.stopPropagation()}>
+                  <p className="text-xs text-gray-400 px-2 mb-1">Parti (üretim tarihi) sütunları — sürükleyerek sırala</p>
+                  {menuColumns.map((col) => (
+                    <div
+                      key={col.key}
+                      draggable
+                      onDragStart={() => setDragColKey(col.key)}
+                      onDragOver={(e) => { e.preventDefault(); handleColDragOver(col.key); }}
+                      onDrop={commitColDrag}
+                      onDragEnd={cancelColDrag}
+                      className={`group flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-50 cursor-grab active:cursor-grabbing ${dragColKey === col.key ? "opacity-40" : ""}`}
+                    >
+                      <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                      </svg>
+                      <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[col.key]}
+                          onChange={(e) => setVisibleCols((prev) => {
+                            const next = { ...prev, [col.key]: e.target.checked };
+                            try { localStorage.setItem("products_visible_cols_v2", JSON.stringify(next)); } catch { }
+                            return next;
+                          })}
+                          className="accent-blue-600"
+                        />
+                        {col.label}
+                      </label>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1306,24 +1484,15 @@ export default function ProductsPage() {
                     <SortTh sortK="brand" label="Marka" />
                     <SortTh sortK="size_desc" label="Ebat" />
                     <SortTh sortK="total_stock" label="Stok" align="center" />
-                    {visibleCols.production_date && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
-                    {visibleCols.season && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
-                    {visibleCols.supplier && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tedarikçi</th>}
-                    {visibleCols.location && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Konum</th>}
-                    {visibleCols.purchase_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Alış Maliyeti (Ort.)</th>}
-                    {visibleCols.sale_price && <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Stoktaki tüm girişlerin miktar ağırlıklı ortalaması">Satış Fiyatı (Ort.)</th>}
-                    {visibleCols.product_type && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ürün Tipi</th>}
-                    {visibleCols.barcode && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Barkod</th>}
-                    {visibleCols.condition && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap" title="Diş Derinliği'nden otomatik hesaplanır">Kondisyon</th>}
-                    {visibleCols.min_stock && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Min. Stok</th>}
-                    {visibleCols.model && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Model</th>}
-                    {visibleCols.load_speed_index && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yük/Hız Endeksi</th>}
-                    {visibleCols.eu_fuel_class && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yakıt Sınıfı</th>}
-                    {visibleCols.eu_wet_grip_class && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Islak Tutuş</th>}
-                    {visibleCols.eu_noise && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Gürültü</th>}
-                    {visibleCols.rim_size && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Jant Ölçüsü</th>}
-                    {visibleCols.pcd && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">PCD</th>}
-                    {visibleCols.offset_et && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">ET (Ofset)</th>}
+                    {visibleOrderedColumns.map((c) => (
+                      <th
+                        key={c.key}
+                        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`}
+                        title={c.headerTitle}
+                      >
+                        {c.label}
+                      </th>
+                    ))}
                     <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
@@ -1335,9 +1504,9 @@ export default function ProductsPage() {
                         <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-100 rounded animate-pulse" /></td>
                         <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-100 rounded animate-pulse" /></td>
                         <td className="px-4 py-3 text-center"><div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse mx-auto" /></td>
-                        {BATCH_COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
+                        {visibleOrderedColumns.map((c) => (
                           <td key={c.key} className="px-4 py-3">
-                            <div className={`h-4 ${BATCH_SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
+                            <div className={`h-4 ${c.skeletonWidth} bg-gray-100 rounded animate-pulse`} />
                           </td>
                         ))}
                         <td className="px-4 py-3">
@@ -1380,32 +1549,11 @@ export default function ProductsPage() {
                                 return breakdown ? <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{breakdown}</div> : null;
                               })()}
                             </td>
-                            {visibleCols.production_date && <td className="px-4 py-3 text-gray-400 text-xs">{group.batches.length} parti</td>}
-                            {visibleCols.season && <td className="px-4 py-3">{seasonBadge(group.season)}</td>}
-                            {visibleCols.supplier && <td className="px-4 py-3"></td>}
-                            {visibleCols.location && <td className="px-4 py-3"></td>}
-                            {visibleCols.purchase_price && (
-                              <td className="px-4 py-3 text-right text-gray-800 font-medium">
-                                {group.avg_purchase_price != null ? formatCurrency(num(group.avg_purchase_price)) : "—"}
+                            {visibleOrderedColumns.map((c) => (
+                              <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : ""}`}>
+                                {c.group(group)}
                               </td>
-                            )}
-                            {visibleCols.sale_price && (
-                              <td className="px-4 py-3 text-right text-gray-800 font-medium">
-                                {group.avg_sale_price != null ? formatCurrency(num(group.avg_sale_price)) : "—"}
-                              </td>
-                            )}
-                            {visibleCols.product_type && <td className="px-4 py-3">{productTypeBadge(group.product_type)}</td>}
-                            {visibleCols.barcode && <td className="px-4 py-3"></td>}
-                            {visibleCols.condition && <td className="px-4 py-3"></td>}
-                            {visibleCols.min_stock && <td className="px-4 py-3 text-gray-500">{group.min_stock_threshold ?? "—"}</td>}
-                            {visibleCols.model && <td className="px-4 py-3 text-gray-500">{group.model_name ?? "—"}</td>}
-                            {visibleCols.load_speed_index && <td className="px-4 py-3"></td>}
-                            {visibleCols.eu_fuel_class && <td className="px-4 py-3"></td>}
-                            {visibleCols.eu_wet_grip_class && <td className="px-4 py-3"></td>}
-                            {visibleCols.eu_noise && <td className="px-4 py-3"></td>}
-                            {visibleCols.rim_size && <td className="px-4 py-3"></td>}
-                            {visibleCols.pcd && <td className="px-4 py-3"></td>}
-                            {visibleCols.offset_et && <td className="px-4 py-3"></td>}
+                            ))}
                             <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {canCreate && (
@@ -1448,34 +1596,11 @@ export default function ProductsPage() {
                                   {batch.stock_qty ?? 0}
                                 </span>
                               </td>
-                              {visibleCols.production_date && (
-                                <td className="px-4 py-3 text-gray-700 font-mono">
-                                  {weekYearLabel(batch.production_week, batch.production_year)}
+                              {visibleOrderedColumns.map((c) => (
+                                <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : ""}`}>
+                                  {c.batch(batch)}
                                 </td>
-                              )}
-                              {visibleCols.season && <td className="px-4 py-3"></td>}
-                              {visibleCols.supplier && <td className="px-4 py-3 text-gray-500">{batch.supplier ?? "—"}</td>}
-                              {visibleCols.location && <td className="px-4 py-3 text-gray-500">{batch.location ?? "—"}</td>}
-                              {visibleCols.purchase_price && <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(num(batch.avg_purchase_price ?? batch.purchase_price))}</td>}
-                              {visibleCols.sale_price && <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatCurrency(num(batch.avg_sale_price ?? batch.sale_price))}</td>}
-                              {visibleCols.product_type && <td className="px-4 py-3"></td>}
-                              {visibleCols.barcode && <td className="px-4 py-3 text-gray-500 font-mono">{batch.barcode ?? "—"}</td>}
-                              {visibleCols.condition && <td className="px-4 py-3">{conditionBadge(batch.tread_depth_mm != null && batch.tread_depth_mm !== "" ? computeCondition(Number(batch.tread_depth_mm)) : null)}</td>}
-                              {visibleCols.min_stock && <td className="px-4 py-3 text-gray-500">{batch.min_stock_threshold ?? "—"}</td>}
-                              {visibleCols.model && <td className="px-4 py-3 text-gray-500">{batch.model_name ?? "—"}</td>}
-                              {visibleCols.load_speed_index && <td className="px-4 py-3 text-gray-500">{batch.load_speed_index ?? "—"}</td>}
-                              {visibleCols.eu_fuel_class && <td className="px-4 py-3 text-gray-500">{batch.eu_fuel_class ?? "—"}</td>}
-                              {visibleCols.eu_wet_grip_class && <td className="px-4 py-3 text-gray-500">{batch.eu_wet_grip_class ?? "—"}</td>}
-                              {visibleCols.eu_noise && (
-                                <td className="px-4 py-3 text-gray-500">
-                                  {batch.eu_noise_db != null
-                                    ? `${batch.eu_noise_db} dB${batch.eu_noise_class != null ? ` (Sınıf ${batch.eu_noise_class})` : ""}`
-                                    : "—"}
-                                </td>
-                              )}
-                              {visibleCols.rim_size && <td className="px-4 py-3 text-gray-500">{batch.rim_size ?? "—"}</td>}
-                              {visibleCols.pcd && <td className="px-4 py-3 text-gray-500">{batch.pcd ?? "—"}</td>}
-                              {visibleCols.offset_et && <td className="px-4 py-3 text-gray-500">{batch.offset_et ?? "—"}</td>}
+                              ))}
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   <button

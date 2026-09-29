@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
@@ -139,35 +139,122 @@ function MultiSelectDropdown({
   );
 }
 
-const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
-  { key: "order_no", label: "Sipariş No", defaultVisible: true },
-  { key: "date", label: "Tarih", defaultVisible: true },
-  { key: "customer_name", label: "Müşteri", defaultVisible: true },
-  { key: "plate", label: "Plaka", defaultVisible: true },
-  { key: "service_name", label: "Yapılan İşlem", defaultVisible: true },
-  { key: "supplier", label: "Tedarikçi", defaultVisible: true },
-  { key: "stock_code", label: "Stok Kodu", defaultVisible: false },
-  { key: "size_desc", label: "Ebat/Ürün", defaultVisible: false },
-  { key: "brand", label: "Marka", defaultVisible: false },
-  { key: "model_name", label: "Model", defaultVisible: false },
-  { key: "quantity", label: "Adet", defaultVisible: true },
-  { key: "unit_price", label: "Tutar", defaultVisible: true },
-  { key: "cost_price", label: "Maliyet", defaultVisible: false },
-  { key: "kar", label: "Kar", defaultVisible: false },
-  { key: "payment_type", label: "Ödeme Şekli", defaultVisible: true },
-  { key: "notes", label: "Açıklama", defaultVisible: true },
+// Her sütunun sıralama anahtarı/hizası/iskelet genişliği/hücre içeriği TEK
+// bir yerde tanımlanır (Ürün Kataloğu'ndaki aynı desen, bkz. o dosyadaki
+// BatchColumnDef) — başlık, iskelet ve gövde hücresi hep aynı tanımdan
+// üretilir. Sadece başlık (SortTh, sıralama oku için sortKey/sortDir state'ine
+// ihtiyaç duyar) component içinde kalır; bu dizi modül seviyesinde kalabilir
+// çünkü cell/tdClassName sadece kendi satırından (r) veri okur.
+interface OrderColumnDef {
+  key: SortKey;
+  label: string;
+  defaultVisible: boolean;
+  align?: "right";
+  narrow?: boolean;
+  skeletonWidth: string;
+  tdClassName: string | ((r: OrderRow) => string);
+  title?: (r: OrderRow) => string | undefined;
+  cell: (r: OrderRow) => ReactNode;
+}
+
+const COLUMNS: OrderColumnDef[] = [
+  {
+    key: "order_no", label: "Sipariş No", defaultVisible: true, narrow: true, skeletonWidth: "w-10",
+    tdClassName: "px-2 py-3 whitespace-nowrap",
+    cell: (r) => (
+      <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
+        #{r.id}
+      </Link>
+    ),
+  },
+  {
+    key: "date", label: "Tarih", defaultVisible: true, skeletonWidth: "w-16",
+    tdClassName: "px-4 py-3 text-gray-500 whitespace-nowrap",
+    cell: (r) => formatDate(r.created_at),
+  },
+  {
+    key: "customer_name", label: "Müşteri", defaultVisible: true, skeletonWidth: "w-28",
+    tdClassName: "px-4 py-3 text-gray-700 whitespace-nowrap",
+    cell: (r) => r.customer_name || "-",
+  },
+  {
+    key: "plate", label: "Plaka", defaultVisible: true, skeletonWidth: "w-16",
+    tdClassName: "px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap",
+    cell: (r) => r.plate,
+  },
+  {
+    key: "service_name", label: "Yapılan İşlem", defaultVisible: true, skeletonWidth: "w-24",
+    tdClassName: "px-4 py-3 text-gray-700 whitespace-nowrap",
+    cell: (r) => r.service_name || "-",
+  },
+  {
+    key: "supplier", label: "Tedarikçi", defaultVisible: true, skeletonWidth: "w-20",
+    tdClassName: "px-4 py-3 text-gray-600 whitespace-nowrap",
+    cell: (r) => r.supplier || "-",
+  },
+  {
+    key: "stock_code", label: "Stok Kodu", defaultVisible: false, skeletonWidth: "w-16",
+    tdClassName: "px-4 py-3 text-gray-500 whitespace-nowrap",
+    cell: (r) => r.stock_code || "-",
+  },
+  {
+    key: "size_desc", label: "Ebat/Ürün", defaultVisible: false, skeletonWidth: "w-28",
+    tdClassName: "px-4 py-3 text-gray-500 whitespace-nowrap",
+    cell: (r) => r.size_desc || "-",
+  },
+  {
+    key: "brand", label: "Marka", defaultVisible: false, skeletonWidth: "w-16",
+    tdClassName: "px-4 py-3 text-gray-500 whitespace-nowrap",
+    cell: (r) => r.brand || "-",
+  },
+  {
+    key: "model_name", label: "Model", defaultVisible: false, skeletonWidth: "w-20",
+    tdClassName: "px-4 py-3 text-gray-500 whitespace-nowrap",
+    cell: (r) => r.model_name || "-",
+  },
+  {
+    key: "quantity", label: "Adet", defaultVisible: true, align: "right", skeletonWidth: "w-6",
+    tdClassName: "px-4 py-3 text-right text-gray-600",
+    cell: (r) => r.quantity ?? "-",
+  },
+  {
+    key: "unit_price", label: "Tutar", defaultVisible: true, align: "right", skeletonWidth: "w-14",
+    tdClassName: "px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap",
+    cell: (r) => formatCurrency(Number(r.unit_price || 0)),
+  },
+  {
+    key: "cost_price", label: "Maliyet", defaultVisible: false, align: "right", skeletonWidth: "w-14",
+    tdClassName: "px-4 py-3 text-right text-gray-500 whitespace-nowrap",
+    cell: (r) => formatCurrency(Number(r.cost_price || 0)),
+  },
+  {
+    key: "kar", label: "Kar", defaultVisible: false, align: "right", skeletonWidth: "w-14",
+    tdClassName: (r) => {
+      const kar = Number(r.unit_price || 0) - Number(r.cost_price || 0);
+      return `px-4 py-3 text-right font-medium whitespace-nowrap ${kar >= 0 ? "text-green-600" : "text-red-500"}`;
+    },
+    cell: (r) => formatCurrency(Number(r.unit_price || 0) - Number(r.cost_price || 0)),
+  },
+  {
+    key: "payment_type", label: "Ödeme Şekli", defaultVisible: true, skeletonWidth: "w-20",
+    tdClassName: "px-4 py-3 text-gray-600 whitespace-nowrap",
+    cell: (r) =>
+      r.payment_type === "Cari" && r.cari_settled
+        ? r.cari_paid_via || "Cari (Ödendi)"
+        : r.payment_type === "Cari" && r.cari_remaining_amount != null
+        ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
+        : r.payment_type || "-",
+  },
+  {
+    key: "notes", label: "Açıklama", defaultVisible: true, skeletonWidth: "w-32",
+    tdClassName: "px-4 py-3 text-gray-500 max-w-xs truncate",
+    title: (r) => r.notes || undefined,
+    cell: (r) => r.notes || "-",
+  },
 ];
 
-// Yükleniyor durumunda "Yükleniyor..." yazısı yerine gerçek tablo iskeletiyle
-// aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir — veri
-// gelince ani bir yerleşim sıçraması olmasın diye başlıklar hep aynı kalır.
-const SKELETON_COL_WIDTH: Record<string, string> = {
-  order_no: "w-10", date: "w-16", customer_name: "w-28", plate: "w-16",
-  service_name: "w-24", supplier: "w-20", stock_code: "w-16", size_desc: "w-28",
-  brand: "w-16", model_name: "w-20",
-  quantity: "w-6", unit_price: "w-14", cost_price: "w-14", kar: "w-14",
-  payment_type: "w-20", notes: "w-32",
-};
+const COLUMNS_BY_KEY: Record<string, OrderColumnDef> = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
+
 const SKELETON_ROWS = 8;
 
 interface OrderRow {
@@ -309,6 +396,50 @@ export default function OrdersPage() {
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
     () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
   );
+  // Sütun sırası + sürükle-bırak canlı önizlemesi — Ürün Kataloğu'ndaki
+  // (src/app/admin/products/page.tsx) aynı desenin birebir kopyası, aynı
+  // gerekçeyle: colOrder sadece bırakma anında kesinleşir, previewColOrder
+  // sürükleme sırasında listenin CANLI olarak yeniden dizilmesini sağlar.
+  const [colOrder, setColOrder] = useState<string[]>(() => COLUMNS.map((c) => c.key));
+  const orderedColumns = colOrder.map((k) => COLUMNS_BY_KEY[k]).filter((c): c is OrderColumnDef => c != null);
+  // Görünür+sıralı sütun listesi TEK sefer hesaplanır ve başlık/iskelet/gövde
+  // satırında aynı referans yeniden kullanılır — her satır için ayrı filter()
+  // çağırmak (N satır × M sütun) gereksiz tekrar iş olurdu (bkz. Ürün
+  // Kataloğu'ndaki aynı düzeltme, code review'da bulundu).
+  const visibleOrderedColumns = orderedColumns.filter((c) => visibleCols[c.key]);
+  const [dragColKey, setDragColKey] = useState<string | null>(null);
+  const [previewColOrder, setPreviewColOrder] = useState<string[] | null>(null);
+  const menuColumns = (previewColOrder ?? colOrder)
+    .map((k) => COLUMNS_BY_KEY[k])
+    .filter((c): c is OrderColumnDef => c != null);
+
+  function handleColDragOver(targetKey: string) {
+    if (!dragColKey || dragColKey === targetKey) return;
+    setPreviewColOrder((prev) => {
+      const base = prev ?? colOrder;
+      const from = base.indexOf(dragColKey);
+      const to = base.indexOf(targetKey);
+      if (from === -1 || to === -1 || from === to) return base;
+      const next = base.filter((k) => k !== dragColKey);
+      next.splice(next.indexOf(targetKey), 0, dragColKey);
+      return next;
+    });
+  }
+
+  function commitColDrag() {
+    if (previewColOrder) {
+      setColOrder(previewColOrder);
+      try { localStorage.setItem("orders_col_order_v1", JSON.stringify(previewColOrder)); } catch { }
+    }
+    setPreviewColOrder(null);
+    setDragColKey(null);
+  }
+
+  function cancelColDrag() {
+    setPreviewColOrder(null);
+    setDragColKey(null);
+  }
+
   const [showColPicker, setShowColPicker] = useState(false);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
@@ -420,6 +551,21 @@ export default function OrdersPage() {
     try {
       const saved = localStorage.getItem("orders_visible_cols");
       if (saved) setVisibleCols(JSON.parse(saved));
+    } catch { }
+    try {
+      const savedOrder = localStorage.getItem("orders_col_order_v1");
+      if (savedOrder) {
+        const parsed: unknown = JSON.parse(savedOrder);
+        if (Array.isArray(parsed)) {
+          const allKeys = COLUMNS.map((c) => c.key);
+          // Set ile tekilleştirme: bozuk/eski bir localStorage içeriğinde aynı
+          // anahtar birden fazla kez geçerse, aynı sütun tabloda iki kez
+          // render edilip React "duplicate key" uyarısı verirdi.
+          const kept = Array.from(new Set(parsed.filter((k): k is string => typeof k === "string" && (allKeys as string[]).includes(k))));
+          const missing = allKeys.filter((k) => !kept.includes(k));
+          setColOrder([...kept, ...missing]);
+        }
+      }
     } catch { }
   }, []);
 
@@ -898,21 +1044,35 @@ export default function OrdersPage() {
               Sütunlar
             </button>
             {showColPicker && (
-              <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-48" onClick={(e) => e.stopPropagation()}>
-                {COLUMNS.map((col) => (
-                  <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={visibleCols[col.key]}
-                      onChange={(e) => setVisibleCols((prev) => {
-                        const next = { ...prev, [col.key]: e.target.checked };
-                        try { localStorage.setItem("orders_visible_cols", JSON.stringify(next)); } catch { }
-                        return next;
-                      })}
-                      className="w-4 h-4 accent-blue-500"
-                    />
-                    {col.label}
-                  </label>
+              <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-52" onClick={(e) => e.stopPropagation()}>
+                <p className="text-xs text-gray-400 px-2 mb-1">Sürükleyerek sırala</p>
+                {menuColumns.map((col) => (
+                  <div
+                    key={col.key}
+                    draggable
+                    onDragStart={() => setDragColKey(col.key)}
+                    onDragOver={(e) => { e.preventDefault(); handleColDragOver(col.key); }}
+                    onDrop={commitColDrag}
+                    onDragEnd={cancelColDrag}
+                    className={`group flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-50 cursor-grab active:cursor-grabbing ${dragColKey === col.key ? "opacity-40" : ""}`}
+                  >
+                    <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                    </svg>
+                    <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={visibleCols[col.key]}
+                        onChange={(e) => setVisibleCols((prev) => {
+                          const next = { ...prev, [col.key]: e.target.checked };
+                          try { localStorage.setItem("orders_visible_cols", JSON.stringify(next)); } catch { }
+                          return next;
+                        })}
+                        className="w-4 h-4 accent-blue-500"
+                      />
+                      {col.label}
+                    </label>
+                  </div>
                 ))}
               </div>
             )}
@@ -1145,22 +1305,9 @@ export default function OrdersPage() {
                     />
                   </th>
                 )}
-                {visibleCols.order_no && <SortTh sortK="order_no" label="Sipariş No" narrow />}
-                {visibleCols.date && <SortTh sortK="date" label="Tarih" />}
-                {visibleCols.customer_name && <SortTh sortK="customer_name" label="Müşteri" />}
-                {visibleCols.plate && <SortTh sortK="plate" label="Plaka" />}
-                {visibleCols.service_name && <SortTh sortK="service_name" label="Yapılan İşlem" />}
-                {visibleCols.supplier && <SortTh sortK="supplier" label="Tedarikçi" />}
-                {visibleCols.stock_code && <SortTh sortK="stock_code" label="Stok Kodu" />}
-                {visibleCols.size_desc && <SortTh sortK="size_desc" label="Ebat/Ürün" />}
-                {visibleCols.brand && <SortTh sortK="brand" label="Marka" />}
-                {visibleCols.model_name && <SortTh sortK="model_name" label="Model" />}
-                {visibleCols.quantity && <SortTh sortK="quantity" label="Adet" align="right" />}
-                {visibleCols.unit_price && <SortTh sortK="unit_price" label="Tutar" align="right" />}
-                {visibleCols.cost_price && <SortTh sortK="cost_price" label="Maliyet" align="right" />}
-                {visibleCols.kar && <SortTh sortK="kar" label="Kar" align="right" />}
-                {visibleCols.payment_type && <SortTh sortK="payment_type" label="Ödeme Şekli" />}
-                {visibleCols.notes && <SortTh sortK="notes" label="Açıklama" />}
+                {visibleOrderedColumns.map((c) => (
+                  <SortTh key={c.key} sortK={c.key} label={c.label} align={c.align} narrow={c.narrow} />
+                ))}
                 <SortTh sortK="status" label="Statü" align="center" stickyClassName={`sm:sticky ${orderActionsWidth.statusOffset} sm:z-20 sm:bg-gray-50 sm:shadow-[-1px_0_0_0_#e5e7eb]`} />
                 <th className={`px-1.5 py-3 sticky right-0 z-20 bg-gray-50 ${orderActionsWidth.cell}`}></th>
               </tr>
@@ -1174,9 +1321,9 @@ export default function OrdersPage() {
                         <div className="h-4 w-4 bg-gray-100 rounded animate-pulse" />
                       </td>
                     )}
-                    {COLUMNS.filter((c) => visibleCols[c.key]).map((c) => (
+                    {visibleOrderedColumns.map((c) => (
                       <td key={c.key} className="px-4 py-3">
-                        <div className={`h-4 ${SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
+                        <div className={`h-4 ${c.skeletonWidth} bg-gray-100 rounded animate-pulse`} />
                       </td>
                     ))}
                     <td className="px-4 py-3 text-center">
@@ -1195,9 +1342,6 @@ export default function OrdersPage() {
                 </tr>
               ) : (
                 rows.map((r) => {
-                  const unitPrice = Number(r.unit_price || 0);
-                  const costPrice = Number(r.cost_price || 0);
-                  const kar = unitPrice - costPrice;
                   return (
                     <tr key={`${r.id}-${r.line_id ?? "none"}`} className="group hover:bg-gray-50 transition-colors">
                       {canEdit && (
@@ -1224,56 +1368,11 @@ export default function OrdersPage() {
                           )}
                         </td>
                       )}
-                      {visibleCols.order_no && (
-                        <td className="px-2 py-3 whitespace-nowrap">
-                          <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
-                            #{r.id}
-                          </Link>
+                      {visibleOrderedColumns.map((c) => (
+                        <td key={c.key} className={typeof c.tdClassName === "function" ? c.tdClassName(r) : c.tdClassName} title={c.title?.(r)}>
+                          {c.cell(r)}
                         </td>
-                      )}
-                      {visibleCols.date && (
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {formatDate(r.created_at)}
-                        </td>
-                      )}
-                      {visibleCols.customer_name && <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.customer_name || "-"}</td>}
-                      {visibleCols.plate && <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">{r.plate}</td>}
-                      {visibleCols.service_name && <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.service_name || "-"}</td>}
-                      {visibleCols.supplier && <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.supplier || "-"}</td>}
-                      {visibleCols.stock_code && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.stock_code || "-"}</td>}
-                      {visibleCols.size_desc && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.size_desc || "-"}</td>}
-                      {visibleCols.brand && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.brand || "-"}</td>}
-                      {visibleCols.model_name && <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.model_name || "-"}</td>}
-                      {visibleCols.quantity && <td className="px-4 py-3 text-right text-gray-600">{r.quantity ?? "-"}</td>}
-                      {visibleCols.unit_price && (
-                        <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
-                          {formatCurrency(unitPrice)}
-                        </td>
-                      )}
-                      {visibleCols.cost_price && (
-                        <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">
-                          {formatCurrency(costPrice)}
-                        </td>
-                      )}
-                      {visibleCols.kar && (
-                        <td className={`px-4 py-3 text-right font-medium whitespace-nowrap ${kar >= 0 ? "text-green-600" : "text-red-500"}`}>
-                          {formatCurrency(kar)}
-                        </td>
-                      )}
-                      {visibleCols.payment_type && (
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                          {r.payment_type === "Cari" && r.cari_settled
-                            ? r.cari_paid_via || "Cari (Ödendi)"
-                            : r.payment_type === "Cari" && r.cari_remaining_amount != null
-                            ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
-                            : r.payment_type || "-"}
-                        </td>
-                      )}
-                      {visibleCols.notes && (
-                        <td className="px-4 py-3 text-gray-500 max-w-xs truncate" title={r.notes || undefined}>
-                          {r.notes || "-"}
-                        </td>
-                      )}
+                      ))}
                       <td className={`px-1.5 py-3 text-center sm:sticky ${orderActionsWidth.statusOffset} sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 sm:shadow-[-1px_0_0_0_#f3f4f6]`}>
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
