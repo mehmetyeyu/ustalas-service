@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useViewGuard } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { useDebouncedValue } from "@/hooks/useDebounce";
 
 const SEASON_OPTIONS = ["Yaz", "Kış", "Dört Mevsim"];
 const MIN_QTY_OPTIONS = [0, 4, 8, 12];
@@ -41,6 +42,7 @@ export default function SharedStockPage() {
   const [limit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [season, setSeason] = useState("");
   const [minQty, setMinQty] = useState(0);
   const [openContact, setOpenContact] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function SharedStockPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (search) params.set("search", search);
+      if (debouncedSearch) params.set("search", debouncedSearch);
       if (season) params.set("season", season);
       if (minQty > 0) params.set("minQty", String(minQty));
       params.set("page", String(targetPage));
@@ -71,7 +73,7 @@ export default function SharedStockPage() {
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, season, minQty]);
+  }, [debouncedSearch, season, minQty]);
 
   useEffect(() => {
     fetchItems(page);

@@ -53,6 +53,9 @@ export default function AppointmentsPage() {
   const { user } = useAuth();
 
   const [items, setItems] = useState<Appointment[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -64,20 +67,29 @@ export default function AppointmentsPage() {
   const [convertModalId, setConvertModalId] = useState<number | null>(null);
   const [convertOrderNoInput, setConvertOrderNoInput] = useState("");
 
-  async function fetchItems() {
+  async function fetchItems(targetPage = page) {
     setLoading(true);
     const params = new URLSearchParams();
     if (filter) params.set("status", filter);
+    params.set("page", String(targetPage));
+    params.set("limit", String(limit));
     const res = await fetch(`/api/appointments?${params}`, { cache: "no-store" });
     const data = await res.json();
-    setItems(Array.isArray(data) ? data : []);
+    setItems(Array.isArray(data.items) ? data.items : []);
+    setTotal(data.total ?? 0);
     setLoading(false);
   }
 
   useEffect(() => {
-    fetchItems();
+    setPage(1);
+    fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, limit]);
+
+  useEffect(() => {
+    fetchItems(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   async function setStatus(id: number, status: string) {
     setBusyId(id);
@@ -264,6 +276,81 @@ export default function AppointmentsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {!loading && items.length > 0 && (
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-gray-600">
+          <div className="flex items-center gap-3">
+            <span>
+              {total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total} kayıt
+            </span>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              Sayfa başına
+              <select
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value))}
+                className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+          {total > limit && (
+            <div className="flex gap-1 overflow-x-auto">
+              <button
+                onClick={() => setPage(1)}
+                disabled={page === 1}
+                className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                «
+              </button>
+              <button
+                onClick={() => setPage((p) => p - 1)}
+                disabled={page === 1}
+                className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ‹
+              </button>
+              {Array.from({ length: Math.ceil(total / limit) }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === Math.ceil(total / limit) || Math.abs(p - page) <= 2)
+                .reduce<(number | "…")[]>((acc, p, i, arr) => {
+                  if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, i) =>
+                  p === "…" ? (
+                    <span key={`ellipsis-${i}`} className="px-2 py-1 text-gray-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p as number)}
+                      className={`px-3 py-1 rounded border ${page === p
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "border-gray-300 hover:bg-gray-100"
+                        }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page * limit >= total}
+                className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ›
+              </button>
+              <button
+                onClick={() => setPage(Math.ceil(total / limit))}
+                disabled={page * limit >= total}
+                className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                »
+              </button>
+            </div>
+          )}
         </div>
       )}
 

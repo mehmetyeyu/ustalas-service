@@ -6,6 +6,7 @@ import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { escapeHtml } from "@/lib/htmlEscape";
+import { useDebouncedValue } from "@/hooks/useDebounce";
 
 interface StorageItem {
   id: number;
@@ -287,6 +288,7 @@ export default function StoragePage() {
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -332,7 +334,7 @@ export default function StoragePage() {
   async function fetchItems(targetPage = page, delivered = showDelivered) {
     setLoading(true);
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     params.set("page", String(targetPage));
     params.set("limit", String(limit));
     if (delivered) params.set("delivered", "true");
@@ -352,7 +354,7 @@ export default function StoragePage() {
     setPage(1);
     fetchItems(1, showDelivered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, showDelivered, limit]);
+  }, [debouncedSearch, showDelivered, limit]);
 
   useEffect(() => {
     fetchItems(page);

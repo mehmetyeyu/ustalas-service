@@ -9,6 +9,7 @@ import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { useDebouncedValue } from "@/hooks/useDebounce";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -563,6 +564,10 @@ export default function ProductsPage() {
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // Hem Ürünler hem Malzeme Hareketleri sekmesinin fetch effect'i aynı
+  // debounce'lu değeri kullanır — her tuş vuruşunda sunucuya sorgu atılmasını
+  // önlemek için.
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [seasonFilter, setSeasonFilter] = useState("");
   const [viewMode, setViewMode] = useState<"products" | "movements">("products");
   const [movements, setMovements] = useState<MovementRow[]>([]);
@@ -795,7 +800,7 @@ export default function ProductsPage() {
   async function fetchItems(targetPage = page) {
     setLoading(true);
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (seasonFilter) params.set("season", seasonFilter);
     if (sortBy) { params.set("sortBy", sortBy); params.set("sortDir", sortDir); }
     params.set("page", String(targetPage));
@@ -811,7 +816,7 @@ export default function ProductsPage() {
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, seasonFilter, sortBy, sortDir, limit]);
+  }, [debouncedSearch, seasonFilter, sortBy, sortDir, limit]);
 
   useEffect(() => {
     fetchItems(page);
@@ -821,7 +826,7 @@ export default function ProductsPage() {
   async function fetchMovements(targetPage = movementsPage) {
     setMovementsLoading(true);
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     params.set("page", String(targetPage));
     params.set("limit", String(movementsLimit));
     const res = await fetch(`/api/products/movements?${params}`);
@@ -836,7 +841,7 @@ export default function ProductsPage() {
     setMovementsPage(1);
     fetchMovements(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, search, movementsLimit]);
+  }, [viewMode, debouncedSearch, movementsLimit]);
 
   useEffect(() => {
     if (viewMode !== "movements") return;

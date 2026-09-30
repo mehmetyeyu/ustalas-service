@@ -6,7 +6,7 @@ import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
 import { buildOrderQuery } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
-import { getAutoRegisterCustomers, getCustomOrderNoEnabled, getPlateRequired } from "@/lib/settings";
+import { getOrderCreationSettings } from "@/lib/settings";
 import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
 import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
 import { logAudit } from "@/lib/auditLog";
@@ -196,7 +196,11 @@ export async function POST(request: NextRequest) {
     // (gerçek bir kullanıcı raporuyla bulundu — #955), en az biri zorunlu.
     const plateValue: string | null = String(plate ?? "").replace(/\s+/g, "").toUpperCase().slice(0, 20) || null;
     const customerNameTrimmed = String(customer_name ?? "").trim();
-    const plateRequired = await getPlateRequired(user.tenantId!);
+    // Bu handler'ın ihtiyaç duyduğu 3 ayar (plate_required,
+    // custom_order_no_enabled, auto_register_customers) aynı app_settings
+    // satırından TEK sorguda — 3 ayrı round-trip yerine (bkz. settings.ts
+    // getOrderCreationSettings notu).
+    const { plateRequired, customOrderNoEnabled, autoRegisterCustomers } = await getOrderCreationSettings(user.tenantId!);
     if (plateRequired && !plateValue) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
     }
@@ -207,7 +211,6 @@ export async function POST(request: NextRequest) {
     // Genel Ayarlar'dan açtıysa zorunlu; kapalıyken istemciden gelen herhangi
     // bir değer YOK sayılır (istemciye güvenilmez, ayar her zaman sunucudan
     // taze okunur). orders.id'ye hiç dokunulmaz, bu tamamen ayrı bir alan.
-    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
     const customOrderNo = customOrderNoEnabled
       ? String(custom_order_no ?? "").trim().slice(0, 50)
       : null;
@@ -247,8 +250,6 @@ export async function POST(request: NextRequest) {
     if (totalAmount <= 0) {
       return NextResponse.json({ error: "Sipariş tutarı 0'dan büyük olmalıdır." }, { status: 400 });
     }
-
-    const autoRegisterCustomers = await getAutoRegisterCustomers(user.tenantId!);
 
     const client = await pool.connect();
     try {

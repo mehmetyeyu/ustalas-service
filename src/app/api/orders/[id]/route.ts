@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, restoreStock, InsufficientStockError } from "@/lib/productStock";
-import { getAppSettings, getCustomOrderNoEnabled, getPlateRequired } from "@/lib/settings";
+import { getAppSettings, getCustomOrderNoEnabled } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
@@ -280,11 +280,18 @@ export async function PUT(
     if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "En az bir satır zorunludur." }, { status: 400 });
     }
+    // Bu handler'ın ihtiyaç duyduğu TÜM ayarlar (plate_required,
+    // custom_order_no_enabled, auto_register_customers, payment_types) aynı
+    // app_settings satırından — 4 ayrı sorgu yerine tek getAppSettings()
+    // çağrısı (bkz. src/lib/settings.ts getOrderCreationSettings ile aynı
+    // gerekçe, POST /api/orders'taki karşılığı).
+    const { plate_required: plateRequired, custom_order_no_enabled: customOrderNoEnabled, auto_register_customers: autoRegisterCustomers, payment_types } =
+      await getAppSettings(user.tenantId!);
+
     // Plaka, Genel Ayarlar'dan kapatılmadıkça zorunlu kalır (bkz. POST
     // /api/orders'taki aynı kontrol, #955 vakası).
     const plateValue: string | null = String(plate ?? "").replace(/\s+/g, "").toUpperCase().slice(0, 20) || null;
     const customerNameTrimmed = String(customer_name ?? "").trim();
-    const plateRequired = await getPlateRequired(user.tenantId!);
     if (plateRequired && !plateValue) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
     }
@@ -310,7 +317,6 @@ export async function PUT(
     // döndürebilir. Alan hiç gönderilmediyse (custom_order_no === undefined,
     // yani bu siparişte hiç numara yoktu VE ayar da kapalıydı) mevcut değere
     // (zaten null) dokunulmaz.
-    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
     let customOrderNo: string | null;
     if (customOrderNoEnabled) {
       customOrderNo = String(custom_order_no ?? "").trim().slice(0, 50);
@@ -331,9 +337,6 @@ export async function PUT(
       ? (String(payment_note ?? "").trim().slice(0, 500) || null)
       : ownershipCheck.rows[0].payment_note;
 
-    // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
-    // tenant_id atadığından burada her zaman dolu olur.
-    const { payment_types, auto_register_customers: autoRegisterCustomers } = await getAppSettings(user.tenantId!);
     // Genel Ayarlar'dan sonradan kaldırılmış bir ödeme tipi, o değeri zaten
     // taşıyan eski bir siparişin düzenlenmesini (alakasız bir alan değişse
     // bile) engellemesin diye bu siparişte hâlâ kayıtlı olan değerler de bu

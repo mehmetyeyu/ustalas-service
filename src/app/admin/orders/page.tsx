@@ -8,6 +8,7 @@ import { parseOrderRows, chunk, type ParsedOrder } from "@/lib/ordersExcel";
 import { Tooltip } from "@/components/Tooltip";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { useDebouncedValue } from "@/hooks/useDebounce";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { useViewGuard, usePermission } from "../AuthContext";
 
@@ -404,6 +405,10 @@ export default function OrdersPage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
+  // Her tuş vuruşunda sunucuya sorgu atılmasını önlemek için — input anında
+  // (search) güncellenir, fetch/Dışa Aktar sorgusu 350ms sonra debounce'lu
+  // değere (debouncedSearch) bakar.
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [fieldFilters, setFieldFilters] = useState<FieldFilters>(EMPTY_FIELD_FILTERS);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -615,7 +620,7 @@ export default function OrdersPage() {
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
     }
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (fieldFilters.customer_name) params.set("customer_name", fieldFilters.customer_name);
     if (fieldFilters.plate) params.set("plate", fieldFilters.plate);
     fieldFilters.service_name.forEach((v) => params.append("service_name", v));
@@ -706,7 +711,7 @@ export default function OrdersPage() {
     setPage(1);
     fetchOrders(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtersReady, statusFilter, dateFilter, customFrom, customTo, search, fieldFilters, sortKey, sortDir, limit]);
+  }, [filtersReady, statusFilter, dateFilter, customFrom, customTo, debouncedSearch, fieldFilters, sortKey, sortDir, limit]);
 
   // Sayfa değişince (pagination) fetch eder — ama filtre efekti de her
   // tetiklendiğinde page'i 1'e resetliyor ve kendi fetchOrders(1)'ini

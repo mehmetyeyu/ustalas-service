@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
       `SELECT DISTINCT code FROM products WHERE supplier = $1 AND tenant_id = $2 AND stock_qty > 0 ORDER BY code`,
       [supplier.trim(), user.tenantId]
     );
-    return NextResponse.json(result.rows.map((r) => r.code));
+    return NextResponse.json(result.rows.map((r) => r.code), {
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

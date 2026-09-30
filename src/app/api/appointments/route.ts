@@ -55,16 +55,45 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ count: Number(result.rows[0].count) });
     }
 
+    // Takvim görünümü (from/to ile, bkz. yukarısı) zaten görünen ay ızgarasıyla
+    // doğal olarak sınırlı — bare array olarak dönmeye devam eder. Liste
+    // sayfası (src/app/admin/appointments/page.tsx) ise from/to vermez ve
+    // firma yıllar içinde binlerce randevu biriktirebilir — bu yol artık
+    // sayfalanır (page/limit, orders/storage ile aynı sözleşim).
+    if (from && to) {
+      const result = await pool.query(
+        `SELECT a.id, a.plate, a.customer_name, a.customer_phone, a.requested_at, a.status,
+                a.order_id, a.notes, a.created_at, s.name AS service_name
+         FROM appointments a
+         LEFT JOIN services s ON s.id = a.service_id
+         WHERE ${conditions.map((c) => `a.${c}`).join(" AND ")}
+         ORDER BY a.requested_at DESC`,
+        values
+      );
+      return NextResponse.json(result.rows);
+    }
+
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
+    const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
+    const offset = (page - 1) * limit;
+
+    const countResult = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) FROM appointments WHERE ${conditions.join(" AND ")}`,
+      values
+    );
+    const total = Number(countResult.rows[0].count);
+
     const result = await pool.query(
       `SELECT a.id, a.plate, a.customer_name, a.customer_phone, a.requested_at, a.status,
               a.order_id, a.notes, a.created_at, s.name AS service_name
        FROM appointments a
        LEFT JOIN services s ON s.id = a.service_id
        WHERE ${conditions.map((c) => `a.${c}`).join(" AND ")}
-       ORDER BY a.requested_at DESC`,
-      values
+       ORDER BY a.requested_at DESC
+       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, limit, offset]
     );
-    return NextResponse.json(result.rows);
+    return NextResponse.json({ items: result.rows, total, page, limit });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

@@ -17,7 +17,9 @@ export async function GET() {
       `SELECT DISTINCT size_desc FROM products WHERE tenant_id = $1 AND size_desc IS NOT NULL AND size_desc <> '' ORDER BY size_desc`,
       [user.tenantId]
     );
-    return NextResponse.json(result.rows.map((r) => r.size_desc));
+    return NextResponse.json(result.rows.map((r) => r.size_desc), {
+      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

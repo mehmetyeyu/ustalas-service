@@ -16,7 +16,9 @@ export async function GET() {
       `SELECT DISTINCT brand FROM products WHERE tenant_id = $1 AND brand IS NOT NULL AND brand <> '' ORDER BY brand`,
       [user.tenantId]
     );
-    return NextResponse.json(result.rows.map((r) => r.brand));
+    return NextResponse.json(result.rows.map((r) => r.brand), {
+      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

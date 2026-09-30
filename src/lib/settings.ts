@@ -134,6 +134,30 @@ export async function getPlateRequired(tenantId: number): Promise<boolean> {
   return result.rows[0]?.plate_required ?? true;
 }
 
+// POST /api/orders'ın tek istekte ihtiyaç duyduğu üç ayarı (yukarıdaki
+// getPlateRequired/getCustomOrderNoEnabled/getAutoRegisterCustomers) ayrı ayrı
+// 3 round-trip yerine TEK sorguda çeker — üçü de aynı app_settings satırından
+// okunuyor. Diğer üçü, sadece tek bir ayara ihtiyaç duyan başka çağıranlar
+// (ör. randevu→sipariş dönüşümü) için ayrı ayrı korunuyor.
+export async function getOrderCreationSettings(
+  tenantId: number
+): Promise<{ plateRequired: boolean; customOrderNoEnabled: boolean; autoRegisterCustomers: boolean }> {
+  const result = await pool.query<{
+    plate_required: boolean;
+    custom_order_no_enabled: boolean;
+    auto_register_customers: boolean;
+  }>(
+    "SELECT plate_required, custom_order_no_enabled, auto_register_customers FROM app_settings WHERE tenant_id = $1",
+    [tenantId]
+  );
+  const row = result.rows[0];
+  return {
+    plateRequired: row?.plate_required ?? true,
+    customOrderNoEnabled: row?.custom_order_no_enabled ?? false,
+    autoRegisterCustomers: row?.auto_register_customers ?? true,
+  };
+}
+
 // /api/auth/me gibi çok sık çağrılan yollarda (her admin sayfası mount'unda,
 // bkz. src/app/admin/AuthContext.tsx) header/login'deki firma adı için 22
 // kolonlu getAppSettings() yerine tek kolonluk ucuz bir sorgu.
