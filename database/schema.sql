@@ -1,6 +1,13 @@
 -- Lastik Servis Yönetim Sistemi — Veritabanı Şeması
 -- PostgreSQL (Neon)
 
+-- ILIKE '%...%' aramalarını (Siparişler/Ürünler/Depolama arama kutuları)
+-- gerçek bir index taramasıyla karşılayabilmek için — bkz. scripts/add-search-indexes.mjs
+-- (o dosyadaki GIN index'ler bu extension'a bağımlı, ayrı bir script olarak
+-- tutuluyor çünkü CREATE INDEX CONCURRENTLY bu dosyanın çalıştığı tek
+-- transaction içinde çalışamıyor).
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- Hizmetler
 CREATE TABLE IF NOT EXISTS services (
   id         SERIAL PRIMARY KEY,
