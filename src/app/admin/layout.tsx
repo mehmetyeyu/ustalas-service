@@ -301,11 +301,23 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   // nav'daki rozet, kullanıcı isteği üzerine eklendi. Sayfa açılışında ve
   // ardından periyodik olarak (10dk) BEKLEMEDE sayısını çeker; appointments.view
   // izni yoksa hiç denemez.
+  //
+  // Sekme ARKA PLANDAYKEN interval durur (Page Visibility API) — önceden
+  // sekme hiç görünmese/kullanıcı saatlerce uzakta olsa bile 10dk'da bir
+  // arka planda çalışmaya devam ediyordu; birden fazla firma/kullanıcı
+  // panelini açık bırakınca bu, veritabanı compute'unun hiç boşta kalıp
+  // uyumasına izin vermeyen kalıcı bir arka plan yükü oluşturuyordu (Neon
+  // compute-saat kotasını zorlayan gerçek bir katkı, bkz. [[neon_pitr_deferred]]).
+  // Sekme tekrar öne gelince hemen bir kez çekilip interval yeniden başlar —
+  // rozet aktif kullanırken hâlâ güncel kalır, sadece boşta duran arka plan
+  // sekmeleri artık sessizce sunucuyu dürtmez.
   useEffect(() => {
     if (!user) return;
     const canView = user.role === "admin" || hasPermission(user, "appointments.view");
     if (!canView) return;
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     async function fetchPending() {
       try {
         // Sadece bir sayı gösterilecek — tüm satırları (isim/telefon/not
@@ -317,9 +329,31 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
         if (!cancelled) setPendingAppointments(typeof data.count === "number" ? data.count : 0);
       } catch { /* sessizce yoksay — bu sadece bir rozet, sayfayı bloklamamalı */ }
     }
+    function startInterval() {
+      if (interval) return;
+      interval = setInterval(fetchPending, 600000);
+    }
+    function stopInterval() {
+      if (interval) { clearInterval(interval); interval = null; }
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        fetchPending();
+        startInterval();
+      } else {
+        stopInterval();
+      }
+    }
+
     fetchPending();
-    const interval = setInterval(fetchPending, 600000);
-    return () => { cancelled = true; clearInterval(interval); };
+    if (document.visibilityState === "visible") startInterval();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      stopInterval();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [user]);
 
   // Yüklenirken tüm linkler gösterilir (kısa an) — asıl erişim zaten
