@@ -181,6 +181,11 @@ export default function SuperAdminPage() {
   // adını yazarak onaylatan ayrı bir modal (bkz. handleDeleteTenant).
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  // Firma hâlâ ödenmiş bir dönemin içindeyse (billing_period_ends_at ileri
+  // bir tarihse) ekstra bir "eminim" onayı — silme, kullanım hakkı devam
+  // ederken erişimi/veriyi hemen yok eder, bu iptalden (gelecekteki
+  // tahsilatları durdurmaktan) farklı bir risk, bkz. aşağıdaki uyarı kutusu.
+  const [deleteAckRemainingPeriod, setDeleteAckRemainingPeriod] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   async function fetchTenants() {
@@ -663,7 +668,7 @@ export default function SuperAdminPage() {
                         {togglingId === t.id ? "İşleniyor..." : t.is_active ? "Pasif Yap" : "Aktif Yap"}
                       </button>
                       <button
-                        onClick={() => { setDeletingTenant(t); setDeleteConfirmName(""); }}
+                        onClick={() => { setDeletingTenant(t); setDeleteConfirmName(""); setDeleteAckRemainingPeriod(false); }}
                         className="text-xs font-medium text-gray-400 hover:text-red-700"
                       >
                         Sil
@@ -822,6 +827,30 @@ export default function SuperAdminPage() {
               (siparişler, müşteriler, Cari, Kasa, ürünler, kullanıcılar — her şey) kalıcı olarak silinecek. Bu işlem
               GERİ ALINAMAZ. Sadece geçici olarak erişimi kapatmak istiyorsanız bunun yerine &quot;Pasif Yap&quot;ı kullanın.
             </p>
+            {isEffectivelyActive(deletingTenant) && (
+              <>
+                <p className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 mb-3">
+                  Bu firmanın <strong>aktif bir aboneliği</strong> var — silme işlemi iyzico&apos;daki aboneliği de
+                  iptal edecek (aksi halde silinen bir firma için tahsilat almaya devam ederdik).
+                </p>
+                {deletingTenant.billing_period_ends_at && (
+                  <p className="text-sm bg-red-50 border border-red-200 text-red-800 rounded-lg px-3 py-2 mb-3">
+                    Bu firmanın <strong>{formatDate(deletingTenant.billing_period_ends_at)}</strong> tarihine kadar
+                    ödenmiş kullanım hakkı var — iptal gelecekteki tahsilatı durdurur, ama bu firmayı şimdi silmek o
+                    tarihe kadar zaten ödenmiş erişimi de hemen sona erdirir.
+                  </p>
+                )}
+                <label className="flex items-start gap-2 text-sm text-gray-700 mb-4">
+                  <input
+                    type="checkbox"
+                    checked={deleteAckRemainingPeriod}
+                    onChange={(e) => setDeleteAckRemainingPeriod(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>Ödenmiş kullanım hakkına rağmen bu firmayı şimdi silmek istediğimden eminim.</span>
+                </label>
+              </>
+            )}
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Onaylamak için firma adını yazın: <span className="font-mono">{deletingTenant.name}</span>
             </label>
@@ -840,7 +869,11 @@ export default function SuperAdminPage() {
               </button>
               <button
                 onClick={handleDeleteTenant}
-                disabled={deleting || deleteConfirmName.trim() !== deletingTenant.name}
+                disabled={
+                  deleting ||
+                  deleteConfirmName.trim() !== deletingTenant.name ||
+                  (isEffectivelyActive(deletingTenant) && !deleteAckRemainingPeriod)
+                }
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
               >
                 {deleting ? "Siliniyor..." : "Kalıcı Olarak Sil"}
