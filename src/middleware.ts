@@ -5,10 +5,16 @@ import { isBillingLocked } from "@/lib/billing";
 import { getClientIp } from "@/lib/clientIp";
 import { isRateLimited, loginRateLimit, registerRateLimit, bookingRateLimit } from "@/lib/rateLimit";
 
-// Sadece pazarlama/demo dağıtımlarında (ör. Elevire) set edilir — ayarlıysa
-// kök yol dahili sipariş aracı yerine doğrudan landing sayfasına yönlendirir.
-// Ustalas'ın kendi prod ortamında bu değişken tanımlı değildir, davranış değişmez.
-const LANDING_REDIRECT = process.env.LANDING_REDIRECT;
+// elevire.yeyu.co'dan gelen, giriş yapmamış ziyaretçiler kök yolda ("/")
+// dahili sipariş aracı yerine doğrudan landing sayfasına (/elevire)
+// yönlendirilir — lastik.yeyu.co/ustalas-service.vercel.app'te davranış
+// değişmez (/admin/login). Eskiden bu, Elevire AYRI bir Vercel
+// projesindeyken sadece o projede set edilen bir LANDING_REDIRECT env
+// değişkeniyle yapılıyordu — 2026-10-01'de üç domain de AYNI Vercel
+// projesine/env değişkenlerine taşındığından (bkz. multi_tenant_migration
+// hafızası) artık host'a göre karar vermek gerekiyor, tek bir global env
+// değişkeni üç domain'i de aynı anda etkilerdi.
+const ELEVIRE_HOSTNAME = "elevire.yeyu.co";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -172,8 +178,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Ana sayfa — giriş yapmış herkes erişebilir. Giriş yapılmamışsa (Elevire'de
-  // LANDING_REDIRECT tanımlıysa) pazarlama sayfasına, yoksa login'e yönlendirir —
+  // Ana sayfa — giriş yapmış herkes erişebilir. Giriş yapılmamışsa, host
+  // elevire.yeyu.co ise pazarlama sayfasına, değilse login'e yönlendirir —
   // ama zaten giriş yapmış birini asla landing'e göndermez (aksi halde "/"'ye
   // giden dahili linkler, ör. Sipariş Ekle, oturum açıkken bile landing'e düşerdi).
   // DB'den taze kontrol (getAuthUserByToken) kullanılır — sadece imza
@@ -181,10 +187,15 @@ export async function middleware(request: NextRequest) {
   // ziyaret edilen sayfanın kabuğunun hâlâ görünmesine yol açardı (bkz.
   // /admin bloğundaki aynı düzeltme).
   if (pathname === "/") {
-    if (!token) return NextResponse.redirect(new URL(LANDING_REDIRECT || "/admin/login", request.url));
+    // request.nextUrl.hostname DEĞİL — yerel/bazı proxy senaryolarında Host
+    // header'ını doğru yansıtmadığı gözlendi (gerçek Host header'ı elle
+    // okumak daha güvenilir).
+    const host = request.headers.get("host") ?? "";
+    const landingRedirect = host === ELEVIRE_HOSTNAME ? "/elevire" : "/admin/login";
+    if (!token) return NextResponse.redirect(new URL(landingRedirect, request.url));
     const user = await getAuthUserByToken(token);
     if (!user) {
-      const res = NextResponse.redirect(new URL(LANDING_REDIRECT || "/admin/login", request.url));
+      const res = NextResponse.redirect(new URL(landingRedirect, request.url));
       res.cookies.delete("auth_token");
       return res;
     }
