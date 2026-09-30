@@ -17,11 +17,20 @@
 // götürür), EN SON kasalar (yukarıdaki hiçbir tablo artık ona referans
 // vermediği için).
 //
+// GÜVENLİK (2): --confirm tek başına yetmez — terminal firma ADINI (koddan
+// farklı olarak ezbere bilinmesi/kopyalanması zor, yanlışlıkla başka bir
+// firmayı hedeflemeyi zorlaştıran) birebir yazmanızı ister, tam eşleşmezse
+// hiçbir şey silinmeden çıkar. Bu, bu oturumda yaşanan "yanlış ortama
+// (production/dev karışıklığı) yazma" olayından sonra eklendi — --confirm
+// gibi kopyalanıp yapıştırılabilen bir bayrağın aksine, o an gerçekten
+// doğru firmaya baktığınızı doğrulamaya zorlar.
+//
 // Kullanım:
 //   node scripts/reset-tenant-data.mjs --code=338176            (dry-run, sayım gösterir)
-//   node scripts/reset-tenant-data.mjs --code=338176 --confirm  (gerçekten siler)
+//   node scripts/reset-tenant-data.mjs --code=338176 --confirm  (firma adını sorar, eşleşirse siler)
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import readline from "node:readline/promises";
 import nextEnv from "@next/env";
 import { Client } from "pg";
 
@@ -81,6 +90,14 @@ async function main() {
       }
       console.log("\nGerçekten silmek için aynı komutu --confirm ile tekrar çalıştırın.");
       return;
+    }
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const typed = await rl.question(`Onaylamak için firma adını birebir yazın ("${name}"): `);
+    rl.close();
+    if (typed !== name) {
+      console.error(`\nFirma adı eşleşmedi ("${typed}" ≠ "${name}") — hiçbir şey silinmedi.`);
+      process.exit(1);
     }
 
     await client.query("BEGIN");
