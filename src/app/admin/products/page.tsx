@@ -237,28 +237,6 @@ const STATIC_BATCH_COLUMNS: BatchColumnDef[] = [
     ),
   },
   {
-    key: "store_stock", label: "Mağaza Stok", defaultVisible: true, hideable: true, align: "center", minWidth: "min-w-[90px]", skeletonWidth: "w-10",
-    headerTitle: "Konumu \"Mağaza\" olarak girilen partilerin toplamı",
-    group: (g) => {
-      const qty = locationQty(g.batches, "Mağaza");
-      return qty > 0
-        ? <span className={`inline-block min-w-[2rem] px-2 py-0.5 rounded text-xs font-semibold ${locationBadgeStyle("Mağaza")}`}>{qty}</span>
-        : <span className="text-gray-300">—</span>;
-    },
-    batch: () => null,
-  },
-  {
-    key: "depot_stock", label: "Depo Stok", defaultVisible: true, hideable: true, align: "center", minWidth: "min-w-[90px]", skeletonWidth: "w-10",
-    headerTitle: "Konumu \"Depo\" olarak girilen partilerin toplamı",
-    group: (g) => {
-      const qty = locationQty(g.batches, "Depo");
-      return qty > 0
-        ? <span className={`inline-block min-w-[2rem] px-2 py-0.5 rounded text-xs font-semibold ${locationBadgeStyle("Depo")}`}>{qty}</span>
-        : <span className="text-gray-300">—</span>;
-    },
-    batch: () => null,
-  },
-  {
     key: "production_date", label: "Üretim Haftası/Yılı", defaultVisible: true, hideable: true, minWidth: "min-w-[100px]", skeletonWidth: "w-12",
     group: (g) => <span className="text-gray-400 text-xs">{g.batches.length} parti</span>,
     batch: (b) => <span className="text-gray-700 font-mono">{weekYearLabel(b.production_week, b.production_year)}</span>,
@@ -433,6 +411,25 @@ function locationQty(batches: ProductBatch[], location: string): number {
   return batches.reduce((sum, b) => sum + (b.location === location ? (b.stock_qty ?? 0) : 0), 0);
 }
 
+// "Taşı" hızlı aksiyonu sadece standart Mağaza/Depo ikilisi arasında çalışır
+// (bkz. openTransfer) — serbest metin bir konumdan (ör. "Şube 2") taşıma bu
+// hızlı yoldan desteklenmez, Düzenle formundan yapılır.
+function otherStandardLocation(location: string | null): string | null {
+  if (location === "Mağaza") return "Depo";
+  if (location === "Depo") return "Mağaza";
+  return null;
+}
+
+// Mağaza Stok / Depo Stok sütunları arasındaki hızlı ok butonları için — bir
+// konumda BİRDEN FAZLA parti varsa (ör. aynı kodun 2 farklı tedarikçiden
+// gelen partisi ikisi de Mağaza'da) hangisinden taşınacağı belirsizleşir, bu
+// yüzden sadece o konumda TAM OLARAK tek parti varken döner (yoksa null —
+// buton hiç gösterilmez, kullanıcı satırı genişletip spesifik partiden taşır).
+function singleBatchAtLocation(batches: ProductBatch[], location: string): ProductBatch | null {
+  const matches = batches.filter((b) => (b.location ?? "") === location);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 const PRODUCT_TYPE_BADGE_STYLE: Record<string, string> = {
   "Lastik": "bg-slate-100 text-slate-700",
   "Jant": "bg-purple-100 text-purple-700",
@@ -602,6 +599,14 @@ export default function ProductsPage() {
   const [editSizeComposedOnce, setEditSizeComposedOnce] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [historyModalProduct, setHistoryModalProduct] = useState<ProductBatch | null>(null);
+  // Mağaza ⇄ Depo kısmi stok taşıma — tek partili ürünlerde grup satırından,
+  // çok partili ürünlerde genişletilmiş parti satırından tetiklenir (bkz.
+  // openTransfer çağrı yerleri). toLocation sabit (butonun kendisi yönü
+  // belirtir, ör. "Depo'ya Taşı") — kasıtlı olarak serbest metin değil.
+  const [transferBatch, setTransferBatch] = useState<ProductBatch | null>(null);
+  const [transferToLocation, setTransferToLocation] = useState("");
+  const [transferQty, setTransferQty] = useState("");
+  const [transferSaving, setTransferSaving] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<StockEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [editingHistoryEntryId, setEditingHistoryEntryId] = useState<number | null>(null);
@@ -635,7 +640,79 @@ export default function ProductsPage() {
       ),
       batch: (b) => <span className="pl-10 inline-block text-gray-300 text-xs">#{b.id}</span>,
     },
-    ...STATIC_BATCH_COLUMNS,
+    // Stok'un hemen ardına eklenir (varsayılan sıradaki eski konumu) — Mağaza
+    // Stok/Depo Stok arasındaki ok butonları transferGroup/openTransfer'e
+    // ihtiyaç duyduğundan STATIC_BATCH_COLUMNS'ta (modül seviyesi) DEĞİL
+    // burada tanımlanır (bkz. "code" sütunundaki aynı gerekçe).
+    ...STATIC_BATCH_COLUMNS.slice(0, STATIC_BATCH_COLUMNS.findIndex((c) => c.key === "total_stock") + 1),
+    {
+      key: "store_stock", label: "Mağaza Stok", defaultVisible: true, hideable: true, align: "center", minWidth: "min-w-[90px]", skeletonWidth: "w-10",
+      headerTitle: "Konumu \"Mağaza\" olarak girilen partilerin toplamı",
+      group: (g) => {
+        const qty = locationQty(g.batches, "Mağaza");
+        const magazaBatch = singleBatchAtLocation(g.batches, "Mağaza");
+        const depoAmbiguous = g.batches.filter((b) => (b.location ?? "") === "Depo").length > 1;
+        const canSend = canEdit && magazaBatch && (magazaBatch.stock_qty ?? 0) > 0 && !depoAmbiguous;
+        return (
+          <div className="flex items-center justify-center gap-1">
+            {qty > 0
+              ? <span className={`inline-block min-w-[2rem] px-2 py-0.5 rounded text-xs font-semibold ${locationBadgeStyle("Mağaza")}`}>{qty}</span>
+              : <span className="text-gray-300">—</span>}
+            {/* Ok her zaman sabit genişlikte bir "slot" kaplar (gösterilmese
+                bile) — yoksa varlığı/yokluğu rozeti sağa-sola kaydırıp
+                sütunun hiza bozuyordu (kullanıcı bulgusu). */}
+            <span className="w-6 h-6 shrink-0">
+              {canSend && (
+                <button
+                  onClick={() => openTransfer(magazaBatch, "Depo")}
+                  title="Depo'ya Taşı"
+                  aria-label="Depo'ya Taşı"
+                  className="text-gray-400 hover:text-blue-600 p-0.5"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </button>
+              )}
+            </span>
+          </div>
+        );
+      },
+      batch: () => null,
+    },
+    {
+      key: "depot_stock", label: "Depo Stok", defaultVisible: true, hideable: true, align: "center", minWidth: "min-w-[90px]", skeletonWidth: "w-10",
+      headerTitle: "Konumu \"Depo\" olarak girilen partilerin toplamı",
+      group: (g) => {
+        const qty = locationQty(g.batches, "Depo");
+        const depoBatch = singleBatchAtLocation(g.batches, "Depo");
+        const magazaAmbiguous = g.batches.filter((b) => (b.location ?? "") === "Mağaza").length > 1;
+        const canSend = canEdit && depoBatch && (depoBatch.stock_qty ?? 0) > 0 && !magazaAmbiguous;
+        return (
+          <div className="flex items-center justify-center gap-1">
+            <span className="w-6 h-6 shrink-0">
+              {canSend && (
+                <button
+                  onClick={() => openTransfer(depoBatch, "Mağaza")}
+                  title="Mağaza'ya Taşı"
+                  aria-label="Mağaza'ya Taşı"
+                  className="text-gray-400 hover:text-blue-600 p-0.5"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                  </svg>
+                </button>
+              )}
+            </span>
+            {qty > 0
+              ? <span className={`inline-block min-w-[2rem] px-2 py-0.5 rounded text-xs font-semibold ${locationBadgeStyle("Depo")}`}>{qty}</span>
+              : <span className="text-gray-300">—</span>}
+          </div>
+        );
+      },
+      batch: () => null,
+    },
+    ...STATIC_BATCH_COLUMNS.slice(STATIC_BATCH_COLUMNS.findIndex((c) => c.key === "total_stock") + 1),
   ];
   const BATCH_COLUMNS_BY_KEY: Record<string, BatchColumnDef> = Object.fromEntries(
     BATCH_COLUMNS.map((c) => [c.key, c])
@@ -810,6 +887,23 @@ export default function ProductsPage() {
     setItems(data.items ?? []);
     setTotal(data.total ?? 0);
     setLoading(false);
+  }
+
+  // Taşıma gibi TEK bir ürün kodunu etkileyen işlemlerden sonra tüm sayfayı
+  // (loading=true, iskelet animasyonu, genişletilmiş satırların kapanması)
+  // yeniden çekmek yerine sadece o kodu taze sorgulayıp listede yerinde
+  // günceller. search ILIKE eşleştirdiğinden (ör. "MICH2" "MICH205"i de
+  // bulur) dönen sonuçlar arasından TAM kod eşleşmesi seçilir.
+  async function refreshSingleProduct(code: string) {
+    const res = await fetch(`/api/products?search=${encodeURIComponent(code)}&limit=500`);
+    const data = await res.json();
+    const fresh = (data.items ?? []).find((g: ProductGroup) => g.code === code);
+    setItems((prev) => {
+      if (!fresh) return prev.filter((g) => g.code !== code);
+      return prev.some((g) => g.code === code)
+        ? prev.map((g) => (g.code === code ? fresh : g))
+        : [...prev, fresh];
+    });
   }
 
   useEffect(() => {
@@ -1047,6 +1141,45 @@ export default function ProductsPage() {
     setSizeComposedOnce(!!(batch.width_mm && batch.profile_pct && batch.rim_diameter));
     setShowAddModal(true);
     toast.success("Bilgiler kopyalandı — Ürün Kodu'nu (ve varsa Barkod'u) girip kaydedin.");
+  }
+
+  // Mağaza ⇄ Depo taşıma — hedef, tıklanan butonun kendisiyle sabitlenir
+  // (bkz. yukarıdaki transferToLocation notu).
+  function openTransfer(batch: ProductBatch, toLocation: string) {
+    setTransferBatch(batch);
+    setTransferToLocation(toLocation);
+    setTransferQty("");
+  }
+
+  async function submitTransfer() {
+    if (!transferBatch) return;
+    const qty = Number(transferQty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error("Geçerli bir miktar girin.");
+      return;
+    }
+    if (qty > (transferBatch.stock_qty ?? 0)) {
+      toast.error(`Yetersiz stok — mevcut: ${transferBatch.stock_qty ?? 0}.`);
+      return;
+    }
+    setTransferSaving(true);
+    try {
+      const res = await fetch(`/api/products/${transferBatch.id}/transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: qty, to_location: transferToLocation }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Taşıma başarısız.");
+      toast.success(`${qty} adet ${transferToLocation}'ya taşındı.`);
+      const code = transferBatch.code;
+      setTransferBatch(null);
+      await refreshSingleProduct(code);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setTransferSaving(false);
+    }
   }
 
   function openEdit(item: ProductBatch, groupThreshold: number | null = item.min_stock_threshold) {
@@ -1719,6 +1852,27 @@ export default function ProductsPage() {
                                     </svg>
                                     <span className="hidden sm:inline">Fiyat Geçmişi</span>
                                   </button>
+                                  {/* Mağaza Stok/Depo Stok sütunlarındaki ok butonları (bkz. BATCH_COLUMNS)
+                                      sadece o konumda TEK parti varken görünür — bu buton SADECE o
+                                      okun gösterilmediği, yani bu partinin konumunda birden fazla
+                                      parti olduğu (hangisinden taşınacağı ancak burada, spesifik
+                                      partiyi seçerek netleşen) durumda gösterilir. Tek partili
+                                      ürünlerde (ör. KUMHO205) grup satırındaki ok zaten yeterli —
+                                      burada tekrar göstermek gereksiz/kafa karıştırıcı olurdu. */}
+                                  {canEdit && otherStandardLocation(batch.location) &&
+                                    group.batches.filter((b) => (b.location ?? "") === (batch.location ?? "")).length > 1 && (
+                                    <button
+                                      onClick={() => openTransfer(batch, otherStandardLocation(batch.location)!)}
+                                      title={`${otherStandardLocation(batch.location)}'ya Taşı`}
+                                      aria-label={`${otherStandardLocation(batch.location)}'ya Taşı`}
+                                      className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-500 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-700 text-xs font-medium"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                                      </svg>
+                                      <span className="hidden sm:inline">{otherStandardLocation(batch.location)}&apos;ya Taşı</span>
+                                    </button>
+                                  )}
                                   {canCreate && (
                                     <button
                                       onClick={() => openClone(batch, group.min_stock_threshold)}
@@ -2451,6 +2605,45 @@ export default function ProductsPage() {
               className="w-full mt-5 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50">
               Kapat
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mağaza ⇄ Depo Taşı */}
+      {transferBatch && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4" onClick={() => !transferSaving && setTransferBatch(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-base font-semibold text-gray-800 mb-1">{transferToLocation}&apos;ya Taşı</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              {batchLabel(transferBatch)} — {transferBatch.location ?? "—"}&apos;da {transferBatch.stock_qty ?? 0} adet
+            </p>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Taşınacak Miktar</label>
+            <input
+              type="number"
+              min={1}
+              max={transferBatch.stock_qty ?? undefined}
+              autoFocus
+              value={transferQty}
+              onChange={(e) => setTransferQty(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !transferSaving && submitTransfer()}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                onClick={() => setTransferBatch(null)}
+                disabled={transferSaving}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-40"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={submitTransfer}
+                disabled={transferSaving || !transferQty}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-40"
+              >
+                {transferSaving ? "Taşınıyor..." : "Taşı"}
+              </button>
+            </div>
           </div>
         </div>
       )}
