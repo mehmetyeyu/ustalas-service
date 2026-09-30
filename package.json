@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "env:local": "cp .env.devdb.local .env.local && echo 'DEVELOPMENT'",
+    "env:prod": "cp .env.proddb.local .env.local && echo 'PRODUCTION'"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
