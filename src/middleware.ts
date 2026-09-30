@@ -191,11 +191,20 @@ export async function middleware(request: NextRequest) {
     // header'ını doğru yansıtmadığı gözlendi (gerçek Host header'ı elle
     // okumak daha güvenilir).
     const host = request.headers.get("host") ?? "";
-    const landingRedirect = host === ELEVIRE_HOSTNAME ? "/elevire" : "/admin/login";
-    if (!token) return NextResponse.redirect(new URL(landingRedirect, request.url));
+    const isElevireHost = host === ELEVIRE_HOSTNAME;
+    // elevire.yeyu.co'da REWRITE (URL çubuğu "/" olarak kalır, içerik /elevire'den
+    // sunulur) — diğer domain'lerde login'e gerçek bir REDIRECT (URL değişir,
+    // kullanıcı zaten farklı bir sayfaya gidiyor, bunun görünmesi beklenir).
+    if (!token) {
+      return isElevireHost
+        ? NextResponse.rewrite(new URL("/elevire", request.url))
+        : NextResponse.redirect(new URL("/admin/login", request.url));
+    }
     const user = await getAuthUserByToken(token);
     if (!user) {
-      const res = NextResponse.redirect(new URL(landingRedirect, request.url));
+      const res = isElevireHost
+        ? NextResponse.rewrite(new URL("/elevire", request.url))
+        : NextResponse.redirect(new URL("/admin/login", request.url));
       res.cookies.delete("auth_token");
       return res;
     }
