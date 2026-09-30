@@ -9,14 +9,6 @@ export default function MesafeliSatisSozlesmesiPage() {
       <h1>Mesafeli Satış Sözleşmesi</h1>
       <p className="updated">Son güncelleme: 2026</p>
 
-      <div className="disclaimer">
-        Bu sözleşme, 6502 sayılı Tüketicinin Korunması Hakkında Kanun ve
-        Mesafeli Sözleşmeler Yönetmeliği’nin genel çerçevesine uygun olarak
-        hazırlanmış genel bir şablondur; hukuki danışmanlık yerine geçmez.
-        Yürürlüğe almadan önce bir hukuk danışmanına gözden geçirtmenizi
-        öneririz.
-      </div>
-
       <h2>1. Taraflar</h2>
       <p>
         <strong>Satıcı:</strong> {COMPANY.unvan} ({COMPANY.adres}, {COMPANY.postaKodu}

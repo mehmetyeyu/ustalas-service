@@ -8,14 +8,6 @@ export default function GizlilikPage() {
     <>
       <h1>Gizlilik Sözleşmesi ve KVKK Aydınlatma Metni</h1>
       <p className="updated">Son güncelleme: 2026</p>
-
-      <div className="disclaimer">
-        Bu metin, {COMPANY.unvan} tarafından genel bilgilendirme amacıyla
-        hazırlanmıştır ve hukuki danışmanlık yerine geçmez. Kendi işletmeniz
-        için özel durumlar söz konusuysa bir hukuk danışmanına başvurmanızı
-        öneririz.
-      </div>
-
       <h2>1. Veri Sorumlusu</h2>
       <p>
         6698 sayılı Kişisel Verilerin Korunması Kanunu (&ldquo;KVKK&rdquo;) uyarınca veri
