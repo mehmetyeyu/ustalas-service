@@ -1085,15 +1085,35 @@ export default function ProductsPage() {
     }
   }
 
-  function openAdd(prefillCode?: string, prefillBrand?: string | null, prefillSize?: string | null) {
+  // "Stok Girişi" — var olan bir kod için yeni parti eklerken (openClone'un
+  // aksine) kod SABİT kalır, ama müşteri isteğiyle (bkz. bu değişikliğin
+  // commit mesajı) diğer tüm alanlar da boş gelmek yerine o kodun EN SON
+  // partisinden (group.batches sırası production_year/week'e göre artan,
+  // bkz. /api/products route'u — son eleman en güncel parti) dolduruluyor:
+  // bir ürün kodu zaten tek bir "tip" ürünü temsil eder, her stok girişinde
+  // Marka/Model/Mevsim/Tedarikçi vb.'yi yeniden yazmaya gerek yok.
+  // Yeni (hiç partisi olmayan) bir kod için çağrılınca (lastBatch yok)
+  // davranış eskisi gibi tamamen boş kalır.
+  function openAdd(prefillCode?: string, lastBatch?: ProductBatch | null, groupThreshold: number | null = null) {
     setForm({
       ...EMPTY_FORM,
       code: prefillCode ?? "",
-      brand: prefillBrand ?? "",
-      size_desc: prefillSize ?? "",
+      brand: lastBatch?.brand ?? "",
+      size_desc: lastBatch?.size_desc ?? "",
+      season: lastBatch?.season ?? "",
+      supplier: lastBatch?.supplier ?? "",
+      location: lastBatch?.location ?? "",
+      purchase_price: lastBatch?.purchase_price != null ? String(num(lastBatch.purchase_price)) : "",
+      sale_price: lastBatch?.sale_price != null ? String(num(lastBatch.sale_price)) : "",
+      product_type: lastBatch?.product_type ?? "",
+      width_mm: lastBatch?.width_mm != null ? String(lastBatch.width_mm) : "",
+      profile_pct: lastBatch?.profile_pct != null ? String(lastBatch.profile_pct) : "",
+      rim_diameter: lastBatch?.rim_diameter ?? "",
+      model_name: lastBatch?.model_name ?? "",
+      min_stock_threshold: groupThreshold != null ? String(groupThreshold) : "",
     });
     setSizeBuilderOpen(false);
-    setSizeComposedOnce(false);
+    setSizeComposedOnce(!!(lastBatch?.width_mm && lastBatch?.profile_pct && lastBatch?.rim_diameter));
     setShowAddModal(true);
   }
 
@@ -1804,7 +1824,7 @@ export default function ProductsPage() {
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {canCreate && (
                                   <button
-                                    onClick={() => openAdd(group.code, group.brand, group.size_desc)}
+                                    onClick={() => openAdd(group.code, group.batches[group.batches.length - 1] ?? null, group.min_stock_threshold)}
                                     title="Stok Girişi"
                                     aria-label="Stok Girişi"
                                     className="flex items-center gap-1 p-1 sm:p-0 rounded text-blue-600 hover:bg-blue-50 sm:hover:bg-transparent hover:text-blue-800 text-xs font-medium whitespace-nowrap"
