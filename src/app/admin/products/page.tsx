@@ -385,6 +385,16 @@ function weekYearLabel(week: number | null, year: number | null): string {
   return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
 }
 
+// Üretim Haftası/Yılı input'ları — DOT koduyla aynı 2 haneli biçimde (ör.
+// "10/26"), sadece rakam, en fazla 2 karakter (önceden type="number" min/max
+// sadece ok tuşlarını/kırmızı çerçeveyi etkiliyordu, yazmayı HİÇ sınırlamıyordu
+// — kullanıcı isterse 6 haneli bir sayı yazabiliyordu). Yıl, normalizeYear
+// (bkz. POST/PATCH /api/products — 2 haneli "26" sunucuda 2026'ya çevrilir)
+// ile zaten uyumlu, burada ekstra bir dönüşüm gerekmiyor.
+function onlyDigits(value: string, maxLen: number): string {
+  return value.replace(/\D/g, "").slice(0, maxLen);
+}
+
 // Konum serbest metin (Mağaza/Depo önerilir ama başka değerler de girilebilir)
 // — sabit bir renk haritası tutmak yerine değere göre DETERMİNİSTİK bir
 // paletten renk seçilir, aynı konum her yerde hep aynı rengi alır.
@@ -547,12 +557,19 @@ export default function ProductsPage() {
   // satırında hep "Fiyat Geçmişi" olduğundan bu sütunu belirleyen hep bu
   // satır tipidir) — aksi halde ör. sadece products.view izni olan bir
   // kullanıcıda sütun gereksiz boş yer kaplardı (özellikle mobilde).
-  const productActionCount = 1 + (canCreate ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 1 : 0);
+  // canEdit için +2 sayılıyor: "Düzenle" + parti satırında veri bağımlı
+  // olarak (aynı konumda birden fazla parti varken) görünen "...'ya Taşı"
+  // taşıma butonu. İkincisi her partide görünmeyebilir ama ne zaman
+  // görüneceği veri değişimine bağlı olduğundan önceden kesin bilinemez —
+  // bütçelenmezse buton sticky sütunun dışına taşıp sayfa genelinde yatay
+  // taşmaya yol açıyordu (gerçek örnek: aynı konumda 2+ partili bir ürün).
+  const productActionCount = 1 + (canCreate ? 1 : 0) + (canEdit ? 2 : 0) + (canDelete ? 1 : 0);
   const PRODUCT_ACTIONS_WIDTH: Record<number, string> = {
     1: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[130px] sm:min-w-[130px] sm:max-w-[130px]",
     2: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[200px] sm:min-w-[200px] sm:max-w-[200px]",
     3: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]",
     4: "w-[122px] min-w-[122px] max-w-[122px] sm:w-[330px] sm:min-w-[330px] sm:max-w-[330px]",
+    5: "w-[148px] min-w-[148px] max-w-[148px] sm:w-[420px] sm:min-w-[420px] sm:max-w-[420px]",
   };
   const productActionsWidth = PRODUCT_ACTIONS_WIDTH[productActionCount];
   const [items, setItems] = useState<ProductGroup[]>([]);
@@ -651,8 +668,7 @@ export default function ProductsPage() {
       group: (g) => {
         const qty = locationQty(g.batches, "Mağaza");
         const magazaBatch = singleBatchAtLocation(g.batches, "Mağaza");
-        const depoAmbiguous = g.batches.filter((b) => (b.location ?? "") === "Depo").length > 1;
-        const canSend = canEdit && magazaBatch && (magazaBatch.stock_qty ?? 0) > 0 && !depoAmbiguous;
+        const canSend = canEdit && magazaBatch && (magazaBatch.stock_qty ?? 0) > 0;
         return (
           <div className="flex items-center justify-center gap-1">
             {qty > 0
@@ -686,8 +702,7 @@ export default function ProductsPage() {
       group: (g) => {
         const qty = locationQty(g.batches, "Depo");
         const depoBatch = singleBatchAtLocation(g.batches, "Depo");
-        const magazaAmbiguous = g.batches.filter((b) => (b.location ?? "") === "Mağaza").length > 1;
-        const canSend = canEdit && depoBatch && (depoBatch.stock_qty ?? 0) > 0 && !magazaAmbiguous;
+        const canSend = canEdit && depoBatch && (depoBatch.stock_qty ?? 0) > 0;
         return (
           <div className="flex items-center justify-center gap-1">
             <span className="w-6 h-6 shrink-0">
@@ -1215,8 +1230,11 @@ export default function ProductsPage() {
       season: item.season ?? "",
       supplier: item.supplier ?? "",
       location: item.location ?? "",
-      production_week: item.production_week != null ? String(item.production_week) : "",
-      production_year: item.production_year != null ? String(item.production_year) : "",
+      // Input artık 2 haneli DOT biçimini bekliyor (bkz. onlyDigits notu) —
+      // yıl veritabanında tam 4 haneli (2026) tutulduğundan son 2 haneye
+      // kısaltılır, hafta zaten tek haneli bile olsa 2 haneye tamamlanır.
+      production_week: item.production_week != null ? String(item.production_week).padStart(2, "0") : "",
+      production_year: item.production_year != null ? String(item.production_year).slice(-2) : "",
       purchase_price: item.purchase_price != null ? String(num(item.purchase_price)) : "",
       markupPercent: "",
       sale_price: item.sale_price != null ? String(num(item.sale_price)) : "",
@@ -2151,11 +2169,11 @@ export default function ProductsPage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
                   <div className="flex gap-2">
-                    <input type="number" min="1" max="53" placeholder="Hafta" value={form.production_week}
-                      onChange={(e) => setForm({ ...form, production_week: e.target.value })}
+                    <input type="text" inputMode="numeric" maxLength={2} placeholder="10" value={form.production_week}
+                      onChange={(e) => setForm({ ...form, production_week: onlyDigits(e.target.value, 2) })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <input type="number" min="2000" max="2100" placeholder="Yıl" value={form.production_year}
-                      onChange={(e) => setForm({ ...form, production_year: e.target.value })}
+                    <input type="text" inputMode="numeric" maxLength={2} placeholder="26" value={form.production_year}
+                      onChange={(e) => setForm({ ...form, production_year: onlyDigits(e.target.value, 2) })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                 </div>
@@ -2390,11 +2408,11 @@ export default function ProductsPage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
                   <div className="flex gap-2">
-                    <input type="number" min="1" max="53" placeholder="Hafta" value={editForm.production_week}
-                      onChange={(e) => setEditForm({ ...editForm, production_week: e.target.value })}
+                    <input type="text" inputMode="numeric" maxLength={2} placeholder="10" value={editForm.production_week}
+                      onChange={(e) => setEditForm({ ...editForm, production_week: onlyDigits(e.target.value, 2) })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <input type="number" min="2000" max="2100" placeholder="Yıl" value={editForm.production_year}
-                      onChange={(e) => setEditForm({ ...editForm, production_year: e.target.value })}
+                    <input type="text" inputMode="numeric" maxLength={2} placeholder="26" value={editForm.production_year}
+                      onChange={(e) => setEditForm({ ...editForm, production_year: onlyDigits(e.target.value, 2) })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                 </div>
