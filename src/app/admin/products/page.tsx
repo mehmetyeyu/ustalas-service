@@ -385,14 +385,27 @@ function weekYearLabel(week: number | null, year: number | null): string {
   return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
 }
 
-// Üretim Haftası/Yılı input'ları — DOT koduyla aynı 2 haneli biçimde (ör.
-// "10/26"), sadece rakam, en fazla 2 karakter (önceden type="number" min/max
-// sadece ok tuşlarını/kırmızı çerçeveyi etkiliyordu, yazmayı HİÇ sınırlamıyordu
-// — kullanıcı isterse 6 haneli bir sayı yazabiliyordu). Yıl, normalizeYear
+// Üretim Haftası/Yılı — DOT koduyla aynı 2 haneli biçimde (ör. "10/26"),
+// sadece rakam (önceden type="number" min/max sadece ok tuşlarını/kırmızı
+// çerçeveyi etkiliyordu, yazmayı HİÇ sınırlamıyordu). Yıl, normalizeYear
 // (bkz. POST/PATCH /api/products — 2 haneli "26" sunucuda 2026'ya çevrilir)
 // ile zaten uyumlu, burada ekstra bir dönüşüm gerekmiyor.
-function onlyDigits(value: string, maxLen: number): string {
-  return value.replace(/\D/g, "").slice(0, maxLen);
+//
+// Müşteri isteği: Hafta/Yıl artık tek bir "10/26" kutusuna yazılabiliyor.
+// Her iki alan da ayrı state olarak kalır (buildPayload/openEdit/openClone
+// hiç değişmedi) — sadece görünümde tek input, yazılan rakamlar ilk 2'si
+// haftaya son 2'si yıla bölünür; "/" kullanıcı yazsa da yazmasa da (ya da
+// yapıştırsa) aynı şekilde ayrıştırılır, DOT kodundaki gibi otomatik "/"
+// eklenmiş gibi görünür.
+function parseWeekYearInput(raw: string): { week: string; year: string } {
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  return { week: digits.slice(0, 2), year: digits.slice(2, 4) };
+}
+
+function formatWeekYearInput(week: string, year: string): string {
+  if (!week && !year) return "";
+  if (!year) return week;
+  return `${week}/${year}`;
 }
 
 // Konum serbest metin (Mağaza/Depo önerilir ama başka değerler de girilebilir)
@@ -2053,7 +2066,14 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-1">Yeni Ürün / Parti</h2>
+            <div className="flex items-start justify-between mb-1">
+              <h2 className="text-xl font-bold text-gray-800">Yeni Ürün / Parti</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
             <p className="text-xs text-gray-400 mb-5">Aynı Ürün Kodu zaten varsa, farklı bir Üretim Haftası/Yılı ve/veya Tedarikçi girerek o koda yeni bir parti eklemiş olursunuz. Kod+Hafta/Yılı+Tedarikçi mevcut bir partiyle birebir eşleşirse, girdiğiniz miktar o partinin stoğuna eklenir ve fiyat geçmişine yeni bir satır düşer.</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2165,28 +2185,29 @@ export default function ProductsPage() {
                   <SearchableCombobox value={form.location} onChange={(val) => setForm({ ...form, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
                 </div>
               </div>
-              {!hideSeasonProduction && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
+              <div className={hideSeasonProduction ? "" : "sm:col-span-2 flex gap-4 flex-wrap"}>
+                {!hideSeasonProduction && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
+                    <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
+                      value={formatWeekYearInput(form.production_week, form.production_year)}
+                      onChange={(e) => {
+                        const { week, year } = parseWeekYearInput(e.target.value);
+                        setForm({ ...form, production_week: week, production_year: year });
+                      }}
+                      className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                )}
+                <div className={hideSeasonProduction ? "" : "flex-1 min-w-[180px]"}>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Stok Miktarı / Min. Eşik</label>
                   <div className="flex gap-2">
-                    <input type="text" inputMode="numeric" maxLength={2} placeholder="10" value={form.production_week}
-                      onChange={(e) => setForm({ ...form, production_week: onlyDigits(e.target.value, 2) })}
+                    <input type="number" placeholder="Adet" value={form.stock_qty}
+                      onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <input type="text" inputMode="numeric" maxLength={2} placeholder="26" value={form.production_year}
-                      onChange={(e) => setForm({ ...form, production_year: onlyDigits(e.target.value, 2) })}
+                    <input type="number" min="0" placeholder="Min. Eşik" value={form.min_stock_threshold}
+                      onChange={(e) => setForm({ ...form, min_stock_threshold: e.target.value })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Stok Miktarı / Min. Eşik</label>
-                <div className="flex gap-2">
-                  <input type="number" placeholder="Adet" value={form.stock_qty}
-                    onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" min="0" placeholder="Min. Eşik" value={form.min_stock_threshold}
-                    onChange={(e) => setForm({ ...form, min_stock_threshold: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
               <div className="sm:col-span-2 border-t border-gray-100 pt-4">
@@ -2304,7 +2325,14 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-5">Partiyi Düzenle</h2>
+            <div className="flex items-start justify-between mb-5">
+              <h2 className="text-xl font-bold text-gray-800">Partiyi Düzenle</h2>
+              <button onClick={() => setEditItem(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2 flex gap-2">
@@ -2404,28 +2432,29 @@ export default function ProductsPage() {
                   <SearchableCombobox value={editForm.location} onChange={(val) => setEditForm({ ...editForm, location: val })} options={LOCATION_OPTIONS} placeholder="Mağaza, Depo..." />
                 </div>
               </div>
-              {!editHideSeasonProduction && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
+              <div className={editHideSeasonProduction ? "" : "sm:col-span-2 flex gap-4 flex-wrap"}>
+                {!editHideSeasonProduction && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">Üretim Haftası / Yılı</label>
+                    <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
+                      value={formatWeekYearInput(editForm.production_week, editForm.production_year)}
+                      onChange={(e) => {
+                        const { week, year } = parseWeekYearInput(e.target.value);
+                        setEditForm({ ...editForm, production_week: week, production_year: year });
+                      }}
+                      className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                )}
+                <div className={editHideSeasonProduction ? "" : "flex-1 min-w-[180px]"}>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Stok Miktarı / Min. Eşik</label>
                   <div className="flex gap-2">
-                    <input type="text" inputMode="numeric" maxLength={2} placeholder="10" value={editForm.production_week}
-                      onChange={(e) => setEditForm({ ...editForm, production_week: onlyDigits(e.target.value, 2) })}
+                    <input type="number" placeholder="Adet" value={editForm.stock_qty}
+                      onChange={(e) => setEditForm({ ...editForm, stock_qty: e.target.value })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <input type="text" inputMode="numeric" maxLength={2} placeholder="26" value={editForm.production_year}
-                      onChange={(e) => setEditForm({ ...editForm, production_year: onlyDigits(e.target.value, 2) })}
+                    <input type="number" min="0" placeholder="Min. Eşik" value={editForm.min_stock_threshold}
+                      onChange={(e) => setEditForm({ ...editForm, min_stock_threshold: e.target.value })}
                       className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Stok Miktarı / Min. Eşik</label>
-                <div className="flex gap-2">
-                  <input type="number" placeholder="Adet" value={editForm.stock_qty}
-                    onChange={(e) => setEditForm({ ...editForm, stock_qty: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" min="0" placeholder="Min. Eşik" value={editForm.min_stock_threshold}
-                    onChange={(e) => setEditForm({ ...editForm, min_stock_threshold: e.target.value })}
-                    className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
               <div className="sm:col-span-2 border-t border-gray-100 pt-4">
