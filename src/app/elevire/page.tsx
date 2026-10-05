@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { formatTry } from "@/lib/exchangeRate";
 import { getPlatformPricing } from "@/lib/platformPricing";
+import { COMPANY } from "./legal/company";
 import WaveHand from "./WaveHand";
 import Logomark from "./Logomark";
 import { inter } from "./fonts";
@@ -231,6 +232,11 @@ export default async function ElevirePage() {
             <a href="/elevire/legal/mesafeli-satis-sozlesmesi">Mesafeli Satış Sözleşmesi</a>
             <a href="/elevire/legal/iptal-ve-iade">İptal ve İade Koşulları</a>
           </nav>
+          <div className="footer-contact">
+            <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
+            <a href={`tel:${COMPANY.telefon.replace(/\s/g, "")}`}>{COMPANY.telefon}</a>
+            <span>{COMPANY.adres}, {COMPANY.postaKodu}</span>
+          </div>
           <div className="footer-bottom">
             <span className="footer-copyright">© 2026 Elevire. Tüm hakları saklıdır.</span>
             <div className="payment-badges">
@@ -579,6 +585,15 @@ const CSS = `
     color: var(--footer-muted);
   }
   .elevire .legal-nav a:hover { color: #ffffff; }
+  .elevire .footer-contact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-size: 0.85rem;
+    color: var(--footer-muted);
+  }
+  .elevire .footer-contact a { color: var(--footer-muted); }
+  .elevire .footer-contact a:hover { color: #ffffff; }
   .elevire .footer-bottom {
     display: flex;
     align-items: center;

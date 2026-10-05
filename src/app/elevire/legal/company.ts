@@ -12,5 +12,6 @@ export const COMPANY = {
   mersisNo: "0949084999300001",
   kep: "yerdenyuksek@hs01.kep.tr",
   email: "info@yeyu.co",
+  telefon: "0534 456 70 52",
   urunAdi: "Elevire",
 } as const;
