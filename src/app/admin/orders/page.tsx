@@ -1004,8 +1004,8 @@ export default function OrdersPage() {
 
 
 
-        <div className="flex items-stretch gap-1.5 sm:gap-3 sm:ml-auto">
-          <div className="shrink-0 flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="flex flex-wrap items-stretch gap-1.5 sm:gap-3 sm:ml-auto">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg sm:shrink-0">
             <div>
               <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Toplam Tutar</div>
               {loading ? (
@@ -1059,7 +1059,7 @@ export default function OrdersPage() {
                 <div className="flex items-center">
                   <Link
                     href="/admin/appointments/ayarlar"
-                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 underline whitespace-nowrap"
+                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 underline"
                     title="Ort. Günlük Tutar/Kâr gösterebilmek için Çalışma Saatlerinizi girin"
                   >
                     Ort. Günlük için Çalışma Saatlerini girin
@@ -1071,7 +1071,7 @@ export default function OrdersPage() {
           <div className="relative shrink-0 flex">
             <button
               onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
-              className="h-full px-1.5 sm:px-3 border border-gray-300 rounded-lg text-[11px] sm:text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1 sm:gap-2 whitespace-nowrap"
+              className="h-full py-2 sm:py-0 px-1.5 sm:px-3 border border-gray-300 rounded-lg text-[11px] sm:text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1 sm:gap-2 whitespace-nowrap"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
