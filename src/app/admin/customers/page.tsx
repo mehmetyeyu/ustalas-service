@@ -66,6 +66,21 @@ interface OrderLedgerLine {
   unit_price: number;
 }
 
+// "name" her zaman GÖRÜNÜR (birincil kimlik alanı, Storage/Products'taki
+// "kod" gibi gizlenemez) ama Products'taki Ürün Kodu gibi yine de
+// sürükleyerek sırası değiştirilebilir — bu yüzden hideable:false olarak
+// listede kalıyor, Sütunlar menüsünde checkbox'sız (sadece sürükle tutamacı)
+// gösteriliyor.
+const COLUMNS: { key: SortKey; label: string; defaultVisible: boolean; hideable: boolean; align: "left" | "right" }[] = [
+  { key: "name", label: "Müşteri Adı", defaultVisible: true, hideable: false, align: "left" },
+  { key: "balance", label: "Bakiye", defaultVisible: true, hideable: true, align: "right" },
+  { key: "phone", label: "Telefon", defaultVisible: true, hideable: true, align: "left" },
+  { key: "order_count", label: "Sipariş Sayısı", defaultVisible: false, hideable: true, align: "right" },
+];
+const COLUMNS_BY_KEY = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
+
+type SortKey = "name" | "phone" | "order_count" | "balance";
+
 export default function CustomersPage() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -89,6 +104,98 @@ export default function CustomersPage() {
   // aynı listede karışıyordu (bkz. görüşme notları) — has_cari_activity
   // (bkz. GET /api/customers) üzerinden ayrılıyor, yeni bir alan gerekmedi.
   const [activeTab, setActiveTab] = useState<"cari" | "perakende">("cari");
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
+  );
+  const [showColPicker, setShowColPicker] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Sütun sırası — Products sayfasındaki AYNI sürükle-bırak deseni: colOrder
+  // sadece bırakma anında güncellenir, previewColOrder sürükleme SIRASINDA
+  // canlı önizleme sağlar (hangi satırın üstüne gelindiği hemen görünür).
+  const [colOrder, setColOrder] = useState<string[]>(() => COLUMNS.map((c) => c.key));
+  const [dragColKey, setDragColKey] = useState<string | null>(null);
+  const [previewColOrder, setPreviewColOrder] = useState<string[] | null>(null);
+  const menuColumns = (previewColOrder ?? colOrder).map((k) => COLUMNS_BY_KEY[k]).filter((c): c is typeof COLUMNS[number] => c != null);
+  const orderedColumns = colOrder.map((k) => COLUMNS_BY_KEY[k]).filter((c): c is typeof COLUMNS[number] => c != null);
+
+  function handleColDragOver(targetKey: string) {
+    if (!dragColKey || dragColKey === targetKey) return;
+    setPreviewColOrder((prev) => {
+      const base = prev ?? colOrder;
+      const from = base.indexOf(dragColKey);
+      const to = base.indexOf(targetKey);
+      if (from === -1 || to === -1 || from === to) return base;
+      const next = base.filter((k) => k !== dragColKey);
+      next.splice(next.indexOf(targetKey), 0, dragColKey);
+      return next;
+    });
+  }
+
+  function commitColDrag() {
+    if (previewColOrder) {
+      setColOrder(previewColOrder);
+      try { localStorage.setItem("customers_col_order", JSON.stringify(previewColOrder)); } catch { }
+    }
+    setPreviewColOrder(null);
+    setDragColKey(null);
+  }
+
+  function cancelColDrag() {
+    setPreviewColOrder(null);
+    setDragColKey(null);
+  }
+
+  // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
+  // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
+  // mount sonrası (hydration bitince) uygulanır — bkz. Storage sayfasındaki
+  // aynı desen.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("customers_visible_cols");
+      if (saved) setVisibleCols(JSON.parse(saved));
+    } catch { }
+    try {
+      const savedOrder = localStorage.getItem("customers_col_order");
+      if (savedOrder) {
+        const parsed: unknown = JSON.parse(savedOrder);
+        if (Array.isArray(parsed)) {
+          const allKeys = COLUMNS.map((c) => c.key);
+          const kept = Array.from(new Set(parsed.filter((k): k is string => typeof k === "string" && allKeys.includes(k as SortKey))));
+          const missing = allKeys.filter((k) => !kept.includes(k));
+          setColOrder([...kept, ...missing]);
+        }
+      }
+    } catch { }
+  }, []);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function SortTh({ sortK, label, align = "left" }: { sortK: SortKey; label: string; align?: "left" | "right" }) {
+    const active = sortKey === sortK;
+    return (
+      <th
+        onClick={() => toggleSort(sortK)}
+        className={`px-4 py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${align === "right" ? "text-right" : "text-left"}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <span className={`text-[10px] ${active ? "text-blue-600" : "text-gray-300"}`}>
+            {active ? (sortDir === "asc" ? "▲" : "▼") : "▲"}
+          </span>
+        </span>
+      </th>
+    );
+  }
+
   const [ordersModalCustomer, setOrdersModalCustomer] = useState<Customer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -295,6 +402,17 @@ export default function CustomersPage() {
     ? tabCustomers.filter((c) => c.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
     : tabCustomers;
 
+  // Tüm müşteriler tek seferde (sayfalama olmadan) çekildiğinden sıralama
+  // istemci tarafında yapılır — Products'taki sunucu taraflı sıralamanın
+  // aksine burada ekstra bir API isteğine gerek yok.
+  const sorted = [...filtered].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    if (sortKey === "name") return a.name.localeCompare(b.name, "tr-TR") * dir;
+    if (sortKey === "phone") return (a.phone ?? "").localeCompare(b.phone ?? "", "tr-TR") * dir;
+    if (sortKey === "order_count") return (a.order_count - b.order_count) * dir;
+    return (a.balance - b.balance) * dir;
+  });
+
   // Çalışana "git şu müşterilerden tahsil et" diye verilebilecek somut bir
   // özet — customers.view zaten sayfa girişinde şart koşulduğundan (bkz.
   // useViewGuard) burada ayrıca izin kontrolüne gerek yok.
@@ -310,7 +428,7 @@ export default function CustomersPage() {
   if (!allowed) return null;
 
   return (
-    <div>
+    <div onClick={() => setShowColPicker(false)}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Müşteriler</h1>
         <div className="flex gap-2 self-start sm:self-auto">
@@ -359,7 +477,7 @@ export default function CustomersPage() {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-col sm:flex-row gap-3 sm:items-center">
         <input
           type="text"
           value={search}
@@ -367,6 +485,56 @@ export default function CustomersPage() {
           placeholder="Müşteri adı ara..."
           className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        <div className="relative">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+            </svg>
+            Sütunlar
+          </button>
+          {showColPicker && (
+            <div className="absolute left-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56" onClick={(e) => e.stopPropagation()}>
+              <p className="text-xs text-gray-400 px-2 mb-1">Sütunlar — sürükleyerek sırala</p>
+              {menuColumns.map((col) => (
+                <div
+                  key={col.key}
+                  draggable
+                  onDragStart={() => setDragColKey(col.key)}
+                  onDragOver={(e) => { e.preventDefault(); handleColDragOver(col.key); }}
+                  onDrop={commitColDrag}
+                  onDragEnd={cancelColDrag}
+                  className={`group flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-50 cursor-grab active:cursor-grabbing ${dragColKey === col.key ? "opacity-40" : ""}`}
+                >
+                  <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                  </svg>
+                  {col.hideable ? (
+                    <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={visibleCols[col.key]}
+                        onChange={(e) => setVisibleCols((prev) => {
+                          const next = { ...prev, [col.key]: e.target.checked };
+                          try { localStorage.setItem("customers_visible_cols", JSON.stringify(next)); } catch { }
+                          return next;
+                        })}
+                        className="accent-blue-600"
+                      />
+                      {col.label}
+                    </label>
+                  ) : (
+                    <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700 select-none">
+                      {col.label}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -379,26 +547,31 @@ export default function CustomersPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Müşteri Adı</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Telefon</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Bakiye</th>
+                  {orderedColumns.filter((col) => visibleCols[col.key]).map((col) => (
+                    <SortTh key={col.key} sortK={col.key} label={col.label} align={col.align} />
+                  ))}
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((c) => (
+                {sorted.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{c.name}</td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{c.phone || "-"}</td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      {c.balance > 0.009 ? (
-                        <span className="text-red-600 font-medium">{formatCurrency(c.balance)} (Borçlu)</span>
-                      ) : c.balance < -0.009 ? (
-                        <span className="text-green-600 font-medium">{formatCurrency(Math.abs(c.balance))} (Alacaklı)</span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
+                    {orderedColumns.filter((col) => visibleCols[col.key]).map((col) => (
+                      <td key={col.key} className={`px-4 py-3 whitespace-nowrap ${col.align === "right" ? "text-right" : ""} ${col.key === "name" ? "font-medium text-gray-800" : "text-gray-600"}`}>
+                        {col.key === "name" && c.name}
+                        {col.key === "phone" && (c.phone || "-")}
+                        {col.key === "order_count" && c.order_count}
+                        {col.key === "balance" && (
+                          c.balance > 0.009 ? (
+                            <span className="text-red-600 font-medium">{formatCurrency(c.balance)} (Borçlu)</span>
+                          ) : c.balance < -0.009 ? (
+                            <span className="text-green-600 font-medium">{formatCurrency(Math.abs(c.balance))} (Alacaklı)</span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )
+                        )}
+                      </td>
+                    ))}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                         {canViewOrders && (
