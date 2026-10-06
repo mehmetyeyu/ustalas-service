@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import {
   BarChart,
+  ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -13,7 +15,8 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../AuthContext";
+import { useToast } from "@/components/ToastProvider";
 
 interface DailyDatum {
   date: string;
@@ -182,10 +185,241 @@ function DateRangeControls({ range, onChange }: { range: DateRange; onChange: (r
   );
 }
 
+interface MonthlyFinancialRow {
+  month: number;
+  income: number;
+  expense: number;
+  kar: number;
+  isSaved: boolean;
+}
+
+const MONTH_NAMES_SHORT = [
+  "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+];
+
+// Gelir/Gider input'ları düzenlenebilir olduğundan type="number" kullanmak
+// zorunda değiliz — odaklanınca ham rakam (yazması kolay olsun diye),
+// odak kalkınca binlik ayraçlı "3.120,00" biçimi gösterilir (bkz. aşağıdaki
+// focusedField state). Üretim Haftası/Yılı'ndaki (Ürünler sayfası) aynı
+// "odakta ham, dışarıda biçimli" deseni.
+function formatTRNumber(raw: string): string {
+  const n = Number(raw.replace(",", "."));
+  if (!Number.isFinite(n)) return raw;
+  return n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Müşteri isteği: Raporlar'daki Ciro/Maliyet/Masraf'tan ayrı, admin'in elle
+// onaylayıp "resmi" hâle getirdiği bir Ay/Gelir/Gider/Kâr özeti — bkz.
+// database/schema.sql monthly_financials yorumu ve GET/PUT
+// /api/reports/monthly-financials. Bir ay hiç kaydedilmemişse Gelir/Gider
+// sistemden önerilir (sarı "öneri" rozetiyle işaretlenir) ama admin
+// "Kaydet"e basana kadar hiçbir şey yazılmaz.
+function YillikOzetTab() {
+  const toast = useToast();
+  const { user } = useAuth();
+  const canEdit = user?.role === "admin";
+  const isMobile = useIsMobile();
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [months, setMonths] = useState<MonthlyFinancialRow[]>([]);
+  const [totals, setTotals] = useState({ income: 0, expense: 0, kar: 0 });
+  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState<Record<number, { income: string; expense: string }>>({});
+  const [savingMonth, setSavingMonth] = useState<number | null>(null);
+  const [focusedField, setFocusedField] = useState<{ month: number; field: "income" | "expense" } | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/reports/monthly-financials?year=${year}`)
+      .then((r) => r.json())
+      .then((d: { months: MonthlyFinancialRow[]; totals: typeof totals }) => {
+        setMonths(d.months);
+        setTotals(d.totals);
+        setDrafts(Object.fromEntries(d.months.map((m) => [m.month, { income: String(m.income), expense: String(m.expense) }])));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [year]);
+
+  async function handleSave(month: number) {
+    const draft = drafts[month];
+    if (!draft) return;
+    setSavingMonth(month);
+    try {
+      const res = await fetch("/api/reports/monthly-financials", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ year, month, income: draft.income, expense: draft.expense }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Kaydedilemedi.");
+        return;
+      }
+      setMonths((prev) => {
+        const next = prev.map((m) => (m.month === month ? (data as MonthlyFinancialRow) : m));
+        setTotals(next.reduce((acc, m) => ({ income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }), { income: 0, expense: 0, kar: 0 }));
+        return next;
+      });
+      toast.success(`${MONTH_NAMES_SHORT[month - 1]} kaydedildi.`);
+    } finally {
+      setSavingMonth(null);
+    }
+  }
+
+  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-semibold text-gray-700">Yıllık Özet</h2>
+        <select
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {years.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="text-center text-gray-400 py-20">Yükleniyor...</div>
+      ) : (
+        <>
+        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
+          <ResponsiveContainer key={isMobile ? "mobile" : "desktop"} width="100%" height={isMobile ? 240 : 300}>
+            <ComposedChart data={months.map((m) => ({ name: MONTH_NAMES_SHORT[m.month - 1].slice(0, 3), gelir: m.income, gider: m.expense, kar: m.kar }))} margin={{ left: 0, right: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="name" tick={{ fontSize: isMobile ? 9 : 12 }} />
+              <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 42 : 60} />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (!active || !payload || payload.length === 0) return null;
+                  const row = payload[0].payload as { gelir: number; gider: number; kar: number };
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-0.5">
+                      <p className="font-medium text-gray-700 mb-1">{label}</p>
+                      <p style={{ color: "#3b82f6" }}>Gelir: {formatCurrency(row.gelir)}</p>
+                      <p style={{ color: "#ef4444" }}>Gider: {formatCurrency(row.gider)}</p>
+                      <p style={{ color: "#10b981" }}>Kâr/Zarar: {formatCurrency(row.kar)}</p>
+                    </div>
+                  );
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: isMobile ? 11 : 13 }} />
+              <Bar dataKey="gelir" name="Gelir" fill="#3b82f6" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="gider" name="Gider" fill="#ef4444" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              <Line type="monotone" dataKey="kar" name="Kâr/Zarar" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ay</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Gelir (₺)</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Gider (₺)</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kâr / Zarar</th>
+                  {canEdit && <th className="px-4 py-3"></th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {months.map((m) => {
+                  const draft = drafts[m.month] ?? { income: "0", expense: "0" };
+                  const draftKar = (Number(draft.income) || 0) - (Number(draft.expense) || 0);
+                  const dirty = Number(draft.income) !== m.income || Number(draft.expense) !== m.expense;
+                  return (
+                    <tr key={m.month} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                        {MONTH_NAMES_SHORT[m.month - 1]}
+                        {!m.isSaved && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700 align-middle">
+                            öneri
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {canEdit ? (
+                          <input
+                            type="text" inputMode="decimal"
+                            value={focusedField?.month === m.month && focusedField.field === "income" ? draft.income : formatTRNumber(draft.income)}
+                            onFocus={() => setFocusedField({ month: m.month, field: "income" })}
+                            onBlur={() => setFocusedField(null)}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
+                              setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], income: cleaned } }));
+                            }}
+                            className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          <span className="text-gray-700 whitespace-nowrap">{formatCurrency(m.income)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {canEdit ? (
+                          <input
+                            type="text" inputMode="decimal"
+                            value={focusedField?.month === m.month && focusedField.field === "expense" ? draft.expense : formatTRNumber(draft.expense)}
+                            onFocus={() => setFocusedField({ month: m.month, field: "expense" })}
+                            onBlur={() => setFocusedField(null)}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
+                              setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], expense: cleaned } }));
+                            }}
+                            className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          <span className="text-gray-700 whitespace-nowrap">{formatCurrency(m.expense)}</span>
+                        )}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${(canEdit ? draftKar : m.kar) >= 0 ? "text-green-600" : "text-red-500"}`}>
+                        {formatCurrency(canEdit ? draftKar : m.kar)}
+                      </td>
+                      {canEdit && (
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleSave(m.month)}
+                            disabled={!dirty || savingMonth === m.month}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            {savingMonth === m.month ? "..." : "Kaydet"}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t-2 border-gray-200 bg-gray-50">
+                <tr>
+                  <td className="px-4 py-3 font-bold text-gray-800 whitespace-nowrap">Yıl Toplamı</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-800 whitespace-nowrap">{formatCurrency(totals.income)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-800 whitespace-nowrap">{formatCurrency(totals.expense)}</td>
+                  <td className={`px-4 py-3 text-right font-bold whitespace-nowrap ${totals.kar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    {formatCurrency(totals.kar)}
+                  </td>
+                  {canEdit && <td className="px-4 py-3"></td>}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const allowed = useViewGuard("reports");
   const canViewKasa = usePermission("kasa.view");
   const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState<"genel" | "yillik">("genel");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   // Dönemsel ve Hizmet Dağılımı, üstteki Ay/Yıl'dan TAMAMEN BAĞIMSIZ kendi
@@ -258,29 +492,52 @@ export default function ReportsPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Raporlar & İstatistikler</h1>
-        <div className="flex gap-2">
-          <select
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {months.map((m, i) => (
-              <option key={i} value={i + 1}>{m}</option>
-            ))}
-          </select>
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        </div>
+        {activeTab === "genel" && (
+          <div className="flex gap-2">
+            <select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {months.map((m, i) => (
+                <option key={i} value={i + 1}>{m}</option>
+              ))}
+            </select>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      {loading ? (
+      {/* Genel Bakış: mevcut Ciro/Maliyet/Masraf tabanlı raporlar — Yıllık Özet:
+          admin'in elle onayladığı, "resmi" Gelir/Gider/Kâr kaydı (bkz.
+          YillikOzetTab yorumu). İkisi kasıtlı olarak ayrı: biri ham/canlı
+          veri, diğeri dondurulmuş/onaylı kayıt. */}
+      <div className="flex gap-1 mb-6 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab("genel")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "genel" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+        >
+          Genel Bakış
+        </button>
+        <button
+          onClick={() => setActiveTab("yillik")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "yillik" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+        >
+          Yıllık Özet
+        </button>
+      </div>
+
+      {activeTab === "yillik" ? (
+        <YillikOzetTab />
+      ) : loading ? (
         <div className="text-center text-gray-400 py-20">Yükleniyor...</div>
       ) : (
         <>
