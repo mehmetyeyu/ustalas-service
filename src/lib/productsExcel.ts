@@ -71,7 +71,7 @@ export function normalizeYear(year: number): number {
 // Üretim Haftası/Yılı "10/26" (Hafta/Yıl, DOT kodu biçimi) metni olarak girilir —
 // takvim tarihi değildir. Excel bazen bu metni otomatik tarihe çevirebildiğinden
 // (seri sayı olarak gelirse) o durumda da hafta/yıl seri tarihten türetilir.
-function parseWeekYear(val: unknown): { week: number | null; year: number | null } {
+export function parseWeekYear(val: unknown): { week: number | null; year: number | null } {
   if (val == null || val === "") return { week: null, year: null };
   if (typeof val === "number") {
     const ms = Math.round((val - 25569) * 86400 * 1000);

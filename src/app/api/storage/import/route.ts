@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import * as XLSX from "xlsx";
+import { parseWeekYear } from "@/lib/productsExcel";
 
 const MAX_BATCH_SIZE = 500;
 
@@ -17,6 +18,10 @@ interface StorageRow {
   adet: number;
   mevsim: string | null;
   aciklama: string | null;
+  model_name: string | null;
+  production_week: number | null;
+  production_year: number | null;
+  load_speed_index: string | null;
 }
 
 function parseRow(r: unknown[]): StorageRow | null {
@@ -41,8 +46,14 @@ function parseRow(r: unknown[]): StorageRow | null {
   const adet = r[7] != null ? Number(r[7]) : 4;
   const mevsim = r[8] != null ? String(r[8]).trim() : null;
   const aciklama = r[9] != null ? String(r[9]).trim() : null;
+  const model_name = r[10] != null ? String(r[10]).trim() : null;
+  const { week: production_week, year: production_year } = parseWeekYear(r[11]);
+  const load_speed_index = r[12] != null ? String(r[12]).trim() : null;
 
-  return { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama };
+  return {
+    depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama,
+    model_name, production_week, production_year, load_speed_index,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -147,15 +158,20 @@ export async function POST(request: NextRequest) {
       if (toUpdate.length > 0) {
         const values: (string | number | null)[] = [];
         const placeholders = toUpdate.map((r, i) => {
-          const base = i * 9;
-          values.push(r.id, r.depo_no, r.customer_name, r.phone, r.ebat, r.marka, r.dis_derinligi, r.adet, r.aciklama);
-          return `($${base + 1}::int,$${base + 2}::int,$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8}::int,$${base + 9})`;
+          const base = i * 13;
+          values.push(
+            r.id, r.depo_no, r.customer_name, r.phone, r.ebat, r.marka, r.dis_derinligi, r.adet, r.aciklama,
+            r.model_name, r.production_week, r.production_year, r.load_speed_index
+          );
+          return `($${base + 1}::int,$${base + 2}::int,$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8}::int,$${base + 9},$${base + 10},$${base + 11}::int,$${base + 12}::int,$${base + 13})`;
         });
         await client.query(
           `UPDATE storage AS s SET
              depo_no=v.depo_no, customer_name=v.customer_name, phone=v.phone, ebat=v.ebat,
-             marka=v.marka, dis_derinligi=v.dis_derinligi, adet=v.adet, aciklama=v.aciklama
-           FROM (VALUES ${placeholders.join(",")}) AS v(id, depo_no, customer_name, phone, ebat, marka, dis_derinligi, adet, aciklama)
+             marka=v.marka, dis_derinligi=v.dis_derinligi, adet=v.adet, aciklama=v.aciklama,
+             model_name=v.model_name, production_week=v.production_week, production_year=v.production_year,
+             load_speed_index=v.load_speed_index
+           FROM (VALUES ${placeholders.join(",")}) AS v(id, depo_no, customer_name, phone, ebat, marka, dis_derinligi, adet, aciklama, model_name, production_week, production_year, load_speed_index)
            WHERE s.id = v.id AND s.tenant_id = $${values.length + 1}`,
           [...values, user.tenantId]
         );
@@ -164,12 +180,15 @@ export async function POST(request: NextRequest) {
       if (toInsert.length > 0) {
         const values: (string | number | null)[] = [];
         const placeholders = toInsert.map((r, i) => {
-          const base = i * 11;
-          values.push(user.tenantId!, r.depo_no, r.plate, r.customer_name, r.phone, r.ebat, r.marka, r.dis_derinligi, r.adet, r.mevsim, r.aciklama);
-          return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11})`;
+          const base = i * 15;
+          values.push(
+            user.tenantId!, r.depo_no, r.plate, r.customer_name, r.phone, r.ebat, r.marka, r.dis_derinligi, r.adet, r.mevsim, r.aciklama,
+            r.model_name, r.production_week, r.production_year, r.load_speed_index
+          );
+          return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15})`;
         });
         await client.query(
-          `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama)
+          `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, model_name, production_week, production_year, load_speed_index)
            VALUES ${placeholders.join(",")}`,
           values
         );

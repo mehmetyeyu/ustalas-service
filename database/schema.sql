@@ -1630,3 +1630,15 @@ CREATE TABLE IF NOT EXISTS monthly_financials (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id, year, month)
 );
+
+-- Depolama — Ürünler'deki (bkz. Faz 2) Model/Üretim Haftası-Yılı/Yük-Hız
+-- Endeksi alanlarının depolanan müşteri lastiklerinde de takip edilmesi
+-- isteği: hangi tam model olduğu, DOT yaşı (uzun süre depoda kalan
+-- lastiklerde güvenlik açısından önemli) ve yük/hız endeksi (teslim
+-- teyidi için). Ürünler'deki AB Etiketi/Jant/Min. Stok Eşiği gibi
+-- alanlar BİLEREK eklenmedi — depolanan müşteri lastiği için (satılık
+-- envanter değil) anlamsızlar.
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS model_name VARCHAR(80);
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS production_week SMALLINT;
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS production_year SMALLINT;
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS load_speed_index VARCHAR(20);

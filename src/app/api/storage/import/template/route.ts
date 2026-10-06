@@ -12,9 +12,9 @@ export async function GET() {
   // konumu esas alınır) — bkz. src/app/api/storage/import/route.ts.
   const buffer = buildTemplateBuffer(
     "Depolama Şablonu",
-    ["Depo No", "Plaka", "Müşteri", "Telefon", "Ebat", "Marka", "Diş Derinliği", "Adet", "Mevsim", "Açıklama"],
-    [null, "00ORNEK00", "Örnek Müşteri", "05551234567", "205/55R16", "Michelin", "5-5-5-5", 4, "Kışlık", "Örnek açıklama"],
-    [8, 12, 20, 14, 12, 14, 12, 6, 12, 30]
+    ["Depo No", "Plaka", "Müşteri", "Telefon", "Ebat", "Marka", "Diş Derinliği", "Adet", "Mevsim", "Açıklama", "Model", "Üretim Haftası/Yılı", "Yük/Hız"],
+    [null, "00ORNEK00", "Örnek Müşteri", "05551234567", "205/55R16", "Michelin", "5-5-5-5", 4, "Kışlık", "Örnek açıklama", "PremiumContact 6", "10/26", "91H"],
+    [8, 12, 20, 14, 12, 14, 12, 6, 12, 30, 20, 16, 10]
   );
 
   return new NextResponse(buffer, {

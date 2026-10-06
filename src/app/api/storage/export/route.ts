@@ -25,6 +25,11 @@ export async function GET() {
       "Mevsim":         r.mevsim ?? "",
       "Açıklama":       r.aciklama ?? "",
       "İşlem Tarihi":   r.islem_tarihi ? new Date(r.islem_tarihi).toLocaleDateString("tr-TR") : "",
+      "Model":          r.model_name ?? "",
+      "Üretim Haftası/Yılı": r.production_week != null && r.production_year != null
+        ? `${String(r.production_week).padStart(2, "0")}/${String(r.production_year).slice(-2)}`
+        : "",
+      "Yük/Hız":        r.load_speed_index ?? "",
     }));
 
     const wb = XLSX.utils.book_new();
@@ -33,6 +38,7 @@ export async function GET() {
     ws["!cols"] = [
       { wch: 8 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 12 },
       { wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 12 }, { wch: 30 }, { wch: 14 },
+      { wch: 20 }, { wch: 16 }, { wch: 10 },
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, "Depolama Listesi");

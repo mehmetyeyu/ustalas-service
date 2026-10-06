@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { getAppSettings } from "@/lib/settings";
 import { escapeLike } from "@/lib/sqlSafety";
+import { normalizeYear } from "@/lib/productsExcel";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi } = body;
+    const { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index } = body;
 
     if (!plate) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
@@ -97,10 +98,11 @@ export async function POST(request: NextRequest) {
     `, [user.tenantId])).rows[0].next;
 
     const result = await pool.query(
-      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [user.tenantId, nextDepoNo, plate || null, customer_name || null, phone || null, ebat || null, marka || null,
-       dis_derinligi || null, adet || 4, mevsim || null, aciklama || null, islem_tarihi || null]
+       dis_derinligi || null, adet || 4, mevsim || null, aciklama || null, islem_tarihi || null,
+       model_name || null, production_week || null, production_year ? normalizeYear(Number(production_year)) : null, load_speed_index || null]
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });

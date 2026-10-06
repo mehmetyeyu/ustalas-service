@@ -23,9 +23,22 @@ interface StorageItem {
   islem_tarihi: string | null;
   teslim_edildi: boolean;
   teslim_tarihi: string | null;
+  model_name: string | null;
+  production_week: number | null;
+  production_year: number | null;
+  load_speed_index: string | null;
 }
 
 const MEVSIM_OPTIONS = ["Kışlık", "Yazlık", "Dört Mevsim"];
+
+// "Değişim Yap" açılırken Mevsim alanı için akıllı varsayım — bkz. sunum
+// "Depoda Mevsim Değişimi Akışı"nın "Açık Soru"su: otomatik ters + yine de
+// değiştirilebilir dropdown (Dört Mevsim ihtimaline karşı kilitli değil).
+function oppositeMevsim(mevsim: string | null): string {
+  if (mevsim === "Kışlık") return "Yazlık";
+  if (mevsim === "Yazlık") return "Kışlık";
+  return "";
+}
 
 const TIRE_BRANDS = [
   "Bridgestone", "Continental", "Dunlop", "Falken", "Firestone",
@@ -157,7 +170,13 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "phone", label: "Telefon", defaultVisible: false },
   { key: "ebat", label: "Ebat", defaultVisible: true },
   { key: "marka", label: "Marka", defaultVisible: true },
+  // Model/Üretim Haftası-Yılı/Yük-Hız — Ürünler'deki (Faz 2) aynı alanların
+  // depolanan müşteri lastiğinde de takip edilmesi isteği; AB Etiketi/Jant/
+  // Min. Stok Eşiği gibi satılık envanter kavramları BİLEREK eklenmedi.
+  { key: "model_name", label: "Model", defaultVisible: false },
   { key: "dis_derinligi", label: "Diş", defaultVisible: true },
+  { key: "uretim_hafta_yili", label: "Üretim Haftası/Yılı", defaultVisible: false },
+  { key: "load_speed_index", label: "Yük/Hız", defaultVisible: false },
   { key: "adet", label: "Adet", defaultVisible: true },
   { key: "mevsim", label: "Mevsim", defaultVisible: true },
   { key: "aciklama", label: "Açıklama", defaultVisible: false },
@@ -168,10 +187,30 @@ const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
 // aynı sütunlarda nabız (pulse) animasyonlu çubuklar gösterilir.
 const SKELETON_COL_WIDTH: Record<string, string> = {
   depo_no: "w-8", plate: "w-16", customer_name: "w-28", phone: "w-20",
-  ebat: "w-20", marka: "w-20", dis_derinligi: "w-10", adet: "w-6",
+  ebat: "w-20", marka: "w-20", model_name: "w-24", dis_derinligi: "w-10",
+  uretim_hafta_yili: "w-14", load_speed_index: "w-12", adet: "w-6",
   mevsim: "w-16", aciklama: "w-32", islem_tarihi: "w-16",
 };
 const SKELETON_ROWS = 8;
+
+// Üretim Haftası/Yılı — Ürünler sayfasındaki AYNI "10/26" biçimi/mantığı
+// (DOT kodu). production_year DB'de 4 haneli (2026) tutulur, görünümde
+// son 2 hane kullanılır.
+function weekYearLabel(week: number | null, year: number | null): string {
+  if (week == null && year == null) return "—";
+  if (week == null) return `—/${String(year).slice(-2)}`;
+  if (year == null) return `${String(week).padStart(2, "0")}/—`;
+  return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
+}
+function parseWeekYearInput(raw: string): { week: string; year: string } {
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  return { week: digits.slice(0, 2), year: digits.slice(2, 4) };
+}
+function formatWeekYearInput(week: string, year: string): string {
+  if (!week && !year) return "";
+  if (!year) return week;
+  return `${week}/${year}`;
+}
 
 const EMPTY_FORM = {
   depo_no: "",
@@ -185,6 +224,10 @@ const EMPTY_FORM = {
   mevsim: "Yazlık",
   aciklama: "",
   islem_tarihi: new Date().toISOString().split("T")[0],
+  model_name: "",
+  production_week: "",
+  production_year: "",
+  load_speed_index: "",
 };
 
 function isOverdue(islem_tarihi: string | null, thresholdMonths: number): boolean {
@@ -219,7 +262,9 @@ async function printLabel(item: StorageItem) {
         <tr><td class="lbl">Telefon</td><td class="val">${escapeHtml(item.phone) || "—"}</td></tr>
         <tr><td class="lbl">Ebat</td><td class="val">${escapeHtml(item.ebat) || "—"}</td></tr>
         <tr><td class="lbl">Marka</td><td class="val">${escapeHtml(item.marka) || "—"}</td></tr>
+        <tr><td class="lbl">Model</td><td class="val">${escapeHtml(item.model_name) || "—"}</td></tr>
         <tr><td class="lbl">Diş Derinliği</td><td class="val">${escapeHtml(item.dis_derinligi) || "—"}</td></tr>
+        <tr><td class="lbl">Üretim Haftası/Yılı</td><td class="val">${weekYearLabel(item.production_week, item.production_year)}</td></tr>
         <tr><td class="lbl">Adet</td><td class="val">${item.adet ?? "—"}</td></tr>
         <tr><td class="lbl">Mevsim</td><td class="val">${escapeHtml(item.mevsim) || "—"}</td></tr>
         <tr><td class="lbl">İşlem Tarihi</td><td class="val">${date}</td></tr>
@@ -316,6 +361,9 @@ export default function StoragePage() {
   const [overdueMonths, setOverdueMonths] = useState(6);
   const [showDelivered, setShowDelivered] = useState(false);
   const [teslimId, setTeslimId] = useState<number | null>(null);
+  const [degisimItem, setDegisimItem] = useState<StorageItem | null>(null);
+  const [degisimForm, setDegisimForm] = useState({ ebat: "", marka: "", dis_derinligi: "", adet: "4", mevsim: "", aciklama: "", islem_tarihi: new Date().toISOString().split("T")[0], model_name: "", production_week: "", production_year: "", load_speed_index: "" });
+  const [degisimSaving, setDegisimSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function fetchOverdueCount() {
@@ -375,6 +423,8 @@ export default function StoragePage() {
           ...form,
           depo_no: form.depo_no ? Number(form.depo_no) : null,
           adet: Number(form.adet),
+          production_week: form.production_week ? Number(form.production_week) : null,
+          production_year: form.production_year ? Number(form.production_year) : null,
         }),
       });
       if (!res.ok) {
@@ -404,6 +454,10 @@ export default function StoragePage() {
       mevsim: item.mevsim ?? "Yazlık",
       aciklama: item.aciklama ?? "",
       islem_tarihi: item.islem_tarihi ? item.islem_tarihi.split("T")[0] : new Date().toISOString().split("T")[0],
+      model_name: item.model_name ?? "",
+      production_week: item.production_week != null ? String(item.production_week).padStart(2, "0") : "",
+      production_year: item.production_year != null ? String(item.production_year).slice(-2) : "",
+      load_speed_index: item.load_speed_index ?? "",
     });
   }
 
@@ -418,6 +472,8 @@ export default function StoragePage() {
           ...editForm,
           depo_no: editForm.depo_no ? Number(editForm.depo_no) : null,
           adet: Number(editForm.adet),
+          production_week: editForm.production_week ? Number(editForm.production_week) : null,
+          production_year: editForm.production_year ? Number(editForm.production_year) : null,
         }),
       });
       if (!res.ok) return;
@@ -460,6 +516,52 @@ export default function StoragePage() {
       await fetchOverdueCount();
     } finally {
       setTeslimId(null);
+    }
+  }
+
+  // "Değişim Yap" — bkz. sunum "Depoda Mevsim Değişimi Akışı": Plaka/Müşteri/
+  // Telefon/Depo No aynı kalır (aynı müşteri/slot), lastiğe özel alanlar
+  // (Ebat/Marka/Diş/Adet/Açıklama) boş gelir çünkü yeni bırakılan set farklı
+  // olabilir — Mevsim ise akıllı varsayımla ters seçili gelir.
+  function openDegisim(item: StorageItem) {
+    setDegisimItem(item);
+    setDegisimForm({
+      ebat: "", marka: "", dis_derinligi: "", adet: "4",
+      mevsim: oppositeMevsim(item.mevsim),
+      aciklama: "",
+      islem_tarihi: new Date().toISOString().split("T")[0],
+      model_name: "", production_week: "", production_year: "", load_speed_index: "",
+    });
+  }
+
+  async function handleDegisimSubmit() {
+    if (!degisimItem) return;
+    setDegisimSaving(true);
+    try {
+      const res = await fetch(`/api/storage/${degisimItem.id}/degisim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...degisimForm,
+          adet: Number(degisimForm.adet),
+          production_week: degisimForm.production_week ? Number(degisimForm.production_week) : null,
+          production_year: degisimForm.production_year ? Number(degisimForm.production_year) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Değişim yapılamadı.");
+        return;
+      }
+      setDegisimItem(null);
+      await fetchItems(page);
+      await fetchOverdueCount();
+      // Yeni kayıt kaydedilir kaydedilmez etiket otomatik basılır — ayrıca
+      // "Etiket" tıklamaya gerek yok (bkz. sunum, adım 4).
+      await printLabel(data);
+      toast.success("Değişim tamamlandı, etiket yazdırılıyor.");
+    } finally {
+      setDegisimSaving(false);
     }
   }
 
@@ -670,7 +772,10 @@ export default function StoragePage() {
                 {visibleCols.phone && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Telefon</th>}
                 {visibleCols.ebat && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ebat</th>}
                 {visibleCols.marka && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marka</th>}
+                {visibleCols.model_name && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Model</th>}
                 {visibleCols.dis_derinligi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Diş</th>}
+                {visibleCols.uretim_hafta_yili && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Üretim Haftası/Yılı</th>}
+                {visibleCols.load_speed_index && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Yük/Hız</th>}
                 {visibleCols.adet && <th className="text-center px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Adet</th>}
                 {visibleCols.mevsim && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
                 {visibleCols.aciklama && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
@@ -718,7 +823,10 @@ export default function StoragePage() {
                     {visibleCols.phone && <td className="px-4 py-3 text-gray-500">{item.phone ?? "—"}</td>}
                     {visibleCols.ebat && <td className="px-4 py-3 text-gray-700 font-mono text-xs">{item.ebat ?? "—"}</td>}
                     {visibleCols.marka && <td className="px-4 py-3 text-gray-700">{item.marka ?? "—"}</td>}
+                    {visibleCols.model_name && <td className="px-4 py-3 text-gray-700">{item.model_name ?? "—"}</td>}
                     {visibleCols.dis_derinligi && <td className="px-4 py-3 text-gray-500 font-mono text-xs">{item.dis_derinligi ?? "—"}</td>}
+                    {visibleCols.uretim_hafta_yili && <td className="px-4 py-3 text-gray-700 font-mono">{weekYearLabel(item.production_week, item.production_year)}</td>}
+                    {visibleCols.load_speed_index && <td className="px-4 py-3 text-gray-500 font-mono text-xs">{item.load_speed_index ?? "—"}</td>}
                     {visibleCols.adet && <td className="px-4 py-3 text-center text-gray-700">{item.adet ?? "—"}</td>}
                     {visibleCols.mevsim && (
                       <td className="px-4 py-3">
@@ -741,6 +849,11 @@ export default function StoragePage() {
                       <div className="hidden sm:flex items-center gap-3 whitespace-nowrap">
                         <button onClick={() => printLabel(item)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Etiket</button>
                         {canEdit && <button onClick={() => openEdit(item)} className="text-gray-600 hover:text-gray-900 text-xs font-medium">Düzenle</button>}
+                        {canEdit && !item.teslim_edildi && (
+                          <button onClick={() => openDegisim(item)} className="text-purple-600 hover:text-purple-800 text-xs font-medium">
+                            Değişim Yap
+                          </button>
+                        )}
                         {canEdit && !item.teslim_edildi && (
                           <button onClick={() => handleTeslim(item)} disabled={teslimId === item.id}
                             className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-40">
@@ -789,6 +902,17 @@ export default function StoragePage() {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                                 Düzenle
+                              </button>
+                            )}
+                            {canEdit && !item.teslim_edildi && (
+                              <button
+                                onClick={() => { setOpenMenuId(null); openDegisim(item); }}
+                                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-purple-600 hover:bg-gray-50"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                </svg>
+                                Değişim Yap
                               </button>
                             )}
                             {canEdit && !item.teslim_edildi && (
@@ -907,90 +1031,130 @@ export default function StoragePage() {
       {/* Yeni Kayıt Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Yeni Depolama Kaydı</h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
-                <input
-                  type="number"
-                  value={form.depo_no}
-                  onChange={(e) => setForm({ ...form, depo_no: e.target.value })}
-                  placeholder="Otomatik"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
+                  <input
+                    type="number"
+                    value={form.depo_no}
+                    onChange={(e) => setForm({ ...form, depo_no: e.target.value })}
+                    placeholder="Otomatik"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Plaka <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={form.plate}
+                    onChange={(e) => setForm({ ...form, plate: e.target.value.toUpperCase() })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
+                  <input
+                    type="text"
+                    value={form.customer_name}
+                    onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
+                  <input
+                    type="text"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
+                  <SearchableCombobox value={form.ebat} onChange={(val) => setForm({ ...form, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
+                  <SearchableCombobox value={form.marka} onChange={(val) => setForm({ ...form, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
+                  <input
+                    type="text"
+                    value={form.dis_derinligi}
+                    onChange={(e) => setForm({ ...form, dis_derinligi: e.target.value })}
+                    placeholder="5-5-5-5"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.adet}
+                    onChange={(e) => setForm({ ...form, adet: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
+                  <input
+                    type="date"
+                    value={form.islem_tarihi}
+                    onChange={(e) => setForm({ ...form, islem_tarihi: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Plaka <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={form.plate}
-                  onChange={(e) => setForm({ ...form, plate: e.target.value.toUpperCase() })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
-                <input
-                  type="text"
-                  value={form.customer_name}
-                  onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
-                <input
-                  type="text"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                <SearchableCombobox value={form.ebat} onChange={(val) => setForm({ ...form, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                <SearchableCombobox value={form.marka} onChange={(val) => setForm({ ...form, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
-                <input
-                  type="text"
-                  value={form.dis_derinligi}
-                  onChange={(e) => setForm({ ...form, dis_derinligi: e.target.value })}
-                  placeholder="5-5-5-5"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={form.adet}
-                  onChange={(e) => setForm({ ...form, adet: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
                 <MevsimCheckboxes value={form.mevsim} onChange={(val) => setForm({ ...form, mevsim: val })} />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
-                <input
-                  type="date"
-                  value={form.islem_tarihi}
-                  onChange={(e) => setForm({ ...form, islem_tarihi: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+
+              {/* Daha az sık kullanılan alanlar — bkz. kullanıcı isteği */}
+              <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
+                  <input
+                    type="text"
+                    value={form.model_name}
+                    onChange={(e) => setForm({ ...form, model_name: e.target.value })}
+                    placeholder="ör. PremiumContact 6"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                  <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
+                    value={formatWeekYearInput(form.production_week, form.production_year)}
+                    onChange={(e) => {
+                      const { week, year } = parseWeekYearInput(e.target.value);
+                      setForm({ ...form, production_week: week, production_year: year });
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
+                  <input
+                    type="text"
+                    value={form.load_speed_index}
+                    onChange={(e) => setForm({ ...form, load_speed_index: e.target.value })}
+                    placeholder="91H"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
                 <input
                   type="text"
@@ -1023,59 +1187,88 @@ export default function StoragePage() {
       {/* Düzenle Modal */}
       {editItem && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Kaydı Düzenle — #{editItem.depo_no}</h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
-                <input type="number" value={editForm.depo_no} onChange={(e) => setEditForm({ ...editForm, depo_no: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
+                  <input type="number" value={editForm.depo_no} onChange={(e) => setEditForm({ ...editForm, depo_no: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Plaka</label>
+                  <input type="text" value={editForm.plate} onChange={(e) => setEditForm({ ...editForm, plate: e.target.value.toUpperCase() })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
+                  <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
+                  <input type="text" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
+                  <SearchableCombobox value={editForm.ebat} onChange={(val) => setEditForm({ ...editForm, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
+                  <SearchableCombobox value={editForm.marka} onChange={(val) => setEditForm({ ...editForm, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
+                  <input type="text" value={editForm.dis_derinligi} onChange={(e) => setEditForm({ ...editForm, dis_derinligi: e.target.value })} placeholder="5-5-5-5"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
+                  <input type="number" min="1" value={editForm.adet} onChange={(e) => setEditForm({ ...editForm, adet: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
+                  <input type="date" value={editForm.islem_tarihi} onChange={(e) => setEditForm({ ...editForm, islem_tarihi: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Plaka</label>
-                <input type="text" value={editForm.plate} onChange={(e) => setEditForm({ ...editForm, plate: e.target.value.toUpperCase() })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
-                <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
-                <input type="text" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                <SearchableCombobox value={editForm.ebat} onChange={(val) => setEditForm({ ...editForm, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                <SearchableCombobox value={editForm.marka} onChange={(val) => setEditForm({ ...editForm, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
-                <input type="text" value={editForm.dis_derinligi} onChange={(e) => setEditForm({ ...editForm, dis_derinligi: e.target.value })} placeholder="5-5-5-5"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
-                <input type="number" min="1" value={editForm.adet} onChange={(e) => setEditForm({ ...editForm, adet: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
                 <MevsimCheckboxes value={editForm.mevsim} onChange={(val) => setEditForm({ ...editForm, mevsim: val })} />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
-                <input type="date" value={editForm.islem_tarihi} onChange={(e) => setEditForm({ ...editForm, islem_tarihi: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+              <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
+                  <input type="text" value={editForm.model_name} onChange={(e) => setEditForm({ ...editForm, model_name: e.target.value })} placeholder="ör. PremiumContact 6"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                  <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
+                    value={formatWeekYearInput(editForm.production_week, editForm.production_year)}
+                    onChange={(e) => {
+                      const { week, year } = parseWeekYearInput(e.target.value);
+                      setEditForm({ ...editForm, production_week: week, production_year: year });
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
+                  <input type="text" value={editForm.load_speed_index} onChange={(e) => setEditForm({ ...editForm, load_speed_index: e.target.value })} placeholder="91H"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
                 <input type="text" value={editForm.aciklama} onChange={(e) => setEditForm({ ...editForm, aciklama: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1091,6 +1284,100 @@ export default function StoragePage() {
               <button onClick={handleUpdate} disabled={saving}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg">
                 {saving ? "Kaydediliyor..." : "Güncelle"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Değişim Yap Modal — bkz. openDegisim/handleDegisimSubmit notu */}
+      {degisimItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="p-6 pb-4">
+              <div className="flex items-start justify-between mb-1">
+                <h2 className="text-xl font-bold text-gray-800">Değişim Yap — Depo No {degisimItem.depo_no}</h2>
+                <button onClick={() => setDegisimItem(null)} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mb-5">
+                {degisimItem.plate || "—"} · {degisimItem.customer_name || "—"} — yeni bırakılan lastiğin bilgilerini girin, eski kayıt otomatik teslim edilmiş sayılacak.
+              </p>
+
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
+                    <SearchableCombobox value={degisimForm.ebat} onChange={(val) => setDegisimForm({ ...degisimForm, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
+                    <SearchableCombobox value={degisimForm.marka} onChange={(val) => setDegisimForm({ ...degisimForm, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
+                    <input type="text" value={degisimForm.dis_derinligi} onChange={(e) => setDegisimForm({ ...degisimForm, dis_derinligi: e.target.value })} placeholder="5-5-5-5"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
+                    <input type="number" min="1" value={degisimForm.adet} onChange={(e) => setDegisimForm({ ...degisimForm, adet: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
+                    <input type="date" value={degisimForm.islem_tarihi} onChange={(e) => setDegisimForm({ ...degisimForm, islem_tarihi: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
+                  <MevsimCheckboxes value={degisimForm.mevsim} onChange={(val) => setDegisimForm({ ...degisimForm, mevsim: val })} />
+                </div>
+
+                <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
+                    <input type="text" value={degisimForm.model_name} onChange={(e) => setDegisimForm({ ...degisimForm, model_name: e.target.value })} placeholder="ör. PremiumContact 6"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
+                    <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
+                      value={formatWeekYearInput(degisimForm.production_week, degisimForm.production_year)}
+                      onChange={(e) => {
+                        const { week, year } = parseWeekYearInput(e.target.value);
+                        setDegisimForm({ ...degisimForm, production_week: week, production_year: year });
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
+                    <input type="text" value={degisimForm.load_speed_index} onChange={(e) => setDegisimForm({ ...degisimForm, load_speed_index: e.target.value })} placeholder="91H"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
+                  <input type="text" value={degisimForm.aciklama} onChange={(e) => setDegisimForm({ ...degisimForm, aciklama: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
+              <button onClick={() => setDegisimItem(null)}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50">
+                İptal
+              </button>
+              <button onClick={handleDegisimSubmit} disabled={degisimSaving}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-semibold py-2.5 rounded-lg">
+                {degisimSaving ? "Kaydediliyor..." : "Kaydet ve Etiket Yazdır"}
               </button>
             </div>
           </div>
