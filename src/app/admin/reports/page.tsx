@@ -214,7 +214,8 @@ function formatTRNumber(raw: string): string {
 // database/schema.sql monthly_financials yorumu ve GET/PUT
 // /api/reports/monthly-financials. Bir ay hiç kaydedilmemişse Gelir/Gider
 // sistemden önerilir (sarı "öneri" rozetiyle işaretlenir) ama admin
-// "Kaydet"e basana kadar hiçbir şey yazılmaz.
+// "Kaydet"e basana kadar hiçbir şey yazılmaz. Gelir = Ciro - Maliyet,
+// Gider = Masraf (müşteri isteğiyle netleştirildi, bkz. route.ts yorumu).
 function YillikOzetTab() {
   const toast = useToast();
   const { user } = useAuth();

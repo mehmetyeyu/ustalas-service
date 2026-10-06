@@ -6,8 +6,13 @@ import { hasPermission } from "@/lib/permissions";
 // Aylık Gelir-Gider-Kar/Zarar Raporu — bkz. database/schema.sql'deki
 // monthly_financials yorumu. Bir ay için kayıt varsa (admin daha önce
 // "Kaydet"e basmış) o satır olduğu gibi döner; yoksa sistemdeki ham veriden
-// (Ciro / Maliyet+Masraf — Raporlar sayfasındaki "Dönemsel" widget'ıyla AYNI
-// formül) bir ÖNERİ hesaplanıp isSaved:false ile döner, hiçbir şey yazılmaz.
+// bir ÖNERİ hesaplanıp isSaved:false ile döner, hiçbir şey yazılmaz.
+//
+// Formül (müşteri isteğiyle netleştirildi): Gelir = Ciro - Maliyet (COGS
+// düşülmüş net gelir), Gider = Masraf. Kâr/Zarar = Gelir - Gider, yani
+// açılımıyla Ciro - Maliyet - Masraf — Raporlar sayfasındaki "Dönemsel"
+// widget'ındaki Kâr ile aynı sonucu verir, sadece Maliyet burada Gider'de
+// değil Gelir'in içinde gösterilir.
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -67,8 +72,10 @@ export async function GET(request: NextRequest) {
         const expense = Number(saved.expense);
         return { month, income, expense, kar: income - expense, isSaved: true };
       }
-      const income = ciroByMonth.get(month) ?? 0;
-      const expense = (maliyetByMonth.get(month) ?? 0) + (masrafByMonth.get(month) ?? 0);
+      const ciro = ciroByMonth.get(month) ?? 0;
+      const maliyet = maliyetByMonth.get(month) ?? 0;
+      const income = ciro - maliyet;
+      const expense = masrafByMonth.get(month) ?? 0;
       return { month, income, expense, kar: income - expense, isSaved: false };
     });
 

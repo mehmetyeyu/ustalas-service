@@ -1612,13 +1612,14 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS plate_required BOOLEAN NOT NUL
 -- Aylık Gelir-Gider-Kar/Zarar Raporu — müşteri isteği: Raporlar'daki
 -- Ciro/Maliyet/Masraf'tan AYRI, elle onaylanıp "kayıt altına alınan" bir
 -- aylık özet. income/expense bir ay için İLK AÇILDIĞINDA sistem verisinden
--- (ciro / maliyet+masraf) önerilir (bkz. GET /api/reports/monthly-financials)
--- ama bu tabloya hiç yazılmaz — sadece admin "Kaydet"e basınca burada bir
--- satır oluşur ve o andan sonra o ayın "resmi" rakamı budur, sistemdeki
--- ham veriler sonradan değişse bile bu satır sabit kalır (geçmiş ayların
--- raporu kaydedildiği hâliyle donar). Kâr/Zarar KASITLI OLARAK burada
--- saklanmaz — her zaman income-expense'ten hesaplanır (bkz. aynı dosya),
--- ayrıca girilebilir bir alan olursa tutarsızlık riski doğar.
+-- önerilir (income = Ciro - Maliyet, expense = Masraf; bkz. GET
+-- /api/reports/monthly-financials route.ts yorumu) ama bu tabloya hiç
+-- yazılmaz — sadece admin "Kaydet"e basınca burada bir satır oluşur ve o
+-- andan sonra o ayın "resmi" rakamı budur, sistemdeki ham veriler sonradan
+-- değişse bile bu satır sabit kalır (geçmiş ayların raporu kaydedildiği
+-- hâliyle donar). Kâr/Zarar KASITLI OLARAK burada saklanmaz — her zaman
+-- income-expense'ten hesaplanır (bkz. aynı dosya), ayrıca girilebilir bir
+-- alan olursa tutarsızlık riski doğar.
 CREATE TABLE IF NOT EXISTS monthly_financials (
   id          SERIAL PRIMARY KEY,
   tenant_id   INT NOT NULL REFERENCES tenants(id),
