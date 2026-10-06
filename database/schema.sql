@@ -512,7 +512,16 @@ UPDATE suppliers SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE storage SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE products SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE product_stock_entries SET tenant_id = 1 WHERE tenant_id IS NULL;
+-- product_stock_entries İSTİSNA: yukarıdakilerin aksine bu satır gerçekten
+-- no-op olmuyor — kendi geri-dolum INSERT'i (yukarıda, "Geriye dönük dolum")
+-- HER build'de stok geçmişi eksik bir ürün bulursa tenant_id'siz yeni satır
+-- ekliyor. Bu satır körü körüne 1'e sabitlerse, başka bir firmaya ait bir
+-- ürünün satırı yanlış firmaya atanıp composite FK'yı (aşağıda) ihlal eder —
+-- gerçek bir production incident'ı buydu (ürün 2438, tenant_id=2, yanlışlıkla
+-- 1'e atanmaya çalışılıp migration'ı çökertti). Doğrusu: sahibi ürünün GERÇEK
+-- tenant_id'sini kullanmak.
+UPDATE product_stock_entries e SET tenant_id = p.tenant_id
+  FROM products p WHERE e.product_id = p.id AND e.tenant_id IS NULL;
 UPDATE expenses SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE recurring_expenses SET tenant_id = 1 WHERE tenant_id IS NULL;
 
