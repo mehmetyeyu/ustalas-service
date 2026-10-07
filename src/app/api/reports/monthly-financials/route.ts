@@ -64,24 +64,31 @@ export async function GET(request: NextRequest) {
     const maliyetByMonth = new Map(maliyetResult.rows.map((r) => [r.month, r.maliyet]));
     const masrafByMonth = new Map(masrafResult.rows.map((r) => [r.month, r.masraf]));
 
+    // Ciro/Maliyet her zaman canlı hesaplanıp döner (kaydedilmiş aylarda
+    // bile) — müşteri isteği: Gelir'in nereden geldiğini (Ciro - Maliyet)
+    // ekranda ayrı sütunlarla görmek istiyor. Bunlar monthly_financials'a
+    // YAZILMAZ (sadece income/expense dondurulur, bkz. schema.sql) — bu
+    // yüzden kaydedilmiş eski bir ayda sistemdeki veri sonradan değişirse
+    // Ciro-Maliyet, dondurulmuş Gelir'e tam eşit çıkmayabilir; bu normaldir,
+    // admin o ay için Gelir'i elle onaylamış/değiştirmiş olabilir.
     const months = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
+      const ciro = ciroByMonth.get(month) ?? 0;
+      const maliyet = maliyetByMonth.get(month) ?? 0;
       const saved = savedByMonth.get(month);
       if (saved) {
         const income = Number(saved.income);
         const expense = Number(saved.expense);
-        return { month, income, expense, kar: income - expense, isSaved: true };
+        return { month, ciro, maliyet, income, expense, kar: income - expense, isSaved: true };
       }
-      const ciro = ciroByMonth.get(month) ?? 0;
-      const maliyet = maliyetByMonth.get(month) ?? 0;
       const income = ciro - maliyet;
       const expense = masrafByMonth.get(month) ?? 0;
-      return { month, income, expense, kar: income - expense, isSaved: false };
+      return { month, ciro, maliyet, income, expense, kar: income - expense, isSaved: false };
     });
 
     const totals = months.reduce(
-      (acc, m) => ({ income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }),
-      { income: 0, expense: 0, kar: 0 }
+      (acc, m) => ({ ciro: acc.ciro + m.ciro, maliyet: acc.maliyet + m.maliyet, income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }),
+      { ciro: 0, maliyet: 0, income: 0, expense: 0, kar: 0 }
     );
 
     return NextResponse.json({ year, months, totals });

@@ -187,6 +187,8 @@ function DateRangeControls({ range, onChange }: { range: DateRange; onChange: (r
 
 interface MonthlyFinancialRow {
   month: number;
+  ciro: number;
+  maliyet: number;
   income: number;
   expense: number;
   kar: number;
@@ -224,7 +226,7 @@ function YillikOzetTab() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [months, setMonths] = useState<MonthlyFinancialRow[]>([]);
-  const [totals, setTotals] = useState({ income: 0, expense: 0, kar: 0 });
+  const [totals, setTotals] = useState({ ciro: 0, maliyet: 0, income: 0, expense: 0, kar: 0 });
   const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState<Record<number, { income: string; expense: string }>>({});
   const [savingMonth, setSavingMonth] = useState<number | null>(null);
@@ -259,8 +261,10 @@ function YillikOzetTab() {
         return;
       }
       setMonths((prev) => {
-        const next = prev.map((m) => (m.month === month ? (data as MonthlyFinancialRow) : m));
-        setTotals(next.reduce((acc, m) => ({ income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }), { income: 0, expense: 0, kar: 0 }));
+        // PUT yanıtı ciro/maliyet döndürmez (bkz. route.ts yorumu, bunlar
+        // hiç saklanmaz) — önceki satırdaki canlı değerler korunur.
+        const next = prev.map((m) => (m.month === month ? { ...m, ...(data as Partial<MonthlyFinancialRow>) } : m));
+        setTotals(next.reduce((acc, m) => ({ ciro: acc.ciro + m.ciro, maliyet: acc.maliyet + m.maliyet, income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }), { ciro: 0, maliyet: 0, income: 0, expense: 0, kar: 0 }));
         return next;
       });
       toast.success(`${MONTH_NAMES_SHORT[month - 1]} kaydedildi.`);
@@ -311,6 +315,9 @@ function YillikOzetTab() {
                 }}
               />
               <Legend wrapperStyle={{ fontSize: isMobile ? 11 : 13 }} />
+              {/* Ciro/Maliyet kırılımı bilinçli olarak burada değil, tabloda
+                  gösteriliyor — chart tek hikayeye (aylık kârlılık) odaklanır,
+                  kesin rakam karşılaştırması tabloya bırakılır. */}
               <Bar dataKey="gelir" name="Gelir" fill="#3b82f6" radius={[4, 4, 0, 0]} isAnimationActive={false} />
               <Bar dataKey="gider" name="Gider" fill="#ef4444" radius={[4, 4, 0, 0]} isAnimationActive={false} />
               <Line type="monotone" dataKey="kar" name="Kâr/Zarar" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
@@ -323,6 +330,8 @@ function YillikOzetTab() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ay</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Ciro (₺)</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Maliyet (₺)</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Gelir (₺)</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Gider (₺)</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Kâr / Zarar</th>
@@ -344,6 +353,8 @@ function YillikOzetTab() {
                           </span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatCurrency(m.ciro)}</td>
+                      <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatCurrency(m.maliyet)}</td>
                       <td className="px-4 py-3 text-right">
                         {canEdit ? (
                           <input
@@ -399,6 +410,8 @@ function YillikOzetTab() {
               <tfoot className="border-t-2 border-gray-200 bg-gray-50">
                 <tr>
                   <td className="px-4 py-3 font-bold text-gray-800 whitespace-nowrap">Yıl Toplamı</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-800 whitespace-nowrap">{formatCurrency(totals.ciro)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-800 whitespace-nowrap">{formatCurrency(totals.maliyet)}</td>
                   <td className="px-4 py-3 text-right font-bold text-gray-800 whitespace-nowrap">{formatCurrency(totals.income)}</td>
                   <td className="px-4 py-3 text-right font-bold text-gray-800 whitespace-nowrap">{formatCurrency(totals.expense)}</td>
                   <td className={`px-4 py-3 text-right font-bold whitespace-nowrap ${totals.kar >= 0 ? "text-green-600" : "text-red-500"}`}>
