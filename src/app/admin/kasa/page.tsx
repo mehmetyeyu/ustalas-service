@@ -9,6 +9,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { CURRENCY_OPTIONS } from "@/lib/kasalar";
+import { TRNumberInput } from "@/components/TRNumberInput";
 
 interface KasaEntry {
   entry_type: "SIPARIS" | "CARI_TAHSILAT" | "MASRAF" | "MANUEL";
@@ -647,10 +648,9 @@ export default function KasaPage() {
                     <span className="text-gray-400 font-normal">({kasaList.find((k) => k.id === entryKasaId)?.currency})</span>
                   )}
                 </label>
-                <input
-                  type="number"
+                <TRNumberInput
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={setAmount}
                   placeholder="0.00"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -912,10 +912,9 @@ export default function KasaPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tutar</label>
-                <input
-                  type="number"
+                <TRNumberInput
                   value={transferAmount}
-                  onChange={(e) => setTransferAmount(e.target.value)}
+                  onChange={setTransferAmount}
                   placeholder="0.00"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />

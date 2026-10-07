@@ -7,6 +7,9 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { escapeHtml } from "@/lib/htmlEscape";
 import { useDebouncedValue } from "@/hooks/useDebounce";
+import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/weekYear";
+import { useColumnPrefs } from "@/hooks/useColumnPrefs";
+import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 
 interface StorageItem {
   id: number;
@@ -193,24 +196,6 @@ const SKELETON_COL_WIDTH: Record<string, string> = {
 };
 const SKELETON_ROWS = 8;
 
-// Üretim Haftası/Yılı — Ürünler sayfasındaki AYNI "10/26" biçimi/mantığı
-// (DOT kodu). production_year DB'de 4 haneli (2026) tutulur, görünümde
-// son 2 hane kullanılır.
-function weekYearLabel(week: number | null, year: number | null): string {
-  if (week == null && year == null) return "—";
-  if (week == null) return `—/${String(year).slice(-2)}`;
-  if (year == null) return `${String(week).padStart(2, "0")}/—`;
-  return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
-}
-function parseWeekYearInput(raw: string): { week: string; year: string } {
-  const digits = raw.replace(/\D/g, "").slice(0, 4);
-  return { week: digits.slice(0, 2), year: digits.slice(2, 4) };
-}
-function formatWeekYearInput(week: string, year: string): string {
-  if (!week && !year) return "";
-  if (!year) return week;
-  return `${week}/${year}`;
-}
 
 const EMPTY_FORM = {
   depo_no: "",
@@ -364,22 +349,12 @@ export default function StoragePage() {
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
-  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
-  );
-  const [showColPicker, setShowColPicker] = useState(false);
+  const {
+    visibleCols, toggleVisible, showColPicker, setShowColPicker,
+    menuColumns, dragColKey, setDragColKey, handleColDragOver, commitColDrag, cancelColDrag, reorderable,
+  } = useColumnPrefs(COLUMNS, { visibleColsKey: "storage_visible_cols" });
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [showMobileActions, setShowMobileActions] = useState(false);
-
-  // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
-  // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
-  // mount sonrası (hydration bitince) uygulanır.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("storage_visible_cols");
-      if (saved) setVisibleCols(JSON.parse(saved));
-    } catch { }
-  }, []);
   const [overdueTotal, setOverdueTotal] = useState(0);
   const [overdueMonths, setOverdueMonths] = useState(6);
   const [showDelivered, setShowDelivered] = useState(false);
@@ -762,23 +737,18 @@ export default function StoragePage() {
             Sütunlar
           </button>
           {showColPicker && (
-            <div className="absolute left-0 sm:left-auto sm:right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-44" onClick={(e) => e.stopPropagation()}>
-              {COLUMNS.map((col) => (
-                <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={visibleCols[col.key]}
-                    onChange={(e) => setVisibleCols((prev) => {
-                      const next = { ...prev, [col.key]: e.target.checked };
-                      try { localStorage.setItem("storage_visible_cols", JSON.stringify(next)); } catch { }
-                      return next;
-                    })}
-                    className="accent-blue-600"
-                  />
-                  {col.label}
-                </label>
-              ))}
-            </div>
+            <ColumnPickerMenu
+              columns={menuColumns}
+              visibleCols={visibleCols}
+              onToggle={toggleVisible}
+              reorderable={reorderable}
+              dragColKey={dragColKey}
+              onDragStart={setDragColKey}
+              onDragOver={handleColDragOver}
+              onDrop={commitColDrag}
+              onDragEnd={cancelColDrag}
+              positionClassName="left-0 sm:left-auto sm:right-0 w-44"
+            />
           )}
         </div>
       </div>

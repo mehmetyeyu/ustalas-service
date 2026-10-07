@@ -64,6 +64,13 @@ export async function GET(request: NextRequest) {
     const maliyetByMonth = new Map(maliyetResult.rows.map((r) => [r.month, r.maliyet]));
     const masrafByMonth = new Map(masrafResult.rows.map((r) => [r.month, r.masraf]));
 
+    // Para tutarları SUM(...)::float (SQL) ve JS çıkarmasından geçtiği için
+    // ikili kayan nokta hatası birikebilir (ör. 242.17 yerine
+    // 242.17000000000007) — eskiden bu sadece ekranda toLocaleString ile
+    // gizleniyordu, inputlar artık yazarken de canlı biçimlendiği için
+    // (bkz. TRNumberInput) ham değerin kendisi 2 ondalığa yuvarlanmalı.
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
     // Ciro/Maliyet her zaman canlı hesaplanıp döner (kaydedilmiş aylarda
     // bile) — müşteri isteği: Gelir'in nereden geldiğini (Ciro - Maliyet)
     // ekranda ayrı sütunlarla görmek istiyor. Bunlar monthly_financials'a
@@ -73,21 +80,21 @@ export async function GET(request: NextRequest) {
     // admin o ay için Gelir'i elle onaylamış/değiştirmiş olabilir.
     const months = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
-      const ciro = ciroByMonth.get(month) ?? 0;
-      const maliyet = maliyetByMonth.get(month) ?? 0;
+      const ciro = round2(ciroByMonth.get(month) ?? 0);
+      const maliyet = round2(maliyetByMonth.get(month) ?? 0);
       const saved = savedByMonth.get(month);
       if (saved) {
-        const income = Number(saved.income);
-        const expense = Number(saved.expense);
-        return { month, ciro, maliyet, income, expense, kar: income - expense, isSaved: true };
+        const income = round2(Number(saved.income));
+        const expense = round2(Number(saved.expense));
+        return { month, ciro, maliyet, income, expense, kar: round2(income - expense), isSaved: true };
       }
-      const income = ciro - maliyet;
-      const expense = masrafByMonth.get(month) ?? 0;
-      return { month, ciro, maliyet, income, expense, kar: income - expense, isSaved: false };
+      const income = round2(ciro - maliyet);
+      const expense = round2(masrafByMonth.get(month) ?? 0);
+      return { month, ciro, maliyet, income, expense, kar: round2(income - expense), isSaved: false };
     });
 
     const totals = months.reduce(
-      (acc, m) => ({ ciro: acc.ciro + m.ciro, maliyet: acc.maliyet + m.maliyet, income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }),
+      (acc, m) => ({ ciro: round2(acc.ciro + m.ciro), maliyet: round2(acc.maliyet + m.maliyet), income: round2(acc.income + m.income), expense: round2(acc.expense + m.expense), kar: round2(acc.kar + m.kar) }),
       { ciro: 0, maliyet: 0, income: 0, expense: 0, kar: 0 }
     );
 
@@ -134,9 +141,9 @@ export async function PUT(request: NextRequest) {
     const row = result.rows[0];
     return NextResponse.json({
       month: row.month,
-      income: Number(row.income),
-      expense: Number(row.expense),
-      kar: Number(row.income) - Number(row.expense),
+      income: incomeNum,
+      expense: expenseNum,
+      kar: Math.round((incomeNum - expenseNum) * 100) / 100,
       isSaved: true,
     });
   } catch (error) {

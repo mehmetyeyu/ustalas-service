@@ -8,6 +8,9 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { PROTECTED_PAYMENT_TYPES, MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { KasaSelect } from "@/components/KasaSelect";
+import { TRNumberInput } from "@/components/TRNumberInput";
+import { useColumnPrefs } from "@/hooks/useColumnPrefs";
+import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
@@ -77,7 +80,6 @@ const COLUMNS: { key: SortKey; label: string; defaultVisible: boolean; hideable:
   { key: "phone", label: "Telefon", defaultVisible: true, hideable: true, align: "left" },
   { key: "order_count", label: "Sipariş Sayısı", defaultVisible: false, hideable: true, align: "right" },
 ];
-const COLUMNS_BY_KEY = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
 
 type SortKey = "name" | "phone" | "order_count" | "balance";
 
@@ -104,71 +106,13 @@ export default function CustomersPage() {
   // aynı listede karışıyordu (bkz. görüşme notları) — has_cari_activity
   // (bkz. GET /api/customers) üzerinden ayrılıyor, yeni bir alan gerekmedi.
   const [activeTab, setActiveTab] = useState<"cari" | "perakende">("cari");
-  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
-  );
-  const [showColPicker, setShowColPicker] = useState(false);
+  const {
+    visibleCols, toggleVisible, showColPicker, setShowColPicker,
+    orderedColumns, menuColumns,
+    dragColKey, setDragColKey, handleColDragOver, commitColDrag, cancelColDrag, reorderable,
+  } = useColumnPrefs(COLUMNS, { visibleColsKey: "customers_visible_cols", colOrderKey: "customers_col_order" });
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  // Sütun sırası — Products sayfasındaki AYNI sürükle-bırak deseni: colOrder
-  // sadece bırakma anında güncellenir, previewColOrder sürükleme SIRASINDA
-  // canlı önizleme sağlar (hangi satırın üstüne gelindiği hemen görünür).
-  const [colOrder, setColOrder] = useState<string[]>(() => COLUMNS.map((c) => c.key));
-  const [dragColKey, setDragColKey] = useState<string | null>(null);
-  const [previewColOrder, setPreviewColOrder] = useState<string[] | null>(null);
-  const menuColumns = (previewColOrder ?? colOrder).map((k) => COLUMNS_BY_KEY[k]).filter((c): c is typeof COLUMNS[number] => c != null);
-  const orderedColumns = colOrder.map((k) => COLUMNS_BY_KEY[k]).filter((c): c is typeof COLUMNS[number] => c != null);
-
-  function handleColDragOver(targetKey: string) {
-    if (!dragColKey || dragColKey === targetKey) return;
-    setPreviewColOrder((prev) => {
-      const base = prev ?? colOrder;
-      const from = base.indexOf(dragColKey);
-      const to = base.indexOf(targetKey);
-      if (from === -1 || to === -1 || from === to) return base;
-      const next = base.filter((k) => k !== dragColKey);
-      next.splice(next.indexOf(targetKey), 0, dragColKey);
-      return next;
-    });
-  }
-
-  function commitColDrag() {
-    if (previewColOrder) {
-      setColOrder(previewColOrder);
-      try { localStorage.setItem("customers_col_order", JSON.stringify(previewColOrder)); } catch { }
-    }
-    setPreviewColOrder(null);
-    setDragColKey(null);
-  }
-
-  function cancelColDrag() {
-    setPreviewColOrder(null);
-    setDragColKey(null);
-  }
-
-  // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
-  // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
-  // mount sonrası (hydration bitince) uygulanır — bkz. Storage sayfasındaki
-  // aynı desen.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("customers_visible_cols");
-      if (saved) setVisibleCols(JSON.parse(saved));
-    } catch { }
-    try {
-      const savedOrder = localStorage.getItem("customers_col_order");
-      if (savedOrder) {
-        const parsed: unknown = JSON.parse(savedOrder);
-        if (Array.isArray(parsed)) {
-          const allKeys = COLUMNS.map((c) => c.key);
-          const kept = Array.from(new Set(parsed.filter((k): k is string => typeof k === "string" && allKeys.includes(k as SortKey))));
-          const missing = allKeys.filter((k) => !kept.includes(k));
-          setColOrder([...kept, ...missing]);
-        }
-      }
-    } catch { }
-  }, []);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -496,43 +440,18 @@ export default function CustomersPage() {
             Sütunlar
           </button>
           {showColPicker && (
-            <div className="absolute left-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56" onClick={(e) => e.stopPropagation()}>
-              <p className="text-xs text-gray-400 px-2 mb-1">Sütunlar — sürükleyerek sırala</p>
-              {menuColumns.map((col) => (
-                <div
-                  key={col.key}
-                  draggable
-                  onDragStart={() => setDragColKey(col.key)}
-                  onDragOver={(e) => { e.preventDefault(); handleColDragOver(col.key); }}
-                  onDrop={commitColDrag}
-                  onDragEnd={cancelColDrag}
-                  className={`group flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-50 cursor-grab active:cursor-grabbing ${dragColKey === col.key ? "opacity-40" : ""}`}
-                >
-                  <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
-                  </svg>
-                  {col.hideable ? (
-                    <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
-                      <input
-                        type="checkbox"
-                        checked={visibleCols[col.key]}
-                        onChange={(e) => setVisibleCols((prev) => {
-                          const next = { ...prev, [col.key]: e.target.checked };
-                          try { localStorage.setItem("customers_visible_cols", JSON.stringify(next)); } catch { }
-                          return next;
-                        })}
-                        className="accent-blue-600"
-                      />
-                      {col.label}
-                    </label>
-                  ) : (
-                    <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700 select-none">
-                      {col.label}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
+            <ColumnPickerMenu
+              columns={menuColumns}
+              visibleCols={visibleCols}
+              onToggle={toggleVisible}
+              reorderable={reorderable}
+              dragColKey={dragColKey}
+              onDragStart={setDragColKey}
+              onDragOver={handleColDragOver}
+              onDrop={commitColDrag}
+              onDragEnd={cancelColDrag}
+              positionClassName="left-0 w-56"
+            />
           )}
         </div>
       </div>
@@ -917,10 +836,9 @@ export default function CustomersPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tutar</label>
-                <input
-                  type="number"
+                <TRNumberInput
                   value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  onChange={setPaymentAmount}
                   placeholder="0.00"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />

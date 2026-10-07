@@ -45,7 +45,7 @@ export interface PaymentHistoryRow {
 // kayıtlı — gerçek bir ödemede saptandı (Soyka/995987, bkz. plan). Bu
 // yüzden HER İKİ conversationId de sorgulanıp sonuçlar birleştiriliyor;
 // aksi halde o değişiklikten önceki gerçek ödemeler "yok" gibi görünürdü.
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser();
   if (!user || user.role !== "super_admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 

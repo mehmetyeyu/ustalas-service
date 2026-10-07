@@ -4,12 +4,16 @@ import { Fragment, useEffect, useState, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { parseProductRows, validateProductRows, chunk, SEASON_OPTIONS, type ParsedProductRow } from "@/lib/productsExcel";
-import { PRODUCT_TYPE_OPTIONS, computeCondition, stockLevel, EU_LABEL_CLASSES, EU_NOISE_CLASSES, type ProductType } from "@/lib/productCondition";
+import { PRODUCT_TYPE_OPTIONS, computeCondition, stockLevel, EU_LABEL_CLASSES, EU_NOISE_CLASSES } from "@/lib/productCondition";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useDebouncedValue } from "@/hooks/useDebounce";
+import { TRNumberInput } from "@/components/TRNumberInput";
+import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/weekYear";
+import { useColumnPrefs } from "@/hooks/useColumnPrefs";
+import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -379,34 +383,6 @@ function batchLabel(item: { code: string; brand?: string | null; size_desc?: str
   return parts.join(" — ");
 }
 
-// DOT kodu biçimi: "10/26" = 10. hafta, 2026 — takvim tarihi değil.
-function weekYearLabel(week: number | null, year: number | null): string {
-  if (week == null || year == null) return "—";
-  return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
-}
-
-// Üretim Haftası/Yılı — DOT koduyla aynı 2 haneli biçimde (ör. "10/26"),
-// sadece rakam (önceden type="number" min/max sadece ok tuşlarını/kırmızı
-// çerçeveyi etkiliyordu, yazmayı HİÇ sınırlamıyordu). Yıl, normalizeYear
-// (bkz. POST/PATCH /api/products — 2 haneli "26" sunucuda 2026'ya çevrilir)
-// ile zaten uyumlu, burada ekstra bir dönüşüm gerekmiyor.
-//
-// Müşteri isteği: Hafta/Yıl artık tek bir "10/26" kutusuna yazılabiliyor.
-// Her iki alan da ayrı state olarak kalır (buildPayload/openEdit/openClone
-// hiç değişmedi) — sadece görünümde tek input, yazılan rakamlar ilk 2'si
-// haftaya son 2'si yıla bölünür; "/" kullanıcı yazsa da yazmasa da (ya da
-// yapıştırsa) aynı şekilde ayrıştırılır, DOT kodundaki gibi otomatik "/"
-// eklenmiş gibi görünür.
-function parseWeekYearInput(raw: string): { week: string; year: string } {
-  const digits = raw.replace(/\D/g, "").slice(0, 4);
-  return { week: digits.slice(0, 2), year: digits.slice(2, 4) };
-}
-
-function formatWeekYearInput(week: string, year: string): string {
-  if (!week && !year) return "";
-  if (!year) return week;
-  return `${week}/${year}`;
-}
 
 // Konum serbest metin (Mağaza/Depo önerilir ama başka değerler de girilebilir)
 // — sabit bir renk haritası tutmak yerine değere göre DETERMİNİSTİK bir
@@ -742,68 +718,11 @@ export default function ProductsPage() {
     },
     ...STATIC_BATCH_COLUMNS.slice(STATIC_BATCH_COLUMNS.findIndex((c) => c.key === "total_stock") + 1),
   ];
-  const BATCH_COLUMNS_BY_KEY: Record<string, BatchColumnDef> = Object.fromEntries(
-    BATCH_COLUMNS.map((c) => [c.key, c])
-  );
-
-  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(BATCH_COLUMNS.map((c) => [c.key, c.defaultVisible]))
-  );
-  // Sütun SIRASI (Sütunlar menüsünde sürükle-bırak) — visibleCols'tan ayrı
-  // tutulur çünkü görünürlük bir "hangi anahtarlar true" sözlüğüyken, sıra
-  // bir DİZİ (key listesi). Kayıtlı sırada artık var olmayan bir anahtar
-  // varsa (ör. bir sütun kaldırılırsa) filtrelenir; BATCH_COLUMNS'a yeni
-  // eklenip kayıtlı sırada henüz bulunmayan anahtarlar sona eklenir — bkz.
-  // aşağıdaki localStorage yükleme useEffect'i.
-  const [colOrder, setColOrder] = useState<string[]>(() => BATCH_COLUMNS.map((c) => c.key));
-  const orderedColumns = colOrder.map((k) => BATCH_COLUMNS_BY_KEY[k]).filter((c): c is BatchColumnDef => c != null);
-  // Görünür+sıralı sütun listesi TEK sefer hesaplanır (render başına) ve
-  // başlık/iskelet/grup satırı/parti satırında aynı referans yeniden
-  // kullanılır — her satır için ayrı ayrı filter() çağırmak (N satır × M
-  // sütun) gereksiz tekrar iş olurdu, code review'da bulundu.
-  const visibleOrderedColumns = orderedColumns.filter((c) => visibleCols[c.key]);
-
-  // Sürükle-bırak CANLI önizleme: colOrder sadece bırakma (drop) anında
-  // güncellenir, ama sürükleme SIRASINDA başka bir satırın üzerine gelince
-  // liste hemen o hedefe göre yeniden dizilir (bkz. handleColDragOver) — bu
-  // sayede kullanıcı bırakacağı yerin nerede açıldığını canlı görür, statik
-  // bir listede "nereye bırakacağım belli değil" sorunu (code review'da
-  // bulundu) ortadan kalkar. previewOrder null iken menü colOrder'ı gösterir;
-  // sürükleme bitince (drop veya iptal) her zaman null'a döner.
-  const [dragColKey, setDragColKey] = useState<string | null>(null);
-  const [previewColOrder, setPreviewColOrder] = useState<string[] | null>(null);
-  const menuColumns = (previewColOrder ?? colOrder)
-    .map((k) => BATCH_COLUMNS_BY_KEY[k])
-    .filter((c): c is BatchColumnDef => c != null);
-
-  function handleColDragOver(targetKey: string) {
-    if (!dragColKey || dragColKey === targetKey) return;
-    setPreviewColOrder((prev) => {
-      const base = prev ?? colOrder;
-      const from = base.indexOf(dragColKey);
-      const to = base.indexOf(targetKey);
-      if (from === -1 || to === -1 || from === to) return base;
-      const next = base.filter((k) => k !== dragColKey);
-      next.splice(next.indexOf(targetKey), 0, dragColKey);
-      return next;
-    });
-  }
-
-  function commitColDrag() {
-    if (previewColOrder) {
-      setColOrder(previewColOrder);
-      try { localStorage.setItem("products_col_order_v1", JSON.stringify(previewColOrder)); } catch { }
-    }
-    setPreviewColOrder(null);
-    setDragColKey(null);
-  }
-
-  function cancelColDrag() {
-    setPreviewColOrder(null);
-    setDragColKey(null);
-  }
-
-  const [showColPicker, setShowColPicker] = useState(false);
+  const {
+    visibleCols, toggleVisible, showColPicker, setShowColPicker,
+    menuColumns, visibleOrderedColumns,
+    dragColKey, setDragColKey, handleColDragOver, commitColDrag, cancelColDrag, reorderable,
+  } = useColumnPrefs(BATCH_COLUMNS, { visibleColsKey: "products_visible_cols_v2", colOrderKey: "products_col_order_v1" });
   const [showMobileActions, setShowMobileActions] = useState(false);
 
   // Sıralama sunucuda yapılır (bkz. /api/products) çünkü liste sayfalanmıştır —
@@ -839,49 +758,6 @@ export default function ProductsPage() {
     );
   }
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("products_visible_cols_v2");
-      if (saved) {
-        // ÜZERİNE YAZMAK yerine BİRLEŞTİRME: kayıtlı değer bu güncellemeden
-        // ÖNCE (Ürün Kodu/Marka/Ebat/Stok henüz BATCH_COLUMNS'a dahil
-        // değilken) kaydedilmiş olabilir — o anahtarlar kayıtlı objede hiç
-        // yoktur, doğrudan atama yapılsaydı visibleCols[key] undefined
-        // (falsy) kalıp bu ana kimlik sütunları YOK OLURDU. Ayrıca
-        // hideable:false sütunlar, kayıtlı değerde ne yazarsa yazsın
-        // koşulsuz true'ya zorlanır — Sütunlar menüsünde zaten hiç
-        // checkbox'ları yok, gizlenmeleri hiçbir zaman istenmez.
-        const parsed = JSON.parse(saved);
-        setVisibleCols((prev) => {
-          const merged = { ...prev, ...parsed };
-          for (const c of BATCH_COLUMNS) {
-            if (!c.hideable) merged[c.key] = true;
-          }
-          return merged;
-        });
-      }
-    } catch { }
-    try {
-      const savedOrder = localStorage.getItem("products_col_order_v1");
-      if (savedOrder) {
-        const parsed: unknown = JSON.parse(savedOrder);
-        if (Array.isArray(parsed)) {
-          const allKeys = BATCH_COLUMNS.map((c) => c.key);
-          // Set ile tekilleştirme: bozuk/eski bir localStorage içeriğinde aynı
-          // anahtar birden fazla kez geçerse, aynı sütun tabloda iki kez
-          // render edilip React "duplicate key" uyarısı verirdi.
-          const kept = Array.from(new Set(parsed.filter((k): k is string => typeof k === "string" && allKeys.includes(k))));
-          const missing = allKeys.filter((k) => !kept.includes(k));
-          setColOrder([...kept, ...missing]);
-        }
-      }
-    } catch { }
-    // BATCH_COLUMNS her render'da yeniden oluşturulan bir dizi (bkz.
-    // yukarıdaki tanım) — bağımlılık olarak eklenirse bu "yalnızca mount'ta
-    // çalışsın" efekti her render'da tekrar tetiklenirdi. Sadece anahtar
-    // KÜMESİ (üye sayısı/isimleri) önemli, o da uygulama boyunca sabit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
@@ -1622,46 +1498,17 @@ export default function ProductsPage() {
                 Sütunlar
               </button>
               {showColPicker && (
-                <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56" onClick={(e) => e.stopPropagation()}>
-                  <p className="text-xs text-gray-400 px-2 mb-1">Sütunlar — sürükleyerek sırala</p>
-                  {menuColumns.map((col) => (
-                    <div
-                      key={col.key}
-                      draggable
-                      onDragStart={() => setDragColKey(col.key)}
-                      onDragOver={(e) => { e.preventDefault(); handleColDragOver(col.key); }}
-                      onDrop={commitColDrag}
-                      onDragEnd={cancelColDrag}
-                      className={`group flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-50 cursor-grab active:cursor-grabbing ${dragColKey === col.key ? "opacity-40" : ""}`}
-                    >
-                      <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
-                      </svg>
-                      {col.hideable ? (
-                        <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
-                          <input
-                            type="checkbox"
-                            checked={visibleCols[col.key]}
-                            onChange={(e) => setVisibleCols((prev) => {
-                              const next = { ...prev, [col.key]: e.target.checked };
-                              try { localStorage.setItem("products_visible_cols_v2", JSON.stringify(next)); } catch { }
-                              return next;
-                            })}
-                            className="accent-blue-600"
-                          />
-                          {col.label}
-                        </label>
-                      ) : (
-                        // Ürün Kodu/Marka/Ebat/Stok — ana kimlik sütunları, kasıtlı
-                        // olarak gizlenemez (bkz. BatchColumnDef.hideable notu);
-                        // sadece sürükleyerek yerleri değiştirilebilir.
-                        <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700 select-none">
-                          {col.label}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <ColumnPickerMenu
+                  columns={menuColumns}
+                  visibleCols={visibleCols}
+                  onToggle={toggleVisible}
+                  reorderable={reorderable}
+                  dragColKey={dragColKey}
+                  onDragStart={setDragColKey}
+                  onDragOver={handleColDragOver}
+                  onDrop={commitColDrag}
+                  onDragEnd={cancelColDrag}
+                />
               )}
             </div>
           </div>
@@ -2213,9 +2060,8 @@ export default function ProductsPage() {
               <div className="sm:col-span-2 border-t border-gray-100 pt-4">
                 <label className="block text-xs font-medium text-gray-400 mb-1">Alış Maliyeti / Kâr Yüzdesi / Satış Fiyatı</label>
                 <div className="flex gap-2">
-                  <input type="number" step="0.01" placeholder="Alış (₺)" value={form.purchase_price}
-                    onChange={(e) => {
-                      const purchase_price = e.target.value;
+                  <TRNumberInput placeholder="Alış (₺)" value={form.purchase_price}
+                    onChange={(purchase_price) => {
                       setForm((prev) => ({ ...prev, purchase_price, sale_price: calcSalePrice(purchase_price, prev.markupPercent, prev.sale_price) }));
                     }}
                     className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -2225,7 +2071,7 @@ export default function ProductsPage() {
                       setForm((prev) => ({ ...prev, markupPercent, sale_price: calcSalePrice(prev.purchase_price, markupPercent, prev.sale_price) }));
                     }}
                     className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" step="0.01" placeholder="Satış (₺)" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
+                  <TRNumberInput placeholder="Satış (₺)" value={form.sale_price} onChange={(sale_price) => setForm({ ...form, sale_price })}
                     className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
@@ -2460,9 +2306,8 @@ export default function ProductsPage() {
               <div className="sm:col-span-2 border-t border-gray-100 pt-4">
                 <label className="block text-xs font-medium text-gray-400 mb-1">Alış Maliyeti / Kâr Yüzdesi / Satış Fiyatı</label>
                 <div className="flex gap-2">
-                  <input type="number" step="0.01" placeholder="Alış (₺)" value={editForm.purchase_price}
-                    onChange={(e) => {
-                      const purchase_price = e.target.value;
+                  <TRNumberInput placeholder="Alış (₺)" value={editForm.purchase_price}
+                    onChange={(purchase_price) => {
                       setEditForm((prev) => ({ ...prev, purchase_price, sale_price: calcSalePrice(purchase_price, prev.markupPercent, prev.sale_price) }));
                     }}
                     className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -2472,7 +2317,7 @@ export default function ProductsPage() {
                       setEditForm((prev) => ({ ...prev, markupPercent, sale_price: calcSalePrice(prev.purchase_price, markupPercent, prev.sale_price) }));
                     }}
                     className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" step="0.01" placeholder="Satış (₺)" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
+                  <TRNumberInput placeholder="Satış (₺)" value={editForm.sale_price} onChange={(sale_price) => setEditForm({ ...editForm, sale_price })}
                     className="w-1/3 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
@@ -2615,16 +2460,16 @@ export default function ProductsPage() {
                           {editingHistoryEntryId === e.id ? (
                             <>
                               <td className="px-2 py-1.5">
-                                <input
-                                  type="number" step="0.01" value={historyEditPurchase}
-                                  onChange={(ev) => setHistoryEditPurchase(ev.target.value)}
+                                <TRNumberInput
+                                  value={historyEditPurchase}
+                                  onChange={setHistoryEditPurchase}
                                   className="w-24 border border-gray-300 rounded-lg px-2 py-1 text-xs sm:text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               </td>
                               <td className="px-2 py-1.5">
-                                <input
-                                  type="number" step="0.01" value={historyEditSale}
-                                  onChange={(ev) => setHistoryEditSale(ev.target.value)}
+                                <TRNumberInput
+                                  value={historyEditSale}
+                                  onChange={setHistoryEditSale}
                                   className="w-24 border border-gray-300 rounded-lg px-2 py-1 text-xs sm:text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               </td>

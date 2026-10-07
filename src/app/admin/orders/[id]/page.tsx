@@ -10,6 +10,8 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { escapeHtml } from "@/lib/htmlEscape";
+import { TRNumberInput } from "@/components/TRNumberInput";
+import { weekYearLabel } from "@/lib/weekYear";
 
 interface OrderDetail {
   id: number;
@@ -103,10 +105,6 @@ interface StockBatch {
 }
 
 
-function weekYearLabel(week: number | null, year: number | null): string {
-  if (week == null || year == null) return "—";
-  return `${String(week).padStart(2, "0")}/${String(year).slice(-2)}`;
-}
 
 // Eski enum değerleri (NAKIT/KREDI_KARTI/HAVALE) geçmiş siparişlerde hâlâ olabilir;
 // yeni ödeme tipi serbest metin ve doğrudan Excel'deki etiketleri kullanır.
@@ -1197,22 +1195,16 @@ function OrderDetailPageInner() {
                           )}
                         </td>
                         <td className="px-2 py-2 align-top">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                          <TRNumberInput
                             value={line.unit_price}
-                            onChange={(e) => updateEditLinePrice(i, e.target.value)}
+                            onChange={(raw) => updateEditLinePrice(i, raw)}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
                         <td className="px-2 py-2 align-top">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                          <TRNumberInput
                             value={line.cost_price}
-                            onChange={(e) => updateEditLine(i, { cost_price: e.target.value })}
+                            onChange={(raw) => updateEditLine(i, { cost_price: raw })}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
@@ -1368,23 +1360,17 @@ function OrderDetailPageInner() {
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Tutar (₺)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                          <TRNumberInput
                             value={line.unit_price}
-                            onChange={(e) => updateEditLinePrice(i, e.target.value)}
+                            onChange={(raw) => updateEditLinePrice(i, raw)}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Maliyet (₺)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                          <TRNumberInput
                             value={line.cost_price}
-                            onChange={(e) => updateEditLine(i, { cost_price: e.target.value })}
+                            onChange={(raw) => updateEditLine(i, { cost_price: raw })}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
@@ -1443,13 +1429,10 @@ function OrderDetailPageInner() {
                         onKasaChange={(kasaId) => updateEditPayment(i, { kasa_id: kasaId })}
                         kasaOptions={kasaOptions}
                       />
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <TRNumberInput
                         placeholder="Tutar"
                         value={entry.amount}
-                        onChange={(e) => updateEditPayment(i, { amount: e.target.value })}
+                        onChange={(raw) => updateEditPayment(i, { amount: raw })}
                         className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       {editPayments.length > 1 && (
@@ -1733,13 +1716,10 @@ function OrderDetailPageInner() {
                       kasaOptions={kasaOptions}
                       selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <TRNumberInput
                       placeholder="Tutar"
                       value={entry.amount}
-                      onChange={(e) => updatePaymentEntry(i, { amount: e.target.value })}
+                      onChange={(raw) => updatePaymentEntry(i, { amount: raw })}
                       className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     {paymentEntries.length > 1 && (

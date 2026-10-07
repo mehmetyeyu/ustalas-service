@@ -11,6 +11,8 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useColumnPrefs } from "@/hooks/useColumnPrefs";
+import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 
 const IMPORT_BATCH_SIZE = 20;
 
@@ -264,8 +266,6 @@ const COLUMNS: OrderColumnDef[] = [
   },
 ];
 
-const COLUMNS_BY_KEY: Record<string, OrderColumnDef> = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
-
 const SKELETON_ROWS = 8;
 
 interface OrderRow {
@@ -418,54 +418,11 @@ export default function OrdersPage() {
   const [importHasWarning, setImportHasWarning] = useState(false);
   const [importStage, setImportStage] = useState<"reading" | "uploading" | "">("");
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
-  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultVisible]))
-  );
-  // Sütun sırası + sürükle-bırak canlı önizlemesi — Ürün Kataloğu'ndaki
-  // (src/app/admin/products/page.tsx) aynı desenin birebir kopyası, aynı
-  // gerekçeyle: colOrder sadece bırakma anında kesinleşir, previewColOrder
-  // sürükleme sırasında listenin CANLI olarak yeniden dizilmesini sağlar.
-  const [colOrder, setColOrder] = useState<string[]>(() => COLUMNS.map((c) => c.key));
-  const orderedColumns = colOrder.map((k) => COLUMNS_BY_KEY[k]).filter((c): c is OrderColumnDef => c != null);
-  // Görünür+sıralı sütun listesi TEK sefer hesaplanır ve başlık/iskelet/gövde
-  // satırında aynı referans yeniden kullanılır — her satır için ayrı filter()
-  // çağırmak (N satır × M sütun) gereksiz tekrar iş olurdu (bkz. Ürün
-  // Kataloğu'ndaki aynı düzeltme, code review'da bulundu).
-  const visibleOrderedColumns = orderedColumns.filter((c) => visibleCols[c.key]);
-  const [dragColKey, setDragColKey] = useState<string | null>(null);
-  const [previewColOrder, setPreviewColOrder] = useState<string[] | null>(null);
-  const menuColumns = (previewColOrder ?? colOrder)
-    .map((k) => COLUMNS_BY_KEY[k])
-    .filter((c): c is OrderColumnDef => c != null);
-
-  function handleColDragOver(targetKey: string) {
-    if (!dragColKey || dragColKey === targetKey) return;
-    setPreviewColOrder((prev) => {
-      const base = prev ?? colOrder;
-      const from = base.indexOf(dragColKey);
-      const to = base.indexOf(targetKey);
-      if (from === -1 || to === -1 || from === to) return base;
-      const next = base.filter((k) => k !== dragColKey);
-      next.splice(next.indexOf(targetKey), 0, dragColKey);
-      return next;
-    });
-  }
-
-  function commitColDrag() {
-    if (previewColOrder) {
-      setColOrder(previewColOrder);
-      try { localStorage.setItem("orders_col_order_v1", JSON.stringify(previewColOrder)); } catch { }
-    }
-    setPreviewColOrder(null);
-    setDragColKey(null);
-  }
-
-  function cancelColDrag() {
-    setPreviewColOrder(null);
-    setDragColKey(null);
-  }
-
-  const [showColPicker, setShowColPicker] = useState(false);
+  const {
+    visibleCols, toggleVisible, showColPicker, setShowColPicker,
+    menuColumns, visibleOrderedColumns,
+    dragColKey, setDragColKey, handleColDragOver, commitColDrag, cancelColDrag, reorderable,
+  } = useColumnPrefs(COLUMNS, { visibleColsKey: "orders_visible_cols", colOrderKey: "orders_col_order_v1" });
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -568,31 +525,6 @@ export default function OrdersPage() {
       </th>
     );
   }
-
-  // localStorage sadece istemcide okunur; sunucu render'ıyla eşleşmesi için
-  // ilk render'da her zaman varsayılanlar kullanılır, kaydedilmiş tercih varsa
-  // mount sonrası (hydration bitince) uygulanır.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("orders_visible_cols");
-      if (saved) setVisibleCols(JSON.parse(saved));
-    } catch { }
-    try {
-      const savedOrder = localStorage.getItem("orders_col_order_v1");
-      if (savedOrder) {
-        const parsed: unknown = JSON.parse(savedOrder);
-        if (Array.isArray(parsed)) {
-          const allKeys = COLUMNS.map((c) => c.key);
-          // Set ile tekilleştirme: bozuk/eski bir localStorage içeriğinde aynı
-          // anahtar birden fazla kez geçerse, aynı sütun tabloda iki kez
-          // render edilip React "duplicate key" uyarısı verirdi.
-          const kept = Array.from(new Set(parsed.filter((k): k is string => typeof k === "string" && (allKeys as string[]).includes(k))));
-          const missing = allKeys.filter((k) => !kept.includes(k));
-          setColOrder([...kept, ...missing]);
-        }
-      }
-    } catch { }
-  }, []);
 
   async function deleteOrder(id: number) {
     if (!(await confirm({ message: `#${id} numaralı siparişi silmek istediğinize emin misiniz?`, confirmText: "Sil", variant: "danger" }))) return;
@@ -1079,37 +1011,18 @@ export default function OrdersPage() {
               Sütunlar
             </button>
             {showColPicker && (
-              <div className="absolute right-0 top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-52" onClick={(e) => e.stopPropagation()}>
-                <p className="text-xs text-gray-400 px-2 mb-1">Sürükleyerek sırala</p>
-                {menuColumns.map((col) => (
-                  <div
-                    key={col.key}
-                    draggable
-                    onDragStart={() => setDragColKey(col.key)}
-                    onDragOver={(e) => { e.preventDefault(); handleColDragOver(col.key); }}
-                    onDrop={commitColDrag}
-                    onDragEnd={cancelColDrag}
-                    className={`group flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-50 cursor-grab active:cursor-grabbing ${dragColKey === col.key ? "opacity-40" : ""}`}
-                  >
-                    <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
-                    </svg>
-                    <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm text-gray-700 select-none">
-                      <input
-                        type="checkbox"
-                        checked={visibleCols[col.key]}
-                        onChange={(e) => setVisibleCols((prev) => {
-                          const next = { ...prev, [col.key]: e.target.checked };
-                          try { localStorage.setItem("orders_visible_cols", JSON.stringify(next)); } catch { }
-                          return next;
-                        })}
-                        className="w-4 h-4 accent-blue-500"
-                      />
-                      {col.label}
-                    </label>
-                  </div>
-                ))}
-              </div>
+              <ColumnPickerMenu
+                columns={menuColumns}
+                visibleCols={visibleCols}
+                onToggle={toggleVisible}
+                reorderable={reorderable}
+                dragColKey={dragColKey}
+                onDragStart={setDragColKey}
+                onDragOver={handleColDragOver}
+                onDrop={commitColDrag}
+                onDragEnd={cancelColDrag}
+                positionClassName="right-0 w-52"
+              />
             )}
           </div>
         </div>

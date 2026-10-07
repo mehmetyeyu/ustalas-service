@@ -7,6 +7,7 @@ import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
+import { TRNumberInput } from "@/components/TRNumberInput";
 
 interface Expense {
   id: number;
@@ -584,12 +585,9 @@ export default function ExpensesPage() {
                           )}
                         </td>
                         <td className="pb-2 pr-2">
-                          <input
-                            type="number"
+                          <TRNumberInput
                             value={row.amount}
-                            onChange={(e) => updateRow(i, { amount: e.target.value })}
-                            min="0"
-                            step="0.01"
+                            onChange={(raw) => updateRow(i, { amount: raw })}
                             className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </td>
@@ -660,12 +658,9 @@ export default function ExpensesPage() {
                           <option key={p} value={p}>{p}</option>
                         ))}
                       </select>
-                      <input
-                        type="number"
+                      <TRNumberInput
                         value={row.amount}
-                        onChange={(e) => updateRow(i, { amount: e.target.value })}
-                        min="0"
-                        step="0.01"
+                        onChange={(raw) => updateRow(i, { amount: raw })}
                         placeholder="Tutar (₺)"
                         className="w-32 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
@@ -753,12 +748,9 @@ export default function ExpensesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tutar (₺)</label>
-                <input
-                  type="number"
+                <TRNumberInput
                   value={editRow.amount}
-                  onChange={(e) => setEditRow((r) => ({ ...r, amount: e.target.value }))}
-                  min="0"
-                  step="0.01"
+                  onChange={(raw) => setEditRow((r) => ({ ...r, amount: raw }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -881,12 +873,9 @@ export default function ExpensesPage() {
                   <div className="flex gap-3">
                     <div className="flex-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Tutar (₺)</label>
-                      <input
-                        type="number"
+                      <TRNumberInput
                         value={recForm.amount}
-                        onChange={(e) => setRecForm((f) => ({ ...f, amount: e.target.value }))}
-                        min="0"
-                        step="0.01"
+                        onChange={(raw) => setRecForm((f) => ({ ...f, amount: raw }))}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>

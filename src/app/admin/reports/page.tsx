@@ -17,6 +17,7 @@ import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
+import { TRNumberInput } from "@/components/TRNumberInput";
 
 interface DailyDatum {
   date: string;
@@ -200,17 +201,6 @@ const MONTH_NAMES_SHORT = [
   "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 ];
 
-// Gelir/Gider input'ları düzenlenebilir olduğundan type="number" kullanmak
-// zorunda değiliz — odaklanınca ham rakam (yazması kolay olsun diye),
-// odak kalkınca binlik ayraçlı "3.120,00" biçimi gösterilir (bkz. aşağıdaki
-// focusedField state). Üretim Haftası/Yılı'ndaki (Ürünler sayfası) aynı
-// "odakta ham, dışarıda biçimli" deseni.
-function formatTRNumber(raw: string): string {
-  const n = Number(raw.replace(",", "."));
-  if (!Number.isFinite(n)) return raw;
-  return n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 // Müşteri isteği: Raporlar'daki Ciro/Maliyet/Masraf'tan ayrı, admin'in elle
 // onaylayıp "resmi" hâle getirdiği bir Ay/Gelir/Gider/Kâr özeti — bkz.
 // database/schema.sql monthly_financials yorumu ve GET/PUT
@@ -230,7 +220,6 @@ function YillikOzetTab() {
   const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState<Record<number, { income: string; expense: string }>>({});
   const [savingMonth, setSavingMonth] = useState<number | null>(null);
-  const [focusedField, setFocusedField] = useState<{ month: number; field: "income" | "expense" } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -357,15 +346,9 @@ function YillikOzetTab() {
                       <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatCurrency(m.maliyet)}</td>
                       <td className="px-4 py-3 text-right">
                         {canEdit ? (
-                          <input
-                            type="text" inputMode="decimal"
-                            value={focusedField?.month === m.month && focusedField.field === "income" ? draft.income : formatTRNumber(draft.income)}
-                            onFocus={() => setFocusedField({ month: m.month, field: "income" })}
-                            onBlur={() => setFocusedField(null)}
-                            onChange={(e) => {
-                              const cleaned = e.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
-                              setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], income: cleaned } }));
-                            }}
+                          <TRNumberInput
+                            value={draft.income}
+                            onChange={(raw) => setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], income: raw } }))}
                             className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (
@@ -374,15 +357,9 @@ function YillikOzetTab() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         {canEdit ? (
-                          <input
-                            type="text" inputMode="decimal"
-                            value={focusedField?.month === m.month && focusedField.field === "expense" ? draft.expense : formatTRNumber(draft.expense)}
-                            onFocus={() => setFocusedField({ month: m.month, field: "expense" })}
-                            onBlur={() => setFocusedField(null)}
-                            onChange={(e) => {
-                              const cleaned = e.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
-                              setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], expense: cleaned } }));
-                            }}
+                          <TRNumberInput
+                            value={draft.expense}
+                            onChange={(raw) => setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], expense: raw } }))}
                             className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (
