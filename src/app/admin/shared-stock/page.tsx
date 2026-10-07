@@ -15,6 +15,7 @@ interface ShopEntry {
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  code: string;
   qty: number;
   production_year: number | null;
   production_week: number | null;
@@ -91,7 +92,7 @@ export default function SharedStockPage() {
           <h1 className="text-xl font-bold text-gray-800">Paylaşılan Stok</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-xl">
             Stok paylaşımını açan diğer firmaların ürünlerinde arama yapın. Yalnızca marka, ebat,
-            sezon ve adet bilgisi görünür — fiyat ve tedarikçi paylaşılmaz.
+            sezon, ürün kodu ve adet bilgisi görünür — fiyat ve tedarikçi paylaşılmaz.
           </p>
         </div>
       </div>
@@ -206,6 +207,7 @@ export default function SharedStockPage() {
                           <div key={shopKey} className="border-t border-gray-100 first:border-t-0">
                             <div className="flex items-center gap-3 flex-wrap px-4 py-2.5 text-sm">
                               <span className="font-medium text-gray-700">{shop.tenant_name}</span>
+                              <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{shop.code}</span>
                               {shop.production_year && (
                                 <span className="font-mono text-xs text-gray-400">
                                   {shop.production_week ? `${String(shop.production_week).padStart(2, "0")}. hf / ` : ""}
