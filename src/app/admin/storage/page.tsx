@@ -252,22 +252,44 @@ async function printLabel(item: StorageItem) {
     if (res.ok) logoUrl = (await res.json()).logoUrl ?? null;
   } catch { /* logo olmadan da yazdırılabilir, sessizce devam */ }
 
+  // Sıra No/Adet/İşlem Tarihi her zaman dolu (zorunlu/varsayılanlı alanlar) —
+  // geri kalanı boşsa satır hiç basılmaz: hem gereksiz "—" satırlarıyla yer
+  // kaplamaz hem de logo + tüm alanlar dolu "en kötü durum" senaryosunda
+  // taşma riskini azaltır (bkz. aşağıdaki sıkılaştırılmış boşluklar).
+  const rows: Array<[string, string]> = [
+    ["Sıra No", String(item.depo_no ?? "—")],
+    ["Müşteri", escapeHtml(item.customer_name)],
+    ["Telefon", escapeHtml(item.phone)],
+    ["Ebat", escapeHtml(item.ebat)],
+    ["Marka", escapeHtml(item.marka)],
+    ["Model", escapeHtml(item.model_name)],
+    ["Diş Derinliği", escapeHtml(item.dis_derinligi)],
+    // weekYearLabel haftayla yıl ikisi de boşken bile "—" döndürür (düz boş
+    // string değil) — bu yüzden diğerleri gibi val'e bakmak yetmez, kaynak
+    // alanlar açıkça kontrol edilir.
+    ...(item.production_week != null || item.production_year != null
+      ? ([["Üretim Haftası/Yılı", weekYearLabel(item.production_week, item.production_year)]] as const)
+      : []),
+    ["Adet", String(item.adet ?? "—")],
+    ["Mevsim", escapeHtml(item.mevsim)],
+    ["İşlem Tarihi", date],
+  ].filter(([label, val]) => val || label === "Sıra No" || label === "Adet" || label === "İşlem Tarihi") as Array<[string, string]>;
+
+  // Aşağıdaki padding/font-size değerleri 11 satır + logo "en kötü durum"
+  // bütçesine göre elle ayarlandı (bkz. style bloğundaki not). İleride yeni
+  // bir alan eklenip satır sayısı 11'i aşarsa CSS'i tekrar elle ayarlamaya
+  // gerek kalmasın diye satır başına boşluk/yazı boyutu bu oranla otomatik
+  // küçülür — sabit bütçe değil, satır sayısına göre ölçeklenen bir önlem.
+  const rowScale = rows.length > 11 ? 11 / rows.length : 1;
+  const tdPaddingMm = (2.8 * rowScale).toFixed(2);
+  const tdFontPt = (14 * rowScale).toFixed(1);
+
   const labelHtml = `
     <div class="label">
       ${logoUrl ? `<img class="logo" src="${escapeHtml(logoUrl)}" alt="" />` : ""}
       <div class="plate">${escapeHtml(item.plate) || "—"}</div>
       <table>
-        <tr><td class="lbl">Sıra No</td><td class="val sira">${item.depo_no ?? "—"}</td></tr>
-        <tr><td class="lbl">Müşteri</td><td class="val">${escapeHtml(item.customer_name) || "—"}</td></tr>
-        <tr><td class="lbl">Telefon</td><td class="val">${escapeHtml(item.phone) || "—"}</td></tr>
-        <tr><td class="lbl">Ebat</td><td class="val">${escapeHtml(item.ebat) || "—"}</td></tr>
-        <tr><td class="lbl">Marka</td><td class="val">${escapeHtml(item.marka) || "—"}</td></tr>
-        <tr><td class="lbl">Model</td><td class="val">${escapeHtml(item.model_name) || "—"}</td></tr>
-        <tr><td class="lbl">Diş Derinliği</td><td class="val">${escapeHtml(item.dis_derinligi) || "—"}</td></tr>
-        <tr><td class="lbl">Üretim Haftası/Yılı</td><td class="val">${weekYearLabel(item.production_week, item.production_year)}</td></tr>
-        <tr><td class="lbl">Adet</td><td class="val">${item.adet ?? "—"}</td></tr>
-        <tr><td class="lbl">Mevsim</td><td class="val">${escapeHtml(item.mevsim) || "—"}</td></tr>
-        <tr><td class="lbl">İşlem Tarihi</td><td class="val">${date}</td></tr>
+        ${rows.map(([label, val]) => `<tr><td class="lbl">${label}</td><td class="val${label === "Sıra No" ? " sira" : ""}">${val || "—"}</td></tr>`).join("\n        ")}
       </table>
     </div>`;
 
@@ -283,9 +305,10 @@ async function printLabel(item: StorageItem) {
     width: 148.5mm;
     height: 210mm;
     border: 1px dashed #aaa;
-    /* Üst padding daralt (14mm -> 8mm) — büyüyen logoya yer açmak için;
-       alt padding aynı (14mm) kalıyor. */
-    padding: 8mm 12mm 14mm;
+    /* Depolama'ya Model/DOT alanları eklenince (en kötü durumda tüm
+       alanlar dolu + logo varken) 210mm'i aşıp 2. sayfaya taşıyordu —
+       padding ve aşağıdaki satır/logo boşlukları bu yüzden sıkılaştırıldı. */
+    padding: 6mm 12mm 12mm;
     font-family: Arial, sans-serif;
     display: flex;
     flex-direction: column;
@@ -294,20 +317,20 @@ async function printLabel(item: StorageItem) {
   /* Sabit 210mm yükseklikli sayfaya logo eklenince taşıp ikinci sayfaya
      düşmesin diye gap yerine (logo yokken TAM olarak eskisiyle aynı
      görünüm kalsın diye) sadece logo VARSA devreye giren, üçü de EŞİT
-     (5mm) boşluklar kullanılıyor: logo üstü, logo altı, plaka altı. */
-  .logo { max-height: 17mm; max-width: 100%; object-fit: contain; align-self: center; margin-top: 5mm; margin-bottom: 5mm; }
+     boşluklar kullanılıyor: logo üstü, logo altı, plaka altı. */
+  .logo { max-height: 13mm; max-width: 100%; object-fit: contain; align-self: center; margin-top: 3.5mm; margin-bottom: 3.5mm; }
   .plate {
     font-size: 36pt;
     font-weight: bold;
     text-align: center;
     letter-spacing: 3px;
     border: 3px solid #000;
-    padding: 6mm;
+    padding: 5mm;
     border-radius: 4mm;
-    margin-bottom: 5mm;
+    margin-bottom: 4mm;
   }
   table { width: 100%; border-collapse: collapse; }
-  td { padding: 3.5mm 2mm; border-bottom: 1px solid #eee; font-size: 14pt; }
+  td { padding: ${tdPaddingMm}mm 2mm; border-bottom: 1px solid #eee; font-size: ${tdFontPt}pt; }
   td.lbl { color: #555; width: 45%; }
   td.val { font-weight: bold; text-align: right; }
   td.sira { font-size: 50pt; }
