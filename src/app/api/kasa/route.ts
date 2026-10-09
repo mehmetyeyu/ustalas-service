@@ -155,8 +155,18 @@ export async function GET(request: NextRequest) {
     // isSpecificKasa true'ysa (tek bir kasa görüntüleniyor) her zaman ham
     // `amount`; değilse (Tüm Kasalar/Kasa) TL karşılığı (kur yoksa NULL —
     // SUM() bunu atlar, o satır toplama girmez).
+    //
+    // PERFORMANS: `filtered` MATERIALIZED olarak işaretli ve TEK sorguda üç
+    // kez referans alınıyor (opening/windowed/toplam bakiye) — önceden bu üç
+    // hesap üç AYRI pool.query() (üç ayrı round-trip, her biri beşli UNION'ı
+    // baştan hesaplıyordu) idi; şimdi Postgres `filtered`'ı bir kez hesaplayıp
+    // sonucu paylaşıyor. Sayfa/bakiye/toplam sayı sütun değil SKALER alt
+    // sorgu olarak seçiliyor (FROM yok) — bu yüzden windowed BOŞ olsa bile
+    // (ör. boş bir ay ya da offset taşması) satır hiç dönmez diye bakiye/
+    // toplam sayı kaybolmaz, her zaman TEK satır döner (bkz. aşağıdaki
+    // entries'in COALESCE(...,'[]') ile sarılmış json_agg'ı).
     const filteredCte = `${combinedCte},
-      filtered AS (
+      filtered AS MATERIALIZED (
         SELECT combined.*,
           COALESCE(k.currency, 'TRY') AS currency,
           CASE WHEN $3::boolean THEN combined.amount
@@ -171,8 +181,8 @@ export async function GET(request: NextRequest) {
       )
     `;
 
-    const [entriesResult, totalResult, countResult, unassignedResult] = await Promise.all([
-      pool.query(
+    const [mainResult, unassignedResult] = await Promise.all([
+      pool.query<{ balance: number; total: number; entries: unknown }>(
         `${filteredCte},
          opening AS (
            SELECT COALESCE(SUM(effective_amount * kasa_direction), 0)::float AS balance
@@ -182,34 +192,27 @@ export async function GET(request: NextRequest) {
            SELECT * FROM filtered
            WHERE ($4::date IS NULL OR entry_date >= $4) AND ($5::date IS NULL OR entry_date <= $5)
          )
-         SELECT windowed.*, k.name AS kasa_name, pk.name AS transfer_pair_kasa_name,
-           ((SELECT balance FROM opening) + SUM(windowed.effective_amount * windowed.kasa_direction) OVER (
-             ORDER BY windowed.entry_date, windowed.sort_ts, windowed.source_rank, windowed.source_id
-           ))::float AS running_balance
-         FROM windowed
-         LEFT JOIN kasalar k ON k.id = windowed.kasa_id AND k.tenant_id = $1
-         LEFT JOIN cash_ledger_entries pair_entry ON pair_entry.id = windowed.transfer_pair_id AND pair_entry.tenant_id = $1
-         LEFT JOIN kasalar pk ON pk.id = pair_entry.kasa_id AND pk.tenant_id = $1
-         ORDER BY windowed.entry_date DESC, windowed.sort_ts DESC, windowed.source_rank DESC, windowed.source_id DESC
-         LIMIT $6 OFFSET $7`,
+         SELECT
+           (SELECT COALESCE(SUM(effective_amount * kasa_direction), 0)::float
+            FROM filtered WHERE $5::date IS NULL OR entry_date <= $5) AS balance,
+           (SELECT COUNT(*)::int FROM windowed) AS total,
+           COALESCE((
+             SELECT json_agg(page ORDER BY
+               page.entry_date DESC, page.sort_ts DESC, page.source_rank DESC, page.source_id DESC)
+             FROM (
+               SELECT windowed.*, k.name AS kasa_name, pk.name AS transfer_pair_kasa_name,
+                 ((SELECT balance FROM opening) + SUM(windowed.effective_amount * windowed.kasa_direction) OVER (
+                   ORDER BY windowed.entry_date, windowed.sort_ts, windowed.source_rank, windowed.source_id
+                 ))::float AS running_balance
+               FROM windowed
+               LEFT JOIN kasalar k ON k.id = windowed.kasa_id AND k.tenant_id = $1
+               LEFT JOIN cash_ledger_entries pair_entry ON pair_entry.id = windowed.transfer_pair_id AND pair_entry.tenant_id = $1
+               LEFT JOIN kasalar pk ON pk.id = pair_entry.kasa_id AND pk.tenant_id = $1
+               ORDER BY windowed.entry_date DESC, windowed.sort_ts DESC, windowed.source_rank DESC, windowed.source_id DESC
+               LIMIT $6 OFFSET $7
+             ) page
+           ), '[]'::json) AS entries`,
         [user.tenantId, kasaIdParam, isSpecificKasa, fromParam, toParam, limit, offset]
-      ),
-      // Toplam bakiye entries listesinden (ve sayfalamadan) bağımsız
-      // hesaplanır — aralık içinde hiç hareket olmasa bile (ör. boş bir ay)
-      // ya da görüntülenen sayfa boş kalsa bile doğru kalması için.
-      pool.query<{ balance: number }>(
-        `${filteredCte}
-         SELECT COALESCE(SUM(effective_amount * kasa_direction), 0)::float AS balance
-         FROM filtered WHERE $4::date IS NULL OR entry_date <= $4`,
-        [user.tenantId, kasaIdParam, isSpecificKasa, toParam]
-      ),
-      // Aynı filtrelerle eşleşen TOPLAM satır sayısı — istemci "Daha Fazla
-      // Yükle" gösterilsin mi diye bunu kullanır.
-      pool.query<{ total: number }>(
-        `${filteredCte}
-         SELECT COUNT(*)::int AS total FROM filtered
-         WHERE ($4::date IS NULL OR entry_date >= $4) AND ($5::date IS NULL OR entry_date <= $5)`,
-        [user.tenantId, kasaIdParam, isSpecificKasa, fromParam, toParam]
       ),
       // "Kasa" (atanmamış) sekmesinin görünürlüğü — kasaId filtresinden VE
       // para birimi dönüşümünden bağımsız (atanmamış hareketler her zaman
@@ -226,9 +229,9 @@ export async function GET(request: NextRequest) {
     ]);
 
     return NextResponse.json({
-      balance: totalResult.rows[0].balance,
-      entries: entriesResult.rows,
-      total: countResult.rows[0].total,
+      balance: mainResult.rows[0].balance,
+      entries: mainResult.rows[0].entries,
+      total: mainResult.rows[0].total,
       hasUnassigned: unassignedResult.rows[0].has_unassigned,
     });
   } catch (error) {

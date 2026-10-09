@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
+import { createKasaResolver, InvalidKasaError } from "@/lib/kasalar";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -100,9 +100,13 @@ export async function POST(request: NextRequest) {
     try {
       await client.query("BEGIN");
       const ids: number[] = [];
+      // Birden fazla masraf satırı genelde aynı ödeme tipini (+ Nakit'te aynı
+      // kasa_id'yi) paylaşır — Siparişler'deki aynı istek-başına-cache'li
+      // resolver (bkz. src/lib/kasalar.ts: createKasaResolver).
+      const resolveKasa = createKasaResolver(client, user.tenantId!);
       for (const e of items as ExpenseInput[]) {
         const paymentType = e.payment_type ? String(e.payment_type).trim() : null;
-        const kasaId = await resolveKasaId(client, user.tenantId!, paymentType, e.kasa_id);
+        const kasaId = await resolveKasa(paymentType, e.kasa_id);
         const result = await client.query(
           `INSERT INTO expenses (tenant_id, expense_date, category, description, amount, payment_type, recurring_expense_id, kasa_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

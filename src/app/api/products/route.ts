@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
                       SUM(quantity * sale_price) / NULLIF(SUM(quantity) FILTER (WHERE sale_price IS NOT NULL), 0) AS avg_sale_price
                FROM product_stock_entries
                WHERE tenant_id = $2
+                 AND product_id IN (SELECT id FROM products WHERE code = ANY($1) AND tenant_id = $2)
                GROUP BY product_id
              ) avg_sub ON avg_sub.product_id = p.id
              WHERE p.code = ANY($1) AND p.tenant_id = $2 AND p.stock_qty > 0

@@ -8,7 +8,7 @@ import { getAppSettings, getCustomOrderNoEnabled } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
-import { resolveKasaId, InvalidKasaError } from "@/lib/kasalar";
+import { createKasaResolver, InvalidKasaError } from "@/lib/kasalar";
 import { logAudit } from "@/lib/auditLog";
 
 interface EditLineInput {
@@ -158,6 +158,10 @@ export async function PATCH(
     const { payment_types } = await getAppSettings(user.tenantId!);
     const paymentOptions = flatPaymentOptions(payment_types);
     const resolvedPayments: { payment_type: string; amount: number; kasa_id: number | null }[] = [];
+    // Parçalı ödemeler genelde aynı tipi (+ Nakit'te aynı kasa_id'yi) paylaşır
+    // — tek istek içinde aynı (tip, kasa_id) çifti bir daha sorgulanmasın diye
+    // istek başına bir resolver (bkz. src/lib/kasalar.ts: createKasaResolver).
+    const resolveKasa = createKasaResolver(pool, user.tenantId!);
     for (const p of payments as { payment_type: string; amount: number; kasa_id?: number | null }[]) {
       if (!p.payment_type || !isValidPaymentType(p.payment_type, paymentOptions)) {
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
@@ -171,7 +175,7 @@ export async function PATCH(
       // (bkz. src/lib/kasalar.ts: resolveKasaId).
       let kasaId: number | null;
       try {
-        kasaId = await resolveKasaId(pool, user.tenantId!, p.payment_type, p.kasa_id);
+        kasaId = await resolveKasa(p.payment_type, p.kasa_id);
       } catch (err) {
         if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
         throw err;
@@ -352,6 +356,11 @@ export async function PUT(
       ...flatPaymentOptions(payment_types),
       ...existingPaymentTypes.rows.map((r) => r.payment_type),
     ]));
+    // Satırlar VE aşağıdaki parçalı ödemeler genelde aynı tipi (+ Nakit'te
+    // aynı kasa_id'yi) paylaşır — tek istek içinde aynı (tip, kasa_id) çifti
+    // bir daha sorgulanmasın diye TEK bir resolver ikisi arasında paylaşılır
+    // (bkz. src/lib/kasalar.ts: createKasaResolver).
+    const resolveKasa = createKasaResolver(pool, user.tenantId!);
     for (const l of lines as EditLineInput[]) {
       if (!l.service_name || !String(l.service_name).trim()) {
         return NextResponse.json({ error: "Her satır için işlem adı zorunludur." }, { status: 400 });
@@ -362,7 +371,7 @@ export async function PUT(
         return NextResponse.json({ error: "Geçersiz ödeme tipi." }, { status: 400 });
       }
       try {
-        l.kasa_id = await resolveKasaId(pool, user.tenantId!, l.payment_type, l.kasa_id);
+        l.kasa_id = await resolveKasa(l.payment_type, l.kasa_id);
       } catch (err) {
         if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
         throw err;
@@ -400,7 +409,7 @@ export async function PUT(
           }
           let kasaId: number | null;
           try {
-            kasaId = await resolveKasaId(pool, user.tenantId!, p.payment_type, p.kasa_id);
+            kasaId = await resolveKasa(p.payment_type, p.kasa_id);
           } catch (err) {
             if (err instanceof InvalidKasaError) return NextResponse.json({ error: err.message }, { status: 400 });
             throw err;

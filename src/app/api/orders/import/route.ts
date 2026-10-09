@@ -134,14 +134,30 @@ export async function POST(request: NextRequest) {
           }
 
           const orderId = orderResult.rows[0].id;
-          for (const line of order.lines) {
-            const serviceId = serviceIdByName.get(line.service_name.trim());
-            if (!serviceId) continue;
+          // Satırlar tek tek değil, sipariş başına TEK toplu INSERT ile eklenir
+          // (performans taraması, bkz. Ürünler/Depolama import'larındaki aynı
+          // toplu INSERT deseni) — siparişin kendisi hâlâ KENDİ transaction'ında
+          // izole kalır (duplicate/hata durumunda sadece bu sipariş atlanır,
+          // yukarıdaki yorum), sadece bu siparişin satır sayısı kadar (önceden
+          // N) sorgu artık TEK sorguya iner.
+          const linesToInsert = order.lines
+            .map((line) => ({ line, serviceId: serviceIdByName.get(line.service_name.trim()) }))
+            .filter((x): x is { line: typeof order.lines[number]; serviceId: number } => x.serviceId != null);
+          if (linesToInsert.length > 0) {
+            const values: (string | number | null)[] = [];
+            const placeholders = linesToInsert.map(({ line, serviceId }, i) => {
+              const base = i * 10;
+              values.push(
+                user.tenantId!, orderId, serviceId, line.unit_price, line.quantity,
+                line.cost_price, line.supplier, line.stock_code, line.size_desc, line.payment_type
+              );
+              return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10})`;
+            });
             await client.query(
               `INSERT INTO order_services
                  (tenant_id, order_id, service_id, unit_price, quantity, cost_price, supplier, stock_code, size_desc, payment_type)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-              [user.tenantId, orderId, serviceId, line.unit_price, line.quantity, line.cost_price, line.supplier, line.stock_code, line.size_desc, line.payment_type]
+               VALUES ${placeholders.join(",")}`,
+              values
             );
           }
 

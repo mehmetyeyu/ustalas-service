@@ -505,8 +505,17 @@ ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS tenant_id INT REFERENCES
 -- IS NULL), sonraki build'lerde no-op olur.
 UPDATE services SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE orders SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE order_services SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE order_payments SET tenant_id = 1 WHERE tenant_id IS NULL;
+-- order_services/order_payments de product_stock_entries'teki AYNI hatayı
+-- taşıyordu (körü körüne 1'e atama) — burada kendi INSERT'leri product_
+-- stock_entries'inki gibi her build'de tekrarlamadığından prod'da zaten
+-- no-op'tu (0 bozuk satır, doğrulandı), ama dev'deki eski/tenant_id'siz
+-- test satırları (orders_order_tenant_fk / order_payments muadili composite
+-- FK'yı ihlal ederek) migration'ı çökertiyordu — performans taraması
+-- sırasında bulundu. Doğrusu burada da ebeveyn siparişin GERÇEK tenant_id'si.
+UPDATE order_services os SET tenant_id = o.tenant_id
+  FROM orders o WHERE os.order_id = o.id AND os.tenant_id IS NULL;
+UPDATE order_payments op SET tenant_id = o.tenant_id
+  FROM orders o WHERE op.order_id = o.id AND op.tenant_id IS NULL;
 UPDATE customers SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE suppliers SET tenant_id = 1 WHERE tenant_id IS NULL;
 UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL;
@@ -1643,3 +1652,14 @@ ALTER TABLE storage ADD COLUMN IF NOT EXISTS model_name VARCHAR(80);
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS production_week SMALLINT;
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS production_year SMALLINT;
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS load_speed_index VARCHAR(20);
+
+-- Performans taraması: orders_customer_name_idx (yukarıda, tek başına
+-- customer_name) Aşama 3'teki (bkz. "her sorgu artık tenant_id'yi eşitlikle
+-- filtreliyor" notu) tenant_id-öncelikli index geçişine dahil edilmemiş —
+-- Müşteriler sayfasındaki "Sil" koruması (/api/customers/[id]) ve "Siparişleri
+-- Gör" (/api/customers/[id]/orders) ikisi de customer_name = $1 AND
+-- tenant_id = $2 ile tam eşleşme arıyor, eski index bu eşleşmeyi tenant_id'siz
+-- taradığından firma sayısı arttıkça diğer firmaların satırları arasında da
+-- arama yapılmış oluyordu. Eski index KALDIRILMADI (customer_name'in tek
+-- başına kullanıldığı başka bir yer olup olmadığı net değil), bu sadece ek.
+CREATE INDEX IF NOT EXISTS orders_tenant_customer_name_idx ON orders(tenant_id, customer_name);

@@ -85,6 +85,11 @@ export async function GET(request: NextRequest) {
     //
     // Aşağıdaki 5 sorgu birbirinden bağımsızdır — sırayla değil Promise.all ile
     // paralel çalıştırılır (toplam gecikme 5 sorgunun toplamı değil en yavaşı kadar olur).
+    // Kasa (Nakit) Özeti artık burada DEĞİL — ayrı bir endpoint'e taşındı
+    // (bkz. /api/reports/cash-summary/route.ts yorumu): değeri year/month/
+    // periodRange/serviceRange'den bağımsız (kuruluştan bugüne tüm zamanların
+    // toplamı) olduğu hâlde önceden bu Promise.all'ın bir parçasıydı, yani
+    // kullanıcı sadece ay değiştirse bile sınırsız UNION'ı yeniden hesaplardı.
     const [
       dailyCiroResult,
       dailyMaliyetResult,
@@ -93,7 +98,6 @@ export async function GET(request: NextRequest) {
       summaryResult,
       paymentBreakdownResult,
       unaddedRecurringResult,
-      cashRegisterResult,
       periodSummaryResult,
     ] = await Promise.all([
       pool.query(
@@ -198,66 +202,6 @@ export async function GET(request: NextRequest) {
          ORDER BY re.category`,
         [expenseStart, expenseEnd, user.tenantId]
       ),
-      // Kasa (Nakit) Özeti — seçili aydan BAĞIMSIZ, kuruluştan bugüne tüm zamanların
-      // toplamı: fiziksel kasadaki nakit hiçbir ay sınırında sıfırlanmaz, o yüzden
-      // aylık rapor gibi tarih filtreli olması anlamsız (FB Lastik geri bildirimi:
-      // "2 aylık toplam nakiti göremiyorum" + "kasadan çıkan masrafları görmüyorum").
-      // Gelir tarafı, aylık Ödeme Tipi Kırılımı'yla aynı order_payments/order_services
-      // ayrıştırma mantığını (bkz. paymentBreakdownResult) tarih filtresiz tekrarlar;
-      // gider tarafı expenses.payment_type='Nakit' olan tüm masrafların toplamıdır.
-      // UYARI: bu order_payments/order_services Nakit ayrıştırma mantığı
-      // src/app/api/kasa/route.ts'te SATIR BAZINDA tekrar yazılıdır (Kasa
-      // sayfası aynı kaynağı toplam yerine tek tek listeler) — burada bir
-      // değişiklik yapılırsa orası da güncellenmeli, aksi halde Kasa sayfası
-      // ile bu özet kart sessizce birbirinden sapar.
-      pool.query(
-        `SELECT
-           (SELECT COALESCE(SUM(total), 0) FROM (
-             SELECT op.amount AS total
-             FROM order_payments op
-             JOIN orders o ON o.id = op.order_id
-             WHERE op.payment_type = 'Nakit' AND o.tenant_id = $1
-
-             UNION ALL
-
-             SELECT os.unit_price AS total
-             FROM order_services os
-             JOIN orders o ON os.order_id = o.id
-             WHERE os.payment_type = 'Nakit'
-               AND NOT EXISTS (SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id AND op2.tenant_id = o.tenant_id)
-               AND o.tenant_id = $1
-
-             UNION ALL
-
-             -- Cari bakiyeden sonradan Nakit tahsil edilen tutarlar (bkz.
-             -- src/lib/customerLedger.ts) — hiçbir siparişe bağlı olmadığından
-             -- yukarıdaki iki kaynakta hiç görünmez, ama kasaya giren gerçek
-             -- nakittir. Gelir raporlarına (tahakkuk esası) KASITLI olarak
-             -- eklenmez, sadece bu Kasa özetine eklenir.
-             SELECT cle.amount AS total
-             FROM customer_ledger_entries cle
-             WHERE cle.entry_type = 'MANUEL' AND cle.direction = -1
-               AND cle.payment_type = 'Nakit' AND cle.tenant_id = $1
-
-             UNION ALL
-
-             -- Kasa sayfasındaki serbest manuel nakit girişleri (bkz.
-             -- src/app/api/kasa/route.ts) — Para Girişi (direction=1).
-             SELECT amount AS total FROM cash_ledger_entries
-             WHERE tenant_id = $1 AND direction = 1
-           ) combined)::float AS income,
-           (SELECT COALESCE(SUM(total), 0) FROM (
-             SELECT amount AS total FROM expenses WHERE payment_type = 'Nakit' AND tenant_id = $1
-
-             UNION ALL
-
-             -- Kasa sayfasındaki serbest manuel nakit çıkışları — Para
-             -- Çıkışı (direction=-1).
-             SELECT amount AS total FROM cash_ledger_entries
-             WHERE tenant_id = $1 AND direction = -1
-           ) combined2)::float AS expense`,
-        [user.tenantId]
-      ),
       // Dönemsel Ciro/Maliyet/Masraf — üstteki Ay/Yıl'dan bağımsız, kullanıcının
       // "Dönemsel" widget'ında seçtiği kendi tarih aralığı (Tarih/Günlük/Haftalık/
       // Aylık). Aralık verilmemişse (hasPeriodRange=false, olmaması beklenmez ama
@@ -307,9 +251,6 @@ export async function GET(request: NextRequest) {
     const totalRevenue = dailyData.reduce((sum, r) => sum + r.ciro, 0);
     const totalExpenses = dailyData.reduce((sum, r) => sum + r.masraf, 0);
 
-    const cashIncome = cashRegisterResult.rows[0]?.income ?? 0;
-    const cashExpense = cashRegisterResult.rows[0]?.expense ?? 0;
-
     const periodSummaryRow = periodSummaryResult?.rows[0] ?? null;
 
     return NextResponse.json({
@@ -318,7 +259,6 @@ export async function GET(request: NextRequest) {
       summary: { ...summaryResult.rows[0], total_revenue: totalRevenue, total_expenses: totalExpenses },
       paymentBreakdown: paymentBreakdownResult.rows,
       unaddedRecurring: unaddedRecurringResult.rows,
-      cashRegister: { income: cashIncome, expense: cashExpense, balance: cashIncome - cashExpense },
       periodSummary: periodSummaryRow
         ? { ciro: periodSummaryRow.ciro, maliyet: periodSummaryRow.maliyet, masraf: periodSummaryRow.masraf }
         : null,

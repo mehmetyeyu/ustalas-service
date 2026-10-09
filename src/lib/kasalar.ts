@@ -74,6 +74,29 @@ export async function resolveKasaId(
   return result.rows[0]?.id ?? null;
 }
 
+// Sipariş Düzelt/Ödeme Al & Kapat ekranlarında birden fazla satır/ödeme
+// GENELDE aynı ödeme tipini (+ aynı kasa_id'yi, Nakit'te) paylaşır — ama
+// resolveKasaId her çağrıda kendi sorgusunu çalıştırıyordu, aynı (tip,
+// kasa_id) çifti bir istekte kaç kez geçerse o kadar tekrar sorgu. Bu,
+// TEK bir istek içinde kullanılacak, aynı çifti bir daha sorgulamayan bir
+// sarmalayıcı döner — istekler arası (farklı kullanıcı/tenant) PAYLAŞILMAZ,
+// her route handler'ı kendi resolver'ını oluşturur.
+export function createKasaResolver(client: QueryClient, tenantId: number) {
+  const cache = new Map<string, Promise<number | null>>();
+  return function resolveKasaIdCached(
+    paymentType: string | null | undefined,
+    clientKasaId: unknown
+  ): Promise<number | null> {
+    const key = `${paymentType ?? ""}|${clientKasaId ?? ""}`;
+    let cached = cache.get(key);
+    if (!cached) {
+      cached = resolveKasaId(client, tenantId, paymentType, clientKasaId);
+      cache.set(key, cached);
+    }
+    return cached;
+  };
+}
+
 // kasa_id alanı bulunan tablolar — Kasalar Yönet'te bir kasanın bağlı ödeme
 // tipi değiştiğinde/kaldırıldığında geçmiş kayıtları senkron tutmak için
 // applyKasaLinkChange'in dolaştığı sabit liste (kullanıcıdan gelen içerik

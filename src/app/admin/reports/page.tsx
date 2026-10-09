@@ -426,10 +426,22 @@ export default function ReportsPage() {
     summary: Summary | null;
     paymentBreakdown: PaymentBreakdown[];
     unaddedRecurring: UnaddedRecurring[];
-    cashRegister: CashRegister | null;
     periodSummary: PeriodSummary | null;
-  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [], unaddedRecurring: [], cashRegister: null, periodSummary: null });
+  }>({ dailyData: [], serviceStats: [], summary: null, paymentBreakdown: [], unaddedRecurring: [], periodSummary: null });
   const [loading, setLoading] = useState(true);
+  // Kasa (Nakit) Özeti, Ay/Yıl/Dönemsel/Hizmet Dağılımı filtrelerinden
+  // TAMAMEN bağımsız (kuruluştan bugüne tüm zamanların toplamı) — bu yüzden
+  // yukarıdaki filtre-bağımlı fetch'ten AYRI, sadece mount'ta bir kez
+  // çekilir; aksi halde kullanıcı sadece ay değiştirse bile sunucu sınırsız
+  // bir UNION'ı yeniden hesaplardı (bkz. /api/reports/cash-summary yorumu).
+  const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
+
+  useEffect(() => {
+    fetch("/api/reports/cash-summary")
+      .then((r) => r.json())
+      .then((d) => setCashRegister(d))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -535,7 +547,7 @@ export default function ReportsPage() {
           {/* Kasa (Nakit) — ay seçiciden BAĞIMSIZ, kuruluştan bugüne tüm zamanların
               toplamı. Fiziksel kasadaki nakit ay sınırında sıfırlanmadığından
               aşağıdaki ay bazlı kartlardan ayrı, kendi başlığıyla gösterilir. */}
-          {data.cashRegister && (
+          {cashRegister && (
             <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-0.5">
                 <p className="text-sm font-semibold text-gray-700">Kasa (Nakit) — Tüm Zamanlar</p>
@@ -552,19 +564,19 @@ export default function ReportsPage() {
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 mb-1">Nakit Gelir</p>
                   <p className="text-lg sm:text-xl font-bold text-green-600 truncate">
-                    {formatCurrency(data.cashRegister.income)}
+                    {formatCurrency(cashRegister.income)}
                   </p>
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 mb-1">Nakit Masraf</p>
                   <p className="text-lg sm:text-xl font-bold text-red-500 truncate">
-                    {formatCurrency(data.cashRegister.expense)}
+                    {formatCurrency(cashRegister.expense)}
                   </p>
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 mb-1">Kasada Kalan</p>
-                  <p className={`text-lg sm:text-xl font-bold truncate ${data.cashRegister.balance >= 0 ? "text-gray-800" : "text-red-500"}`}>
-                    {formatCurrency(data.cashRegister.balance)}
+                  <p className={`text-lg sm:text-xl font-bold truncate ${cashRegister.balance >= 0 ? "text-gray-800" : "text-red-500"}`}>
+                    {formatCurrency(cashRegister.balance)}
                   </p>
                 </div>
               </div>
