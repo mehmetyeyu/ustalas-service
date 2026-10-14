@@ -49,6 +49,9 @@ interface OrderLine {
 
 interface StockBatch {
   id: number;
+  code: string;
+  supplier: string | null;
+  product_type: string | null;
   production_week: number | null;
   production_year: number | null;
   size_desc: string | null;
@@ -88,6 +91,24 @@ function num(v: string): number {
 function amountToStr(unitPrice: number | null, qty: number): string {
   if (unitPrice == null) return "";
   return String(Math.round(unitPrice * qty * 100) / 100);
+}
+
+// Ürünler ekranından (/?product=<id>) gelen bir partinin hangi ürün-satışı
+// hizmetine (tracks_size) yazılacağı. Ürün Tipi ("Lastik", "İkinci El
+// Lastik"…) hizmet adıyla birebir aynı olmayabilir (ör. hizmet "Lastik
+// Satışı") ve çoğu eski üründe hiç girilmemiş — önce tam eşleşme, sonra adı
+// Ürün Tipi ile başlayan hizmet, Ürün Tipi yoksa "İkinci El" olmayan ilk
+// hizmet denenir. Yanlış tahmin olursa personel İşlem alanından değiştirir.
+function pickProductSaleService(saleServices: Service[], productType: string | null): Service | null {
+  if (saleServices.length === 0) return null;
+  const lower = (s: string) => s.toLocaleLowerCase("tr-TR");
+  const type = productType ? lower(productType.trim()) : "";
+  if (type) {
+    return saleServices.find((s) => lower(s.name) === type)
+      ?? saleServices.find((s) => lower(s.name).startsWith(type))
+      ?? saleServices[0];
+  }
+  return saleServices.find((s) => !lower(s.name).startsWith("ikinci el")) ?? saleServices[0];
 }
 
 function weekYearLabel(week: number | null, year: number | null): string {
@@ -255,6 +276,7 @@ function OrderPageInner() {
   const searchParams = useSearchParams();
   const plateInputRef = useRef<HTMLInputElement>(null);
   const [services, setServices] = useState<Service[]>([]);
+  const [servicesLoaded, setServicesLoaded] = useState(false);
   // Bir ürün/parça satışı temsil eden işlemler — bunlarda Tedarikçi varsayılan
   // olarak "Servis İşçiliği" gelmez (boş bırakılır, gerçek tedarikçi seçilir),
   // Stok Kodu ve Ebat alanları gösterilir. Diğer (işçilik) işlemlerinde ikisi
@@ -304,7 +326,8 @@ function OrderPageInner() {
     fetch("/api/services")
       .then((r) => r.json())
       .then(setServices)
-      .catch(() => toast.error("Hizmetler yüklenemedi."));
+      .catch(() => toast.error("Hizmetler yüklenemedi."))
+      .finally(() => setServicesLoaded(true));
 
     fetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
@@ -379,6 +402,76 @@ function OrderPageInner() {
       .finally(() => router.replace("/"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Ürünler ekranındaki "Sipariş" butonu (bkz. admin/products/page.tsx) —
+  // seçilen partiyle tek satırlık bir sipariş ön doldurulur, plaka/müşteri
+  // burada girilir, gerekirse işçilik satırları eklenir. Satır, parti
+  // seçicideki (TireBatchPicker onBatchSelect) ile aynı alanları doldurur ki
+  // Adet değişince Tutar/Maliyet yeniden hesaplansın ve stok uyarısı çalışsın.
+  // Parti isteği hizmet listesini BEKLEMEDEN, onunla paralel başlar (ikisi
+  // ardışık olunca alanlar belirgin geç doluyordu); satır ancak ikisi de
+  // gelince yazılır, çünkü hangi İşlem'e yazılacağı hizmet listesine bağlı.
+  // Bu sürede İşlem Satırları yerine yükleniyor göstergesi çıkar ve kaydet
+  // kilitlenir — yoksa personel boş satırla kaydetmeye çalışabilirdi.
+  const [productLoading, setProductLoading] = useState(() => !!searchParams.get("product"));
+  const [prefillBatch, setPrefillBatch] = useState<StockBatch | null>(null);
+  const productFetchStarted = useRef(false);
+  useEffect(() => {
+    const productParam = searchParams.get("product");
+    if (!productParam || productFetchStarted.current) return;
+    productFetchStarted.current = true;
+    fetch(`/api/products/stock-batches?id=${encodeURIComponent(productParam)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: StockBatch[]) => {
+        const batch = Array.isArray(data) ? data[0] : undefined;
+        if (batch) {
+          setPrefillBatch(batch);
+        } else {
+          toast.error("Ürün bulunamadı veya stokta yok.");
+          setProductLoading(false);
+        }
+      })
+      .catch(() => {
+        toast.error("Ürün bilgisi yüklenemedi.");
+        setProductLoading(false);
+      })
+      .finally(() => router.replace("/"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!prefillBatch || !servicesLoaded) return;
+    const batch = prefillBatch;
+    setPrefillBatch(null);
+    setProductLoading(false);
+    const service = pickProductSaleService(services.filter((s) => s.tracks_size), batch.product_type);
+    if (!service) {
+      toast.error("Hizmetler'de ürün satışı (Ebat takibi açık) bir hizmet yok — önce Hizmetler ekranından ekleyin.");
+      return;
+    }
+    const supplier = batch.supplier || "";
+    const salePrice = batch.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
+    const purchasePrice = batch.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
+    setLines([{
+      ...EMPTY_LINE,
+      service_name: service.name,
+      supplier,
+      stock_code: batch.code,
+      size_desc: batch.size_desc || "",
+      brand: batch.brand || "",
+      model_name: batch.model_name || "",
+      product_id: batch.id,
+      max_stock: batch.stock_qty,
+      unit_sale_price: salePrice,
+      unit_purchase_price: purchasePrice,
+      unit_price: amountToStr(salePrice, 1),
+      cost_price: amountToStr(purchasePrice, 1) || "0",
+    }]);
+    if (supplier) ensureStockCodes(supplier);
+    toast.success(`${batch.code} siparişe eklendi — plakayı girip kaydedin.`);
+    plateInputRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillBatch, servicesLoaded]);
 
   // tracks_size işaretli bir satırda Tedarikçi seçilince, o tedarikçide
   // stoğu olan ürün kodları (henüz önbellekte yoksa) çekilir.
@@ -684,6 +777,15 @@ function OrderPageInner() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 İşlem Satırları <span className="text-red-500">*</span>
               </label>
+              {productLoading ? (
+                <div role="status" className="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-8 text-sm text-gray-500">
+                  <svg className="w-5 h-5 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                  </svg>
+                  Ürün bilgileri yükleniyor...
+                </div>
+              ) : (<>
               <div className="hidden sm:block border border-gray-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm border-collapse">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -1015,6 +1117,7 @@ function OrderPageInner() {
               >
                 + Satır Ekle
               </button>
+              </>)}
             </div>
 
             <div>
@@ -1039,7 +1142,7 @@ function OrderPageInner() {
                 </div>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || productLoading}
                   className="shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-5 py-2 rounded-lg transition-colors text-sm"
                 >
                   {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
@@ -1057,7 +1160,7 @@ function OrderPageInner() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || productLoading}
                   className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-lg transition-colors text-lg"
                 >
                   {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 import { parseProductRows, validateProductRows, chunk, SEASON_OPTIONS, type ParsedProductRow } from "@/lib/productsExcel";
@@ -535,6 +536,124 @@ function seasonBadge(season: string | null) {
   );
 }
 
+const ORDER_ICON = (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+  </svg>
+);
+const ORDER_BUTTON_CLASS = "flex items-center gap-1 p-1 sm:p-0 rounded text-green-600 hover:bg-green-50 sm:hover:bg-transparent hover:text-green-800 text-xs font-medium whitespace-nowrap";
+const ORDER_MENU_WIDTH = 300;
+
+// Grup satırındaki "Sipariş" butonu: stoğu olan tek parti varsa doğrudan o
+// partiyle sipariş formunu açar (/?product=<id>), birden fazlaysa (farklı
+// tedarikçi/üretim haftası/konum) hangisinden satılacağı seçilsin diye
+// küçük bir parti menüsü açar — tek tık fazla ama akordeonu açıp aramaktan
+// hızlı. Menü, tablonun yatay kaydırma alanında kırpılmasın diye body'e
+// portal ile taşınır (bkz. admin/orders/page.tsx çoklu seçim menüsü);
+// kaydırma/yeniden boyutlandırmada konumu kaymasın diye kapanır.
+function OrderBatchMenu({ batches }: { batches: ProductBatch[] }) {
+  const [rect, setRect] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!rect) return;
+    const close = () => setRect(null);
+    function handleMouseDown(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (buttonRef.current?.contains(target) || target.closest("[data-order-batch-menu]")) return;
+      close();
+    }
+    function handleKey(e: KeyboardEvent) { if (e.key === "Escape") close(); }
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [rect]);
+
+  function toggle() {
+    if (rect) { setRect(null); return; }
+    const r = buttonRef.current?.getBoundingClientRect();
+    if (!r) return;
+    // Buton sağdaki sticky İşlemler sütununda — menü butonun sağ kenarına
+    // hizalanır, ekranın solundan taşmasın diye kırpılır; altta yer yoksa
+    // butonun üstüne açılır.
+    const left = Math.max(8, Math.min(r.right - ORDER_MENU_WIDTH, window.innerWidth - ORDER_MENU_WIDTH - 8));
+    const estimatedHeight = 44 + batches.length * 52;
+    setRect(window.innerHeight - r.bottom < estimatedHeight && r.top > estimatedHeight
+      ? { left, bottom: window.innerHeight - r.top + 4 }
+      : { left, top: r.bottom + 4 });
+  }
+
+  if (batches.length === 1) {
+    return (
+      <Link href={`/?product=${batches[0].id}`} title="Sipariş Oluştur" aria-label="Sipariş Oluştur" className={ORDER_BUTTON_CLASS}>
+        {ORDER_ICON}<span className="hidden sm:inline">Sipariş</span>
+      </Link>
+    );
+  }
+
+  // Tedarikçiye, sonra en eski üretim tarihine göre (eski DOT önce satılsın).
+  const sorted = [...batches].sort((a, b) =>
+    (a.supplier ?? "").localeCompare(b.supplier ?? "", "tr-TR")
+    || (a.production_year ?? 0) - (b.production_year ?? 0)
+    || (a.production_week ?? 0) - (b.production_week ?? 0)
+  );
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggle}
+        title="Sipariş Oluştur — parti seçin"
+        aria-label="Sipariş Oluştur"
+        aria-haspopup="menu"
+        aria-expanded={!!rect}
+        className={ORDER_BUTTON_CLASS}
+      >
+        {ORDER_ICON}<span className="hidden sm:inline">Sipariş</span>
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {rect && typeof document !== "undefined" && createPortal(
+        <div
+          data-order-batch-menu
+          role="menu"
+          style={{ position: "fixed", left: rect.left, top: rect.top, bottom: rect.bottom, width: ORDER_MENU_WIDTH, maxHeight: 320 }}
+          className="z-50 bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto p-1 text-left"
+        >
+          <div className="px-2 py-1.5 text-xs font-medium text-gray-500">Hangi partiden satılacak?</div>
+          {sorted.map((b) => (
+            <Link
+              key={b.id}
+              href={`/?product=${b.id}`}
+              role="menuitem"
+              className="flex items-center justify-between gap-3 px-2 py-2 rounded hover:bg-green-50 text-sm"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-gray-800 font-medium">{b.supplier || "Tedarikçi yok"}</span>
+                <span className="block text-xs text-gray-500">
+                  <span className="font-mono">{weekYearLabel(b.production_week, b.production_year)}</span>
+                  {b.location ? ` · ${b.location}` : ""}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs font-semibold text-gray-700">Stok: {b.stock_qty}</span>
+            </Link>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 export default function ProductsPage() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -552,13 +671,17 @@ export default function ProductsPage() {
   // görüneceği veri değişimine bağlı olduğundan önceden kesin bilinemez —
   // bütçelenmezse buton sticky sütunun dışına taşıp sayfa genelinde yatay
   // taşmaya yol açıyordu (gerçek örnek: aynı konumda 2+ partili bir ürün).
-  const productActionCount = 1 + (canCreate ? 1 : 0) + (canEdit ? 2 : 0) + (canDelete ? 1 : 0);
+  // Baştaki 2: "Fiyat Geçmişi" + "Sipariş" (stoğu olan partide, izin
+  // gerektirmez — sipariş oluşturmak her oturumlu kullanıcıya açık, bkz.
+  // POST /api/orders).
+  const productActionCount = 2 + (canCreate ? 1 : 0) + (canEdit ? 2 : 0) + (canDelete ? 1 : 0);
   const PRODUCT_ACTIONS_WIDTH: Record<number, string> = {
     1: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[130px] sm:min-w-[130px] sm:max-w-[130px]",
     2: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[200px] sm:min-w-[200px] sm:max-w-[200px]",
     3: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[260px] sm:min-w-[260px] sm:max-w-[260px]",
     4: "w-[122px] min-w-[122px] max-w-[122px] sm:w-[330px] sm:min-w-[330px] sm:max-w-[330px]",
     5: "w-[148px] min-w-[148px] max-w-[148px] sm:w-[420px] sm:min-w-[420px] sm:max-w-[420px]",
+    6: "w-[174px] min-w-[174px] max-w-[174px] sm:w-[500px] sm:min-w-[500px] sm:max-w-[500px]",
   };
   const productActionsWidth = PRODUCT_ACTIONS_WIDTH[productActionCount];
   const [items, setItems] = useState<ProductGroup[]>([]);
@@ -1700,6 +1823,9 @@ export default function ProductsPage() {
                             ))}
                             <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
+                                {group.batches.some((b) => (b.stock_qty ?? 0) > 0) && (
+                                  <OrderBatchMenu batches={group.batches.filter((b) => (b.stock_qty ?? 0) > 0)} />
+                                )}
                                 {canCreate && (
                                   <button
                                     onClick={() => openAdd(group.code, group.batches[group.batches.length - 1] ?? null, group.min_stock_threshold)}
@@ -1739,6 +1865,16 @@ export default function ProductsPage() {
                               ))}
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
+                                  {(batch.stock_qty ?? 0) > 0 && (
+                                    <Link
+                                      href={`/?product=${batch.id}`}
+                                      title="Bu partiyle sipariş oluştur"
+                                      aria-label="Sipariş Oluştur"
+                                      className={ORDER_BUTTON_CLASS}
+                                    >
+                                      {ORDER_ICON}<span className="hidden sm:inline">Sipariş</span>
+                                    </Link>
+                                  )}
                                   <button
                                     onClick={() => openHistoryModal(batch)}
                                     title="Fiyat Geçmişi"
