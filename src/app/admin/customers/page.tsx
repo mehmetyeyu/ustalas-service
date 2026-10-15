@@ -654,7 +654,7 @@ export default function CustomersPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
-                          <Link href={`/admin/orders/${o.id}`} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                          <Link prefetch={false} href={`/admin/orders/${o.id}`} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
                             Detay →
                           </Link>
                         </td>
@@ -725,7 +725,7 @@ export default function CustomersPage() {
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap align-top">{formatDate(e.entry_date)}</td>
                         <td className="px-3 py-2 text-gray-700 whitespace-nowrap align-top">
                           {e.entry_type === "SIPARIS"
-                            ? <Link href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">{e.order_custom_order_no || `#${e.order_id}`}</Link>
+                            ? <Link prefetch={false} href={`/admin/orders/${e.order_id}`} className="text-blue-600 hover:text-blue-800">{e.order_custom_order_no || `#${e.order_id}`}</Link>
                             : "—"}
                         </td>
                         <td className="px-3 py-2 text-gray-700 whitespace-nowrap align-top">

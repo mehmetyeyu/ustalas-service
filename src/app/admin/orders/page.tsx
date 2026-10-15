@@ -168,8 +168,17 @@ const COLUMNS: OrderColumnDef[] = [
     // Ayarlar'dan elle numara girişini açtıysa) o gösterilir, aksi halde
     // hep otomatik #id — eski siparişlerde bu alan boş olduğundan görünüm
     // hiç değişmez.
+    //
+    // prefetch={false}: Next.js production'da ekranda görünen her Link'i
+    // arka planda önceden yükler; /admin/orders/[id] dinamik olduğundan her
+    // ön yükleme sunucuda bir fonksiyon çağrısı (+ middleware auth sorgusu)
+    // demek. 20 satırlık liste tıklanmadan ~40 çağrı üretiyordu — Vercel
+    // Observability'de bu sayfa, açıldığından ~10 kat fazla çağrılıp toplam
+    // Active CPU'nun ~%35-40'ını tek başına harcıyordu (2026-10-16). Dinamik
+    // href'li tüm Link'ler (müşteri ekstresi, kasa, ürün hareketleri,
+    // /?product=, /?copyFrom=) aynı sebeple prefetch={false}.
     cell: (r) => (
-      <Link href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
+      <Link prefetch={false} href={`/admin/orders/${r.id}`} className="font-mono font-semibold text-blue-600 hover:text-blue-800">
         {r.custom_order_no || `#${r.id}`}
       </Link>
     ),
@@ -1343,7 +1352,7 @@ export default function OrdersPage() {
                       </td>
                       <td className={`px-1 sm:px-3 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 ${orderActionsWidth.cell}`}>
                         <div className="flex items-center justify-center sm:justify-start gap-0.5 sm:gap-3">
-                          <Link
+                          <Link prefetch={false}
                             href={`/admin/orders/${r.id}`}
                             title="Detay"
                             aria-label="Detay"
@@ -1356,7 +1365,7 @@ export default function OrdersPage() {
                             <span className="hidden sm:inline">Detay</span>
                           </Link>
                           {canEdit && (
-                            <Link
+                            <Link prefetch={false}
                               href={`/admin/orders/${r.id}?edit=1`}
                               title="Düzenle"
                               aria-label="Düzenle"
@@ -1369,7 +1378,7 @@ export default function OrdersPage() {
                               <span className="hidden sm:inline">Düzenle</span>
                             </Link>
                           )}
-                          <Link
+                          <Link prefetch={false}
                             href={`/?copyFrom=${r.id}`}
                             title="Aynı müşteri/işlem satırlarıyla, sadece plakayı değiştirerek yeni bir sipariş oluştur"
                             aria-label="Kopyala"

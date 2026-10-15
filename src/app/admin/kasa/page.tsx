@@ -569,7 +569,7 @@ export default function KasaPage() {
                       {e.transfer_pair_kasa_name
                         ? (e.kasa_direction === -1 ? `→ ${e.transfer_pair_kasa_name}` : `← ${e.transfer_pair_kasa_name}`)
                         : e.entry_type === "SIPARIS" && e.ref_id
-                        ? <Link href={`/admin/orders/${e.ref_id}`} className="text-blue-600 hover:text-blue-800">{e.related_account || `#${e.ref_id}`}</Link>
+                        ? <Link prefetch={false} href={`/admin/orders/${e.ref_id}`} className="text-blue-600 hover:text-blue-800">{e.related_account || `#${e.ref_id}`}</Link>
                         : (e.related_account || "-")}
                     </td>
                     <td className="px-4 py-3 text-gray-600">{e.description || "-"}</td>

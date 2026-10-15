@@ -593,7 +593,7 @@ function OrderBatchMenu({ batches }: { batches: ProductBatch[] }) {
 
   if (batches.length === 1) {
     return (
-      <Link href={`/?product=${batches[0].id}`} title="Sipariş Oluştur" aria-label="Sipariş Oluştur" className={ORDER_BUTTON_CLASS}>
+      <Link prefetch={false} href={`/?product=${batches[0].id}`} title="Sipariş Oluştur" aria-label="Sipariş Oluştur" className={ORDER_BUTTON_CLASS}>
         {ORDER_ICON}<span className="hidden sm:inline">Sipariş</span>
       </Link>
     );
@@ -632,7 +632,7 @@ function OrderBatchMenu({ batches }: { batches: ProductBatch[] }) {
         >
           <div className="px-2 py-1.5 text-xs font-medium text-gray-500">Hangi partiden satılacak?</div>
           {sorted.map((b) => (
-            <Link
+            <Link prefetch={false}
               key={b.id}
               href={`/?product=${b.id}`}
               role="menuitem"
@@ -1707,7 +1707,7 @@ export default function ProductsPage() {
                                 <span className="whitespace-nowrap text-gray-400 text-xs">
                                   {m.plate}
                                   {m.order_id != null && (
-                                    <Link href={`/admin/orders/${m.order_id}`} className="ml-1 text-blue-600 hover:text-blue-800 font-mono">
+                                    <Link prefetch={false} href={`/admin/orders/${m.order_id}`} className="ml-1 text-blue-600 hover:text-blue-800 font-mono">
                                       #{m.order_id}
                                     </Link>
                                   )}
@@ -1867,7 +1867,7 @@ export default function ProductsPage() {
                               <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   {(batch.stock_qty ?? 0) > 0 && (
-                                    <Link
+                                    <Link prefetch={false}
                                       href={`/?product=${batch.id}`}
                                       title="Bu partiyle sipariş oluştur"
                                       aria-label="Sipariş Oluştur"
