@@ -201,7 +201,10 @@ export default function SharedStockPage() {
                     </div>
                     <div className="border-t border-gray-100">
                       {group.shops.map((shop) => {
-                        const shopKey = `${groupKey}__${shop.tenant_id}`;
+                        // Aynı firma bir grupta farklı kodlarla birden fazla satır
+                        // olabiliyor (bkz. API shopsByTenant) — kod anahtara dahil
+                        // edilmezse key'ler çakışıp "İletişime Geç" iki satırı açar.
+                        const shopKey = `${groupKey}__${shop.tenant_id}__${shop.code}`;
                         const contactOpen = openContact === shopKey;
                         return (
                           <div key={shopKey} className="border-t border-gray-100 first:border-t-0">

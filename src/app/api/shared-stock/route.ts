@@ -112,7 +112,12 @@ export async function GET(request: NextRequest) {
     const groups = new Map<string, GroupAcc>();
 
     for (const row of result.rows) {
-      const key = `${row.brand} ${row.size_desc} ${row.season ?? ""}`;
+      // Ayraç NUL (\u0000) — marka/ebat/sezon metinlerinde asla geçmez.
+      // Boşluk ayraç OLAMAZ: ebatların çoğu boşluk içeriyor ("205/55 R16"),
+      // ebadı "X Yaz"+sezonu boş ile ebadı "X"+sezonu "Yaz" aynı anahtara
+      // düşerdi. Kaynakta ham NUL değil escape dizisi olarak yazılı ki git
+      // dosyayı "binary" saymasın (4ab105f'in boşluğa geçme sebebi buydu).
+      const key = `${row.brand}\u0000${row.size_desc}\u0000${row.season ?? ""}`;
       let group = groups.get(key);
       if (!group) {
         group = { brand: row.brand, size_desc: row.size_desc, season: row.season, total_stock: 0, shopsByTenant: new Map() };
@@ -154,9 +159,19 @@ export async function GET(request: NextRequest) {
         size_desc: g.size_desc,
         season: g.season,
         total_stock: g.total_stock,
-        shops: Array.from(g.shopsByTenant.values()).sort((a, b) => b.qty - a.qty),
+        shops: Array.from(g.shopsByTenant.values())
+          .sort((a, b) => b.qty - a.qty || a.tenant_id - b.tenant_id || a.code.localeCompare(b.code, "tr")),
       }))
-      .sort((a, b) => a.brand.localeCompare(b.brand, "tr") || a.size_desc.localeCompare(b.size_desc, "tr"));
+      // Sezon da sıralamada olmalı: aynı marka+ebadın Yaz/Kış grupları
+      // eşit sayılınca sıraları SQL'deki (ORDER BY'sız) satır sırasına
+      // kalıyordu, sayfa sınırına denk gelince bir grup iki sayfada birden
+      // görünüp diğeri hiç görünmeyebiliyordu. Sezonsuz grup sona.
+      .sort((a, b) =>
+        a.brand.localeCompare(b.brand, "tr")
+        || a.size_desc.localeCompare(b.size_desc, "tr")
+        || (a.season == null ? 1 : 0) - (b.season == null ? 1 : 0)
+        || (a.season ?? "").localeCompare(b.season ?? "", "tr")
+      );
 
     const total = items.length;
     const offset = (page - 1) * limit;
