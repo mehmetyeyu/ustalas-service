@@ -90,7 +90,13 @@ export async function GET(request: NextRequest) {
               -- AT TIME ZONE deseniyle aynı, sargable olmasa da bu sorgu zaten
               -- WHERE'e göre az sayıda satır tarıyor).
               MIN((o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date)::text AS first_order_date,
-              MAX((o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date)::text AS last_order_date
+              MAX((o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date)::text AS last_order_date,
+              -- Çalışma saatleri (aşağıda) ayrı bir sorgu yerine buraya
+              -- gömülü — her sorgu, döndürdüğü satırdan bağımsız ~1,5-2ms
+              -- sabit Active CPU maliyeti taşıyor (sürücü/protokol), bu
+              -- endpoint en sık çağrılanlardan. $1 her zaman tenant_id
+              -- (bkz. buildOrderQuery).
+              (SELECT booking_working_hours FROM app_settings WHERE tenant_id = $1) AS booking_working_hours
        ${fromClause}`,
       values
     );
@@ -107,11 +113,7 @@ export async function GET(request: NextRequest) {
     // kullanmıyor olabilir) ortalama YANLIŞ bir varsayımla (ör. hep 7 gün
     // açık) hesaplanmasın diye workingHoursConfigured=false dönülür, istemci
     // bunun yerine "Çalışma Saatlerinizi girin" ipucu gösterir.
-    const workingHoursResult = await pool.query<{ booking_working_hours: WorkingHours | null }>(
-      "SELECT booking_working_hours FROM app_settings WHERE tenant_id = $1",
-      [user.tenantId]
-    );
-    const workingHours = workingHoursResult.rows[0]?.booking_working_hours ?? null;
+    const workingHours: WorkingHours | null = countResult.rows[0].booking_working_hours ?? null;
     const workingHoursConfigured = hasAnyWorkingDay(workingHours);
     const workingDaySpan = workingHoursConfigured && firstOrderDate && lastOrderDate
       ? countWorkingDays(workingHours, firstOrderDate, lastOrderDate)
@@ -121,7 +123,14 @@ export async function GET(request: NextRequest) {
     // Bu sayfadaki siparişlerin bağlı olduğu müşterilerin TAM geçmişi
     // gerekiyor (sadece sayfadaki siparişler değil — bir eski sipariş, bu
     // sayfada görünmeyen daha da eski bir borcu bekliyor olabilir).
-    const orderIds = Array.from(new Set(result.rows.map((r) => r.id as number)));
+    // Sadece ödeme şekli "Cari" olan satırların siparişleri — cari_* alanları
+    // UI'da yalnızca bu satırlarda okunuyor (bkz. admin/orders/page.tsx
+    // payment_type hücresi), Cari olmayan bir siparişin zaten SIPARIS cari
+    // kaydı yok. Sayfada hiç Cari satır yoksa (çoğu sayfa) cari sorgusu
+    // tamamen atlanır.
+    const orderIds = Array.from(new Set(
+      result.rows.filter((r) => r.payment_type === "Cari").map((r) => r.id as number)
+    ));
     const statusByOrderId = new Map<number, OrderLedgerStatus>();
     if (orderIds.length > 0) {
       const ledgerResult = await pool.query<{ customer_id: number; order_id: number | null; direction: 1 | -1; amount: number; payment_type: string | null }>(
