@@ -419,7 +419,8 @@ function OrderDetailPageInner() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
   const [sizeOptions, setSizeOptions] = useState<string[]>([]);
-  const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
+  // Genel Ayarlar'daki ödeme tipleri — AuthContext store'undan (bkz. /api/auth/me).
+  const paymentOptions = authUser?.paymentTypes.length ? authUser.paymentTypes : DEFAULT_PAYMENT_OPTIONS;
   const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
@@ -448,10 +449,6 @@ function OrderDetailPageInner() {
     // Nakit ödeme her zaman TL'dir — döviz kasaları (ör. "Dolar Kasa") bu
     // seçicide hiç görünmez (bkz. plan: "Kasalara Para Birimi Desteği").
     fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types); })
-      .catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 

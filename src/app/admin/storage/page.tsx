@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Tooltip } from "@/components/Tooltip";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { escapeHtml } from "@/lib/htmlEscape";
@@ -357,7 +357,9 @@ export default function StoragePage() {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [overdueTotal, setOverdueTotal] = useState(0);
-  const [overdueMonths, setOverdueMonths] = useState(6);
+  // Genel Ayarlar'daki gecikme eşiği — AuthContext store'undan (bkz. /api/auth/me).
+  const { user: authUser } = useAuth();
+  const overdueMonths = authUser?.storageOverdueMonths || 6;
   const [showDelivered, setShowDelivered] = useState(false);
   const [teslimId, setTeslimId] = useState<number | null>(null);
   const [degisimItem, setDegisimItem] = useState<StorageItem | null>(null);
@@ -370,13 +372,6 @@ export default function StoragePage() {
     const data = await res.json();
     setOverdueTotal(data.total ?? 0);
   }
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => { if (d.storage_overdue_months) setOverdueMonths(d.storage_overdue_months); })
-      .catch(() => { });
-  }, []);
 
   async function fetchItems(targetPage = page, delivered = showDelivered) {
     setLoading(true);

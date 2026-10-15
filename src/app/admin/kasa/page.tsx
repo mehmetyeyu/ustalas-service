@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDate, formatCurrency, formatMoney } from "@/lib/format";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
@@ -90,7 +90,12 @@ export default function KasaPage() {
   // "Nazım Hesap" gibi Nakit-dışı bir ödeme tipi bir kasaya bağlanabilir (bkz.
   // src/lib/kasalar.ts: resolveKasaId) — o tipteki işlemler otomatik bu kasaya
   // sayılır. Nakit/Cari hariç, tenant'ın gerçek ödeme tipi listesi.
-  const [linkableTypes, setLinkableTypes] = useState<string[]>([]);
+  // Kasaya bağlanabilecek ödeme tipleri (Nakit/Cari hariç) — Genel Ayarlar'dan,
+  // AuthContext store'undan (bkz. /api/auth/me), ayrı istek yok.
+  const { user: authUser } = useAuth();
+  const linkableTypes = authUser
+    ? flatPaymentOptions(authUser.paymentTypes).filter((t) => t !== "Nakit" && t !== "Cari")
+    : [];
   // Para birimi -> TL kuru (bkz. src/app/api/currency-rates/route.ts) —
   // sadece canlı gösterim için, kullanıcı Kasaları Yönet'ten günceller.
   const [rates, setRates] = useState<Record<string, number>>({});
@@ -188,14 +193,6 @@ export default function KasaPage() {
   useEffect(() => {
     fetchKasaList();
     fetchRates();
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d.payment_types)) {
-          setLinkableTypes(flatPaymentOptions(d.payment_types).filter((t) => t !== "Nakit" && t !== "Cari"));
-        }
-      })
-      .catch(() => {});
   }, []);
 
   useEffect(() => {

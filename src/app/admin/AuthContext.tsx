@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
 
@@ -30,50 +30,96 @@ interface AuthUser {
   // plate_required notu) — Sipariş Detayı/Düzelt ekranının Plaka alanını
   // zorunlu mu gösterileceğini bilmesi için.
   plateRequired: boolean;
+  // Genel Ayarlar'dan — önceden her sayfa (Siparişler, Sipariş Detayı,
+  // Müşteriler, Kasa, Giderler, Depolama) açılışta admin-only /api/settings'i
+  // sırf bunlar için ayrıca çağırıyordu (personelde 403 alıp varsayılana
+  // düşüyordu). Artık /api/auth/me ile bir kez gelir, burada tutulur.
+  paymentTypes: string[];
+  storageOverdueMonths: number;
+  ordersDefaultDateFilter: string;
 }
 
 interface AuthState {
   user: AuthUser | null;
   loading: boolean;
+  // Genel Ayarlar kaydedilince çağrılır ki store'daki ayarlar (ödeme tipleri
+  // vb.) sayfa yenilemeden diğer sayfalara yansısın.
+  refresh: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthState>({ user: null, loading: true });
+const AuthContext = createContext<AuthState>({ user: null, loading: true, refresh: async () => {} });
+
+const SETTINGS_CHANNEL = "ustalas-settings";
+
+// Genel Ayarlar kaydedilince çağrılır: diğer sekmelere haber verir (kendi
+// sekmesi mesajı almaz, o refresh() ile tazelenir).
+export function notifySettingsChanged() {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(SETTINGS_CHANNEL);
+  channel.postMessage("changed");
+  channel.close();
+}
+
+// /api/auth/me yanıtı (snake_case) — bkz. src/app/api/auth/me/route.ts.
+interface MeResponse {
+  username: string; role: string; permissions?: string[]; business_name?: string; panel_logo_url?: string | null;
+  billing_status?: string | null; trial_ends_at?: string | null; plan?: string | null;
+  billing_cancel_at_period_end?: boolean; billing_period_ends_at?: string | null; billing_last_payment_error?: string | null;
+  is_primary_admin?: boolean; onboarding_tour_completed_at?: string | null;
+  custom_order_no_enabled?: boolean; plate_required?: boolean;
+  payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string;
+}
+
+function toAuthUser(data: MeResponse): AuthUser {
+  return {
+    username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "",
+    panelLogoUrl: data.panel_logo_url ?? null,
+    billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
+    billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
+    billingLastPaymentError: data.billing_last_payment_error ?? null,
+    isPrimaryAdmin: !!data.is_primary_admin, onboardingTourCompletedAt: data.onboarding_tour_completed_at ?? null,
+    customOrderNoEnabled: !!data.custom_order_no_enabled,
+    plateRequired: data.plate_required !== false,
+    paymentTypes: Array.isArray(data.payment_types) ? data.payment_types : [],
+    storageOverdueMonths: typeof data.storage_overdue_months === "number" ? data.storage_overdue_months : 6,
+    ordersDefaultDateFilter: typeof data.orders_default_date_filter === "string" ? data.orders_default_date_filter : "",
+  };
+}
 
 // AdminLayout'ta bir kez /api/auth/me çekilir, tüm /admin/* sayfaları bunu
 // context'ten okur — her sayfa kendi fetch'ini tekrarlamaz. Nav filtreleme
 // (layout) ve sayfa bazlı izin kontrolleri (her admin sayfası) bu context'i kullanır.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({ user: null, loading: true });
+  const [state, setState] = useState<{ user: AuthUser | null; loading: boolean }>({ user: null, loading: true });
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled) return;
-        setState({
-          user: data
-            ? {
-                username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "",
-                panelLogoUrl: data.panel_logo_url ?? null,
-                billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
-                billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
-                billingLastPaymentError: data.billing_last_payment_error ?? null,
-                isPrimaryAdmin: !!data.is_primary_admin, onboardingTourCompletedAt: data.onboarding_tour_completed_at ?? null,
-                customOrderNoEnabled: !!data.custom_order_no_enabled,
-                plateRequired: data.plate_required !== false,
-              }
-            : null,
-          loading: false,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ user: null, loading: false });
-      });
-    return () => { cancelled = true; };
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      setState({ user: data ? toAuthUser(data) : null, loading: false });
+    } catch {
+      setState((prev) => ({ user: prev.user, loading: false }));
+    }
   }, []);
 
-  return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
+  useEffect(() => { load(); }, [load]);
+
+  // Store sekme başına tutulur — Genel Ayarlar bir sekmede kaydedilince
+  // (bkz. notifySettingsChanged) aynı tarayıcıdaki diğer açık panel
+  // sekmeleri de tazelensin (ör. açık duran Sipariş Detayı'nda yeni ödeme
+  // tipi görünsün). Ayar kaydedilmedikçe hiç istek atılmaz.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(SETTINGS_CHANNEL);
+    channel.onmessage = () => { load(); };
+    return () => channel.close();
+  }, [load]);
+
+  // value sabit tutulur (useMemo) — layout her navigasyonda yeniden render
+  // olur, her seferinde yeni bir nesne verilseydi tüm useAuth() kullanan
+  // sayfalar gereksiz yere yeniden render olurdu.
+  const value = useMemo(() => ({ ...state, refresh: load }), [state, load]);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

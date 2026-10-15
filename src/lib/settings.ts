@@ -122,23 +122,12 @@ export async function getCustomOrderNoEnabled(tenantId: number): Promise<boolean
   return result.rows[0]?.custom_order_no_enabled ?? false;
 }
 
-// POST/PUT /api/orders'ın her istekte ihtiyaç duyduğu — Plaka'nın zorunlu mu
-// (tarihsel/varsayılan davranış) yoksa opsiyonel mi (#955 vakası, Genel
-// Ayarlar'dan kapatılmışsa) olduğu. getAutoRegisterCustomers ile aynı desen;
-// varsayılan true — ayar hiç ayarlanmamış bir firmada davranış değişmez.
-export async function getPlateRequired(tenantId: number): Promise<boolean> {
-  const result = await pool.query<{ plate_required: boolean }>(
-    "SELECT plate_required FROM app_settings WHERE tenant_id = $1",
-    [tenantId]
-  );
-  return result.rows[0]?.plate_required ?? true;
-}
-
-// POST /api/orders'ın tek istekte ihtiyaç duyduğu üç ayarı (yukarıdaki
-// getPlateRequired/getCustomOrderNoEnabled/getAutoRegisterCustomers) ayrı ayrı
-// 3 round-trip yerine TEK sorguda çeker — üçü de aynı app_settings satırından
-// okunuyor. Diğer üçü, sadece tek bir ayara ihtiyaç duyan başka çağıranlar
-// (ör. randevu→sipariş dönüşümü) için ayrı ayrı korunuyor.
+// POST /api/orders'ın tek istekte ihtiyaç duyduğu üç ayarı (plate_required,
+// custom_order_no_enabled, auto_register_customers) ayrı ayrı 3 round-trip
+// yerine TEK sorguda çeker — üçü de aynı app_settings satırından okunuyor.
+// Yukarıdaki tek kolonluk getCustomOrderNoEnabled/getAutoRegisterCustomers,
+// sadece tek bir ayara ihtiyaç duyan başka çağıranlar (ör. randevu→sipariş
+// dönüşümü, içe aktarma) için korunuyor.
 export async function getOrderCreationSettings(
   tenantId: number
 ): Promise<{ plateRequired: boolean; customOrderNoEnabled: boolean; autoRegisterCustomers: boolean }> {
@@ -158,13 +147,42 @@ export async function getOrderCreationSettings(
   };
 }
 
-// /api/auth/me gibi çok sık çağrılan yollarda (her admin sayfası mount'unda,
-// bkz. src/app/admin/AuthContext.tsx) header/login'deki firma adı için 22
-// kolonlu getAppSettings() yerine tek kolonluk ucuz bir sorgu.
-export async function getBusinessName(tenantId: number): Promise<string> {
-  const result = await pool.query<{ business_name: string }>(
-    "SELECT business_name FROM app_settings WHERE tenant_id = $1",
+export interface SessionSettings {
+  business_name: string;
+  panel_logo_url: string | null;
+  custom_order_no_enabled: boolean;
+  plate_required: boolean;
+  payment_types: string[];
+  storage_overdue_months: number;
+  orders_default_date_filter: OrdersDefaultDateFilter;
+}
+
+// /api/auth/me için — panel açılışında BİR KEZ çekilip istemcide store'da
+// (src/app/admin/AuthContext.tsx) tutulan, sayfaların sık okuduğu ayarlar.
+// Önceden /me bunları 4 ayrı sorguyla çekiyordu, sayfalar da (Siparişler,
+// Sipariş Detayı, Müşteriler, Kasa, Giderler, Depolama) sadece ödeme
+// tipleri/tek bir ayar için açılışta admin-only /api/settings'i (22 kolon +
+// firma bilgisi, 2 sorgu) ayrıca çağırıyordu. Her sorgu ~1,5-2ms sabit
+// Active CPU taşıdığından hepsi tek sorguda. Varsayılanlar ve korumalı ödeme
+// tipleri getAppSettings ile birebir aynı.
+export async function getSessionSettings(tenantId: number): Promise<SessionSettings> {
+  const result = await pool.query<Omit<SessionSettings, "panel_logo_url"> & { panel_logo_url: string | null; has_settings: boolean }>(
+    `SELECT t.panel_logo_url, a.tenant_id IS NOT NULL AS has_settings,
+            a.business_name, a.custom_order_no_enabled, a.plate_required,
+            a.payment_types, a.storage_overdue_months, a.orders_default_date_filter
+     FROM tenants t LEFT JOIN app_settings a ON a.tenant_id = t.id
+     WHERE t.id = $1`,
     [tenantId]
   );
-  return result.rows[0]?.business_name ?? DEFAULT_SETTINGS.business_name;
+  const row = result.rows[0];
+  const s = row?.has_settings ? row : DEFAULT_SETTINGS;
+  return {
+    business_name: s.business_name ?? DEFAULT_SETTINGS.business_name,
+    panel_logo_url: row?.panel_logo_url ?? null,
+    custom_order_no_enabled: s.custom_order_no_enabled ?? DEFAULT_SETTINGS.custom_order_no_enabled,
+    plate_required: s.plate_required ?? DEFAULT_SETTINGS.plate_required,
+    payment_types: Array.from(new Set([...PROTECTED_PAYMENT_TYPES, ...(s.payment_types ?? DEFAULT_SETTINGS.payment_types)])),
+    storage_overdue_months: s.storage_overdue_months ?? DEFAULT_SETTINGS.storage_overdue_months,
+    orders_default_date_filter: s.orders_default_date_filter ?? DEFAULT_SETTINGS.orders_default_date_filter,
+  };
 }

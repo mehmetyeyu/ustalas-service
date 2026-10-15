@@ -9,9 +9,11 @@ import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { formatTurkishPhoneInput } from "@/lib/phone";
 import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 import ImageUploadField from "@/components/ImageUploadField";
+import { useAuth, notifySettingsChanged } from "../AuthContext";
 
 export default function GeneralSettingsPage() {
   const toast = useToast();
+  const { refresh: refreshAuth } = useAuth();
   const [businessName, setBusinessName] = useState("");
   const [code, setCode] = useState("");
   const [overdueMonths, setOverdueMonths] = useState("6");
@@ -175,6 +177,12 @@ export default function GeneralSettingsPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Ayarlar kaydedilemedi.");
       toast.success("Ayarlar başarıyla kaydedildi.");
+      // Ödeme tipleri, işletme adı, Sipariş No/Plaka zorunluluğu vb. diğer
+      // sayfalarda AuthContext store'undan okunuyor — sayfa yenilemeden
+      // yansısın diye bu sekmenin store'u tazelenir, diğer açık sekmelere de
+      // haber verilir (bkz. /api/auth/me, AuthContext).
+      refreshAuth();
+      notifySettingsChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {

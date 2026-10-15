@@ -10,7 +10,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 
@@ -441,9 +441,11 @@ export default function OrdersPage() {
   // Genel Ayarlar'daki ödeme şekilleri listesi — Filtrele modalındaki
   // paymentTypeOptions'tan farklı (o gerçekten kullanılmış değerlerdir),
   // bu Excel içe aktarma normalizasyonu için kullanılır (bkz. handleImport).
-  const [settingsPaymentTypes, setSettingsPaymentTypes] = useState<string[]>(DEFAULT_PAYMENT_TYPES);
-  // Genel Ayarlar'daki varsayılan tarih filtresi /api/settings'ten gelene kadar
-  // ilk fetchOrders çağrısını erteler — yoksa sayfa açılışında önce "Tümü" ile
+  // AuthContext store'undan (bkz. /api/auth/me) — ayrı /api/settings isteği yok.
+  const { user: authUser, loading: authLoading } = useAuth();
+  const settingsPaymentTypes = authUser?.paymentTypes.length ? authUser.paymentTypes : DEFAULT_PAYMENT_TYPES;
+  // Genel Ayarlar'daki varsayılan tarih filtresi store'a gelene kadar ilk
+  // fetchOrders çağrısını erteler — yoksa sayfa açılışında önce "Tümü" ile
   // bir istek atılıp hemen ardından doğru filtreyle ikinci bir istek atılırdı.
   const [filtersReady, setFiltersReady] = useState(false);
   // Toplu Ödeme Şekli değiştirme (bkz. bulk-payment-type API) — satır bazlı
@@ -478,34 +480,18 @@ export default function OrdersPage() {
         if (Array.isArray(data)) setPaymentTypeOptions(data.sort((a, b) => a.localeCompare(b, "tr-TR")));
       })
       .catch(() => { });
-    // Bu istek yavaş bir ağda hiç sonuçlanmazsa (ne başarı ne hata) filtersReady
-    // hiç true olmaz ve liste sonsuza dek yükleniyor görünür kalırdı — isteği
-    // iptal etmeden (aksi halde 5sn'den yavaş bir ağda varsayılan tarih filtresi
-    // kalıcı olarak hiç uygulanmazdı), 5sn sonra listeyi yine de açan ayrı bir
-    // "en kötü ihtimalde" zamanlayıcı kullanılır; istek daha sonra sonuçlanırsa
-    // varsayılan (kullanıcı henüz dokunmadıysa) o zaman uygulanır.
-    let settingsSettled = false;
-    const readyFallback = setTimeout(() => {
-      if (!settingsSettled) setFiltersReady(true);
-    }, 5000);
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d.payment_types)) setSettingsPaymentTypes(d.payment_types);
-        // Kullanıcı bu istek sonuçlanmadan önce Filtrele modalından kendi tarih
-        // filtresini (Tümü dahil) zaten seçmişse dateFilterTouchedRef true olur —
-        // ayarlardaki varsayılan o durumda kullanıcının seçimini ezmez.
-        if (typeof d.orders_default_date_filter === "string" && !dateFilterTouchedRef.current) {
-          setDateFilter(d.orders_default_date_filter);
-        }
-      })
-      .catch(() => { })
-      .finally(() => {
-        settingsSettled = true;
-        clearTimeout(readyFallback);
-        setFiltersReady(true);
-      });
   }, []);
+
+  // Store yüklenince (çoğu zaman sayfa açılmadan çoktan yüklüdür — layout'ta
+  // bir kez çekilir) varsayılan tarih filtresi BİR KEZ uygulanıp liste açılır.
+  // Kullanıcı Filtrele modalından kendi tarih filtresini (Tümü dahil) zaten
+  // seçmişse dateFilterTouchedRef true olur — varsayılan onu ezmez. /me
+  // başarısız olsa da loading false olur, liste yine açılır.
+  useEffect(() => {
+    if (authLoading || filtersReady) return;
+    if (authUser && !dateFilterTouchedRef.current) setDateFilter(authUser.ordersDefaultDateFilter);
+    setFiltersReady(true);
+  }, [authLoading, authUser, filtersReady]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/format";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/expenseCategories";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
@@ -82,7 +82,9 @@ export default function ExpensesPage() {
   const [items, setItems] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [paymentOptions, setPaymentOptions] = useState<string[]>([]);
+  // Genel Ayarlar'daki ödeme tipleri — AuthContext store'undan (bkz. /api/auth/me).
+  const { user: authUser } = useAuth();
+  const paymentOptions = authUser?.paymentTypes ?? [];
   const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
   const [usedCategories, setUsedCategories] = useState<string[]>([]);
   const [recurringTemplates, setRecurringTemplates] = useState<RecurringExpense[]>([]);
@@ -128,10 +130,6 @@ export default function ExpensesPage() {
   }
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types); })
-      .catch(() => {});
     fetch("/api/expenses/categories")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setUsedCategories(d); })

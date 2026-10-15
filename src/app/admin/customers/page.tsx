@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { PROTECTED_PAYMENT_TYPES, MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
@@ -156,7 +156,12 @@ export default function CustomersPage() {
   const [paymentType, setPaymentType] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
-  const [paymentOptions, setPaymentOptions] = useState<string[]>(DEFAULT_PAYMENT_OPTIONS);
+  // Genel Ayarlar'daki ödeme tipleri (Cari hariç — tahsilat zaten cariye) —
+  // AuthContext store'undan (bkz. /api/auth/me), ayrı istek yok.
+  const { user: authUser } = useAuth();
+  const paymentOptions = authUser?.paymentTypes.length
+    ? authUser.paymentTypes.filter((t) => t !== "Cari")
+    : DEFAULT_PAYMENT_OPTIONS;
   const [paymentKasaId, setPaymentKasaId] = useState<number | null>(null);
   const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
@@ -174,10 +179,6 @@ export default function CustomersPage() {
 
   useEffect(() => {
     fetchCustomers();
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d.payment_types)) setPaymentOptions(d.payment_types.filter((t: string) => t !== "Cari")); })
-      .catch(() => { });
     // Nakit tahsilat her zaman TL'dir — döviz kasaları bu seçicide görünmez.
     fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
     fetch("/api/suppliers").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setSupplierOptions(d.map((s: { name: string }) => s.name)); }).catch(() => { });
