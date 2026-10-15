@@ -5,6 +5,7 @@
 // ileride bir kayıt (register) sayfası eklenirse aynen (değiştirilmeden)
 // oradan da çağrılabilir — bkz. ~/.claude/plans/joyful-kindling-badger.md.
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password";
 import pool from "@/lib/db";
 
 interface QueryClient {
@@ -154,7 +155,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       [tenantId, DEFAULT_SUPPLIER_NAMES]
     );
 
-    const passwordHash = await bcrypt.hash(input.adminPassword, 10);
+    const passwordHash = await bcrypt.hash(input.adminPassword, BCRYPT_COST);
     const userResult = await client.query(
       `INSERT INTO users (tenant_id, username, password_hash, role, is_primary_admin)
        VALUES ($1, $2, $3, 'admin', true)

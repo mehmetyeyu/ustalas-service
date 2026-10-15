@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password";
 import pool from "@/lib/db";
 import { signToken, REMEMBER_ME_EXPIRES_IN, REMEMBER_ME_MAX_AGE_SECONDS } from "@/lib/auth";
 
@@ -80,9 +81,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Hash standart cost'ta değilse (bkz. src/lib/password.ts) doğru şifre
+    // elimizdeyken yeniden yazılır — aynı UPDATE içinde, ayrı sorgu yok.
+    // tokens_invalid_before'a dokunulmaz: şifre aynı, diğer oturumlar düşmez.
+    const newHash = bcrypt.getRounds(user.password_hash) !== BCRYPT_COST
+      ? await bcrypt.hash(password, BCRYPT_COST)
+      : null;
     await pool.query(
-      "UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = $1",
-      [user.id]
+      `UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = NOW(),
+         password_hash = COALESCE($2, password_hash)
+       WHERE id = $1`,
+      [user.id, newHash]
     );
 
     // "Beni Hatırla" — bkz. src/lib/auth.ts REMEMBER_ME_* notu, işaretlenmezse

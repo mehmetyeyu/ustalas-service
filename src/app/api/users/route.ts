@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { ALLOWED_ROLES } from "@/lib/roles";
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       perms = permissions;
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
     const result = await pool.query(
       `INSERT INTO users (tenant_id, username, password_hash, role, permissions)

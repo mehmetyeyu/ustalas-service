@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { ALLOWED_ROLES } from "@/lib/roles";
@@ -122,7 +123,7 @@ export async function PATCH(
       changes.push(`rol → ${role}`);
     }
     if (password) {
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
       await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3", [passwordHash, id, authUser.tenantId]);
       changes.push("şifre sıfırlandı");
     }

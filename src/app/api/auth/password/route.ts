@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 
@@ -35,7 +36,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Mevcut şifre hatalı." }, { status: 401 });
     }
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_COST);
     await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [
       newHash,
       authUser.userId,
