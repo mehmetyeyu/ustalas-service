@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { trIncludes } from "@/lib/trSearch";
 
 interface Supplier {
   id: number;
@@ -80,7 +81,7 @@ export default function SuppliersPage() {
   }
 
   const filtered = search
-    ? suppliers.filter((s) => s.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
+    ? suppliers.filter((s) => trIncludes(s.name, search))
     : suppliers;
 
   if (!allowed) return null;

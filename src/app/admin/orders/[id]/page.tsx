@@ -12,6 +12,7 @@ import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { escapeHtml } from "@/lib/htmlEscape";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { weekYearLabel } from "@/lib/weekYear";
+import { trIncludes } from "@/lib/trSearch";
 
 interface OrderDetail {
   id: number;
@@ -161,7 +162,7 @@ function SearchableCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = query
-    ? options.filter((o) => o.toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR")))
+    ? options.filter((o) => trIncludes(o, query))
     : options;
 
   useEffect(() => {

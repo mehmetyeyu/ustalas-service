@@ -11,6 +11,7 @@ import { KasaSelect } from "@/components/KasaSelect";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
+import { trIncludes } from "@/lib/trSearch";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
@@ -343,7 +344,7 @@ export default function CustomersPage() {
   const perakendeCustomers = customers.filter((c) => !c.has_cari_activity);
   const tabCustomers = activeTab === "cari" ? cariCustomers : perakendeCustomers;
   const filtered = search
-    ? tabCustomers.filter((c) => c.name.toLocaleLowerCase("tr-TR").includes(search.toLocaleLowerCase("tr-TR")))
+    ? tabCustomers.filter((c) => trIncludes(c.name, search))
     : tabCustomers;
 
   // Tüm müşteriler tek seferde (sayfalama olmadan) çekildiğinden sıralama

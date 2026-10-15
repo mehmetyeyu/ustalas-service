@@ -10,6 +10,7 @@ import { useDebouncedValue } from "@/hooks/useDebounce";
 import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/weekYear";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
+import { trIncludes } from "@/lib/trSearch";
 
 interface StorageItem {
   id: number;
@@ -94,7 +95,7 @@ function SearchableCombobox({
   const ref = useRef<HTMLDivElement>(null);
 
   const filtered = query
-    ? options.filter((o) => o.toLowerCase().includes(query.toLowerCase()))
+    ? options.filter((o) => trIncludes(o, query))
     : options;
 
   useEffect(() => {

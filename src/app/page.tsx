@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { formatCurrency } from "@/lib/format";
+import { trIncludes } from "@/lib/trSearch";
 
 interface Service {
   id: number;
@@ -133,7 +134,7 @@ function SearchableCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = query
-    ? options.filter((o) => o.toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR")))
+    ? options.filter((o) => trIncludes(o, query))
     : options;
 
   useEffect(() => {

@@ -8,6 +8,7 @@ import { formatTry } from "@/lib/exchangeRate";
 import { CopyBox } from "@/components/CopyBox";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
 import type { ConsistencyCheckResult, OrphanedSubscription } from "@/app/api/super-admin/consistency-check/route";
+import { trIncludes } from "@/lib/trSearch";
 
 // paymentStatus'un tam değer haritası iyzico tarafından dokümante edilmemiş
 // — gerçek başarılı ödemelerde gözlemlenen tek değer "SUCCESS" (bkz.
@@ -447,9 +448,9 @@ export default function SuperAdminPage() {
     const q = search.trim().toLowerCase();
     if (!q) return true;
     return (
-      t.name.toLowerCase().includes(q) ||
+      trIncludes(t.name, q) ||
       t.code.includes(q) ||
-      (t.contact_name?.toLowerCase().includes(q) ?? false) ||
+      (t.contact_name ? trIncludes(t.contact_name, q) : false) ||
       (t.contact_email?.toLowerCase().includes(q) ?? false) ||
       (t.contact_phone?.includes(q) ?? false)
     );
