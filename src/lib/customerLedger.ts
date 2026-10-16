@@ -162,10 +162,20 @@ export async function syncOrderLedgerBatch(
   const params = dueOrders.flatMap(({ orderId, total }) => [
     tenantId, customerIdByName.get(nameByOrderId.get(orderId)!), orderId, total, userId ?? null,
   ]);
+  // Borç satırının tarihi = siparişin kendi tarihi (İstanbul günü), "bugün"
+  // DEĞİL. Bu fonksiyon siparişin her düzenlenmesinde satırı silip yeniden
+  // yazıyor — önceden CURRENT_DATE ile yazıldığı için eski bir siparişte
+  // sadece plaka düzeltmek bile borcunu bugüne taşıyordu: FIFO sırası
+  // bozulup ödeme başka bir siparişe kayıyor, ekstrede tarih yanlış
+  // görünüyordu. Sipariş tarihi değişmediği için sonuç artık her
+  // düzenlemede aynı. (Geçmişte kaymış kayıtlar bilinçli olarak geriye dönük
+  // düzeltilmedi — ilgili sipariş tekrar düzenlendiğinde kendiliğinden düzelir.)
   await client.query(
     `INSERT INTO customer_ledger_entries (tenant_id, customer_id, order_id, entry_type, direction, amount, entry_date, created_by)
-     SELECT tenant_id, customer_id, order_id, 'SIPARIS', 1, amount, CURRENT_DATE, created_by
-     FROM (VALUES ${values}) AS v(tenant_id, customer_id, order_id, amount, created_by)`,
+     SELECT v.tenant_id, v.customer_id, v.order_id, 'SIPARIS', 1, v.amount,
+            (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date, v.created_by
+     FROM (VALUES ${values}) AS v(tenant_id, customer_id, order_id, amount, created_by)
+     JOIN orders o ON o.id = v.order_id AND o.tenant_id = v.tenant_id`,
     params
   );
 }
@@ -210,14 +220,34 @@ export interface OrderLedgerStatus {
 
 export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]): Map<number, OrderLedgerStatus> {
   const queue: { orderId: number | null; remaining: number }[] = [];
+  // Borç yokken gelen ödeme (avans) ya da fazla ödemenin artanı — kaybolmaz,
+  // sonraki borç(lar)a (MANUEL dahil) sırayla düşülür. Önceden atılıyordu:
+  // müşteri bakiyesi 0 görünürken sonraki siparişin rozeti "ödenmedi"
+  // kalıyordu. Ödeme yöntemi paidVia için korunur.
+  const creditPool: { remaining: number; paymentType: string | null }[] = [];
   const statusByOrderId = new Map<number, OrderLedgerStatus>();
   const paymentTypesByOrderId = new Map<number, Set<string>>();
+  const notePaymentType = (orderId: number | null, applied: number, paymentType: string | null) => {
+    if (orderId == null || applied <= 0.009 || !paymentType) return;
+    let types = paymentTypesByOrderId.get(orderId);
+    if (!types) paymentTypesByOrderId.set(orderId, (types = new Set()));
+    types.add(paymentType);
+  };
 
   for (const entry of entriesChronological) {
     if (entry.direction === 1) {
-      queue.push({ orderId: entry.orderId, remaining: entry.amount });
+      const item = { orderId: entry.orderId, remaining: entry.amount };
+      while (item.remaining > 0.009 && creditPool.length > 0) {
+        const pooled = creditPool[0];
+        const applied = Math.min(pooled.remaining, item.remaining);
+        item.remaining -= applied;
+        pooled.remaining -= applied;
+        notePaymentType(item.orderId, applied, pooled.paymentType);
+        if (pooled.remaining <= 0.009) creditPool.shift();
+      }
+      if (item.remaining > 0.009) queue.push(item);
       if (entry.orderId != null) {
-        statusByOrderId.set(entry.orderId, { originalAmount: entry.amount, remainingAmount: entry.amount, paidVia: null });
+        statusByOrderId.set(entry.orderId, { originalAmount: entry.amount, remainingAmount: Math.max(0, item.remaining), paidVia: null });
       }
       continue;
     }
@@ -236,13 +266,10 @@ export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]
       if (front.orderId != null) {
         const status = statusByOrderId.get(front.orderId);
         if (status) status.remainingAmount = Math.max(0, front.remaining);
-        if (applied > 0.009 && entry.paymentType) {
-          let types = paymentTypesByOrderId.get(front.orderId);
-          if (!types) paymentTypesByOrderId.set(front.orderId, (types = new Set()));
-          types.add(entry.paymentType);
-        }
+        notePaymentType(front.orderId, applied, entry.paymentType);
       }
     }
+    if (credit > 0.009) creditPool.push({ remaining: credit, paymentType: entry.paymentType });
   }
 
   for (const [orderId, status] of Array.from(statusByOrderId)) {

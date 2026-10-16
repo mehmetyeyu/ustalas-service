@@ -92,4 +92,37 @@ describe("computeOrderLedgerStatus", () => {
     const result = computeOrderLedgerStatus([credit(1000, "Nakit")]);
     expect(result.size).toBe(0);
   });
+
+  // Peşin ödeme (avans) / fazla ödeme: borç yokken gelen para kaybolmaz,
+  // "alacak" olarak bekleyip sonraki borç(lar)dan düşülür — önceden atılıyordu,
+  // müşteri bakiyesi 0 görünürken sonraki siparişin rozeti "ödenmedi" kalıyordu.
+  it("borç yokken alınan avans sonraki siparişi kapatır", () => {
+    const result = computeOrderLedgerStatus([credit(1000, "Nakit"), debt(1, 1000)]);
+    expect(result.get(1)!.remainingAmount).toBe(0);
+    expect(result.get(1)!.paidVia).toBe("Nakit");
+  });
+
+  it("kısmi avans sonraki siparişin bir kısmını kapatır", () => {
+    const result = computeOrderLedgerStatus([credit(300, "Nakit"), debt(1, 1000)]);
+    expect(result.get(1)!.remainingAmount).toBe(700);
+  });
+
+  it("avans + sonradan gelen farklı yöntemli ödeme siparişi 'Karışık' kapatır", () => {
+    const result = computeOrderLedgerStatus([credit(600, "Nakit"), debt(1, 1000), credit(400, "POS")]);
+    expect(result.get(1)!.remainingAmount).toBe(0);
+    expect(result.get(1)!.paidVia).toBe("Karışık");
+  });
+
+  it("fazla ödemenin artanı bir sonraki siparişe sayılır", () => {
+    const result = computeOrderLedgerStatus([debt(1, 500), credit(800, "Nakit"), debt(2, 500)]);
+    expect(result.get(1)!.remainingAmount).toBe(0);
+    expect(result.get(2)!.remainingAmount).toBe(200);
+    expect(result.get(2)!.paidVia).toBe("Nakit");
+  });
+
+  it("avans araya giren order_id'siz (MANUEL) borçta tükenirse sonraki sipariş ödenmemiş kalır", () => {
+    const manualDebt: LedgerFifoEntry = { orderId: null, direction: 1, amount: 500, paymentType: null };
+    const result = computeOrderLedgerStatus([credit(500, "Nakit"), manualDebt, debt(1, 500)]);
+    expect(result.get(1)!.remainingAmount).toBe(500);
+  });
 });
