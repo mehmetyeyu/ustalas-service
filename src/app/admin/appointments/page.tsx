@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
@@ -80,13 +80,20 @@ export default function AppointmentsPage() {
     setLoading(false);
   }
 
+  // Filtre efekti sayfayı 1'e alıp kendisi çeker ve prevPageRef'i 1 yapar;
+  // sayfa efekti page gerçekten değişmediyse (açılışta veya filtre değişip
+  // page 1'e dönünce) aynı isteği ikinci kez atmaz (bkz. admin/orders).
+  const prevPageRef = useRef(page);
   useEffect(() => {
+    prevPageRef.current = 1;
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, limit]);
 
   useEffect(() => {
+    if (prevPageRef.current === page) return;
+    prevPageRef.current = page;
     fetchItems(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
@@ -255,9 +262,9 @@ export default function AppointmentsPage() {
                             </>
                           )}
                           {a.status === "TAMAMLANDI" && a.order_id && (
-                            <a href={`/admin/orders/${a.order_id}`} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                            <Link prefetch={false} href={`/admin/orders/${a.order_id}`} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
                               Siparişi Gör →
-                            </a>
+                            </Link>
                           )}
                           {canDelete && (
                             <button

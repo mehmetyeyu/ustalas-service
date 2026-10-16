@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
@@ -672,14 +673,17 @@ function OrderPageInner() {
                 );
                 // Panele erişimi olmayan (hiç sayfa izni olmayan) bir staff için
                 // tıklanabilir yapılmaz — "Yönetici Paneli" metin linkiyle aynı koşul.
-                return panelPath ? <a href={panelPath}>{brand}</a> : brand;
+                // <a> değil Link: panele dönüş tam sayfa yenilemesi yapmasın
+                // (store/layout korunur, /api/auth/me vb. tekrar çekilmez).
+                return panelPath ? <Link prefetch={false} href={panelPath}>{brand}</Link> : brand;
               })()}
               <h2 className="text-black-700 font-bold text-lg mt-1">Yeni Sipariş Oluştur</h2>
             </div>
             <div className="flex items-center gap-3">
               {panelPath && (
                 <>
-                  <a
+                  <Link
+                    prefetch={false}
                     href={panelPath}
                     className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
                   >
@@ -687,7 +691,7 @@ function OrderPageInner() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
                     </svg>
                     Yönetici Paneli Geri Dön
-                  </a>
+                  </Link>
                   <span className="text-gray-300">|</span>
                 </>
               )}

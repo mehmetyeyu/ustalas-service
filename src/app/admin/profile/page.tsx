@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
+import { useAuth } from "../AuthContext";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Yönetici",
@@ -10,9 +11,11 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function ProfilePage() {
   const toast = useToast();
-  const [username, setUsername] = useState("");
-  const [role, setRole] = useState("");
-  const [loading, setLoading] = useState(true);
+  // Kullanıcı adı/rol AuthContext store'undan (bkz. /api/auth/me) — sayfa
+  // ayrıca /me çağırmaz. Kullanıcı adı değişince store tazelenir.
+  const { user, loading, refresh: refreshAuth } = useAuth();
+  const username = user?.username ?? "";
+  const role = user?.role ?? "";
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -23,15 +26,8 @@ export default function ProfilePage() {
   const [usernameSaving, setUsernameSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        setUsername(data.username || "");
-        setNewUsername(data.username || "");
-        setRole(data.role || "");
-        setLoading(false);
-      });
-  }, []);
+    if (user) setNewUsername(user.username);
+  }, [user]);
 
   async function handleChangeUsername() {
     if (!newUsername.trim()) {
@@ -51,7 +47,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ username: newUsername.trim() }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kullanıcı adı değiştirilemedi.");
-      setUsername(newUsername.trim());
+      await refreshAuth();
       toast.success("Kullanıcı adınız başarıyla güncellendi.");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");

@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/format";
 import { RESOURCE_ACTIONS } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { useAuth } from "../AuthContext";
 
 const MENU_WIDTH = 192; // w-48
 const MENU_MAX_HEIGHT = 260;
@@ -95,7 +96,9 @@ export default function UsersPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [users, setUsers] = useState<User[]>([]);
-  const [currentUsername, setCurrentUsername] = useState("");
+  // Kendi satırını (sil/pasifleştir yapılamaz) ayırt etmek için — AuthContext
+  // store'undan (bkz. /api/auth/me), ayrı istek yok.
+  const currentUsername = useAuth().user?.username ?? "";
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
@@ -163,9 +166,6 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => setCurrentUsername(data.username || ""));
   }, []);
 
   function openNew() {

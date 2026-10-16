@@ -392,13 +392,20 @@ export default function StoragePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Filtre efekti sayfayı 1'e alıp kendisi çeker ve prevPageRef'i 1 yapar;
+  // sayfa efekti page gerçekten değişmediyse (açılışta veya filtre değişip
+  // page 1'e dönünce) aynı isteği ikinci kez atmaz (bkz. admin/orders).
+  const prevPageRef = useRef(page);
   useEffect(() => {
+    prevPageRef.current = 1;
     setPage(1);
     fetchItems(1, showDelivered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, showDelivered, limit]);
 
   useEffect(() => {
+    if (prevPageRef.current === page) return;
+    prevPageRef.current = page;
     fetchItems(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);

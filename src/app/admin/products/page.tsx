@@ -934,13 +934,20 @@ export default function ProductsPage() {
     });
   }
 
+  // Filtre efekti sayfayı 1'e alıp kendisi çeker ve prevPageRef'i 1 yapar;
+  // sayfa efekti page gerçekten değişmediyse (açılışta veya filtre değişip
+  // page 1'e dönünce) aynı isteği ikinci kez atmaz (bkz. admin/orders).
+  const prevPageRef = useRef(page);
   useEffect(() => {
+    prevPageRef.current = 1;
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, seasonFilter, sortBy, sortDir, limit]);
 
   useEffect(() => {
+    if (prevPageRef.current === page) return;
+    prevPageRef.current = page;
     fetchItems(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
@@ -958,8 +965,13 @@ export default function ProductsPage() {
     setMovementsLoading(false);
   }
 
+  // Filtre efekti sayfayı 1'e alıp kendisi çeker ve prevPageRef'i 1 yapar;
+  // sayfa efekti page gerçekten değişmediyse (açılışta veya filtre değişip
+  // page 1'e dönünce) aynı isteği ikinci kez atmaz (bkz. admin/orders).
+  const prevMovementsPageRef = useRef(movementsPage);
   useEffect(() => {
     if (viewMode !== "movements") return;
+    prevMovementsPageRef.current = 1;
     setMovementsPage(1);
     fetchMovements(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -967,6 +979,8 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (viewMode !== "movements") return;
+    if (prevMovementsPageRef.current === movementsPage) return;
+    prevMovementsPageRef.current = movementsPage;
     fetchMovements(movementsPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [movementsPage]);

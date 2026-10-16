@@ -633,8 +633,12 @@ export default function OrdersPage() {
     }
   }
 
+  const prevPageRef = useRef(page);
   useEffect(() => {
     if (!filtersReady) return;
+    // page 3'teyken filtre değişirse aşağıdaki sayfa efekti de 3→1 değişimini
+    // görüp aynı 1. sayfayı ikinci kez çekerdi — burada çekildiği işaretlenir.
+    prevPageRef.current = 1;
     setPage(1);
     fetchOrders(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -645,7 +649,6 @@ export default function OrdersPage() {
   // çağırıyor; page burada gerçekten değişmediyse (ör. ayarlar yüklenip
   // filtersReady true olduğunda) tekrar aynı isteği atmamak için önceki
   // page değeriyle karşılaştırılıyor.
-  const prevPageRef = useRef(page);
   useEffect(() => {
     if (prevPageRef.current === page) return;
     prevPageRef.current = page;
