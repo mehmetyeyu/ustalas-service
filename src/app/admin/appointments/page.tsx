@@ -6,6 +6,8 @@ import { formatDate } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAfter } from "@/lib/queries";
 
 interface Appointment {
   id: number;
@@ -46,6 +48,7 @@ const FILTERS = [
 
 export default function AppointmentsPage() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const allowed = useViewGuard("appointments");
   const canApprove = usePermission("appointments.approve");
@@ -134,6 +137,8 @@ export default function AppointmentsPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Dönüştürme başarısız.");
       setConvertModalId(null);
+      // Dönüştürme bir sipariş oluşturur (yeni müşteri/hizmet kaydı olabilir).
+      invalidateAfter(queryClient, "order");
       await fetchItems();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");

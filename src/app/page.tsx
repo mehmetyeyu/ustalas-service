@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,11 +8,13 @@ import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { formatCurrency } from "@/lib/format";
 import { trIncludes } from "@/lib/trSearch";
+import { useQueryClient } from "@tanstack/react-query";
+import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter } from "@/lib/queries";
 
 interface Service {
   id: number;
   name: string;
-  price: number | null;
+  price: number | string | null;
   tracks_size: boolean;
 }
 
@@ -20,11 +22,6 @@ interface Customer {
   id: number;
   name: string;
   phone: string | null;
-}
-
-interface Supplier {
-  id: number;
-  name: string;
 }
 
 interface OrderLine {
@@ -72,6 +69,12 @@ interface StockBatch {
 // başka firmalara da sunulacağından kod içine bir firmanın gerçek tedarikçi
 // listesini gömmek yanlış olur.
 const TEDARIKCI_SEED = ["Servis İşçiliği"];
+
+// Sorgu verisi henüz yokken kullanılan sabit boş diziler — her render'da yeni
+// [] üretilseydi bunlara bağlı memo/effect'ler gereksiz yere yeniden çalışırdı.
+const NO_SERVICES: Service[] = [];
+const NO_CUSTOMERS: Customer[] = [];
+const NO_STRINGS: string[] = [];
 
 const EMPTY_LINE: OrderLine = {
   service_name: "", supplier: "Servis İşçiliği", stock_code: "", size_desc: "",
@@ -277,8 +280,15 @@ function OrderPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const plateInputRef = useRef<HTMLInputElement>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [servicesLoaded, setServicesLoaded] = useState(false);
+  const queryClient = useQueryClient();
+  // Hizmet/müşteri/tedarikçi/ebat listeleri TanStack önbelleğinden (bkz.
+  // src/lib/queries.ts) — panelde zaten yüklendiyse tekrar çekilmez, sipariş
+  // kaydedilince (yeni müşteri/tedarikçi/hizmet adı otomatik kaydedilir)
+  // tazelenir. servicesLoaded: istek bitti (başarılı ya da hatalı) — ürün
+  // ön doldurma hangi İşlem'e yazacağını bilmek için bunu bekler.
+  const servicesQuery = useServices();
+  const services: Service[] = servicesQuery.data ?? NO_SERVICES;
+  const servicesLoaded = !servicesQuery.isPending;
   // Bir ürün/parça satışı temsil eden işlemler — bunlarda Tedarikçi varsayılan
   // olarak "Servis İşçiliği" gelmez (boş bırakılır, gerçek tedarikçi seçilir),
   // Stok Kodu ve Ebat alanları gösterilir. Diğer (işçilik) işlemlerinde ikisi
@@ -319,51 +329,30 @@ function OrderPageInner() {
   // uygulanıyor — aynı /api/auth/me çağrısından geldiği için ekstra istek yok.
   const [businessName, setBusinessName] = useState("");
   const [panelLogoUrl, setPanelLogoUrl] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
+  const customers: Customer[] = useCustomers().data ?? NO_CUSTOMERS;
+  const suppliersData = useSuppliers().data;
+  const supplierOptions = useMemo(
+    () => Array.from(new Set([...TEDARIKCI_SEED, ...(suppliersData ?? []).map((s) => s.name)])).sort((a, b) => a.localeCompare(b, "tr-TR")),
+    [suppliersData]
+  );
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
-  const [sizeOptions, setSizeOptions] = useState<string[]>([]);
+  const sizeOptions = useProductSizes().data ?? NO_STRINGS;
+
+  // Oturum/firma ayarları TanStack önbelleğinden (bkz. useMe) — panelden bu
+  // forma (ve geri) geçerken /api/auth/me tekrar çekilmez.
+  const { data: me } = useMe();
+  useEffect(() => {
+    if (!me) return;
+    setPanelPath(getDefaultAdminPath({ role: me.role, permissions: me.permissions ?? [] }));
+    setBusinessName(me.business_name || "");
+    setPanelLogoUrl(me.panel_logo_url || null);
+    setCustomOrderNoEnabled(!!me.custom_order_no_enabled);
+    setPlateRequired(me.plate_required !== false);
+  }, [me]);
 
   useEffect(() => {
-    fetch("/api/services")
-      .then((r) => r.json())
-      .then(setServices)
-      .catch(() => toast.error("Hizmetler yüklenemedi."))
-      .finally(() => setServicesLoaded(true));
-
-    fetch("/api/auth/me")
-      .then((r) => r.ok ? r.json() : null)
-      .then((user) => {
-        if (!user) return;
-        setPanelPath(getDefaultAdminPath(user));
-        setBusinessName(user.business_name || "");
-        setPanelLogoUrl(user.panel_logo_url || null);
-        setCustomOrderNoEnabled(!!user.custom_order_no_enabled);
-        setPlateRequired(user.plate_required !== false);
-      })
-      .catch(() => { });
-
-    fetch("/api/customers")
-      .then((r) => r.json())
-      .then((data: Customer[]) => { if (Array.isArray(data)) setCustomers(data); })
-      .catch(() => { });
-
-    fetch("/api/suppliers")
-      .then((r) => r.json())
-      .then((data: Supplier[]) => {
-        if (!Array.isArray(data)) return;
-        const merged = Array.from(new Set([...TEDARIKCI_SEED, ...data.map((s) => s.name)])).sort((a, b) =>
-          a.localeCompare(b, "tr-TR")
-        );
-        setSupplierOptions(merged);
-      })
-      .catch(() => { });
-
-    fetch("/api/products/sizes")
-      .then((r) => r.json())
-      .then((data: string[]) => { if (Array.isArray(data)) setSizeOptions(data); })
-      .catch(() => { });
-  }, [toast]);
+    if (servicesQuery.isError) toast.error("Hizmetler yüklenemedi.");
+  }, [servicesQuery.isError, toast]);
 
   // "Kopyala" (bkz. Sipariş Detayı) — aynı müşteri altında birden fazla
   // araç için hemen hemen aynı işlem satırlarıyla tekrar tekrar sipariş
@@ -639,6 +628,7 @@ function OrderPageInner() {
       }
 
       toast.success("Sipariş başarıyla kaydedildi!");
+      invalidateAfter(queryClient, "order");
       setPlate("");
       setCustomOrderNo("");
       setCustomerName("");

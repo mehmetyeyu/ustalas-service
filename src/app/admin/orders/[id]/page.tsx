@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
@@ -10,6 +11,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { escapeHtml } from "@/lib/htmlEscape";
+import { useServices, useCustomers, useSuppliers, useProductSizes, useKasalar, invalidateAfter } from "@/lib/queries";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { weekYearLabel } from "@/lib/weekYear";
 import { trIncludes } from "@/lib/trSearch";
@@ -53,10 +55,14 @@ interface OrderDetail {
   }[];
 }
 
+// Sorgu verisi henüz yokken kullanılan sabit boş diziler (render'lar arası aynı referans).
+const NO_SERVICES: Service[] = [];
+const NO_STRINGS: string[] = [];
+
 interface Service {
   id: number;
   name: string;
-  price: number | null;
+  price: number | string | null;
   tracks_size: boolean;
 }
 interface Customer {
@@ -64,10 +70,7 @@ interface Customer {
   name: string;
   phone: string | null;
 }
-interface Supplier {
-  id: number;
-  name: string;
-}
+const NO_CUSTOMERS: Customer[] = [];
 interface EditLine {
   id: number | null;
   service_name: string;
@@ -409,19 +412,31 @@ function OrderDetailPageInner() {
   // alınırsa (bir satır tekrar Karışık'a dönerse) buradan aynen geri yüklenir.
   const [originalEditPayments, setOriginalEditPayments] = useState<{ payment_type: string; amount: string; kasa_id: number | null }[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [services, setServices] = useState<Service[]>([]);
+  // Hizmet/müşteri/tedarikçi/ebat/kasa listeleri TanStack önbelleğinden (bkz.
+  // src/lib/queries.ts) — liste sayfasından ya da sipariş formundan zaten
+  // yüklendiyse detay açılışında tekrar çekilmez; düzenleme/ödeme kaydı
+  // sonrası tazelenir.
+  const queryClient = useQueryClient();
+  const services: Service[] = useServices().data ?? NO_SERVICES;
   // Bir ürün/parça satışı temsil eden işlemler — bunlarda Tedarikçi varsayılan
   // olarak "Servis İşçiliği" gelmez (boş bırakılır, gerçek tedarikçi seçilir),
   // Stok Kodu ve Ebat alanları gösterilir. Diğer (işçilik) işlemlerinde ikisi
   // de gizlenir. Önceden burada sabit, kod içine gömülü bir isim listesi
   // vardı — artık services.tracks_size'a (bkz. Hizmetler ekranı) bakıyor.
   const productSaleServiceNames = new Set(services.filter((s) => s.tracks_size).map((s) => s.name));
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [supplierOptions, setSupplierOptions] = useState<string[]>(TEDARIKCI_SEED);
-  const [sizeOptions, setSizeOptions] = useState<string[]>([]);
+  const customers: Customer[] = useCustomers().data ?? NO_CUSTOMERS;
+  const suppliersData = useSuppliers().data;
+  const supplierOptions = useMemo(
+    () => Array.from(new Set([...TEDARIKCI_SEED, ...(suppliersData ?? []).map((s) => s.name)])).sort((a, b) => a.localeCompare(b, "tr-TR")),
+    [suppliersData]
+  );
+  const sizeOptions = useProductSizes().data ?? NO_STRINGS;
   // Genel Ayarlar'daki ödeme tipleri — AuthContext store'undan (bkz. /api/auth/me).
   const paymentOptions = authUser?.paymentTypes.length ? authUser.paymentTypes : DEFAULT_PAYMENT_OPTIONS;
-  const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
+  // Nakit ödeme her zaman TL'dir — döviz kasaları (ör. "Dolar Kasa") bu
+  // seçicide hiç görünmez (bkz. plan: "Kasalara Para Birimi Desteği").
+  const kasalarData = useKasalar().data;
+  const kasaOptions = useMemo(() => (kasalarData ?? []).filter((k) => k.currency === "TRY"), [kasalarData]);
   const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
   async function fetchOrder() {
@@ -434,21 +449,6 @@ function OrderDetailPageInner() {
 
   useEffect(() => {
     fetchOrder();
-
-    fetch("/api/services").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setServices(d); }).catch(() => { });
-    fetch("/api/customers").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setCustomers(d); }).catch(() => { });
-    fetch("/api/suppliers")
-      .then((r) => r.json())
-      .then((d: Supplier[]) => {
-        if (!Array.isArray(d)) return;
-        const merged = Array.from(new Set([...TEDARIKCI_SEED, ...d.map((s) => s.name)])).sort((a, b) => a.localeCompare(b, "tr-TR"));
-        setSupplierOptions(merged);
-      })
-      .catch(() => { });
-    fetch("/api/products/sizes").then((r) => r.json()).then((d: string[]) => { if (Array.isArray(d)) setSizeOptions(d); }).catch(() => { });
-    // Nakit ödeme her zaman TL'dir — döviz kasaları (ör. "Dolar Kasa") bu
-    // seçicide hiç görünmez (bkz. plan: "Kasalara Para Birimi Desteği").
-    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -891,6 +891,7 @@ function OrderDetailPageInner() {
         throw new Error(data.error || "Kaydetme başarısız.");
       }
       setEditing(false);
+      invalidateAfter(queryClient, "order");
       await fetchOrder();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -965,6 +966,7 @@ function OrderDetailPageInner() {
         throw new Error(data.error || "İşlem başarısız.");
       }
       setShowModal(false);
+      invalidateAfter(queryClient, "order");
       setPaymentNoteInput("");
       await fetchOrder();
     } catch (err: unknown) {

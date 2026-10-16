@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { formatCurrency } from "@/lib/format";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/expenseCategories";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
+import { useKasalar } from "@/lib/queries";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
@@ -85,7 +86,10 @@ export default function ExpensesPage() {
   // Genel Ayarlar'daki ödeme tipleri — AuthContext store'undan (bkz. /api/auth/me).
   const { user: authUser } = useAuth();
   const paymentOptions = authUser?.paymentTypes ?? [];
-  const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
+  // Nakit ödeme/tahsilat her zaman TL'dir — döviz kasaları bu seçicide görünmez.
+  // Kasa listesi TanStack önbelleğinden (bkz. src/lib/queries.ts).
+  const kasalarData = useKasalar().data;
+  const kasaOptions = useMemo(() => (kasalarData ?? []).filter((k) => k.currency === "TRY"), [kasalarData]);
   const [usedCategories, setUsedCategories] = useState<string[]>([]);
   const [recurringTemplates, setRecurringTemplates] = useState<RecurringExpense[]>([]);
 
@@ -134,8 +138,6 @@ export default function ExpensesPage() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setUsedCategories(d); })
       .catch(() => {});
-    // Nakit ödeme her zaman TL'dir — döviz kasaları bu seçicide görünmez.
-    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => {});
     fetchRecurringTemplates();
   }, []);
 

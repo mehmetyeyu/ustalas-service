@@ -10,6 +10,8 @@ import { KasaSelect } from "@/components/KasaSelect";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { CURRENCY_OPTIONS } from "@/lib/kasalar";
 import { TRNumberInput } from "@/components/TRNumberInput";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAfter } from "@/lib/queries";
 
 interface KasaEntry {
   entry_type: "SIPARIS" | "CARI_TAHSILAT" | "MASRAF" | "MANUEL";
@@ -43,6 +45,7 @@ const ENTRY_TYPE_LABELS: Record<KasaEntry["entry_type"], string> = {
 
 export default function KasaPage() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const allowed = useViewGuard("kasa");
   const canManage = usePermission("kasa.manage");
@@ -304,6 +307,7 @@ export default function KasaPage() {
       setNewKasaName("");
       setNewKasaLinkedType("");
       setNewKasaCurrency("TRY");
+      invalidateAfter(queryClient, "kasa");
       await fetchKasaList();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -323,6 +327,7 @@ export default function KasaPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setRenamingKasaId(null);
+      invalidateAfter(queryClient, "kasa");
       // Hareket tablosundaki "Kasa" kolonu (bkz. entries[].kasa_name) önceki
       // fetch'ten geldiği için, yeniden adlandırma sonrası eski adı göstermeye
       // devam etmesin diye entries de yeniden çekilir. Bağlı ödeme tipi
@@ -343,6 +348,7 @@ export default function KasaPage() {
       const res = await fetch(`/api/kasalar/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).error || "Silinemedi.");
       if (selectedKasa === String(id)) setSelectedKasa("all");
+      invalidateAfter(queryClient, "kasa");
       await fetchKasaList();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");

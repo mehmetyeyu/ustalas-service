@@ -1,8 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
+import { queryKeys, useMe, type MeResponse } from "@/lib/queries";
 
 interface AuthUser {
   username: string;
@@ -60,16 +62,6 @@ export function notifySettingsChanged() {
   channel.close();
 }
 
-// /api/auth/me yanıtı (snake_case) — bkz. src/app/api/auth/me/route.ts.
-interface MeResponse {
-  username: string; role: string; permissions?: string[]; business_name?: string; panel_logo_url?: string | null;
-  billing_status?: string | null; trial_ends_at?: string | null; plan?: string | null;
-  billing_cancel_at_period_end?: boolean; billing_period_ends_at?: string | null; billing_last_payment_error?: string | null;
-  is_primary_admin?: boolean; onboarding_tour_completed_at?: string | null;
-  custom_order_no_enabled?: boolean; plate_required?: boolean;
-  payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string;
-}
-
 function toAuthUser(data: MeResponse): AuthUser {
   return {
     username: data.username, role: data.role, permissions: data.permissions ?? [], businessName: data.business_name ?? "",
@@ -86,23 +78,17 @@ function toAuthUser(data: MeResponse): AuthUser {
   };
 }
 
-// AdminLayout'ta bir kez /api/auth/me çekilir, tüm /admin/* sayfaları bunu
-// context'ten okur — her sayfa kendi fetch'ini tekrarlamaz. Nav filtreleme
-// (layout) ve sayfa bazlı izin kontrolleri (her admin sayfası) bu context'i kullanır.
+// /api/auth/me TanStack Query önbelleğinden okunur (bkz. useMe, kök layout'taki
+// QueryProvider) — tüm /admin/* sayfaları bunu context'ten okur, her sayfa
+// kendi fetch'ini tekrarlamaz; sipariş formu (/) da aynı önbelleği kullanır.
+// Nav filtreleme (layout) ve sayfa bazlı izin kontrolleri (her admin sayfası)
+// bu context'i kullanır. Dışarıya verilen şekil (user/loading/refresh) aynı
+// kaldı — sayfalar TanStack'e doğrudan bağımlı değil.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<{ user: AuthUser | null; loading: boolean }>({ user: null, loading: true });
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/me", { cache: "no-store" });
-      const data = res.ok ? await res.json() : null;
-      setState({ user: data ? toAuthUser(data) : null, loading: false });
-    } catch {
-      setState((prev) => ({ user: prev.user, loading: false }));
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  const queryClient = useQueryClient();
+  const { data, isPending, refetch } = useMe();
+  const user = useMemo(() => (data ? toAuthUser(data) : null), [data]);
+  const refresh = useCallback(async () => { await refetch(); }, [refetch]);
 
   // Store sekme başına tutulur — Genel Ayarlar bir sekmede kaydedilince
   // (bkz. notifySettingsChanged) aynı tarayıcıdaki diğer açık panel
@@ -111,14 +97,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel(SETTINGS_CHANNEL);
-    channel.onmessage = () => { load(); };
+    channel.onmessage = () => { queryClient.invalidateQueries({ queryKey: queryKeys.me }); };
     return () => channel.close();
-  }, [load]);
+  }, [queryClient]);
 
   // value sabit tutulur (useMemo) — layout her navigasyonda yeniden render
   // olur, her seferinde yeni bir nesne verilseydi tüm useAuth() kullanan
   // sayfalar gereksiz yere yeniden render olurdu.
-  const value = useMemo(() => ({ ...state, refresh: load }), [state, load]);
+  const value = useMemo(() => ({ user, loading: isPending, refresh }), [user, isPending, refresh]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

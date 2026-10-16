@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
@@ -11,6 +11,8 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServices, useSuppliers, useOrderPaymentTypes, invalidateAfter } from "@/lib/queries";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 
@@ -435,9 +437,14 @@ export default function OrdersPage() {
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
-  const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
-  const [paymentTypeOptions, setPaymentTypeOptions] = useState<string[]>([]);
+  // Filtrele modalındaki seçenekler TanStack önbelleğinden (bkz. src/lib/queries.ts).
+  const queryClient = useQueryClient();
+  const servicesData = useServices().data;
+  const suppliersData = useSuppliers().data;
+  const paymentTypesData = useOrderPaymentTypes().data;
+  const serviceOptions = useMemo(() => (servicesData ?? []).map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")), [servicesData]);
+  const supplierOptions = useMemo(() => (suppliersData ?? []).map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")), [suppliersData]);
+  const paymentTypeOptions = useMemo(() => [...(paymentTypesData ?? [])].sort((a, b) => a.localeCompare(b, "tr-TR")), [paymentTypesData]);
   // Genel Ayarlar'daki ödeme şekilleri listesi — Filtrele modalındaki
   // paymentTypeOptions'tan farklı (o gerçekten kullanılmış değerlerdir),
   // bu Excel içe aktarma normalizasyonu için kullanılır (bkz. handleImport).
@@ -461,26 +468,6 @@ export default function OrdersPage() {
   // Ödeme Şekli ise gerçekten kullanılmış değerlerden ("Mail Order" tipleri
   // "<Tedarikçi> Mail Order" olarak dinamik oluştuğundan sabit liste yetmez)
   // doldurulur.
-  useEffect(() => {
-    fetch("/api/services")
-      .then((r) => r.json())
-      .then((data: { name: string }[]) => {
-        if (Array.isArray(data)) setServiceOptions(data.map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")));
-      })
-      .catch(() => { });
-    fetch("/api/suppliers")
-      .then((r) => r.json())
-      .then((data: { name: string }[]) => {
-        if (Array.isArray(data)) setSupplierOptions(data.map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")));
-      })
-      .catch(() => { });
-    fetch("/api/orders/payment-types")
-      .then((r) => r.json())
-      .then((data: string[]) => {
-        if (Array.isArray(data)) setPaymentTypeOptions(data.sort((a, b) => a.localeCompare(b, "tr-TR")));
-      })
-      .catch(() => { });
-  }, []);
 
   // Store yüklenince (çoğu zaman sayfa açılmadan çoktan yüklüdür — layout'ta
   // bir kez çekilir) varsayılan tarih filtresi BİR KEZ uygulanıp liste açılır.
@@ -526,6 +513,8 @@ export default function OrdersPage() {
     setDeletingId(id);
     try {
       await fetch(`/api/orders/${id}`, { method: "DELETE" });
+      // Silinen siparişin stoğu geri döner, ödeme şekli seçenekleri değişebilir.
+      invalidateAfter(queryClient, "order");
       await fetchOrders(page);
     } finally {
       setDeletingId(null);
@@ -625,6 +614,7 @@ export default function OrdersPage() {
         toast.success(`${data.updated} satırın ödeme şekli güncellendi.`);
       }
       setBulkPaymentType("");
+      invalidateAfter(queryClient, "order");
       await fetchOrders(page);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -733,6 +723,8 @@ export default function OrdersPage() {
         (productsAdded ? ` Ürün kataloğuna eksik olan ${productsAdded} ürün kodu eklendi.` : "")
       );
       setImportHasWarning(changedDuplicates > 0 || duplicateOrderNo > 0);
+      // İçe aktarma yeni müşteri/tedarikçi/hizmet ve ürün kodu da ekler.
+      invalidateAfter(queryClient, "order");
       setPage(1);
       await fetchOrders(1);
     } catch {

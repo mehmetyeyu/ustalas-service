@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useState, useRef, type ReactNode, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
@@ -8,6 +8,8 @@ import { parseProductRows, validateProductRows, chunk, SEASON_OPTIONS, type Pars
 import { PRODUCT_TYPE_OPTIONS, computeCondition, stockLevel, EU_LABEL_CLASSES, EU_NOISE_CLASSES } from "@/lib/productCondition";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission } from "../AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSuppliers, useProductBrands, invalidateAfter } from "@/lib/queries";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useDebouncedValue } from "@/hooks/useDebounce";
@@ -884,23 +886,13 @@ export default function ProductsPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
-  const [brandOptions, setBrandOptions] = useState<string[]>([]);
-
-  useEffect(() => {
-    fetch("/api/suppliers")
-      .then((r) => r.json())
-      .then((data: { name: string }[]) => {
-        if (Array.isArray(data)) setSupplierOptions(data.map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")));
-      })
-      .catch(() => { });
-    fetch("/api/products/brands")
-      .then((r) => r.json())
-      .then((data: string[]) => {
-        if (Array.isArray(data)) setBrandOptions(data.sort((a, b) => a.localeCompare(b, "tr-TR")));
-      })
-      .catch(() => { });
-  }, []);
+  // Tedarikçi/marka önerileri TanStack önbelleğinden (bkz. src/lib/queries.ts);
+  // ürün eklenince/düzenlenince/silinince invalidateAfter("product") tazeler.
+  const queryClient = useQueryClient();
+  const suppliersData = useSuppliers().data;
+  const brandsData = useProductBrands().data;
+  const supplierOptions = useMemo(() => (suppliersData ?? []).map((s) => s.name).sort((a, b) => a.localeCompare(b, "tr-TR")), [suppliersData]);
+  const brandOptions = useMemo(() => [...(brandsData ?? [])].sort((a, b) => a.localeCompare(b, "tr-TR")), [brandsData]);
 
   async function fetchItems(targetPage = page) {
     setLoading(true);
@@ -1121,6 +1113,7 @@ export default function ProductsPage() {
       }
       setShowAddModal(false);
       setForm(EMPTY_FORM);
+      invalidateAfter(queryClient, "product");
       await fetchItems(page);
     } finally {
       setSaving(false);
@@ -1304,6 +1297,7 @@ export default function ProductsPage() {
         return;
       }
       setEditItem(null);
+      invalidateAfter(queryClient, "product");
       await fetchItems(page);
     } finally {
       setSaving(false);
@@ -1368,6 +1362,7 @@ export default function ProductsPage() {
         toast.error(data.error ?? "Parti silinemedi.");
         return;
       }
+      invalidateAfter(queryClient, "product");
       await fetchItems(page);
     } finally {
       setDeletingId(null);
@@ -1450,6 +1445,7 @@ export default function ProductsPage() {
         `${imported} parti içe aktarıldı.` +
         (skipped ? ` ${skipped} satır ürün kodu olmadığı için atlandı.` : "")
       );
+      invalidateAfter(queryClient, "product");
       setPage(1);
       await fetchItems(1);
     } catch {

@@ -6,6 +6,8 @@ import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { TRNumberInput } from "@/components/TRNumberInput";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAfter } from "@/lib/queries";
 
 interface Service {
   id: number;
@@ -19,6 +21,7 @@ interface Service {
 
 export default function ServicesPage() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const allowed = useViewGuard("services");
   const canCreate = usePermission("services.create");
@@ -94,6 +97,7 @@ export default function ServicesPage() {
         if (!res.ok) throw new Error("Ekleme başarısız.");
       }
       setShowForm(false);
+      invalidateAfter(queryClient, "service");
       await fetchServices();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -105,6 +109,7 @@ export default function ServicesPage() {
   async function handleDelete(id: number) {
     if (!(await confirm({ message: "Bu hizmeti devre dışı bırakmak istediğinize emin misiniz?", confirmText: "Devre Dışı Bırak", variant: "danger" }))) return;
     await fetch(`/api/services/${id}`, { method: "DELETE" });
+    invalidateAfter(queryClient, "service");
     await fetchServices();
   }
 

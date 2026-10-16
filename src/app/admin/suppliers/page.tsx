@@ -5,6 +5,8 @@ import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { trIncludes } from "@/lib/trSearch";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAfter } from "@/lib/queries";
 
 interface Supplier {
   id: number;
@@ -13,6 +15,7 @@ interface Supplier {
 
 export default function SuppliersPage() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const allowed = useViewGuard("suppliers");
   const canCreate = usePermission("suppliers.create");
@@ -66,6 +69,7 @@ export default function SuppliersPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setShowForm(false);
+      invalidateAfter(queryClient, "supplier");
       await fetchSuppliers();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -77,6 +81,7 @@ export default function SuppliersPage() {
   async function handleDelete(id: number) {
     if (!(await confirm({ message: "Bu tedarikçiyi silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     await fetch(`/api/suppliers/${id}`, { method: "DELETE" });
+    invalidateAfter(queryClient, "supplier");
     await fetchSuppliers();
   }
 

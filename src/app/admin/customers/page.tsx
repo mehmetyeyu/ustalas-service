@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
+import { useKasalar, useSuppliers, invalidateAfter } from "@/lib/queries";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { PROTECTED_PAYMENT_TYPES, MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
@@ -12,6 +13,7 @@ import { TRNumberInput } from "@/components/TRNumberInput";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
+import { useQueryClient } from "@tanstack/react-query";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
@@ -86,6 +88,7 @@ type SortKey = "name" | "phone" | "order_count" | "balance";
 
 export default function CustomersPage() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const allowed = useViewGuard("customers");
   const canCreate = usePermission("customers.create");
@@ -163,8 +166,12 @@ export default function CustomersPage() {
     ? authUser.paymentTypes.filter((t) => t !== "Cari")
     : DEFAULT_PAYMENT_OPTIONS;
   const [paymentKasaId, setPaymentKasaId] = useState<number | null>(null);
-  const [kasaOptions, setKasaOptions] = useState<{ id: number; name: string }[]>([]);
-  const [supplierOptions, setSupplierOptions] = useState<string[]>([]);
+  // Nakit ödeme/tahsilat her zaman TL'dir — döviz kasaları bu seçicide görünmez.
+  // Kasa listesi TanStack önbelleğinden (bkz. src/lib/queries.ts).
+  const kasalarData = useKasalar().data;
+  const kasaOptions = useMemo(() => (kasalarData ?? []).filter((k) => k.currency === "TRY"), [kasalarData]);
+  const suppliersData = useSuppliers().data;
+  const supplierOptions = useMemo(() => (suppliersData ?? []).map((s) => s.name), [suppliersData]);
   const [savingPayment, setSavingPayment] = useState(false);
 
   async function fetchCustomers() {
@@ -179,9 +186,6 @@ export default function CustomersPage() {
 
   useEffect(() => {
     fetchCustomers();
-    // Nakit tahsilat her zaman TL'dir — döviz kasaları bu seçicide görünmez.
-    fetch("/api/kasalar").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setKasaOptions(d.filter((k: { currency?: string }) => k.currency === "TRY")); }).catch(() => { });
-    fetch("/api/suppliers").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setSupplierOptions(d.map((s: { name: string }) => s.name)); }).catch(() => { });
   }, []);
 
   async function openOrders(c: Customer) {
@@ -235,6 +239,7 @@ export default function CustomersPage() {
   }
 
   async function refreshAfterLedgerChange(customerId: number) {
+    invalidateAfter(queryClient, "customer");
     await Promise.all([
       fetchCustomers(),
       ledgerModalCustomer?.id === customerId ? openLedger(ledgerModalCustomer) : Promise.resolve(),
@@ -322,6 +327,7 @@ export default function CustomersPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setShowForm(false);
+      invalidateAfter(queryClient, "customer");
       await fetchCustomers();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -333,6 +339,7 @@ export default function CustomersPage() {
   async function handleDelete(id: number) {
     if (!(await confirm({ message: "Bu müşteriyi silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
+    invalidateAfter(queryClient, "customer");
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       toast.error(data.error ?? "Müşteri silinemedi.");
