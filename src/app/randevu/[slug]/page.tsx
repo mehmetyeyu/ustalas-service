@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 interface Service {
@@ -118,7 +118,7 @@ function formatDateLabel(dateStr: string): string {
   return new Date(Date.UTC(y, m - 1, d, 9, 0, 0)).toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long", timeZone: "Europe/Istanbul" });
 }
 
-export default function RandevuPage() {
+function RandevuPageInner() {
   const { slug } = useParams<{ slug: string }>();
   // src/lib/embed.js bu sayfayı ?embed=1 ile açıyor — bkz. /admin/settings
   // "Embed Kodu" bölümü. Gömülü modda tam-viyport arkaplan/başlık kaldırılır
@@ -450,5 +450,16 @@ export default function RandevuPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Sayfa statik üretilip CDN'den sunuluyor (bkz. layout.tsx) — useSearchParams
+// (?embed=1) statik sayfada bir Suspense sınırı gerektirir; içerik zaten
+// tarayıcıda /meta ile yüklendiğinden görünümde fark yok.
+export default function RandevuPage() {
+  return (
+    <Suspense fallback={null}>
+      <RandevuPageInner />
+    </Suspense>
   );
 }

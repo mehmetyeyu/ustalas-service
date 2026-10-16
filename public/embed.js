@@ -55,17 +55,39 @@
   var shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = '<div class="uw-loading">Yükleniyor...</div>';
 
-  fetch(origin + "/api/public/randevu/" + encodeURIComponent(slug) + "/meta")
-    .then(function (res) {
-      if (!res.ok) throw new Error("not-found");
-      return res.json();
-    })
-    .then(function (meta) {
-      mountWidget(shadow, host, origin, slug, meta);
-    })
-    .catch(function () {
-      shadow.innerHTML = '<div class="uw-loading">Sayfa bulunamadı.</div>';
-    });
+  function loadMeta() {
+    fetch(origin + "/api/public/randevu/" + encodeURIComponent(slug) + "/meta")
+      .then(function (res) {
+        if (!res.ok) throw new Error("not-found");
+        return res.json();
+      })
+      .then(function (meta) {
+        mountWidget(shadow, host, origin, slug, meta);
+      })
+      .catch(function () {
+        shadow.innerHTML = '<div class="uw-loading">Sayfa bulunamadı.</div>';
+      });
+  }
+
+  // Tembel yükleme: widget sitenin her sayfasında (ör. alt bilgi) duruyor
+  // olabilir — /meta isteği ancak widget ekrana yaklaşınca (300px kala)
+  // atılır. O bölüme hiç kaydırmayan ziyaretçi sunucuya hiç istek atmaz
+  // (yoğun bir sitede bu, Vercel fonksiyon çağrısı/CPU demek). Eski
+  // tarayıcıda IntersectionObserver yoksa eskisi gibi hemen yüklenir.
+  if ("IntersectionObserver" in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) {
+          observer.disconnect();
+          loadMeta();
+          return;
+        }
+      }
+    }, { rootMargin: "300px" });
+    observer.observe(host);
+  } else {
+    loadMeta();
+  }
 
   // --- Türkiye sabit UTC+3 yardımcıları (bkz. src/app/randevu/[slug]/page.tsx
   // içindeki aynı adlı fonksiyonlar — bu widget'ın React karşılığı) ---

@@ -27,6 +27,20 @@ export async function GET(
       ),
     ]);
 
+    // Vercel CDN önbelleği: widget firmanın sitesinin her sayfa görüntülemesinde
+    // bunu ister — önbelleksiz, yoğun bir site tek başına tüm platformun
+    // (bütün firmaların paneli dahil) Vercel CPU bütçesini tüketebilirdi.
+    // CDN'de 1 saat taze, süre dolunca 1 güne kadar eski yanıt anında verilip
+    // arka planda yenilenir → firma başına saatte ~1 fonksiyon çağrısı.
+    // Hizmet/çalışma saati/görünüm değişikliği widget'a en geç ~1 saatte
+    // yansır (kullanıcı onayladı); randevu kaydı (POST) ve müsait saatler
+    // (/slots) canlı kalır, yani önbellek yüzünden hatalı randevu oluşmaz.
+    // CORS başlığı joker (*) — yanıt ziyaretçinin origin'ine göre değişmediği
+    // için paylaşımlı önbellekte güvenli. Sadece başarılı yanıt önbelleklenir.
+    const cacheHeaders = {
+      "Cache-Control": "public, max-age=300",
+      "Vercel-CDN-Cache-Control": "max-age=3600, stale-while-revalidate=86400",
+    };
     return withCors(NextResponse.json({
       tenant: { name: tenant.name, slug: tenant.slug },
       workingHours: s?.booking_working_hours ?? null,
@@ -44,7 +58,7 @@ export async function GET(
         density: s?.booking_widget_density ?? "normal",
         headingSize: s?.booking_widget_heading_size ?? "md",
       },
-    }));
+    }, { headers: cacheHeaders }));
   } catch (error) {
     console.error(error);
     return withCors(NextResponse.json({ error: "Sunucu hatası." }, { status: 500 }));
