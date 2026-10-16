@@ -3,18 +3,19 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 
-// Sipariş oluşturma ekranındaki Tedarikçi alanı için dizin listesi. Nadiren
-// değişen bir liste olduğundan uzun cache'lenir (yeni bir tedarikçi eklense
-// bile otomatik tamamlamada elle yazmak her zaman çalışır — bkz. src/lib/directories.ts).
+// Sipariş oluşturma ekranındaki Tedarikçi alanı için dizin listesi. İstemci
+// tarafında TanStack Query önbelleğinde tutulur ve değiştiren işlemlerden sonra
+// tazelenir (bkz. src/lib/queries.ts) — burada HTTP Cache-Control yok; önceki
+// 1 saatlik tarayıcı önbelleği silinen/yeni tedarikçiyi bir saate kadar
+// gizliyordu. Listede olmayan bir ad otomatik tamamlamada elle yazılabilir —
+// bkz. src/lib/directories.ts.
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
     const result = await pool.query("SELECT id, name FROM suppliers WHERE tenant_id = $1 ORDER BY name", [user.tenantId]);
-    return NextResponse.json(result.rows, {
-      headers: { "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400" },
-    });
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

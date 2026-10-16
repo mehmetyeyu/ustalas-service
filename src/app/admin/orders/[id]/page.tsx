@@ -11,7 +11,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { escapeHtml } from "@/lib/htmlEscape";
-import { useServices, useCustomers, useSuppliers, useProductSizes, useKasalar, invalidateAfter } from "@/lib/queries";
+import { useServices, useCustomers, useSuppliers, useProductSizes, useKasalar, invalidateAfter, useStockCodes } from "@/lib/queries";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { weekYearLabel } from "@/lib/weekYear";
 import { trIncludes } from "@/lib/trSearch";
@@ -303,17 +303,21 @@ function PaymentTypeSelect({
 // önerilir), kod bir partiyle eşleşince altında
 // Üretim Haftası/Yılı seçici belirir — seçilen parti product_id + Ebat + o
 // partinin mevcut stoğunu (max_stock, anlık uyarı için) üst bileşene bildirir.
+const NO_CODES: string[] = [];
+
 function TireBatchPicker({
-  supplier, code, productId, codeOptions, onCodeChange, onBatchSelect,
+  supplier, code, productId, onCodeChange, onBatchSelect,
 }: {
   supplier: string;
   code: string;
   productId: number | null;
-  codeOptions: string[];
   onCodeChange: (code: string) => void;
   onBatchSelect: (batch: StockBatch | null) => void;
 }) {
   const [batches, setBatches] = useState<StockBatch[]>([]);
+  // Tedarikçide stoğu olan kodlar — ortak önbellekten (bkz. useStockCodes);
+  // sipariş/ürün kaydında tazelenir, form açık kalsa da eskimez.
+  const codeOptions = useStockCodes(supplier).data ?? NO_CODES;
 
   useEffect(() => {
     if (!supplier.trim() || !code.trim()) {
@@ -437,7 +441,6 @@ function OrderDetailPageInner() {
   // seçicide hiç görünmez (bkz. plan: "Kasalara Para Birimi Desteği").
   const kasalarData = useKasalar().data;
   const kasaOptions = useMemo(() => (kasalarData ?? []).filter((k) => k.currency === "TRY"), [kasalarData]);
-  const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
 
   async function fetchOrder() {
     const res = await fetch(`/api/orders/${id}`);
@@ -451,18 +454,6 @@ function OrderDetailPageInner() {
     fetchOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  // tracks_size işaretli bir satırda Tedarikçi seçilince, o tedarikçide
-  // stoğu olan ürün kodları (henüz önbellekte yoksa) çekilir.
-  function ensureStockCodes(supplier: string) {
-    if (!supplier.trim() || stockCodesBySupplier[supplier]) return;
-    fetch(`/api/products/stock-codes?supplier=${encodeURIComponent(supplier)}`)
-      .then((r) => r.json())
-      .then((data: string[]) => {
-        if (Array.isArray(data)) setStockCodesBySupplier((prev) => ({ ...prev, [supplier]: data }));
-      })
-      .catch(() => { });
-  }
 
   const islemOptions = services.map((s) => s.name);
   const customerOptions = customers.map((c) => c.name);
@@ -635,12 +626,6 @@ function OrderDetailPageInner() {
     setEditPayments(initialPayments);
     setOriginalEditPayments(initialPayments);
     setPaymentsCleared(false);
-    // Mevcut ürün/parça satışı (tracks_size, bkz. Hizmetler ekranı)
-    // satırlarının tedarikçileri için kod önerilerini önden çeker, böylece
-    // parti seçici açılır açılmaz dolu gelir.
-    order.services
-      .filter((svc) => productSaleServiceNames.has(svc.name.trim()) && svc.supplier)
-      .forEach((svc) => ensureStockCodes(svc.supplier as string));
     // Zaten bir partiye bağlı satırların (product_id dolu) güncel stok
     // durumunu çeker — bu satırın kendi miktarı zaten o partiden düşülmüş
     // olduğundan, gerçek sınır (max_stock) güncel stok + bu satırın halihazırda
@@ -760,7 +745,6 @@ function OrderDetailPageInner() {
       } else {
         updateEditLine(index, { supplier: val });
       }
-      ensureStockCodes(val);
     } else {
       updateEditLine(index, { supplier: val });
     }
@@ -1112,7 +1096,6 @@ function OrderDetailPageInner() {
                                 supplier={line.supplier}
                                 code={line.stock_code}
                                 productId={line.product_id}
-                                codeOptions={stockCodesBySupplier[line.supplier] ?? []}
                                 onCodeChange={(val) => updateEditLine(i, { stock_code: val })}
                                 onBatchSelect={(batch) => {
                                   const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
@@ -1285,7 +1268,6 @@ function OrderDetailPageInner() {
                             supplier={line.supplier}
                             code={line.stock_code}
                             productId={line.product_id}
-                            codeOptions={stockCodesBySupplier[line.supplier] ?? []}
                             onCodeChange={(val) => updateEditLine(i, { stock_code: val })}
                             onBatchSelect={(batch) => {
                               const qty = Math.max(1, Math.round(num(line.quantity)) || 1);

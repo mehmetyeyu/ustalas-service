@@ -9,7 +9,7 @@ import { useToast } from "@/components/ToastProvider";
 import { formatCurrency } from "@/lib/format";
 import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter } from "@/lib/queries";
+import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter, useStockCodes } from "@/lib/queries";
 
 interface Service {
   id: number;
@@ -212,17 +212,21 @@ function SearchableCombobox({
 // Üretim Haftası/Yılı seçici belirir — seçilen parti product_id + Ebat + o
 // partinin mevcut stoğunu (max_stock, sipariş ekranında anlık uyarı için) üst
 // bileşene bildirir.
+const NO_CODES: string[] = [];
+
 function TireBatchPicker({
-  supplier, code, productId, codeOptions, onCodeChange, onBatchSelect,
+  supplier, code, productId, onCodeChange, onBatchSelect,
 }: {
   supplier: string;
   code: string;
   productId: number | null;
-  codeOptions: string[];
   onCodeChange: (code: string) => void;
   onBatchSelect: (batch: StockBatch | null) => void;
 }) {
   const [batches, setBatches] = useState<StockBatch[]>([]);
+  // Tedarikçide stoğu olan kodlar — ortak önbellekten (bkz. useStockCodes);
+  // sipariş/ürün kaydında tazelenir, form açık kalsa da eskimez.
+  const codeOptions = useStockCodes(supplier).data ?? NO_CODES;
 
   useEffect(() => {
     if (!supplier.trim() || !code.trim()) {
@@ -335,7 +339,6 @@ function OrderPageInner() {
     () => Array.from(new Set([...TEDARIKCI_SEED, ...(suppliersData ?? []).map((s) => s.name)])).sort((a, b) => a.localeCompare(b, "tr-TR")),
     [suppliersData]
   );
-  const [stockCodesBySupplier, setStockCodesBySupplier] = useState<Record<string, string[]>>({});
   const sizeOptions = useProductSizes().data ?? NO_STRINGS;
 
   // Oturum/firma ayarları TanStack önbelleğinden (bkz. useMe) — panelden bu
@@ -458,23 +461,10 @@ function OrderPageInner() {
       unit_price: amountToStr(salePrice, 1),
       cost_price: amountToStr(purchasePrice, 1) || "0",
     }]);
-    if (supplier) ensureStockCodes(supplier);
     toast.success(`${batch.code} siparişe eklendi — plakayı girip kaydedin.`);
     plateInputRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillBatch, servicesLoaded]);
-
-  // tracks_size işaretli bir satırda Tedarikçi seçilince, o tedarikçide
-  // stoğu olan ürün kodları (henüz önbellekte yoksa) çekilir.
-  function ensureStockCodes(supplier: string) {
-    if (!supplier.trim() || stockCodesBySupplier[supplier]) return;
-    fetch(`/api/products/stock-codes?supplier=${encodeURIComponent(supplier)}`)
-      .then((r) => r.json())
-      .then((data: string[]) => {
-        if (Array.isArray(data)) setStockCodesBySupplier((prev) => ({ ...prev, [supplier]: data }));
-      })
-      .catch(() => { });
-  }
 
   // Fiyatı girilmemiş hizmetler otomatik doldurmaz — Tutar elle girilir.
   const priceByName = new Map(
@@ -533,7 +523,6 @@ function OrderPageInner() {
       } else {
         updateLine(index, { supplier: val });
       }
-      ensureStockCodes(val);
     } else {
       updateLine(index, { supplier: val });
     }
@@ -828,7 +817,6 @@ function OrderPageInner() {
                                   supplier={line.supplier}
                                   code={line.stock_code}
                                   productId={line.product_id}
-                                  codeOptions={stockCodesBySupplier[line.supplier] ?? []}
                                   onCodeChange={(val) => updateLine(i, { stock_code: val })}
                                   onBatchSelect={(batch) => {
                                     const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
@@ -999,7 +987,6 @@ function OrderPageInner() {
                             supplier={line.supplier}
                             code={line.stock_code}
                             productId={line.product_id}
-                            codeOptions={stockCodesBySupplier[line.supplier] ?? []}
                             onCodeChange={(val) => updateLine(i, { stock_code: val })}
                             onBatchSelect={(batch) => {
                               const qty = Math.max(1, Math.round(num(line.quantity)) || 1);

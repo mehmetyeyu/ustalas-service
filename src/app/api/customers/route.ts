@@ -52,9 +52,7 @@ export async function GET(request: NextRequest) {
         : `SELECT id, name, phone FROM customers WHERE tenant_id = $1 ORDER BY name`,
       [user.tenantId]
     );
-    return NextResponse.json(result.rows, {
-      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" },
-    });
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

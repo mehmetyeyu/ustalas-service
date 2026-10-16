@@ -12,9 +12,7 @@ export async function GET() {
       "SELECT * FROM services WHERE tenant_id = $1 AND is_active = 1 ORDER BY name",
       [user.tenantId]
     );
-    return NextResponse.json(result.rows, {
-      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
-    });
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

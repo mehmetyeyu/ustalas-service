@@ -21,6 +21,8 @@ export const queryKeys = {
   products: ["products"] as const,
   productSizes: ["products", "sizes"] as const,
   productBrands: ["products", "brands"] as const,
+  // Tedarikçi başına stoğu olan ürün kodları (sipariş formundaki öneriler).
+  productStockCodes: (supplier: string) => ["products", "stock-codes", supplier] as const,
   // Siparişlerde gerçekten kullanılmış ödeme şekilleri (filtre seçenekleri).
   orderPaymentTypes: ["orders", "payment-types"] as const,
 };
@@ -98,6 +100,19 @@ export function useProductSizes() {
 }
 export function useProductBrands() {
   return useQuery({ queryKey: queryKeys.productBrands, queryFn: () => fetchJson<string[]>("/api/products/brands"), staleTime: REFERENCE_STALE_MS });
+}
+// Stok bilgisi — satıştan/ürün girişinden hemen sonra doğru olmalı: kısa süre
+// taze sayılır ve "products" öneki altında olduğu için sipariş/ürün kaydında
+// invalidateAfter ile tazelenir (önceden form açık kaldıkça hiç yenilenmiyordu,
+// biten kod önerilmeye devam ediyor, yeni gelen kod görünmüyordu).
+export function useStockCodes(supplier: string) {
+  const s = supplier.trim();
+  return useQuery({
+    queryKey: queryKeys.productStockCodes(s),
+    queryFn: () => fetchJson<string[]>(`/api/products/stock-codes?supplier=${encodeURIComponent(s)}`),
+    enabled: s !== "",
+    staleTime: 30 * 1000,
+  });
 }
 export function useOrderPaymentTypes() {
   return useQuery({ queryKey: queryKeys.orderPaymentTypes, queryFn: () => fetchJson<string[]>("/api/orders/payment-types"), staleTime: REFERENCE_STALE_MS });
