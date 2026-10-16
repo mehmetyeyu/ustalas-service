@@ -241,8 +241,8 @@ function BillingPageContent() {
   const canSwitchPlanNow = daysUntilRenewal !== null && daysUntilRenewal <= 3;
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-xl font-bold text-gray-800 mb-1">Abonelik</h1>
+    <div className="max-w-3xl">
+      <h1 className="text-2xl font-bold text-gray-800 mb-1">Abonelik</h1>
       <p className="text-sm text-gray-500 mb-6">Elevire aboneliğinizi buradan yönetin.</p>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">

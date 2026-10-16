@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
 import { PushNotificationToggle } from "../PushNotificationToggle";
+import { useDialog } from "@/lib/useDialog";
 
 interface TicketListItem {
   id: number;
@@ -44,6 +45,7 @@ export default function DestekPage() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [showNewModal, setShowNewModal] = useState(false);
+  const showNewModalDialog = useDialog(() => setShowNewModal(false));
   const [newSubject, setNewSubject] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [creating, setCreating] = useState(false);
@@ -242,7 +244,7 @@ export default function DestekPage() {
       </div>
 
       {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showNewModalDialog} role="dialog" aria-modal="true" aria-label="Yeni Destek Talebi" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg">
             <h2 className="text-lg font-bold text-gray-800 mb-4">Yeni Destek Talebi</h2>
             <div className="space-y-3">

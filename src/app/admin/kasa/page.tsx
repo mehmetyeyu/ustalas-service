@@ -12,6 +12,7 @@ import { CURRENCY_OPTIONS } from "@/lib/kasalar";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
+import { useDialog } from "@/lib/useDialog";
 
 interface KasaEntry {
   entry_type: "SIPARIS" | "CARI_TAHSILAT" | "MASRAF" | "MANUEL";
@@ -73,6 +74,7 @@ export default function KasaPage() {
   const [dateTo, setDateTo] = useState("");
 
   const [showModal, setShowModal] = useState(false);
+  const showModalDialog = useDialog(() => setShowModal(false));
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [amount, setAmount] = useState("");
@@ -82,6 +84,7 @@ export default function KasaPage() {
   const [saving, setSaving] = useState(false);
 
   const [showManageModal, setShowManageModal] = useState(false);
+  const showManageModalDialog = useDialog(() => setShowManageModal(false));
   const [newKasaName, setNewKasaName] = useState("");
   const [newKasaLinkedType, setNewKasaLinkedType] = useState("");
   const [newKasaCurrency, setNewKasaCurrency] = useState("TRY");
@@ -106,6 +109,7 @@ export default function KasaPage() {
   const [rateSaving, setRateSaving] = useState<string | null>(null);
 
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const showTransferModalDialog = useDialog(() => setShowTransferModal(false));
   const [transferFrom, setTransferFrom] = useState<number | null>(null);
   const [transferTo, setTransferTo] = useState<number | null>(null);
   const [transferAmount, setTransferAmount] = useState("");
@@ -487,23 +491,27 @@ export default function KasaPage() {
           </div>
         )}
 
-        <div className="flex flex-wrap items-end gap-2 ml-auto">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
+        {/* Mobilde iki tarih alanı satırı eşit paylaşır (önceden sağa yaslı,
+            içeriden girintili duruyordu); label'lar alana bağlı. */}
+        <div className="flex w-full sm:w-auto flex-wrap items-end gap-2 sm:ml-auto">
+          <div className="flex-1 sm:flex-none">
+            <label htmlFor="kasa-tarih-baslangic" className="block text-xs font-medium text-gray-500 mb-1">Başlangıç</label>
             <input
+              id="kasa-tarih-baslangic"
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 sm:py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
+          <div className="flex-1 sm:flex-none">
+            <label htmlFor="kasa-tarih-bitis" className="block text-xs font-medium text-gray-500 mb-1">Bitiş</label>
             <input
+              id="kasa-tarih-bitis"
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 sm:py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           {(dateFrom || dateTo) && (
@@ -624,7 +632,7 @@ export default function KasaPage() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showModalDialog} role="dialog" aria-modal="true" aria-label="Para Girişi/Çıkışı" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editingEntryId !== null ? "Kasa Hareketini Düzenle" : "Para Girişi/Çıkışı Ekle"}
@@ -710,7 +718,7 @@ export default function KasaPage() {
       )}
 
       {showManageModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showManageModalDialog} role="dialog" aria-modal="true" aria-label="Kasaları Yönet" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Kasaları Yönet</h2>
 
@@ -875,7 +883,7 @@ export default function KasaPage() {
       )}
 
       {showTransferModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showTransferModalDialog} role="dialog" aria-modal="true" aria-label="Kasalar Arası Transfer" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Kasalar Arası Transfer</h2>
 

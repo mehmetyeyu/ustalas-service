@@ -8,6 +8,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
+import { useDialog } from "@/lib/useDialog";
 
 interface Appointment {
   id: number;
@@ -68,6 +69,7 @@ export default function AppointmentsPage() {
   // ekranındaki zorunluluğun bu yoldan gelen siparişler için de geçerli
   // kalması için.
   const [convertModalId, setConvertModalId] = useState<number | null>(null);
+  const convertModalIdDialog = useDialog(() => setConvertModalId(null));
   const [convertOrderNoInput, setConvertOrderNoInput] = useState("");
 
   async function fetchItems(targetPage = page) {
@@ -310,14 +312,14 @@ export default function AppointmentsPage() {
           </div>
           {total > limit && (
             <div className="flex gap-1 overflow-x-auto">
-              <button
+              <button aria-label="İlk sayfa"
                 onClick={() => setPage(1)}
                 disabled={page === 1}
                 className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 «
               </button>
-              <button
+              <button aria-label="Önceki sayfa"
                 onClick={() => setPage((p) => p - 1)}
                 disabled={page === 1}
                 className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -338,6 +340,7 @@ export default function AppointmentsPage() {
                     <button
                       key={p}
                       onClick={() => setPage(p as number)}
+                    aria-current={page === p ? "page" : undefined}
                       className={`px-3 py-1 rounded border ${page === p
                         ? "bg-blue-600 text-white border-blue-600"
                         : "border-gray-300 hover:bg-gray-100"
@@ -347,14 +350,14 @@ export default function AppointmentsPage() {
                     </button>
                   )
                 )}
-              <button
+              <button aria-label="Sonraki sayfa"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page * limit >= total}
                 className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 ›
               </button>
-              <button
+              <button aria-label="Son sayfa"
                 onClick={() => setPage(Math.ceil(total / limit))}
                 disabled={page * limit >= total}
                 className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"

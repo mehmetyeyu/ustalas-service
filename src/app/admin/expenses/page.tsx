@@ -9,6 +9,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { TRNumberInput } from "@/components/TRNumberInput";
+import { useDialog } from "@/lib/useDialog";
 
 interface Expense {
   id: number;
@@ -96,11 +97,13 @@ export default function ExpensesPage() {
   // Yeni Masraf: Sipariş Oluşturma'daki İşlem Satırları gibi tek seferde
   // birden fazla satır girilebilir (bkz. POST /api/expenses — { items: [...] }).
   const [showAddForm, setShowAddForm] = useState(false);
+  const showAddFormDialog = useDialog(() => setShowAddForm(false));
   const [rows, setRows] = useState<ExpenseRow[]>([emptyRow()]);
   const [addSaving, setAddSaving] = useState(false);
 
   // Düzenle: her zaman tek bir kaydı hedefler, ayrı (küçük) bir form.
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
+  const editExpenseDialog = useDialog(() => setEditExpense(null));
   const [editRow, setEditRow] = useState<ExpenseRow>(emptyRow());
   const [editSaving, setEditSaving] = useState(false);
 
@@ -108,6 +111,7 @@ export default function ExpensesPage() {
   // (bkz. src/app/api/recurring-expenses). Aynı panel içinde inline
   // ekle/düzenle formu (recForm) toggle edilir.
   const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const showRecurringModalDialog = useDialog(() => { setShowRecurringModal(false); setRecFormOpen(false); });
   const [recFormOpen, setRecFormOpen] = useState(false);
   const [recEditingId, setRecEditingId] = useState<number | null>(null);
   const [recForm, setRecForm] = useState(emptyRecurringForm());
@@ -516,7 +520,7 @@ export default function ExpensesPage() {
 
       {/* Yeni Masraf — çoklu satır formu */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showAddFormDialog} role="dialog" aria-modal="true" aria-label="Yeni Masraf" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Yeni Masraf Ekle</h2>
 
@@ -712,7 +716,7 @@ export default function ExpensesPage() {
 
       {/* Düzenle — tek kayıt */}
       {editExpense && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={editExpenseDialog} role="dialog" aria-modal="true" aria-label="Masrafı Düzenle" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Masraf Düzenle</h2>
 
@@ -801,7 +805,7 @@ export default function ExpensesPage() {
 
       {/* Sabit Giderler — Masraflar sayfasına gömülü yönetim paneli */}
       {showRecurringModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showRecurringModalDialog} role="dialog" aria-modal="true" aria-label="Sabit Giderler" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-1">
               <h2 className="text-xl font-bold text-gray-800">Sabit Giderler</h2>

@@ -39,6 +39,11 @@ export interface JwtPayload {
   // her istekte DB'den taze okunur, JWT'ye hiç gömülmez.
   isPrimaryAdmin?: boolean;
   onboardingTourCompletedAt?: string | null;
+  // Panel görünümü tercihleri (bkz. database/schema.sql ui_version notu) —
+  // aynı kullanıcı sorgusundan gelir, ek sorgu yok.
+  uiVersion?: "v1" | "v2";
+  uiTheme?: "system" | "light" | "dark";
+  uiV2Available?: boolean;
   iat?: number;
   iatMs?: number;
 }
@@ -81,6 +86,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
   const result = await pool.query(
     `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
             u.is_primary_admin, u.onboarding_tour_completed_at,
+            u.ui_version, u.ui_theme, u.ui_v2_available,
             u.tenant_id, t.name AS tenant_name, t.is_active AS tenant_is_active,
             t.billing_status, t.trial_ends_at, t.plan,
             t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error
@@ -133,6 +139,9 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     billingLastPaymentError: user.billing_last_payment_error ?? null,
     isPrimaryAdmin: user.is_primary_admin ?? false,
     onboardingTourCompletedAt: user.onboarding_tour_completed_at ?? null,
+    uiVersion: user.ui_version === "v2" ? "v2" : "v1",
+    uiTheme: user.ui_theme === "light" || user.ui_theme === "dark" ? user.ui_theme : "system",
+    uiV2Available: user.ui_v2_available ?? false,
   };
 }
 

@@ -15,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useServices, useSuppliers, useOrderPaymentTypes, invalidateAfter } from "@/lib/queries";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
+import { useDialog } from "@/lib/useDialog";
 
 const IMPORT_BATCH_SIZE = 20;
 
@@ -57,6 +58,20 @@ function MultiSelectDropdown({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // Açık listede Escape yalnızca listeyi kapatır (Filtrele penceresi açık
+  // kalır) — capture aşamasında, pencerenin Escape dinleyicisinden önce.
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setOpen(false);
+      buttonRef.current?.focus();
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -192,18 +207,35 @@ const COLUMNS: OrderColumnDef[] = [
   },
   {
     key: "customer_name", label: "Müşteri", defaultVisible: true, skeletonWidth: "w-28",
-    tdClassName: "px-4 py-3 text-gray-700 whitespace-nowrap",
+    // Uzun şirket unvanları sütunu genişletip diğer sütunları sağdaki sabit
+    // Statü sütununun altına itiyordu — Açıklama gibi sınırlı, tam ad title'da.
+    tdClassName: "px-4 py-3 text-gray-700 whitespace-nowrap max-w-[16rem] truncate",
+    title: (r) => r.customer_name || undefined,
     cell: (r) => r.customer_name || "-",
   },
   {
     key: "plate", label: "Plaka", defaultVisible: true, skeletonWidth: "w-16",
     tdClassName: "px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap",
-    cell: (r) => r.plate || "—",
+    // v2: plaka rozeti — eski görünümde span stilsiz kalır, görünüm değişmez.
+    cell: (r) => r.plate ? (
+      <span className="v2:inline-block v2:rounded-md v2:border v2:border-v2-line-strong v2:bg-v2-surface-2 v2:px-2 v2:py-0.5 v2:text-[13px] v2:font-medium">{r.plate}</span>
+    ) : "—",
   },
   {
     key: "service_name", label: "Yapılan İşlem", defaultVisible: true, skeletonWidth: "w-24",
     tdClassName: "px-4 py-3 text-gray-700 whitespace-nowrap",
-    cell: (r) => r.service_name || "-",
+    // v2: işlemin altında ebat/ürün ve adet (taslaktaki iki satırlı hücre) —
+    // eski görünümde bu alt satır gizli.
+    cell: (r) => (
+      <>
+        {r.service_name || "-"}
+        {(r.size_desc || r.quantity != null) && (
+          <span className="hidden v2:block text-xs text-v2-fg-subtle">
+            {[r.size_desc, r.quantity != null ? `${r.quantity} adet` : null].filter(Boolean).join(" · ")}
+          </span>
+        )}
+      </>
+    ),
   },
   {
     key: "supplier", label: "Tedarikçi", defaultVisible: true, skeletonWidth: "w-20",
@@ -256,12 +288,23 @@ const COLUMNS: OrderColumnDef[] = [
   {
     key: "payment_type", label: "Ödeme Şekli", defaultVisible: true, skeletonWidth: "w-20",
     tdClassName: "px-4 py-3 text-gray-600 whitespace-nowrap",
-    cell: (r) =>
-      r.payment_type === "Cari" && r.cari_settled
-        ? r.cari_paid_via || "Cari (Ödendi)"
-        : r.payment_type === "Cari" && r.cari_remaining_amount != null
-        ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
-        : r.payment_type || "-",
+    // v2: ödeme şekli rozet olarak (açık cari vurgulu) — eski görünümde
+    // span stilsiz kalır.
+    cell: (r) => {
+      const text =
+        r.payment_type === "Cari" && r.cari_settled
+          ? r.cari_paid_via || "Cari (Ödendi)"
+          : r.payment_type === "Cari" && r.cari_remaining_amount != null
+          ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
+          : r.payment_type || "-";
+      if (!r.payment_type) return text;
+      const openCari = r.payment_type === "Cari" && !r.cari_settled;
+      return (
+        <span className={`v2:inline-block v2:rounded-md v2:px-2 v2:py-0.5 v2:text-xs ${openCari ? "v2:bg-v2-info-bg v2:text-v2-info-fg v2:font-semibold" : "v2:bg-v2-muted v2:text-v2-fg v2:font-medium"}`}>
+          {text}
+        </span>
+      );
+    },
   },
   {
     key: "notes", label: "Açıklama", defaultVisible: true, skeletonWidth: "w-32",
@@ -278,6 +321,101 @@ const COLUMNS: OrderColumnDef[] = [
 ];
 
 const SKELETON_ROWS = 8;
+
+// Yeni görünüm araç çubuğundaki tek tıkla tarih seçimi — değerler Filtrele
+// modalındaki Tarih seçimiyle aynı (bkz. getDateRange).
+const DATE_PRESETS = [
+  { value: "bugun", label: "Bugün" },
+  { value: "bu_hafta", label: "Bu Hafta" },
+  { value: "bu_ay", label: "Bu Ay" },
+  { value: "", label: "Tümü" },
+] as const;
+
+const DATE_FILTER_LABEL: Record<string, string> = {
+  bugun: "Bugün", bu_hafta: "Bu hafta", bu_ay: "Bu ay", ozel: "Seçili aralık", "": "Tüm zamanlar",
+};
+
+// Yeni görünümün özet kartları — eski görünümdeki tek satırlık özet kutusuyla
+// aynı veriler (aktif filtrelere göre /api/orders GET'ten), artı sipariş ve
+// bekleyen sipariş sayısı. "Bekleyen" kartı tıklanınca Statü filtresini
+// Beklemede'ye çevirir (tekrar tıklayınca kaldırır).
+function OrdersKpiCards(props: {
+  loading: boolean;
+  totalAmount: number;
+  totalKar: number;
+  orderCount: number;
+  pendingCount: number;
+  dateFilter: string;
+  workingDaySpan: number;
+  workingHoursConfigured: boolean;
+  avgDailyAmount: number;
+  avgDailyKar: number;
+  pendingActive: boolean;
+  onTogglePending: () => void;
+}) {
+  const { loading, totalAmount, totalKar, workingDaySpan } = props;
+  const card = "flex min-w-0 flex-col gap-1.5 rounded-xl border border-v2-line bg-v2-surface px-4 py-4 text-left sm:px-5";
+  const label = "text-[13px] font-medium text-v2-fg-muted";
+  const value = "text-xl sm:text-[26px] font-semibold leading-tight tracking-tight tabular-nums";
+  const sub = "text-xs text-v2-fg-muted";
+  const skeleton = <div className="h-8 w-32 animate-pulse rounded bg-v2-muted" />;
+  const karPct = totalAmount > 0 ? (totalKar / totalAmount) * 100 : null;
+
+  return (
+    <section aria-label="Özet" className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className={card}>
+        <span className={label}>Toplam Tutar</span>
+        {loading ? skeleton : <span className={`${value} text-v2-fg`}>{formatCurrency(totalAmount)}</span>}
+        <span className={sub}>
+          {DATE_FILTER_LABEL[props.dateFilter] ?? "Seçili aralık"}
+          {!loading && ` · ${props.orderCount} sipariş`}
+        </span>
+      </div>
+      <div className={card}>
+        <span className={label}>Kâr</span>
+        {loading ? skeleton : (
+          <span className={`${value} ${totalKar >= 0 ? "text-v2-success-fg" : "text-v2-danger-fg"}`}>{formatCurrency(totalKar)}</span>
+        )}
+        <span className={sub}>
+          {!loading && karPct != null ? `Tutarın %${karPct.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}'i` : "\u00a0"}
+        </span>
+      </div>
+      <div className={card}>
+        <span className={label}>Ort. Günlük Tutar</span>
+        {loading ? skeleton : workingDaySpan > 0 ? (
+          <span className={`${value} text-v2-fg`}>{formatCurrency(props.avgDailyAmount)}</span>
+        ) : (
+          <span className={`${value} text-v2-fg-subtle`}>—</span>
+        )}
+        {!loading && workingDaySpan > 0 ? (
+          <span className={sub}>
+            {workingDaySpan} çalışma günü · kâr{" "}
+            <span className={props.avgDailyKar >= 0 ? "text-v2-success-fg" : "text-v2-danger-fg"}>{formatCurrency(props.avgDailyKar)}</span>
+          </span>
+        ) : !loading && !props.workingHoursConfigured ? (
+          <Link href="/admin/appointments/ayarlar" className="text-xs font-medium text-v2-link hover:underline">
+            Hesaplamak için çalışma saatlerini girin
+          </Link>
+        ) : (
+          <span className={sub}>Çalışma günlerine göre</span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={props.onTogglePending}
+        aria-pressed={props.pendingActive}
+        title={props.pendingActive ? "Statü filtresini kaldır" : "Sadece bekleyen siparişleri göster"}
+        className={`${card} transition-colors hover:border-v2-line-strong ${props.pendingActive ? "ring-2 ring-v2-primary/40" : ""}`}
+      >
+        <span className={label}>Bekleyen</span>
+        {loading ? skeleton : (
+          <span className={`${value} ${props.pendingCount > 0 ? "text-v2-warning-fg" : "text-v2-fg"}`}>{props.pendingCount} sipariş</span>
+        )}
+        <span className={sub}>{props.pendingActive ? "Filtre uygulandı · kaldırmak için tıklayın" : "Ödemesi alınmamış"}</span>
+      </button>
+    </section>
+  );
+}
 
 interface OrderRow {
   id: number;
@@ -388,11 +526,21 @@ export default function OrdersPage() {
     3: { cell: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[220px] sm:min-w-[220px] sm:max-w-[220px]", statusOffset: "sm:right-[220px]" },
     4: { cell: "w-[122px] min-w-[122px] max-w-[122px] sm:w-[285px] sm:min-w-[285px] sm:max-w-[285px]", statusOffset: "sm:right-[285px]" },
   };
-  const orderActionsWidth = ORDER_ACTIONS_WIDTH[orderActionCount];
+  // Yeni görünümde işlemler masaüstünde de yalnızca ikon (34px kare):
+  // genişlik = n×34px buton + (n−1)×2px boşluk + 24px hücre iç dolgusu.
+  const ORDER_ACTIONS_WIDTH_V2: Record<number, { cell: string; statusOffset: string }> = {
+    1: { cell: "w-[44px] min-w-[44px] max-w-[44px] sm:w-[58px] sm:min-w-[58px] sm:max-w-[58px]", statusOffset: "sm:right-[58px]" },
+    2: { cell: "w-[70px] min-w-[70px] max-w-[70px] sm:w-[94px] sm:min-w-[94px] sm:max-w-[94px]", statusOffset: "sm:right-[94px]" },
+    3: { cell: "w-[96px] min-w-[96px] max-w-[96px] sm:w-[130px] sm:min-w-[130px] sm:max-w-[130px]", statusOffset: "sm:right-[130px]" },
+    4: { cell: "w-[122px] min-w-[122px] max-w-[122px] sm:w-[166px] sm:min-w-[166px] sm:max-w-[166px]", statusOffset: "sm:right-[166px]" },
+  };
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [totalKar, setTotalKar] = useState(0);
+  // Yeni görünümün özet kartları için (bkz. /api/orders GET order_count/pending_count).
+  const [orderCount, setOrderCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   // Ortalama günlük tutar/kâr için — bkz. /api/orders GET. workingDaySpan,
   // Randevu Ayarları'ndaki GERÇEK çalışma günlerine göre hesaplanır (ör.
   // Pazar kapalıysa sayılmaz); workingHoursConfigured false ise bu ayar hiç
@@ -422,6 +570,7 @@ export default function OrdersPage() {
   const debouncedSearch = useDebouncedValue(search, 350);
   const [fieldFilters, setFieldFilters] = useState<FieldFilters>(EMPTY_FIELD_FILTERS);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const filterDialog = useDialog(() => setShowFilterModal(false));
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
@@ -450,6 +599,8 @@ export default function OrdersPage() {
   // bu Excel içe aktarma normalizasyonu için kullanılır (bkz. handleImport).
   // AuthContext store'undan (bkz. /api/auth/me) — ayrı /api/settings isteği yok.
   const { user: authUser, loading: authLoading } = useAuth();
+  const v2 = authUser?.uiVersion === "v2";
+  const orderActionsWidth = (v2 ? ORDER_ACTIONS_WIDTH_V2 : ORDER_ACTIONS_WIDTH)[orderActionCount];
   const settingsPaymentTypes = authUser?.paymentTypes.length ? authUser.paymentTypes : DEFAULT_PAYMENT_TYPES;
   // Genel Ayarlar'daki varsayılan tarih filtresi store'a gelene kadar ilk
   // fetchOrders çağrısını erteler — yoksa sayfa açılışında önce "Tümü" ile
@@ -496,7 +647,7 @@ export default function OrdersPage() {
     return (
       <th
         onClick={() => toggleSort(sortK)}
-        className={`${narrow ? "px-2" : "px-4"} py-3 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${ALIGN_CLASS[align]} ${stickyClassName ?? ""}`}
+        className={`${narrow ? "px-2" : "px-4"} py-3 whitespace-nowrap cursor-pointer select-none ${v2 ? "text-[11px] font-semibold uppercase tracking-wider text-v2-fg-muted hover:text-v2-fg" : "font-medium text-gray-600 hover:text-gray-900"} ${ALIGN_CLASS[align]} ${stickyClassName ?? ""}`}
       >
         <span className="inline-flex items-center gap-1">
           {label}
@@ -562,6 +713,8 @@ export default function OrdersPage() {
     setTotal(data.total ?? 0);
     setTotalAmount(data.totalAmount ?? 0);
     setTotalKar(data.totalKar ?? 0);
+    setOrderCount(data.orderCount ?? 0);
+    setPendingCount(data.pendingCount ?? 0);
     setWorkingHoursConfigured(data.workingHoursConfigured ?? true);
     setWorkingDaySpan(data.workingDaySpan ?? 0);
     setLoading(false);
@@ -777,7 +930,13 @@ export default function OrdersPage() {
   return (
     <div onClick={() => { setShowColPicker(false); setShowMobileActions(false); }}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Sipariş Listesi</h1>
+        {v2 ? (
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-v2-fg">Siparişler</h1>
+          </div>
+        ) : (
+          <h1 className="text-2xl font-bold text-gray-800">Sipariş Listesi</h1>
+        )}
         <div className="flex gap-1.5 sm:gap-2">
           <input
             type="file"
@@ -821,7 +980,7 @@ export default function OrdersPage() {
             </button>
             <Link
               href="/"
-              className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium whitespace-nowrap"
+              className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium whitespace-nowrap v2:hidden"
             >
               + Sipariş Ekle
             </Link>
@@ -869,7 +1028,7 @@ export default function OrdersPage() {
                 <Link
                   href="/"
                   onClick={() => setShowMobileActions(false)}
-                  className="block px-4 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                  className="block px-4 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50 v2:hidden"
                 >
                   + Sipariş Ekle
                 </Link>
@@ -886,6 +1045,23 @@ export default function OrdersPage() {
           }`}>
           {importMsg}
         </div>
+      )}
+
+      {v2 && (
+        <OrdersKpiCards
+          loading={loading}
+          totalAmount={totalAmount}
+          totalKar={totalKar}
+          orderCount={orderCount}
+          pendingCount={pendingCount}
+          dateFilter={dateFilter}
+          workingDaySpan={workingDaySpan}
+          workingHoursConfigured={workingHoursConfigured}
+          avgDailyAmount={avgDailyAmount}
+          avgDailyKar={avgDailyKar}
+          pendingActive={statusFilter === "BEKLEMEDE"}
+          onTogglePending={() => setStatusFilter((v) => (v === "BEKLEMEDE" ? "" : "BEKLEMEDE"))}
+        />
       )}
 
       {/* Filtreler */}
@@ -927,7 +1103,29 @@ export default function OrdersPage() {
 
 
         <div className="flex flex-wrap items-stretch gap-1.5 sm:gap-3 sm:ml-auto">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg sm:shrink-0">
+          {/* Yeni görünüm: tek tıkla tarih aralığı (Filtrele modalındaki
+              Tarih seçimiyle aynı state). Özet kutusu yerine üstteki kartlar. */}
+          {v2 && (
+            <div role="group" aria-label="Tarih aralığı" className="flex gap-0.5 rounded-lg bg-v2-muted p-[3px]">
+              {DATE_PRESETS.map((p) => {
+                const active = dateFilter === p.value;
+                return (
+                  <button
+                    key={p.value || "all"}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => { updateDateFilter(p.value); setCustomFrom(""); setCustomTo(""); }}
+                    className={`h-8 rounded-md px-3 text-[13px] whitespace-nowrap transition-colors ${
+                      active ? "bg-v2-surface font-semibold text-v2-fg shadow-sm" : "font-medium text-v2-fg-muted hover:text-v2-fg"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className={`${v2 ? "hidden" : "flex"} flex-wrap items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-lg sm:shrink-0`}>
             <div>
               <div className="text-[9px] sm:text-[10px] font-medium text-gray-500 uppercase tracking-wide">Toplam Tutar</div>
               {loading ? (
@@ -1002,6 +1200,7 @@ export default function OrdersPage() {
             </button>
             {showColPicker && (
               <ColumnPickerMenu
+                onClose={() => setShowColPicker(false)}
                 columns={menuColumns}
                 visibleCols={visibleCols}
                 onToggle={toggleVisible}
@@ -1021,6 +1220,10 @@ export default function OrdersPage() {
       {/* Filtreleme Modalı */}
       {showFilterModal && (
         <div
+          ref={filterDialog}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Siparişleri Filtrele"
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowFilterModal(false)}
         >
@@ -1031,7 +1234,7 @@ export default function OrdersPage() {
             <div className="p-6 pb-4">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-bold text-gray-800">Siparişleri Filtrele</h2>
-              <button onClick={() => setShowFilterModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Kapat" onClick={() => setShowFilterModal(false)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1246,7 +1449,7 @@ export default function OrdersPage() {
                 {visibleOrderedColumns.map((c) => (
                   <SortTh key={c.key} sortK={c.key} label={c.label} align={c.align} narrow={c.narrow} />
                 ))}
-                <SortTh sortK="status" label="Statü" align="center" stickyClassName={`sm:sticky ${orderActionsWidth.statusOffset} sm:z-20 sm:bg-gray-50 sm:shadow-[-1px_0_0_0_#e5e7eb]`} />
+                <SortTh sortK="status" label="Statü" align="center" stickyClassName={`sm:sticky ${orderActionsWidth.statusOffset} sm:z-20 sm:bg-gray-50 ${v2 ? "sm:shadow-[-1px_0_0_0_rgb(var(--v2-line))]" : "sm:shadow-[-1px_0_0_0_#e5e7eb]"}`} />
                 <th className={`px-1.5 py-3 sticky right-0 z-20 bg-gray-50 ${orderActionsWidth.cell}`}></th>
               </tr>
             </thead>
@@ -1320,19 +1523,30 @@ export default function OrdersPage() {
                           {c.cell(r)}
                         </td>
                       ))}
-                      <td className={`px-1.5 py-3 text-center sm:sticky ${orderActionsWidth.statusOffset} sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 sm:shadow-[-1px_0_0_0_#f3f4f6]`}>
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                            r.status === "TAMAMLANDI"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
-                        </span>
+                      <td className={`px-1.5 py-3 text-center sm:sticky ${orderActionsWidth.statusOffset} sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 ${v2 ? "sm:shadow-[-1px_0_0_0_rgb(var(--v2-line))]" : "sm:shadow-[-1px_0_0_0_#f3f4f6]"}`}>
+                        {v2 ? (
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${
+                              r.status === "TAMAMLANDI" ? "bg-v2-success-bg text-v2-success-fg" : "bg-v2-warning-bg text-v2-warning-fg"
+                            }`}
+                          >
+                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+                            {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                              r.status === "TAMAMLANDI"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-yellow-100 text-yellow-700"
+                            }`}
+                          >
+                            {r.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
+                          </span>
+                        )}
                       </td>
                       <td className={`px-1 sm:px-3 py-3 sticky right-0 z-10 bg-white group-hover:bg-gray-50 ${orderActionsWidth.cell}`}>
-                        <div className="flex items-center justify-center sm:justify-start gap-0.5 sm:gap-3">
+                        <div className={`flex items-center justify-center gap-0.5 ${v2 ? "sm:justify-end sm:gap-0.5 [&>*]:sm:h-[34px] [&>*]:sm:w-[34px] [&>*]:sm:justify-center [&>*]:sm:rounded-md [&>*:hover]:sm:!bg-v2-muted [&_span]:sm:hidden" : "sm:justify-start sm:gap-3"}`}>
                           <Link prefetch={false}
                             href={`/admin/orders/${r.id}`}
                             title="Detay"
@@ -1421,14 +1635,14 @@ export default function OrdersPage() {
         </div>
         {total > limit && (
           <div className="flex gap-1 overflow-x-auto">
-            <button
+            <button aria-label="İlk sayfa"
               onClick={() => setPage(1)}
               disabled={page === 1}
               className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               «
             </button>
-            <button
+            <button aria-label="Önceki sayfa"
               onClick={() => setPage((p) => p - 1)}
               disabled={page === 1}
               className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1449,6 +1663,7 @@ export default function OrdersPage() {
                   <button
                     key={p}
                     onClick={() => setPage(p as number)}
+                    aria-current={page === p ? "page" : undefined}
                     className={`px-3 py-1 rounded border ${page === p
                       ? "bg-blue-600 text-white border-blue-600"
                       : "border-gray-300 hover:bg-gray-100"
@@ -1458,14 +1673,14 @@ export default function OrdersPage() {
                   </button>
                 )
               )}
-            <button
+            <button aria-label="Sonraki sayfa"
               onClick={() => setPage((p) => p + 1)}
               disabled={page * limit >= total}
               className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ›
             </button>
-            <button
+            <button aria-label="Son sayfa"
               onClick={() => setPage(Math.ceil(total / limit))}
               disabled={page * limit >= total}
               className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"

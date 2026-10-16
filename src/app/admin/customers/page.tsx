@@ -14,6 +14,7 @@ import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
+import { useDialog } from "@/lib/useDialog";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
@@ -101,6 +102,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const showFormDialog = useDialog(() => setShowForm(false));
   const [editItem, setEditItem] = useState<Customer | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -145,13 +147,16 @@ export default function CustomersPage() {
   }
 
   const [ordersModalCustomer, setOrdersModalCustomer] = useState<Customer | null>(null);
+  const ordersModalCustomerDialog = useDialog(() => setOrdersModalCustomer(null));
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ledgerModalCustomer, setLedgerModalCustomer] = useState<Customer | null>(null);
+  const ledgerModalCustomerDialog = useDialog(() => setLedgerModalCustomer(null));
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [ledgerBalance, setLedgerBalance] = useState(0);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [paymentModalCustomer, setPaymentModalCustomer] = useState<Customer | null>(null);
+  const paymentModalCustomerDialog = useDialog(() => setPaymentModalCustomer(null));
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<number | null>(null);
   const [paymentDirection, setPaymentDirection] = useState<1 | -1>(-1);
@@ -450,6 +455,7 @@ export default function CustomersPage() {
           </button>
           {showColPicker && (
             <ColumnPickerMenu
+              onClose={() => setShowColPicker(false)}
               columns={menuColumns}
               visibleCols={visibleCols}
               onToggle={toggleVisible}
@@ -515,12 +521,17 @@ export default function CustomersPage() {
                             <span className="hidden sm:inline">Cari</span>
                           </button>
                         )}
-                        {c.order_count > 0 && canViewOrders && (
+                        {/* Siparişi olmayan müşteride buton görünmez ama yerini korur —
+                            yoksa satırlardaki Cari/Düzenle/Sil hizası kayıyordu. */}
+                        {canViewOrders && (
                           <button
                             onClick={() => openOrders(c)}
                             title="Siparişler"
                             aria-label="Siparişler"
-                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-600 hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-900 text-xs font-medium"
+                            disabled={!(c.order_count > 0)}
+                            aria-hidden={c.order_count > 0 ? undefined : true}
+                            tabIndex={c.order_count > 0 ? undefined : -1}
+                            className="flex items-center gap-1 p-1 sm:p-0 rounded text-gray-600 disabled:invisible hover:bg-gray-100 sm:hover:bg-transparent hover:text-gray-900 text-xs font-medium"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
@@ -566,7 +577,7 @@ export default function CustomersPage() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showFormDialog} role="dialog" aria-modal="true" aria-label="Müşteri Formu" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editItem ? "Müşteri Düzenle" : "Yeni Müşteri Ekle"}
@@ -616,14 +627,14 @@ export default function CustomersPage() {
 
       {/* Siparişler Modal */}
       {ordersModalCustomer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={ordersModalCustomerDialog} role="dialog" aria-modal="true" aria-label="Müşteri Siparişleri" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between mb-5">
               <div>
                 <h2 className="text-xl font-bold text-gray-800">{ordersModalCustomer.name} — Siparişler</h2>
                 {ordersModalCustomer.phone && <p className="text-xs text-gray-400 mt-0.5">{ordersModalCustomer.phone}</p>}
               </div>
-              <button onClick={() => setOrdersModalCustomer(null)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Kapat" onClick={() => setOrdersModalCustomer(null)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -683,7 +694,7 @@ export default function CustomersPage() {
 
       {/* Cari Hareketleri Modal */}
       {ledgerModalCustomer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={ledgerModalCustomerDialog} role="dialog" aria-modal="true" aria-label="Cari Hareketleri" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between mb-5">
               <div>
@@ -692,7 +703,7 @@ export default function CustomersPage() {
                   Bakiye: {formatCurrency(Math.abs(ledgerBalance))} {ledgerBalance > 0.009 ? "(Borçlu)" : ledgerBalance < -0.009 ? "(Alacaklı)" : ""}
                 </p>
               </div>
-              <button onClick={() => setLedgerModalCustomer(null)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Kapat" onClick={() => setLedgerModalCustomer(null)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -822,7 +833,7 @@ export default function CustomersPage() {
 
       {/* Tahsilat Al / Borç Ekle Modal */}
       {paymentModalCustomer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+        <div ref={paymentModalCustomerDialog} role="dialog" aria-modal="true" aria-label="Tahsilat / Borç" className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {paymentModalCustomer.name}{editingEntryId !== null ? " — Hareketi Düzenle" : ""}

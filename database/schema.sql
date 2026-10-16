@@ -1663,3 +1663,17 @@ ALTER TABLE storage ADD COLUMN IF NOT EXISTS load_speed_index VARCHAR(20);
 -- arama yapılmış oluyordu. Eski index KALDIRILMADI (customer_name'in tek
 -- başına kullanıldığı başka bir yer olup olmadığı net değil), bu sadece ek.
 CREATE INDEX IF NOT EXISTS orders_tenant_customer_name_idx ON orders(tenant_id, customer_name);
+
+-- Yeni panel görünümü (v2, "premium kurumsal" tasarım) — eski (v1) ile bir
+-- süre yan yana yaşar, kullanıcı "Yeni görünüme geç" ile kendisi geçer.
+-- ui_version: kullanıcının seçtiği görünüm ('v1' = bugünkü, 'v2' = yeni).
+-- ui_theme: yalnızca v2'de anlamlı — 'system' (cihazın açık/koyu ayarını
+--   takip eder), 'light' veya 'dark'. Kullanıcı başına saklanır, her cihazda
+--   geçerli olur.
+-- ui_v2_available: bu kullanıcı yeni görünüme geçebilir mi (banner'ı görür
+--   mü). Kademeli açılış için — önce tek tek hesaplara açılır, sonra tüm
+--   yöneticilere tek bir UPDATE ile. Banner yalnızca yöneticilere gösterilir
+--   (bkz. admin/layout.tsx).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_version VARCHAR(4) NOT NULL DEFAULT 'v1';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_theme VARCHAR(8) NOT NULL DEFAULT 'system';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_v2_available BOOLEAN NOT NULL DEFAULT false;

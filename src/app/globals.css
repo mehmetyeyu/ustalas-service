@@ -1,3 +1,443 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Yeni panel görünümü (v2) renk sistemi. Açık tema değişkenleri :root'ta da
+ * tanımlı — iki görünümün ortak kullandığı yeni düzenli sayfalar (ör. sipariş
+ * detayı) eski görünümde de açık temayla çalışsın; eski sınıfların
+ * yeniden eşlenmesi (aşağıda) yine yalnızca data-ui="v2" iken devrede. Değerler
+ * boşlukla ayrılmış RGB kanalları (Tailwind'de opaklık için:
+ * tailwind.config.ts → colors.v2). Açık tema varsayılan, koyu tema
+ * data-theme="dark" ile. Hangisinin uygulanacağına src/lib/uiTheme.ts karar
+ * verir (kullanıcı tercihi: Açık / Koyu / Sistem).
+ */
+:root, html[data-ui="v2"] {
+  --v2-bg: 244 246 249;
+  --v2-surface: 255 255 255;
+  --v2-surface-2: 250 251 252;
+  --v2-muted: 241 243 247;
+  --v2-line: 227 231 237;
+  --v2-line-strong: 220 225 232;
+  --v2-fg: 15 23 42;
+  --v2-fg-muted: 71 85 105;
+  --v2-fg-subtle: 100 116 139;
+  --v2-primary: 30 78 156;
+  --v2-primary-hover: 22 59 120;
+  --v2-primary-soft: 232 238 248;
+  --v2-link: 30 78 156;
+  --v2-sidebar: 14 26 43;
+  --v2-sidebar-fg: 195 204 218;
+  --v2-sidebar-muted: 147 161 181;
+  --v2-sidebar-active: 27 45 71;
+  --v2-sidebar-line: 31 48 72;
+  --v2-accent: 110 160 240;
+  --v2-success-bg: 230 244 236;
+  --v2-success-fg: 15 94 53;
+  --v2-warning-bg: 253 241 225;
+  --v2-warning-fg: 138 52 16;
+  --v2-info-bg: 238 242 251;
+  --v2-info-fg: 30 63 122;
+  --v2-danger-bg: 254 236 236;
+  --v2-danger-fg: 155 28 28;
+  color-scheme: light;
+}
+
+html[data-ui="v2"][data-theme="dark"] {
+  --v2-bg: 10 15 22;
+  --v2-surface: 17 24 35;
+  --v2-surface-2: 12 18 26;
+  --v2-muted: 28 42 64;
+  --v2-line: 31 43 61;
+  --v2-line-strong: 38 50 70;
+  --v2-fg: 230 235 242;
+  --v2-fg-muted: 169 180 196;
+  --v2-fg-subtle: 133 146 166;
+  --v2-primary: 53 103 200;
+  --v2-primary-hover: 75 125 220;
+  --v2-primary-soft: 28 47 80;
+  --v2-link: 141 180 245;
+  --v2-sidebar: 7 11 17;
+  --v2-sidebar-fg: 169 180 196;
+  --v2-sidebar-muted: 133 146 166;
+  --v2-sidebar-active: 21 35 58;
+  --v2-sidebar-line: 23 33 49;
+  --v2-accent: 110 160 240;
+  --v2-success-bg: 15 44 28;
+  --v2-success-fg: 127 211 162;
+  --v2-warning-bg: 51 36 15;
+  --v2-warning-fg: 244 194 122;
+  --v2-info-bg: 23 40 74;
+  --v2-info-fg: 180 204 246;
+  --v2-danger-bg: 58 20 20;
+  --v2-danger-fg: 248 160 160;
+  color-scheme: dark;
+}
+
+/* body.bg-gray-50 (kök layout) aşağıdaki eşlemeyle ikinci yüzey rengine
+   dönüşüyordu — zemin tema zemini olsun diye sınıfla birlikte hedeflenir. */
+html[data-ui="v2"] body,
+html[data-ui="v2"] body.bg-gray-50 {
+  background: rgb(var(--v2-bg));
+  color: rgb(var(--v2-fg));
+  font-family: var(--font-v2-sans), system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Yeni görünüm tercihi olan kullanıcıda, tercih sunucudan gelene kadar eski
+   menü/banner bir an görünmesin (bkz. admin/layout.tsx v1-chrome). */
+html[data-ui="v2"] .v1-chrome { display: none; }
+
+/*
+ * v2: mevcut sayfaların (henüz ayrı ayrı yenilenmemiş olanlar dahil) ortak
+ * renk sınıflarını yeni renk sistemine eşler — her sayfanın ikinci bir
+ * kopyasını yazmak yerine aynı sayfa iki görünümde de çalışır, koyu mod
+ * tüm sayfalarda tek seferde devreye girer. Yalnızca <html data-ui="v2">
+ * altında; eski görünüm birebir aynı kalır. Sayfaya özel rötuşlar için
+ * Tailwind'in v2: ön eki (tailwind.config.ts) kullanılır.
+ * Seçiciler html[data-ui] ile başladığından Tailwind'in tek sınıflı
+ * kurallarından daha özeldir; hover/focus/disabled durumları da ayrıca
+ * eşlenir (yoksa taban eşleme onları ezerdi).
+ */
+html[data-ui="v2"] .bg-white { background-color: rgb(var(--v2-surface)); }
+html[data-ui="v2"] .bg-gray-50 { background-color: rgb(var(--v2-surface-2)); }
+html[data-ui="v2"] .bg-gray-100 { background-color: rgb(var(--v2-muted)); }
+html[data-ui="v2"] .bg-gray-200 { background-color: rgb(var(--v2-line)); }
+html[data-ui="v2"] .hover\:bg-gray-50:hover { background-color: rgb(var(--v2-muted) / 0.6); }
+html[data-ui="v2"] .hover\:bg-gray-100:hover { background-color: rgb(var(--v2-muted)); }
+/* Renkli üzerine-gelme zeminleri (ör. Ürünler'deki "Hangi partiden
+   satılacak?" menüsü hover:bg-green-50) — eşlenmezse koyu temada açık
+   pastel zemin üzerinde açık renk yazı okunmuyordu. */
+html[data-ui="v2"] .hover\:bg-gray-200:hover { background-color: rgb(var(--v2-line-strong)); }
+html[data-ui="v2"] .hover\:bg-green-50:hover { background-color: rgb(var(--v2-success-bg)); }
+html[data-ui="v2"] .hover\:bg-blue-100:hover { background-color: rgb(var(--v2-primary-soft)); }
+html[data-ui="v2"] :is(.hover\:bg-amber-100, .hover\:bg-amber-200):hover { background-color: rgb(var(--v2-warning-bg)); }
+
+html[data-ui="v2"] .text-gray-900,
+html[data-ui="v2"] .text-gray-800,
+html[data-ui="v2"] .text-gray-700 { color: rgb(var(--v2-fg)); }
+html[data-ui="v2"] .text-gray-600 { color: rgb(var(--v2-fg-muted)); }
+html[data-ui="v2"] .text-gray-500,
+html[data-ui="v2"] .text-gray-400 { color: rgb(var(--v2-fg-subtle)); }
+html[data-ui="v2"] .text-gray-300 { color: rgb(var(--v2-fg-subtle) / 0.6); }
+html[data-ui="v2"] .hover\:text-gray-900:hover,
+html[data-ui="v2"] .hover\:text-gray-700:hover,
+html[data-ui="v2"] .hover\:text-gray-600:hover { color: rgb(var(--v2-fg)); }
+
+html[data-ui="v2"] .border-gray-300 { border-color: rgb(var(--v2-line-strong)); }
+html[data-ui="v2"] .border-gray-200,
+html[data-ui="v2"] .border-gray-100 { border-color: rgb(var(--v2-line)); }
+html[data-ui="v2"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+html[data-ui="v2"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--v2-line)); }
+
+html[data-ui="v2"] .bg-blue-600 { background-color: rgb(var(--v2-primary)); }
+html[data-ui="v2"] .hover\:bg-blue-700:hover { background-color: rgb(var(--v2-primary-hover)); }
+html[data-ui="v2"] .disabled\:bg-blue-300:disabled { background-color: rgb(var(--v2-primary) / 0.45); }
+html[data-ui="v2"] .disabled\:bg-gray-50:disabled { background-color: rgb(var(--v2-muted)); }
+html[data-ui="v2"] .disabled\:bg-gray-300:disabled { background-color: rgb(var(--v2-line-strong)); }
+html[data-ui="v2"] .disabled\:text-gray-300:disabled { color: rgb(var(--v2-fg-subtle)); }
+html[data-ui="v2"] .disabled\:border-gray-200:disabled { border-color: rgb(var(--v2-line)); }
+html[data-ui="v2"] .bg-blue-50,
+html[data-ui="v2"] .hover\:bg-blue-50:hover { background-color: rgb(var(--v2-primary-soft)); }
+html[data-ui="v2"] .border-blue-600 { border-color: rgb(var(--v2-primary)); }
+html[data-ui="v2"] .text-blue-600,
+html[data-ui="v2"] .text-blue-700 { color: rgb(var(--v2-link)); }
+html[data-ui="v2"] .hover\:text-blue-800:hover { color: rgb(var(--v2-link) / 0.8); }
+html[data-ui="v2"] .focus\:ring-blue-500:focus { --tw-ring-color: rgb(var(--v2-primary) / 0.45); }
+
+html[data-ui="v2"] .bg-green-100 { background-color: rgb(var(--v2-success-bg)); }
+html[data-ui="v2"] .text-green-700,
+html[data-ui="v2"] .text-green-600 { color: rgb(var(--v2-success-fg)); }
+html[data-ui="v2"] .bg-yellow-100,
+html[data-ui="v2"] .bg-amber-50 { background-color: rgb(var(--v2-warning-bg)); }
+html[data-ui="v2"] .text-yellow-700,
+html[data-ui="v2"] .text-amber-600,
+html[data-ui="v2"] .text-amber-800 { color: rgb(var(--v2-warning-fg)); }
+html[data-ui="v2"] .text-red-500,
+html[data-ui="v2"] .text-red-600,
+html[data-ui="v2"] .hover\:text-red-600:hover,
+html[data-ui="v2"] .hover\:text-red-700:hover { color: rgb(var(--v2-danger-fg)); }
+html[data-ui="v2"] .hover\:bg-red-50:hover { background-color: rgb(var(--v2-danger-bg)); }
+
+/* Form alanları: arka plan sınıfı olmayan input/select/textarea yüzey rengini
+   alsın (koyu modda tarayıcının varsayılan beyazı kalmasın). <main>'e
+   bağlı değil — sipariş formu ("/") ve body'ye portal edilen modallar da
+   kapsansın. */
+html[data-ui="v2"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):not([class*="bg-"]) {
+  background-color: rgb(var(--v2-surface));
+  color: rgb(var(--v2-fg));
+}
+html[data-ui="v2"] ::placeholder { color: rgb(var(--v2-fg-subtle)); }
+
+/* Sayfa başlıkları: daha sakin, kurumsal ağırlık. */
+html[data-ui="v2"] main h1 { font-weight: 600; letter-spacing: -0.01em; }
+
+/* Ön ekli varyantlar (ör. Siparişler tablosunun sabit Statü/İşlemler
+   sütunları sm:bg-white / sm:bg-gray-50 kullanıyor, satır üzerine gelince
+   group-hover). */
+html[data-ui="v2"] .sm\:bg-white { background-color: rgb(var(--v2-surface)); }
+html[data-ui="v2"] .sm\:bg-gray-50 { background-color: rgb(var(--v2-surface-2)); }
+/* group-hover rengi sabit (sticky) hücrelerde de kullanılıyor — yarı saydam
+   olsaydı yatay kaydırmada altından geçen sütunlar görünürdü; bu yüzden
+   yüzey rengi üstüne aynı tonu bindirip opak veriyoruz. */
+html[data-ui="v2"] .group:hover .group-hover\:bg-gray-50 {
+  background-color: rgb(var(--v2-surface));
+  background-image: linear-gradient(rgb(var(--v2-muted) / 0.6), rgb(var(--v2-muted) / 0.6));
+}
+@media (min-width: 640px) {
+  html[data-ui="v2"] .group:hover .sm\:group-hover\:bg-gray-50 {
+    background-color: rgb(var(--v2-surface));
+    background-image: linear-gradient(rgb(var(--v2-muted) / 0.6), rgb(var(--v2-muted) / 0.6));
+  }
+}
+html[data-ui="v2"] .group:hover .group-hover\:bg-gray-100 { background-color: rgb(var(--v2-muted)); }
+html[data-ui="v2"] .group:hover .group-hover\:text-gray-600 { color: rgb(var(--v2-fg-muted)); }
+
+/* Renk sınıfı verilmemiş kenarlıklar (ör. sadece "border-t") Tailwind'in
+   varsayılan açık grisini alıyordu — koyu modda parlak beyaz çizgi. :where
+   ile özgüllük 0: sadece varsayılanın yerine geçer, border-gray-300 gibi
+   açıkça verilmiş renkleri ezmez. */
+:where(html[data-ui="v2"]) :where(*, ::before, ::after) { border-color: rgb(var(--v2-line)); }
+
+/*
+ * v2 koyu tema: renkli pastel rozet/uyarı zeminleri (bg-*-50/100/200) koyu
+ * zeminde göze batıyordu — yarı saydam tona, koyu yazı renkleri (text-*-500..900)
+ * açık tona çevrilir. Açık temada Tailwind'in pastel renkleri olduğu gibi kalır.
+ * (Ton değerleri Tailwind paletinin 500 ve 300 tonları.)
+ */
+html[data-ui="v2"][data-theme="dark"] .bg-red-50, html[data-ui="v2"][data-theme="dark"] .bg-red-100 { background-color: rgb(239 68 68 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-red-200 { background-color: rgb(239 68 68 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-red-500, html[data-ui="v2"][data-theme="dark"] .text-red-600, html[data-ui="v2"][data-theme="dark"] .text-red-700, html[data-ui="v2"][data-theme="dark"] .text-red-800, html[data-ui="v2"][data-theme="dark"] .text-red-900 { color: rgb(252 165 165); }
+html[data-ui="v2"][data-theme="dark"] .border-red-100, html[data-ui="v2"][data-theme="dark"] .border-red-200, html[data-ui="v2"][data-theme="dark"] .border-red-300 { border-color: rgb(239 68 68 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-orange-50, html[data-ui="v2"][data-theme="dark"] .bg-orange-100 { background-color: rgb(249 115 22 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-orange-200 { background-color: rgb(249 115 22 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-orange-500, html[data-ui="v2"][data-theme="dark"] .text-orange-600, html[data-ui="v2"][data-theme="dark"] .text-orange-700, html[data-ui="v2"][data-theme="dark"] .text-orange-800, html[data-ui="v2"][data-theme="dark"] .text-orange-900 { color: rgb(253 186 116); }
+html[data-ui="v2"][data-theme="dark"] .border-orange-100, html[data-ui="v2"][data-theme="dark"] .border-orange-200, html[data-ui="v2"][data-theme="dark"] .border-orange-300 { border-color: rgb(249 115 22 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-amber-50, html[data-ui="v2"][data-theme="dark"] .bg-amber-100 { background-color: rgb(245 158 11 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-amber-200 { background-color: rgb(245 158 11 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-amber-500, html[data-ui="v2"][data-theme="dark"] .text-amber-600, html[data-ui="v2"][data-theme="dark"] .text-amber-700, html[data-ui="v2"][data-theme="dark"] .text-amber-800, html[data-ui="v2"][data-theme="dark"] .text-amber-900 { color: rgb(252 211 77); }
+html[data-ui="v2"][data-theme="dark"] .border-amber-100, html[data-ui="v2"][data-theme="dark"] .border-amber-200, html[data-ui="v2"][data-theme="dark"] .border-amber-300 { border-color: rgb(245 158 11 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-yellow-50, html[data-ui="v2"][data-theme="dark"] .bg-yellow-100 { background-color: rgb(234 179 8 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-yellow-200 { background-color: rgb(234 179 8 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-yellow-500, html[data-ui="v2"][data-theme="dark"] .text-yellow-600, html[data-ui="v2"][data-theme="dark"] .text-yellow-700, html[data-ui="v2"][data-theme="dark"] .text-yellow-800, html[data-ui="v2"][data-theme="dark"] .text-yellow-900 { color: rgb(253 224 71); }
+html[data-ui="v2"][data-theme="dark"] .border-yellow-100, html[data-ui="v2"][data-theme="dark"] .border-yellow-200, html[data-ui="v2"][data-theme="dark"] .border-yellow-300 { border-color: rgb(234 179 8 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-green-50, html[data-ui="v2"][data-theme="dark"] .bg-green-100 { background-color: rgb(34 197 94 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-green-200 { background-color: rgb(34 197 94 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-green-500, html[data-ui="v2"][data-theme="dark"] .text-green-600, html[data-ui="v2"][data-theme="dark"] .text-green-700, html[data-ui="v2"][data-theme="dark"] .text-green-800, html[data-ui="v2"][data-theme="dark"] .text-green-900 { color: rgb(134 239 172); }
+html[data-ui="v2"][data-theme="dark"] .border-green-100, html[data-ui="v2"][data-theme="dark"] .border-green-200, html[data-ui="v2"][data-theme="dark"] .border-green-300 { border-color: rgb(34 197 94 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-emerald-50, html[data-ui="v2"][data-theme="dark"] .bg-emerald-100 { background-color: rgb(16 185 129 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-emerald-200 { background-color: rgb(16 185 129 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-emerald-500, html[data-ui="v2"][data-theme="dark"] .text-emerald-600, html[data-ui="v2"][data-theme="dark"] .text-emerald-700, html[data-ui="v2"][data-theme="dark"] .text-emerald-800, html[data-ui="v2"][data-theme="dark"] .text-emerald-900 { color: rgb(110 231 183); }
+html[data-ui="v2"][data-theme="dark"] .border-emerald-100, html[data-ui="v2"][data-theme="dark"] .border-emerald-200, html[data-ui="v2"][data-theme="dark"] .border-emerald-300 { border-color: rgb(16 185 129 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-teal-50, html[data-ui="v2"][data-theme="dark"] .bg-teal-100 { background-color: rgb(20 184 166 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-teal-200 { background-color: rgb(20 184 166 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-teal-500, html[data-ui="v2"][data-theme="dark"] .text-teal-600, html[data-ui="v2"][data-theme="dark"] .text-teal-700, html[data-ui="v2"][data-theme="dark"] .text-teal-800, html[data-ui="v2"][data-theme="dark"] .text-teal-900 { color: rgb(94 234 212); }
+html[data-ui="v2"][data-theme="dark"] .border-teal-100, html[data-ui="v2"][data-theme="dark"] .border-teal-200, html[data-ui="v2"][data-theme="dark"] .border-teal-300 { border-color: rgb(20 184 166 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-cyan-50, html[data-ui="v2"][data-theme="dark"] .bg-cyan-100 { background-color: rgb(6 182 212 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-cyan-200 { background-color: rgb(6 182 212 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-cyan-500, html[data-ui="v2"][data-theme="dark"] .text-cyan-600, html[data-ui="v2"][data-theme="dark"] .text-cyan-700, html[data-ui="v2"][data-theme="dark"] .text-cyan-800, html[data-ui="v2"][data-theme="dark"] .text-cyan-900 { color: rgb(103 232 249); }
+html[data-ui="v2"][data-theme="dark"] .border-cyan-100, html[data-ui="v2"][data-theme="dark"] .border-cyan-200, html[data-ui="v2"][data-theme="dark"] .border-cyan-300 { border-color: rgb(6 182 212 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-sky-50, html[data-ui="v2"][data-theme="dark"] .bg-sky-100 { background-color: rgb(14 165 233 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-sky-200 { background-color: rgb(14 165 233 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-sky-500, html[data-ui="v2"][data-theme="dark"] .text-sky-600, html[data-ui="v2"][data-theme="dark"] .text-sky-700, html[data-ui="v2"][data-theme="dark"] .text-sky-800, html[data-ui="v2"][data-theme="dark"] .text-sky-900 { color: rgb(125 211 252); }
+html[data-ui="v2"][data-theme="dark"] .border-sky-100, html[data-ui="v2"][data-theme="dark"] .border-sky-200, html[data-ui="v2"][data-theme="dark"] .border-sky-300 { border-color: rgb(14 165 233 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-blue-50, html[data-ui="v2"][data-theme="dark"] .bg-blue-100 { background-color: rgb(59 130 246 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-blue-200 { background-color: rgb(59 130 246 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-blue-500, html[data-ui="v2"][data-theme="dark"] .text-blue-600, html[data-ui="v2"][data-theme="dark"] .text-blue-700, html[data-ui="v2"][data-theme="dark"] .text-blue-800, html[data-ui="v2"][data-theme="dark"] .text-blue-900 { color: rgb(147 197 253); }
+html[data-ui="v2"][data-theme="dark"] .border-blue-100, html[data-ui="v2"][data-theme="dark"] .border-blue-200, html[data-ui="v2"][data-theme="dark"] .border-blue-300 { border-color: rgb(59 130 246 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-indigo-50, html[data-ui="v2"][data-theme="dark"] .bg-indigo-100 { background-color: rgb(99 102 241 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-indigo-200 { background-color: rgb(99 102 241 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-indigo-500, html[data-ui="v2"][data-theme="dark"] .text-indigo-600, html[data-ui="v2"][data-theme="dark"] .text-indigo-700, html[data-ui="v2"][data-theme="dark"] .text-indigo-800, html[data-ui="v2"][data-theme="dark"] .text-indigo-900 { color: rgb(165 180 252); }
+html[data-ui="v2"][data-theme="dark"] .border-indigo-100, html[data-ui="v2"][data-theme="dark"] .border-indigo-200, html[data-ui="v2"][data-theme="dark"] .border-indigo-300 { border-color: rgb(99 102 241 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-violet-50, html[data-ui="v2"][data-theme="dark"] .bg-violet-100 { background-color: rgb(139 92 246 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-violet-200 { background-color: rgb(139 92 246 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-violet-500, html[data-ui="v2"][data-theme="dark"] .text-violet-600, html[data-ui="v2"][data-theme="dark"] .text-violet-700, html[data-ui="v2"][data-theme="dark"] .text-violet-800, html[data-ui="v2"][data-theme="dark"] .text-violet-900 { color: rgb(196 181 253); }
+html[data-ui="v2"][data-theme="dark"] .border-violet-100, html[data-ui="v2"][data-theme="dark"] .border-violet-200, html[data-ui="v2"][data-theme="dark"] .border-violet-300 { border-color: rgb(139 92 246 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-purple-50, html[data-ui="v2"][data-theme="dark"] .bg-purple-100 { background-color: rgb(168 85 247 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-purple-200 { background-color: rgb(168 85 247 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-purple-500, html[data-ui="v2"][data-theme="dark"] .text-purple-600, html[data-ui="v2"][data-theme="dark"] .text-purple-700, html[data-ui="v2"][data-theme="dark"] .text-purple-800, html[data-ui="v2"][data-theme="dark"] .text-purple-900 { color: rgb(216 180 254); }
+html[data-ui="v2"][data-theme="dark"] .border-purple-100, html[data-ui="v2"][data-theme="dark"] .border-purple-200, html[data-ui="v2"][data-theme="dark"] .border-purple-300 { border-color: rgb(168 85 247 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-pink-50, html[data-ui="v2"][data-theme="dark"] .bg-pink-100 { background-color: rgb(236 72 153 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-pink-200 { background-color: rgb(236 72 153 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-pink-500, html[data-ui="v2"][data-theme="dark"] .text-pink-600, html[data-ui="v2"][data-theme="dark"] .text-pink-700, html[data-ui="v2"][data-theme="dark"] .text-pink-800, html[data-ui="v2"][data-theme="dark"] .text-pink-900 { color: rgb(249 168 212); }
+html[data-ui="v2"][data-theme="dark"] .border-pink-100, html[data-ui="v2"][data-theme="dark"] .border-pink-200, html[data-ui="v2"][data-theme="dark"] .border-pink-300 { border-color: rgb(236 72 153 / 0.35); }
+html[data-ui="v2"][data-theme="dark"] .bg-rose-50, html[data-ui="v2"][data-theme="dark"] .bg-rose-100 { background-color: rgb(244 63 94 / 0.14); }
+html[data-ui="v2"][data-theme="dark"] .bg-rose-200 { background-color: rgb(244 63 94 / 0.22); }
+html[data-ui="v2"][data-theme="dark"] .text-rose-500, html[data-ui="v2"][data-theme="dark"] .text-rose-600, html[data-ui="v2"][data-theme="dark"] .text-rose-700, html[data-ui="v2"][data-theme="dark"] .text-rose-800, html[data-ui="v2"][data-theme="dark"] .text-rose-900 { color: rgb(253 164 175); }
+html[data-ui="v2"][data-theme="dark"] .border-rose-100, html[data-ui="v2"][data-theme="dark"] .border-rose-200, html[data-ui="v2"][data-theme="dark"] .border-rose-300 { border-color: rgb(244 63 94 / 0.35); }
+
+/* Opaklıklı açık gri zeminler (Takvim'de ay dışı günler, Ürünler'de grup
+   satırları). bg-white/5, bg-white/10 yeni yan menünün kendi sınıfları,
+   eşlenmez. */
+html[data-ui="v2"] .bg-gray-50\/50,
+html[data-ui="v2"] .bg-gray-50\/40 { background-color: rgb(var(--v2-surface-2) / 0.7); }
+
+/* ------------------------------------------------------------------ */
+/* Yeni görünüm (v2) form öğeleri ve ortak bileşen cilası — yalnızca   */
+/* panelde (data-ui="v2"); herkese açık sayfalar (randevu, giriş)      */
+/* etkilenmez. Tarayıcının varsayılan select oku / checkbox / radio /  */
+/* sayı oku yerine tasarım diliyle uyumlu, iki temada da tutarlı       */
+/* öğeler.                                                             */
+/* ------------------------------------------------------------------ */
+
+/* Açılır liste: kendi oku, kenardan nefes payı (varsayılan ok sağ
+   kenara yapışıktı). */
+html[data-ui="v2"] select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  padding-right: 2.5rem !important;
+  cursor: pointer;
+}
+html[data-ui="v2"][data-theme="dark"] select:not([multiple]):not([size]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2395A2B5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+html[data-ui="v2"] select:disabled { cursor: not-allowed; opacity: 0.6; }
+
+/* Checkbox / radio: özel kutu, işaret ve durumlar. */
+html[data-ui="v2"] input[type="checkbox"],
+html[data-ui="v2"] input[type="radio"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  display: inline-block;
+  vertical-align: middle;
+  border: 1.5px solid rgb(var(--v2-line-strong));
+  border-radius: 5px;
+  background-color: rgb(var(--v2-surface));
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+html[data-ui="v2"] input[type="radio"] { border-radius: 9999px; }
+/* Kenar boşluğu sıfırlaması özgüllüksüz (:where) — sayfadaki mr-2/mt-0.5 gibi
+   sınıflar ezilmesin. Gizli tutulan (hidden/sr-only, ör. Depolama'daki çip
+   içindeki Mevsim seçicisi) checkbox'lar yukarıdaki display kuralıyla
+   görünür olmasın. */
+:where(html[data-ui="v2"] input[type="checkbox"], html[data-ui="v2"] input[type="radio"]) { margin: 0; }
+html[data-ui="v2"] input:is([type="checkbox"], [type="radio"]).hidden { display: none; }
+html[data-ui="v2"] input[type="checkbox"]:hover:not(:disabled),
+html[data-ui="v2"] input[type="radio"]:hover:not(:disabled) { border-color: rgb(var(--v2-primary)); }
+html[data-ui="v2"] input[type="checkbox"]:checked,
+html[data-ui="v2"] input[type="checkbox"]:indeterminate,
+html[data-ui="v2"] input[type="radio"]:checked {
+  background-color: rgb(var(--v2-primary));
+  border-color: rgb(var(--v2-primary));
+}
+html[data-ui="v2"] input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+  background-size: 0.8rem;
+}
+html[data-ui="v2"] input[type="checkbox"]:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round'%3E%3Cpath d='M6 12h12'/%3E%3C/svg%3E");
+  background-size: 0.8rem;
+}
+html[data-ui="v2"] input[type="radio"]:checked {
+  background-image: radial-gradient(circle, white 0 32%, transparent 36%);
+}
+html[data-ui="v2"] input[type="checkbox"]:focus-visible,
+html[data-ui="v2"] input[type="radio"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(var(--v2-primary) / 0.25);
+}
+html[data-ui="v2"] input[type="checkbox"]:disabled,
+html[data-ui="v2"] input[type="radio"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Metin alanları: tek tip odak halkası (sayfalarda focus:ring-blue-500,
+   ring-2, outline karışıktı). */
+html[data-ui="v2"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), select, textarea) {
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+html[data-ui="v2"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), select, textarea):focus {
+  outline: none;
+  border-color: rgb(var(--v2-primary));
+  box-shadow: 0 0 0 3px rgb(var(--v2-primary) / 0.18);
+}
+html[data-ui="v2"] :is(input, textarea):disabled { cursor: not-allowed; }
+html[data-ui="v2"] :is(input, textarea):read-only:not([type="checkbox"]):not([type="radio"]) { cursor: default; }
+
+/* Sayı alanları: tarayıcının ok düğmeleri tutar alanlarında kalabalık
+   ediyor ve fare tekerleğiyle yanlışlıkla değer değiştirebiliyordu. */
+html[data-ui="v2"] input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+html[data-ui="v2"] input[type="number"]::-webkit-inner-spin-button,
+html[data-ui="v2"] input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Tarih/saat seçici ikonu: daha sakin, tıklanabilir. */
+html[data-ui="v2"] input::-webkit-calendar-picker-indicator { opacity: 0.55; cursor: pointer; transition: opacity 0.15s; }
+html[data-ui="v2"] input::-webkit-calendar-picker-indicator:hover { opacity: 0.9; }
+
+/* Tablo başlıkları: tüm listelerde aynı (Siparişler'deki stil). */
+html[data-ui="v2"] main table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(var(--v2-fg-muted));
+}
+/* Tablo hücrelerinde rakamlar eşit genişlikte — tutarlar alt alta hizalı. */
+html[data-ui="v2"] main table td { font-variant-numeric: tabular-nums; }
+
+/* Kartlar: zayıf gölge yerine ince kenar + hafif gölge (açık temada
+   kartlar zeminden ayrışmıyordu). box-shadow ile — kenarlık eklemek
+   ölçüleri 1px kaydırırdı. */
+html[data-ui="v2"] main :is(.bg-white.shadow-sm, .bg-white.shadow) {
+  box-shadow: 0 0 0 1px rgb(var(--v2-line)), 0 1px 2px rgb(15 23 42 / 0.04);
+}
+html[data-ui="v2"] :is(.bg-white.shadow-xl, .bg-white.shadow-lg) {
+  box-shadow: 0 0 0 1px rgb(var(--v2-line)), 0 20px 40px -12px rgb(0 0 0 / 0.35);
+}
+
+/* Sağdaki sabit İşlemler sütunu (Ürünler — işaret sınıfı v2-actions):
+   yeni görünümde yan menü 264px yer kapladığından yazılı butonlar sütunu
+   ~500px'e çıkarıp ortadaki sütunları örtüyordu. İkon butonlar (adı
+   title/aria-label'da), sütun içeriğe göre daralır — Siparişler'deki
+   işlem butonlarıyla aynı görünüm. */
+html[data-ui="v2"] main .v2-actions { width: 1% !important; min-width: 0 !important; max-width: none !important; }
+html[data-ui="v2"] main .v2-actions .sm\:inline { display: none !important; }
+html[data-ui="v2"] main .v2-actions > div { gap: 2px !important; }
+html[data-ui="v2"] main .v2-actions :is(a, button) {
+  padding: 7px !important;
+  border-radius: 7px;
+}
+html[data-ui="v2"] main .v2-actions :is(a, button):hover { background-color: rgb(var(--v2-muted)) !important; }
+
+/* Boş checkbox/radio koyu temada silik kalıyordu — kenar biraz daha belirgin. */
+html[data-ui="v2"][data-theme="dark"] input[type="checkbox"]:not(:checked):not(:indeterminate),
+html[data-ui="v2"][data-theme="dark"] input[type="radio"]:not(:checked) {
+  border-color: rgb(var(--v2-fg-subtle) / 0.7);
+}
+
+/* Tablolardaki küçük durum rozetleri tek satırda kalsın ("Dört Mevsim"
+   gibi iki kelimeli rozetler dar sütunda ikiye bölünüyordu). */
+html[data-ui="v2"] main td :is(span.rounded-full, span.rounded) { white-space: nowrap; }
+
+/* Klavye odağı: buton/link/sekme için tek tip, temaya uygun odak halkası
+   (tarayıcı varsayılanı koyu temada siyah-mavi karışık ve bazı yerlerde
+   hiç görünmüyordu). Yalnızca klavyeyle gezilirken (:focus-visible) —
+   fareyle tıklamada halka çıkmaz. Yan menüde koyu zemin için açık vurgu. */
+html[data-ui="v2"] :is(button, a[href], summary, [role="button"], [role="tab"], [role="switch"]):focus-visible {
+  outline: 2px solid rgb(var(--v2-primary));
+  outline-offset: 2px;
+}
+html[data-ui="v2"][data-theme="dark"] :is(button, a[href], summary, [role="button"], [role="tab"], [role="switch"]):focus-visible,
+html[data-ui="v2"] aside :is(button, a[href]):focus-visible {
+  outline-color: rgb(var(--v2-accent));
+}
+
+/* Mobilde sayfalama butonları (« ‹ 1 2 3 › ») 30px'lik dokunma hedefiydi —
+   aria-label/aria-current ile işaretli olanlar en az 36px. */
+@media (max-width: 639px) {
+  html[data-ui="v2"] main button:is([aria-label$="sayfa"], [aria-current="page"]) {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+}

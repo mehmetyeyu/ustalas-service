@@ -7,6 +7,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
+import { useDialog } from "@/lib/useDialog";
 
 interface Supplier {
   id: number;
@@ -24,6 +25,7 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const showFormDialog = useDialog(() => setShowForm(false));
   const [editItem, setEditItem] = useState<Supplier | null>(null);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -173,7 +175,7 @@ export default function SuppliersPage() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showFormDialog} role="dialog" aria-modal="true" aria-label="Tedarikçi Formu" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editItem ? "Tedarikçi Düzenle" : "Yeni Tedarikçi Ekle"}

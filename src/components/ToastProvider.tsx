@@ -22,10 +22,14 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 // daha fazla zaman gerekebilir.
 const DURATIONS: Record<ToastType, number> = { success: 3500, warning: 5000, error: 6000 };
 
-const TOAST_STYLES: Record<ToastType, string> = {
-  success: "bg-green-50 border-green-200 text-green-700",
-  warning: "bg-amber-50 border-amber-300 text-amber-800",
-  error: "bg-red-50 border-red-200 text-red-600",
+// Opak yüzey kartı + türe göre renkli ikon (iki görünümde ve açık/koyu
+// temada aynı; renkler --v2-* değişkenleri). Eskiden açık pastel zemin
+// kullanılıyordu — koyu temada yarı saydam kalıp arkasındaki içerik
+// yazının içinden görünüyordu.
+const TOAST_TONES: Record<ToastType, { badge: string; accent: string; icon: string }> = {
+  success: { badge: "bg-v2-success-bg text-v2-success-fg", accent: "before:bg-v2-success-fg", icon: "M5 12.5l4.5 4.5L19 7.5" },
+  warning: { badge: "bg-v2-warning-bg text-v2-warning-fg", accent: "before:bg-v2-warning-fg", icon: "M12 8v5M12 16.5v.01" },
+  error: { badge: "bg-v2-danger-bg text-v2-danger-fg", accent: "before:bg-v2-danger-fg", icon: "M8 8l8 8M16 8l-8 8" },
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -68,16 +72,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={t.id}
             role="alert"
-            className={`pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg animate-toast-in ${TOAST_STYLES[t.type]}`}
+            className={`pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-xl border border-v2-line bg-v2-surface py-3 pl-4 pr-3 text-sm text-v2-fg shadow-xl animate-toast-in before:absolute before:inset-y-0 before:left-0 before:w-1 ${TOAST_TONES[t.type].accent}`}
           >
-            <span className="flex-1">{t.message}</span>
+            <span aria-hidden="true" className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${TOAST_TONES[t.type].badge}`}>
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d={TOAST_TONES[t.type].icon} /></svg>
+            </span>
+            <span className="flex-1 leading-5">{t.message}</span>
             <button
               type="button"
               onClick={() => remove(t.id)}
-              className="shrink-0 leading-none opacity-60 hover:opacity-100"
+              className="-mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-v2-fg-subtle hover:bg-v2-muted hover:text-v2-fg"
               aria-label="Kapat"
             >
-              ×
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
         ))}

@@ -9,6 +9,9 @@ import { useToast } from "@/components/ToastProvider";
 import { formatCurrency } from "@/lib/format";
 import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
+import { forgetUiPref, useApplyUi } from "@/lib/uiTheme";
+import { AuthProvider } from "@/app/admin/AuthContext";
+import StandaloneShellV2 from "@/components/v2/StandaloneShellV2";
 import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter, useStockCodes } from "@/lib/queries";
 
 interface Service {
@@ -181,6 +184,9 @@ function SearchableCombobox({
         value={value}
         onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
         onFocus={(e) => { setQuery(""); setOpen(true); e.target.select(); }}
+        // Escape önce açık öneri listesini kapatır; içinde bulunduğu pencere
+        // (useDialog) preventDefault'u görüp kapanmaz — ikinci Escape kapatır.
+        onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); } }}
         placeholder={placeholder}
         className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
@@ -214,16 +220,31 @@ function SearchableCombobox({
 // bileşene bildirir.
 const NO_CODES: string[] = [];
 
+// Stok Kodu ve Parti, satır ızgarasında İKİ AYRI hücre olarak çizilir
+// (fragment döner; hücre/etiket sınıfları çağırandan gelir). Parti seçimi
+// eskiden kod kutusunun altına küçük bir listeyle sıkışıyor, satırı
+// hizasız uzatıyordu; marka/model ön yazısı da Marka/Model alanlarını
+// tekrarlıyordu (seçilince zaten oralara dolar).
 function TireBatchPicker({
-  supplier, code, productId, onCodeChange, onBatchSelect,
+  supplier, code, productId, onCodeChange, onBatchSelect, cellClassName, labelClassName,
 }: {
   supplier: string;
   code: string;
   productId: number | null;
   onCodeChange: (code: string) => void;
   onBatchSelect: (batch: StockBatch | null) => void;
+  cellClassName: string;
+  labelClassName: string;
 }) {
   const [batches, setBatches] = useState<StockBatch[]>([]);
+  // Partiler çekilirken boş liste "parti yok" sanılmasın diye.
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  // 300ms bekleme yalnızca kullanıcı kodu YAZARKEN anlamlı (her tuşta istek
+  // atılmasın). Kod zaten dolu açılan satırlarda (Düzelt, Ürünler'den
+  // sipariş) açılıştaki koda yapılan çekim beklemeden başlar — Parti alanı
+  // geç dolmasın. (Bir "ilk çalışma" bayrağı yerine açılış değeriyle
+  // karşılaştırılır: Strict Mode'da efekt iki kez çalışsa da doğru kalır.)
+  const initialCodeRef = useRef(code);
   // Tedarikçide stoğu olan kodlar — ortak önbellekten (bkz. useStockCodes);
   // sipariş/ürün kaydında tazelenir, form açık kalsa da eskimez.
   const codeOptions = useStockCodes(supplier).data ?? NO_CODES;
@@ -231,51 +252,60 @@ function TireBatchPicker({
   useEffect(() => {
     if (!supplier.trim() || !code.trim()) {
       setBatches([]);
+      setLoadingBatches(false);
       return;
     }
+    setLoadingBatches(true);
+    const delay = code === initialCodeRef.current ? 0 : 300;
     const t = setTimeout(() => {
       fetch(`/api/products/stock-batches?supplier=${encodeURIComponent(supplier)}&code=${encodeURIComponent(code)}`)
         .then((r) => r.json())
         .then((data: StockBatch[]) => { if (Array.isArray(data)) setBatches(data); })
-        .catch(() => setBatches([]));
-    }, 300);
+        .catch(() => setBatches([]))
+        .finally(() => setLoadingBatches(false));
+    }, delay);
     return () => clearTimeout(t);
   }, [supplier, code]);
 
+  const batchPlaceholder = !code.trim()
+    ? "Önce stok kodu seçin"
+    : loadingBatches
+    ? "Partiler yükleniyor…"
+    : batches.length === 0
+    ? "Bu kodda parti bulunamadı"
+    : "Parti seçin…";
+
   return (
-    <div className="space-y-1">
-      <SearchableCombobox
-        value={code}
-        onChange={(val) => { onCodeChange(val); onBatchSelect(null); }}
-        options={codeOptions}
-        placeholder="Ürün kodu..."
-      />
-      {batches.length > 0 && (batches[0].brand || batches[0].model_name) && (
-        // Marka/Model kod bazında aynıdır (tüm partiler aynı koda ait), bu
-        // yüzden tek partinin (batches[0]) değeri hangisi seçilirse seçilsin
-        // geçerlidir — parti listesinde tekrar tekrar göstermeye gerek yok.
-        <p className="text-xs text-gray-400 truncate">
-          {[batches[0].brand, batches[0].model_name].filter(Boolean).join(" — ")}
-        </p>
-      )}
-      {batches.length > 0 && (
+    <>
+      <div className={cellClassName}>
+        <label className={labelClassName}>Stok Kodu</label>
+        <SearchableCombobox
+          value={code}
+          onChange={(val) => { onCodeChange(val); onBatchSelect(null); }}
+          options={codeOptions}
+          placeholder="Ürün kodu..."
+        />
+      </div>
+      <div className={cellClassName}>
+        <label className={labelClassName}>Parti (Hafta/Yıl)</label>
         <select
           value={productId ?? ""}
+          disabled={batches.length === 0}
           onChange={(e) => {
             const b = batches.find((x) => x.id === Number(e.target.value));
             onBatchSelect(b ?? null);
           }}
-          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <option value="">Parti (Hafta/Yıl) seç...</option>
+          <option value="">{batchPlaceholder}</option>
           {batches.map((b) => (
             <option key={b.id} value={b.id}>
               {weekYearLabel(b.production_week, b.production_year)} — Stok: {b.stock_qty}{b.location ? ` (${b.location})` : ""}
             </option>
           ))}
         </select>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -344,6 +374,13 @@ function OrderPageInner() {
   // Oturum/firma ayarları TanStack önbelleğinden (bkz. useMe) — panelden bu
   // forma (ve geri) geçerken /api/auth/me tekrar çekilmez.
   const { data: me } = useMe();
+  // Sipariş formu panel layout'unun dışında — panelde seçilen görünüm/tema
+  // (yeni görünüm + koyu/açık) burada da uygulanır, aksi halde koyu temadan
+  // forma geçince sayfa beyaz kalıyordu. Formdan çıkınca temizlenir.
+  useApplyUi(me ? (me.ui_version ?? "v1") : null, me?.ui_theme ?? "system");
+  // Yeni görünümde form panelin sol menüsü/üst çubuğuyla açılır (bkz.
+  // OrderPage → StandaloneShellV2); kendi marka/geri dön/çıkış satırı gizlenir.
+  const v2 = me?.ui_version === "v2";
   useEffect(() => {
     if (!me) return;
     setPanelPath(getDefaultAdminPath({ role: me.role, permissions: me.permissions ?? [] }));
@@ -542,13 +579,7 @@ function OrderPageInner() {
   }
 
   const total = lines.reduce((sum, l) => sum + num(l.unit_price), 0);
-  // Stok Kodu ve Ebat sütunları (başlık dahil) yalnızca en az bir ürün/parça
-  // satışı (Lastik/Jant/İkinci El) satırı varsa gösterilir — işçilik
-  // satırlarında bu bilgiler anlamsız. Ebat, sadece "Lastik Satışı"na değil
-  // (İkinci El Lastik dahil) hepsine anlamlıdır — daha önce sadece Lastik
-  // Satışı'na özeldi, İkinci El satışlarında ebat hiç girilemiyordu (gerçek
-  // bir kullanıcı raporuydu).
-  const hasProductSaleLine = lines.some((l) => productSaleServiceNames.has(l.service_name.trim()));
+  const totalKar = lines.reduce((sum, l) => sum + num(l.unit_price) - num(l.cost_price), 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -634,14 +665,19 @@ function OrderPageInner() {
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    forgetUiPref();
     window.location.href = "/admin/login";
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
-      <div className="w-full">
-        <div className="bg-white rounded-2xl shadow-lg p-6">
-          <div className="flex items-center justify-between mb-6">
+    <div className={v2 ? undefined : "min-h-screen bg-gray-50 p-4 sm:p-6"}>
+      <div className="w-full max-w-6xl">
+        {v2 && (
+          <header className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight text-v2-fg">Yeni Sipariş</h1>
+          </header>
+        )}
+          <div className={v2 ? "hidden" : "v1-chrome flex items-center justify-between mb-6"}>
             <div>
               {(() => {
                 const brand = panelLogoUrl ? (
@@ -683,7 +719,13 @@ function OrderPageInner() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Taslaktaki düzen (iki görünümde ortak): Sipariş Bilgileri, İşlem
+              Satırları ve Notlar ayrı kartlar; her satır kendi bloğu (masaüstü
+              tablo + mobil kart kopyası yerine tek, her genişliğe uyan blok);
+              altta yapışık toplam + kâr + Sipariş Oluştur çubuğu. */}
+          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+            <section aria-labelledby="siparis-bilgileri" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm p-5">
+              <h2 id="siparis-bilgileri" className="mb-4 text-[15px] font-semibold text-v2-fg">Sipariş Bilgileri</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -756,13 +798,17 @@ function OrderPageInner() {
                 />
               </div>
             </div>
+            </section>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                İşlem Satırları <span className="text-red-500">*</span>
-              </label>
+            <section aria-labelledby="islem-satirlari" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm">
+              <div className="flex items-center justify-between border-b border-v2-line px-5 py-4">
+                <h2 id="islem-satirlari" className="text-[15px] font-semibold text-v2-fg">
+                  İşlem Satırları <span className="text-red-500">*</span>
+                </h2>
+                <span className="text-[13px] text-v2-fg-muted">{lines.length} satır</span>
+              </div>
               {productLoading ? (
-                <div role="status" className="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-8 text-sm text-gray-500">
+                <div role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
                   <svg className="w-5 h-5 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
@@ -770,387 +816,178 @@ function OrderPageInner() {
                   Ürün bilgileri yükleniyor...
                 </div>
               ) : (<>
-              <div className="hidden sm:block border border-gray-200 rounded-lg overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[160px]">Yapılan İşlem</th>
-                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Tedarikçi</th>
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Stok Kodu</th>}
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[150px]">Ebat</th>}
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Marka</th>}
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap min-w-[110px]">Model</th>}
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-16">Adet</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Tutar (₺)</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-24">Maliyet (₺)</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-20">Kar (₺)</th>
-                      <th className="px-2 py-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {lines.map((line, i) => {
-                      const kar = num(line.unit_price) - num(line.cost_price);
-                      const isProductSale = productSaleServiceNames.has(line.service_name.trim());
-                      const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
-                      return (
-                        <tr key={i}>
-                          <td className="px-2 py-2 align-top">
-                            <SearchableCombobox
-                              value={line.service_name}
-                              onChange={(val) => updateLine(i, { service_name: val })}
-                              options={islemOptions}
-                              placeholder="İşlem seç veya yaz..."
-                            />
-                          </td>
-                          <td className="px-2 py-2 align-top">
-                            <SearchableCombobox
-                              value={line.supplier}
-                              onChange={(val) => handleSupplierChange(i, line, val)}
-                              options={supplierOptions}
-                              placeholder="Tedarikçi seç veya yaz..."
-                            />
-                          </td>
-                          {hasProductSaleLine && (
-                            <td className="px-2 py-2 align-top">
-                              {isProductSale ? (
-                                <TireBatchPicker
-                                  supplier={line.supplier}
-                                  code={line.stock_code}
-                                  productId={line.product_id}
-                                  onCodeChange={(val) => updateLine(i, { stock_code: val })}
-                                  onBatchSelect={(batch) => {
-                                    const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
-                                    const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
-                                    const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
-                                    updateLine(i, {
-                                      product_id: batch?.id ?? null,
-                                      size_desc: batch?.size_desc || line.size_desc,
-                                      brand: batch?.brand || line.brand,
-                                      model_name: batch?.model_name || line.model_name,
-                                      max_stock: batch?.stock_qty ?? null,
-                                      unit_sale_price: salePrice,
-                                      unit_purchase_price: purchasePrice,
-                                      unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
-                                      cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
-                                    });
-                                  }}
-                                />
-                              ) : (
-                                <span className="text-gray-300 text-sm">—</span>
-                              )}
-                            </td>
-                          )}
-                          {hasProductSaleLine && (
-                            <td className="px-2 py-2 align-top">
-                              {isProductSale ? (
-                                <SearchableCombobox
-                                  value={line.size_desc}
-                                  onChange={(val) => updateLine(i, { size_desc: val })}
-                                  options={sizeOptions}
-                                  placeholder="205/60R16"
-                                />
-                              ) : (
-                                <span className="text-gray-300 text-sm">—</span>
-                              )}
-                            </td>
-                          )}
-                          {hasProductSaleLine && (
-                            <td className="px-2 py-2 align-top">
-                              {isProductSale ? (
-                                <input
-                                  type="text"
-                                  value={line.brand}
-                                  onChange={(e) => updateLine(i, { brand: e.target.value })}
-                                  placeholder="Marka"
-                                  className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              ) : (
-                                <span className="text-gray-300 text-sm">—</span>
-                              )}
-                            </td>
-                          )}
-                          {hasProductSaleLine && (
-                            <td className="px-2 py-2 align-top">
-                              {isProductSale ? (
-                                <input
-                                  type="text"
-                                  value={line.model_name}
-                                  onChange={(e) => updateLine(i, { model_name: e.target.value })}
-                                  placeholder="Model"
-                                  className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              ) : (
-                                <span className="text-gray-300 text-sm">—</span>
-                              )}
-                            </td>
-                          )}
-                          <td className="px-2 py-2 align-top">
-                            <input
-                              type="number"
-                              min="1"
-                              value={line.quantity}
-                              onChange={(e) => handleQuantityChange(i, line, e.target.value)}
-                              className={`w-16 border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
-                            />
-                            {line.product_id != null && line.max_stock != null && (
-                              <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
-                                Stok: {line.max_stock}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-2 py-2 align-top">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.unit_price}
-                              onChange={(e) => updateLine(i, { unit_price: e.target.value })}
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-2 py-2 align-top">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.cost_price}
-                              onChange={(e) => updateLine(i, { cost_price: e.target.value })}
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-2 py-2 align-top text-right font-medium text-gray-500 whitespace-nowrap pt-4">
-                            {formatCurrency(kar)}
-                          </td>
-                          <td className="px-2 py-2 align-top text-center pt-4">
-                            {lines.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeLine(i)}
-                                className="text-red-400 hover:text-red-600 text-xs font-medium"
-                              >
-                                Sil
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {lines.map((line, i) => {
+                const kar = num(line.unit_price) - num(line.cost_price);
+                const isProductSale = productSaleServiceNames.has(line.service_name.trim());
+                const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
+                const name = line.service_name.trim();
+                return (
+                  <div key={i} className="flex flex-col gap-3.5 border-b border-v2-line px-5 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-v2-fg-muted">
+                        Satır {i + 1}{name ? ` · ${name}` : ""}
+                      </span>
+                      {lines.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeLine(i)}
+                          aria-label={`Satır ${i + 1}'i sil`}
+                          title="Satırı sil"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-v2-fg-muted hover:bg-v2-danger-bg hover:text-v2-danger-fg"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>
+                        </button>
+                      )}
+                    </div>
 
-              {/* Mobil: her satır tabloda sığmadığı için kart olarak gösterilir */}
-              <div className="sm:hidden space-y-3">
-                {lines.map((line, i) => {
-                  const kar = num(line.unit_price) - num(line.cost_price);
-                  const isProductSale = productSaleServiceNames.has(line.service_name.trim());
-                  const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
-                  return (
-                    <div key={i} className="border border-gray-200 rounded-lg bg-gray-50 p-3 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-500">Satır {i + 1}</span>
-                        {lines.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeLine(i)}
-                            className="text-red-400 hover:text-red-600 text-xs font-medium"
-                          >
-                            Sil
-                          </button>
-                        )}
+                    {/* Tüm alanlar TEK ızgarada ve listede sabit yerlerinde: ürün
+                        satışına özel alanlar (Stok Kodu/Ebat/Marka/Model) araya
+                        koşullu girer, İşlem/Tedarikçi kutuları hiç taşınmaz. Ayrı
+                        kapsayıcılara bölünce ad bir ürün satışı adına dönüştüğü/
+                        döndüğü anda kutu yeniden kuruluyor, yazarken odak
+                        kayboluyordu. lg'de 24 sütun: normal işlem tek satır
+                        (6+6+2+4+3+3), ürün satışı iki satır (İşlem/Tedarikçi/
+                        Stok Kodu/Parti 6×4 / Ebat/Marka/Model 4×3 +2+4+3+3). */}
+                    <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-[repeat(24,minmax(0,1fr))]">
+                      <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-6">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Yapılan İşlem</label>
+                        <SearchableCombobox value={line.service_name} onChange={(val) => updateLine(i, { service_name: val })} options={islemOptions} placeholder="İşlem seç veya yaz..." />
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Yapılan İşlem</label>
-                        <SearchableCombobox
-                          value={line.service_name}
-                          onChange={(val) => updateLine(i, { service_name: val })}
-                          options={islemOptions}
-                          placeholder="İşlem seç veya yaz..."
+                      <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-6">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Tedarikçi</label>
+                        <SearchableCombobox value={line.supplier} onChange={(val) => handleSupplierChange(i, line, val)} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
+                      </div>
+                      {isProductSale && (
+                        <TireBatchPicker
+                          supplier={line.supplier}
+                          code={line.stock_code}
+                          productId={line.product_id}
+                          onCodeChange={(val) => updateLine(i, { stock_code: val })}
+                          onBatchSelect={(batch) => {
+                            const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
+                            const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
+                            const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
+                            updateLine(i, {
+                              product_id: batch?.id ?? null,
+                              size_desc: batch?.size_desc || line.size_desc,
+                              brand: batch?.brand || line.brand,
+                              model_name: batch?.model_name || line.model_name,
+                              max_stock: batch?.stock_qty ?? null,
+                              unit_sale_price: salePrice,
+                              unit_purchase_price: purchasePrice,
+                              unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
+                              cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
+                            });
+                          }}
+  cellClassName="col-span-2 min-w-0 sm:col-span-1 lg:col-span-6"
+                          labelClassName="block text-[13px] font-medium text-gray-700 mb-1.5"
                         />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Tedarikçi</label>
-                        <SearchableCombobox
-                          value={line.supplier}
-                          onChange={(val) => handleSupplierChange(i, line, val)}
-                          options={supplierOptions}
-                          placeholder="Tedarikçi seç veya yaz..."
-                        />
-                      </div>
-
+                      )}
                       {isProductSale && (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
-                          <TireBatchPicker
-                            supplier={line.supplier}
-                            code={line.stock_code}
-                            productId={line.product_id}
-                            onCodeChange={(val) => updateLine(i, { stock_code: val })}
-                            onBatchSelect={(batch) => {
-                              const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
-                              const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
-                              const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
-                              updateLine(i, {
-                                product_id: batch?.id ?? null,
-                                size_desc: batch?.size_desc || line.size_desc,
-                                brand: batch?.brand || line.brand,
-                                model_name: batch?.model_name || line.model_name,
-                                max_stock: batch?.stock_qty ?? null,
-                                unit_sale_price: salePrice,
-                                unit_purchase_price: purchasePrice,
-                                unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
-                                cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
-                              });
-                            }}
-                          />
+                        <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-4">
+                          <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Ebat</label>
+                          <SearchableCombobox value={line.size_desc} onChange={(val) => updateLine(i, { size_desc: val })} options={sizeOptions} placeholder="205/60R16" />
                         </div>
                       )}
                       {isProductSale && (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
-                          <SearchableCombobox
-                            value={line.size_desc}
-                            onChange={(val) => updateLine(i, { size_desc: val })}
-                            options={sizeOptions}
-                            placeholder="205/60R16"
-                          />
+                        <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-4">
+                          <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Marka</label>
+                          <input type="text" value={line.brand} onChange={(e) => updateLine(i, { brand: e.target.value })} placeholder="Marka" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
                       )}
                       {isProductSale && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Marka</label>
-                            <input
-                              type="text"
-                              value={line.brand}
-                              onChange={(e) => updateLine(i, { brand: e.target.value })}
-                              placeholder="Marka"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Model</label>
-                            <input
-                              type="text"
-                              value={line.model_name}
-                              onChange={(e) => updateLine(i, { model_name: e.target.value })}
-                              placeholder="Model"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
+                        <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-4">
+                          <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Model</label>
+                          <input type="text" value={line.model_name} onChange={(e) => updateLine(i, { model_name: e.target.value })} placeholder="Model" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
                       )}
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Adet</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={line.quantity}
-                            onChange={(e) => handleQuantityChange(i, line, e.target.value)}
-                            className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
-                          />
+                      <div className="lg:col-span-2">
+                        {/* Stok sınırı Adet etiketinin yanında rozet — alanın altındaki
+                            yazı yalnızca bu satırı uzatıp ızgara hizasını bozuyordu. */}
+                        <div className="mb-1.5 flex items-center justify-between gap-1">
+                          <label className="block text-[13px] font-medium text-gray-700">Adet</label>
                           {line.product_id != null && line.max_stock != null && (
-                            <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
-                              Stok: {line.max_stock}
-                            </p>
+                            <span
+                              title="Seçili partide kalan stok"
+                              className={`whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums ${overStock ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`}
+                            >
+                              Stok {line.max_stock}
+                            </span>
                           )}
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Tutar (₺)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={line.unit_price}
-                            onChange={(e) => updateLine(i, { unit_price: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Maliyet (₺)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={line.cost_price}
-                            onChange={(e) => updateLine(i, { cost_price: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          value={line.quantity}
+                          onChange={(e) => handleQuantityChange(i, line, e.target.value)}
+                          className={`w-full border rounded-lg px-4 py-2.5 text-base text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
+                        />
                       </div>
-
-                      <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
-                        <span className="text-xs font-medium text-gray-500">Kar</span>
-                        <span className="font-medium text-gray-700">{formatCurrency(kar)}</span>
+                      <div className="lg:col-span-4">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Tutar (₺)</label>
+                        <input type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => updateLine(i, { unit_price: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 text-right font-semibold" />
+                      </div>
+                      <div className="lg:col-span-3">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Maliyet (₺)</label>
+                        <input type="number" min="0" step="0.01" value={line.cost_price} onChange={(e) => updateLine(i, { cost_price: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 text-right" />
+                      </div>
+                      <div className="lg:col-span-3">
+                        <span className="block text-[13px] font-medium text-gray-700 mb-1.5">Kâr</span>
+                        <div className={`flex h-[46px] items-center justify-end text-base font-semibold tabular-nums ${kar >= 0 ? "text-v2-success-fg" : "text-v2-danger-fg"}`}>
+                          {formatCurrency(kar)}
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
+              <div className="p-5">
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-v2-line-strong text-sm font-semibold text-v2-link hover:bg-v2-muted"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" d="M12 5v14M5 12h14" /></svg>
+                  Satır Ekle
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={addLine}
-                className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
-              >
-                + Satır Ekle
-              </button>
               </>)}
-            </div>
+            </section>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notlar
-              </label>
+            <section className="rounded-xl border border-v2-line bg-v2-surface shadow-sm p-5">
+              <label htmlFor="siparis-notlar" className="mb-2.5 block text-[15px] font-semibold text-v2-fg">Notlar</label>
               <textarea
+                id="siparis-notlar"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ek notlar..."
                 rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
               />
-            </div>
+            </section>
 
-            <div className="sticky bottom-0 sm:static -mx-6 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0 bg-white sm:bg-transparent border-t border-gray-100 sm:border-t-0 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:shadow-none z-10">
-              {/* Mobil: kompakt tek satır */}
-              <div className="flex sm:hidden items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Toplam Tutar</div>
-                  <div className="text-base font-bold text-green-600 truncate">{formatCurrency(total)}</div>
+            {/* Mobilde iki satır: üstte toplamlar, altta tam genişlik buton(lar) —
+                önceden buton yarım genişlikte sola yaslı kalıyordu. */}
+            <div className="sticky bottom-3 sm:bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 sm:gap-4 rounded-xl border border-v2-line bg-v2-surface/95 px-4 sm:px-5 py-3 shadow-lg backdrop-blur">
+              <div className="flex items-end gap-6 sm:gap-8">
+                <div className="flex flex-col">
+                  <span className="text-xs text-v2-fg-muted">Toplam Tutar</span>
+                  <span className="text-2xl font-bold leading-8 tracking-tight tabular-nums text-v2-fg">{formatCurrency(total)}</span>
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading || productLoading}
-                  className="shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-5 py-2 rounded-lg transition-colors text-sm"
-                >
-                  {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
-                </button>
-              </div>
-
-              {/* Masaüstü: dikey görünüm */}
-              <div className="hidden sm:block space-y-3">
-                <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
-                  <span className="text-gray-600 font-medium">Toplam Tutar:</span>
-                  <span className="text-xl font-bold text-green-600">
-                    {formatCurrency(total)}
-                  </span>
+                <div className="flex flex-col">
+                  <span className="text-xs text-v2-fg-muted">Kâr</span>
+                  <span className={`text-xl font-semibold leading-8 tabular-nums ${totalKar >= 0 ? "text-v2-success-fg" : "text-v2-danger-fg"}`}>{formatCurrency(totalKar)}</span>
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={loading || productLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-lg transition-colors text-lg"
-                >
-                  {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
-                </button>
               </div>
+              <button
+                type="submit"
+                disabled={loading || productLoading}
+                className="h-12 w-full sm:w-auto rounded-xl bg-blue-600 px-7 text-[15px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {loading ? "Kaydediliyor..." : "Sipariş Oluştur"}
+              </button>
             </div>
           </form>
-        </div>
       </div>
     </div>
   );
@@ -1158,8 +995,12 @@ function OrderPageInner() {
 
 export default function OrderPage() {
   return (
-    <Suspense fallback={null}>
-      <OrderPageInner />
-    </Suspense>
+    <AuthProvider>
+      <StandaloneShellV2 activeHref="/admin/orders">
+        <Suspense fallback={null}>
+          <OrderPageInner />
+        </Suspense>
+      </StandaloneShellV2>
+    </AuthProvider>
   );
 }

@@ -82,6 +82,11 @@ export async function GET(request: NextRequest) {
       `SELECT COUNT(*)::int AS total,
               COALESCE(SUM(os.unit_price), 0)::float AS total_amount,
               COALESCE(SUM(os.unit_price - os.cost_price), 0)::float AS total_kar,
+              -- Yeni görünümün özet kartları için (sipariş sayısı ve bekleyen
+              -- sipariş) — liste satır (line) bazlı olduğundan DISTINCT; aynı
+              -- sorguya eklendiği için ek bir sorgu maliyeti yok.
+              COUNT(DISTINCT o.id)::int AS order_count,
+              COUNT(DISTINCT o.id) FILTER (WHERE o.status = 'BEKLEMEDE')::int AS pending_count,
               -- Ortalama GÜNLÜK tutar/kâr için (bkz. admin/orders/page.tsx özet
               -- kutusu) — aktif filtrelerle eşleşen siparişlerin GERÇEKTE hangi
               -- gün aralığına yayıldığı. "Tümü" (tarih filtresi yokken) dahil
@@ -103,6 +108,8 @@ export async function GET(request: NextRequest) {
     const total: number = countResult.rows[0].total;
     const totalAmount: number = countResult.rows[0].total_amount;
     const totalKar: number = countResult.rows[0].total_kar;
+    const orderCount: number = countResult.rows[0].order_count;
+    const pendingCount: number = countResult.rows[0].pending_count;
     const firstOrderDate: string | null = countResult.rows[0].first_order_date;
     const lastOrderDate: string | null = countResult.rows[0].last_order_date;
 
@@ -176,7 +183,7 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({
-      items, total, totalAmount, totalKar, firstOrderDate, lastOrderDate,
+      items, total, totalAmount, totalKar, orderCount, pendingCount, firstOrderDate, lastOrderDate,
       workingHoursConfigured, workingDaySpan, page, limit,
     });
   } catch (error) {

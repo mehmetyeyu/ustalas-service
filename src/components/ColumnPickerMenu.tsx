@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { ColumnPrefsColumn } from "@/hooks/useColumnPrefs";
 
 // Products/Customers/Orders/Storage'daki "Sütunlar" dropdown'ının ortak
@@ -20,15 +21,29 @@ interface ColumnPickerMenuProps<C extends ColumnPrefsColumn> {
   // left/right flip var) — tek bir align enum'u yeterli olmadığı için tüm
   // positioning+width class'ları doğrudan buradan verilir.
   positionClassName?: string;
+  // Verilirse Escape menüyü kapatır (dışarı tıklama ile kapatma sayfanın
+  // kök div'inde, değişmedi).
+  onClose?: () => void;
 }
 
 export function ColumnPickerMenu<C extends ColumnPrefsColumn>({
   columns, visibleCols, onToggle, reorderable,
   dragColKey, onDragStart, onDragOver, onDrop, onDragEnd,
-  positionClassName = "right-0 w-56",
+  positionClassName = "right-0 w-56", onClose,
 }: ColumnPickerMenuProps<C>) {
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && onCloseRef.current && !e.defaultPrevented) onCloseRef.current();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
   return (
     <div
+      role="group"
+      aria-label="Sütunlar"
       className={`absolute top-10 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 ${positionClassName}`}
       onClick={(e) => e.stopPropagation()}
     >

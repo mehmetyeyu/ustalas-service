@@ -33,7 +33,7 @@ export function isValidPermissionKey(key: string): boolean {
   return ALL_PERMISSION_KEYS.includes(key);
 }
 
-interface PermissionUser {
+export interface PermissionUser {
   role: string;
   permissions?: string[] | null;
 }

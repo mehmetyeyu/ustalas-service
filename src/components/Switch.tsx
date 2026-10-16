@@ -2,16 +2,21 @@ export function Switch({
   checked,
   disabled,
   onClick,
+  label,
 }: {
   checked: boolean;
   disabled?: boolean;
   onClick: () => void;
+  // Ekran okuyucu adı — anahtarın yanındaki görünür başlık (ör. "Araç
+  // Plakası Zorunlu"); verilmezse anahtar isimsiz okunuyordu.
+  label?: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       onClick={onClick}
       disabled={disabled}
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${

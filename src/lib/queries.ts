@@ -44,6 +44,7 @@ export interface MeResponse {
   is_primary_admin?: boolean; onboarding_tour_completed_at?: string | null;
   custom_order_no_enabled?: boolean; plate_required?: boolean;
   payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string;
+  ui_version?: "v1" | "v2"; ui_theme?: "system" | "light" | "dark"; ui_v2_available?: boolean;
 }
 
 // Oturum yoksa (401) hata değil null — "giriş yapılmamış" geçerli bir durum.

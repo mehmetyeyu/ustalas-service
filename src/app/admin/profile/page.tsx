@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
 import { useAuth } from "../AuthContext";
+import { SettingsPage, SettingsSection } from "@/components/v2/SettingsLayout";
+import AppearanceSettings from "@/components/v2/AppearanceSettings";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Yönetici",
@@ -94,11 +96,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-lg">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Profil</h1>
-
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-500 mb-4">Hesap Bilgileri</h2>
+    <SettingsPage title="Profil" description="Hesap bilgileriniz, panel görünümü ve giriş bilgileriniz.">
+      <SettingsSection title="Hesap Bilgileri">
         <div className="space-y-3 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-500">Kullanıcı Adı</span>
@@ -109,12 +108,13 @@ export default function ProfilePage() {
             <span className="font-medium text-gray-800">{ROLE_LABELS[role] || role}</span>
           </div>
         </div>
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-500 mb-4">Kullanıcı Adını Değiştir</h2>
+      {(user?.uiV2Available || user?.uiVersion === "v2") && <AppearanceSettings />}
 
-        <div className="mb-5">
+      <SettingsSection title="Kullanıcı Adı" description="Panele girişte kullandığınız kullanıcı adı.">
+
+        <div className="mb-5 max-w-md">
           <label className="block text-sm font-medium text-gray-700 mb-1">Yeni Kullanıcı Adı</label>
           <input
             type="text"
@@ -127,16 +127,15 @@ export default function ProfilePage() {
         <button
           onClick={handleChangeUsername}
           disabled={usernameSaving}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors"
         >
           {usernameSaving ? "Kaydediliyor..." : "Kullanıcı Adını Güncelle"}
         </button>
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-sm font-semibold text-gray-500 mb-4">Şifre Değiştir</h2>
+      <SettingsSection title="Şifre" description="Değiştirmek için mevcut şifrenizi ve yeni şifrenizi iki kez girin.">
 
-        <div className="space-y-4 mb-5">
+        <div className="space-y-4 mb-5 max-w-md">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mevcut Şifre</label>
             <input
@@ -169,11 +168,11 @@ export default function ProfilePage() {
         <button
           onClick={handleChangePassword}
           disabled={saving}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors"
         >
           {saving ? "Kaydediliyor..." : "Şifreyi Güncelle"}
         </button>
-      </div>
-    </div>
+      </SettingsSection>
+    </SettingsPage>
   );
 }

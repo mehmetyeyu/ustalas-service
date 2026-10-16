@@ -11,6 +11,7 @@ import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/we
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
+import { useDialog } from "@/lib/useDialog";
 
 interface StorageItem {
   id: number;
@@ -113,6 +114,9 @@ function SearchableCombobox({
         value={value}
         onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
         onFocus={(e) => { setQuery(""); setOpen(true); e.target.select(); }}
+        // Escape önce açık öneri listesini kapatır; içinde bulunduğu pencere
+        // (useDialog) preventDefault'u görüp kapanmaz — ikinci Escape kapatır.
+        onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); } }}
         placeholder={placeholder}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
@@ -344,9 +348,11 @@ export default function StoragePage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 350);
   const [showAddModal, setShowAddModal] = useState(false);
+  const showAddModalDialog = useDialog(() => setShowAddModal(false));
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [editItem, setEditItem] = useState<StorageItem | null>(null);
+  const editItemDialog = useDialog(() => setEditItem(null));
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
@@ -363,6 +369,7 @@ export default function StoragePage() {
   const [showDelivered, setShowDelivered] = useState(false);
   const [teslimId, setTeslimId] = useState<number | null>(null);
   const [degisimItem, setDegisimItem] = useState<StorageItem | null>(null);
+  const degisimItemDialog = useDialog(() => setDegisimItem(null));
   const [degisimForm, setDegisimForm] = useState({ ebat: "", marka: "", dis_derinligi: "", adet: "4", mevsim: "", aciklama: "", islem_tarihi: new Date().toISOString().split("T")[0], model_name: "", production_week: "", production_year: "", load_speed_index: "" });
   const [degisimSaving, setDegisimSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -741,6 +748,7 @@ export default function StoragePage() {
           </button>
           {showColPicker && (
             <ColumnPickerMenu
+              onClose={() => setShowColPicker(false)}
               columns={menuColumns}
               visibleCols={visibleCols}
               onToggle={toggleVisible}
@@ -867,7 +875,10 @@ export default function StoragePage() {
                       <div className="relative sm:hidden">
                         <button
                           onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === item.id ? null : item.id); }}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                          aria-label="İşlemler"
+                          aria-haspopup="menu"
+                          aria-expanded={openMenuId === item.id}
+                          className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
                         >
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                             <circle cx="10" cy="4" r="1.5" />
@@ -969,14 +980,14 @@ export default function StoragePage() {
         </div>
         {total > limit && (
           <div className="flex gap-1 overflow-x-auto">
-            <button
+            <button aria-label="İlk sayfa"
               onClick={() => setPage(1)}
               disabled={page === 1}
               className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               «
             </button>
-            <button
+            <button aria-label="Önceki sayfa"
               onClick={() => setPage((p) => p - 1)}
               disabled={page === 1}
               className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -997,6 +1008,7 @@ export default function StoragePage() {
                   <button
                     key={p}
                     onClick={() => setPage(p as number)}
+                    aria-current={page === p ? "page" : undefined}
                     className={`px-3 py-1 rounded border ${page === p
                       ? "bg-blue-600 text-white border-blue-600"
                       : "border-gray-300 hover:bg-gray-100"
@@ -1006,14 +1018,14 @@ export default function StoragePage() {
                   </button>
                 )
               )}
-            <button
+            <button aria-label="Sonraki sayfa"
               onClick={() => setPage((p) => p + 1)}
               disabled={page * limit >= total}
               className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ›
             </button>
-            <button
+            <button aria-label="Son sayfa"
               onClick={() => setPage(Math.ceil(total / limit))}
               disabled={page * limit >= total}
               className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1026,7 +1038,7 @@ export default function StoragePage() {
 
       {/* Yeni Kayıt Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showAddModalDialog} role="dialog" aria-modal="true" aria-label="Yeni Depolama Kaydı" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Yeni Depolama Kaydı</h2>
@@ -1182,7 +1194,7 @@ export default function StoragePage() {
       )}
       {/* Düzenle Modal */}
       {editItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={editItemDialog} role="dialog" aria-modal="true" aria-label="Depolama Kaydını Düzenle" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <h2 className="text-xl font-bold text-gray-800 mb-5">Kaydı Düzenle — #{editItem.depo_no}</h2>
@@ -1288,12 +1300,12 @@ export default function StoragePage() {
 
       {/* Değişim Yap Modal — bkz. openDegisim/handleDegisimSubmit notu */}
       {degisimItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={degisimItemDialog} role="dialog" aria-modal="true" aria-label="Değişim Yap" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
               <div className="flex items-start justify-between mb-1">
                 <h2 className="text-xl font-bold text-gray-800">Değişim Yap — Depo No {degisimItem.depo_no}</h2>
-                <button onClick={() => setDegisimItem(null)} className="text-gray-400 hover:text-gray-600">
+                <button aria-label="Kapat" onClick={() => setDegisimItem(null)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1372,7 +1384,7 @@ export default function StoragePage() {
                 İptal
               </button>
               <button onClick={handleDegisimSubmit} disabled={degisimSaving}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-semibold py-2.5 rounded-lg">
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg">
                 {degisimSaving ? "Kaydediliyor..." : "Kaydet ve Etiket Yazdır"}
               </button>
             </div>

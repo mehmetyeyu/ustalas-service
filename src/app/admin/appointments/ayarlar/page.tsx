@@ -5,6 +5,7 @@ import { PushNotificationToggle } from "../../PushNotificationToggle";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { Switch } from "@/components/Switch";
+import { SettingsPage, SettingsSection } from "@/components/v2/SettingsLayout";
 import { CopyBox } from "@/components/CopyBox";
 
 interface DayWindow { open: string; close: string; }
@@ -202,14 +203,20 @@ export default function AppointmentSettingsPage() {
   }
 
   return (
-    <div className="max-w-lg">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Randevu Ayarları</h1>
-
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <p className="text-xs text-gray-400 mb-5">
-          /randevu sayfasından gelen online randevu taleplerini etkiler. Hangi hizmetlerin
-          randevuya açık olduğunu Hizmetler sayfasından ayarlayabilirsiniz.
-        </p>
+    <SettingsPage
+      title="Randevu Ayarları"
+      description="/randevu sayfasından gelen online randevu taleplerini etkiler. Hangi hizmetlerin randevuya açık olduğunu Hizmetler sayfasından ayarlayabilirsiniz."
+      footer={
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+        >
+          {saving ? "Kaydediliyor..." : "Kaydet"}
+        </button>
+      }
+    >
+      <SettingsSection title="Randevu Kuralları" description="Kapasite, ne kadar ileriye randevu alınabileceği ve onay şekli.">
 
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-1">Kapasite</label>
@@ -239,8 +246,23 @@ export default function AppointmentSettingsPage() {
           </p>
         </div>
 
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Çalışma Saatleri</label>
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoApprove}
+            onChange={(e) => setAutoApprove(e.target.checked)}
+            className="w-4 h-4 accent-blue-600"
+          />
+          Randevuları otomatik onayla
+        </label>
+        <p className="text-xs text-gray-400 mt-1 ml-6">
+          Kapalıysa (önerilen) gelen talepler Randevular sayfasında onayınızı bekler.
+        </p>
+
+      </SettingsSection>
+
+      <SettingsSection title="Çalışma Saatleri" description="Online randevu alınabilecek günler ve saatler. Siparişlerdeki günlük ortalamalar da bu günlere göre hesaplanır.">
+        <div>
           <div className="flex flex-col gap-2">
             {DAYS.map((d) => {
               const window = workingHours[d.key];
@@ -280,27 +302,15 @@ export default function AppointmentSettingsPage() {
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={autoApprove}
-            onChange={(e) => setAutoApprove(e.target.checked)}
-            className="w-4 h-4 accent-blue-600"
-          />
-          Randevuları otomatik onayla
-        </label>
-        <p className="text-xs text-gray-400 mt-1 ml-6">
-          Kapalıysa (önerilen) gelen talepler Randevular sayfasında onayınızı bekler.
-        </p>
+      </SettingsSection>
 
-        <div className="mt-6 pt-5 border-t border-gray-100">
-          <PushNotificationToggle />
-        </div>
+      <SettingsSection title="Bildirimler" description="Yeni randevu talepleri ve onaylanan randevular için bildirimler.">
+        <PushNotificationToggle />
 
         <div className="mt-6 pt-5 border-t border-gray-100">
           <div className="flex items-center justify-between mb-1">
             <div className="text-sm font-medium text-gray-700">WhatsApp Bildirimi</div>
-            <Switch checked={whatsappEnabled} onClick={() => setWhatsappEnabled((v) => !v)} />
+            <Switch label="WhatsApp Bildirimi" checked={whatsappEnabled} onClick={() => setWhatsappEnabled((v) => !v)} />
           </div>
           <p className="text-xs text-gray-400 mb-4">
             Randevu onaylandığında müşterinin telefonuna WhatsApp üzerinden bilgilendirme mesajı
@@ -352,10 +362,11 @@ export default function AppointmentSettingsPage() {
           </div>
         </div>
 
+      </SettingsSection>
+
         {slug && origin && (
-          <div className="mt-6 pt-5 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-semibold text-gray-700">Web Sitenize Ekleyin</h3>
+          <SettingsSection title="Web Sitenize Ekleyin" description="Randevu formunu kendi web sitenize, Google Haritalar gibi gömebilirsiniz — aşağıdaki kodlardan birini sitenize yapıştırmanız yeterli.">
+            <div className="flex items-center justify-end mb-1">
               <button
                 type="button"
                 onClick={handleRegenerateSlug}
@@ -366,8 +377,6 @@ export default function AppointmentSettingsPage() {
               </button>
             </div>
             <p className="text-xs text-gray-400 mb-3">
-              Randevu formunu kendi web sitenize, Google Haritalar gibi gömebilirsiniz —
-              aşağıdaki kodlardan birini sitenize yapıştırmanız yeterli.
               &quot;Bağlantıyı Yenile&quot;, tahmin edilmesi zor rastgele yeni bir bağlantı üretir
               (eski bağlantı/kod artık çalışmaz — sitenizdeki kodu yenilemeniz gerekir).
             </p>
@@ -385,17 +394,8 @@ export default function AppointmentSettingsPage() {
               label="veya iframe ile göm (tam izole kutu)"
               value={`<iframe src="${origin}/randevu/${slug}?embed=1" style="width:100%;max-width:480px;height:700px;border:none" title="Online Randevu"></iframe>`}
             />
-          </div>
+          </SettingsSection>
         )}
-      </div>
-
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
-      >
-        {saving ? "Kaydediliyor..." : "Kaydet"}
-      </button>
-    </div>
+    </SettingsPage>
   );
 }

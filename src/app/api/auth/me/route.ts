@@ -18,6 +18,7 @@ export async function GET() {
     billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? false, billing_period_ends_at: user.billingPeriodEndsAt ?? null,
     billing_last_payment_error: user.billingLastPaymentError ?? null,
     is_primary_admin: user.isPrimaryAdmin ?? false, onboarding_tour_completed_at: user.onboardingTourCompletedAt ?? null,
+    ui_version: user.uiVersion ?? "v1", ui_theme: user.uiTheme ?? "system", ui_v2_available: user.uiV2Available ?? false,
     ...settings,
   });
 }

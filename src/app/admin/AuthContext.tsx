@@ -39,7 +39,14 @@ interface AuthUser {
   paymentTypes: string[];
   storageOverdueMonths: number;
   ordersDefaultDateFilter: string;
+  // Panel görünümü (bkz. database/schema.sql ui_version notu): v1 = bugünkü,
+  // v2 = yeni "premium" görünüm; tema yalnızca v2'de anlamlı.
+  uiVersion: "v1" | "v2";
+  uiTheme: "system" | "light" | "dark";
+  uiV2Available: boolean;
 }
+
+export type UiPreferences = { ui_version?: "v1" | "v2"; ui_theme?: "system" | "light" | "dark" };
 
 interface AuthState {
   user: AuthUser | null;
@@ -47,9 +54,11 @@ interface AuthState {
   // Genel Ayarlar kaydedilince çağrılır ki store'daki ayarlar (ödeme tipleri
   // vb.) sayfa yenilemeden diğer sayfalara yansısın.
   refresh: () => Promise<void>;
+  // Görünüm/tema tercihini kaydeder; ekran yanıtı beklemeden değişir.
+  setUiPreferences: (prefs: UiPreferences) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthState>({ user: null, loading: true, refresh: async () => {} });
+const AuthContext = createContext<AuthState>({ user: null, loading: true, refresh: async () => {}, setUiPreferences: async () => {} });
 
 const SETTINGS_CHANNEL = "ustalas-settings";
 
@@ -75,6 +84,9 @@ function toAuthUser(data: MeResponse): AuthUser {
     paymentTypes: Array.isArray(data.payment_types) ? data.payment_types : [],
     storageOverdueMonths: typeof data.storage_overdue_months === "number" ? data.storage_overdue_months : 6,
     ordersDefaultDateFilter: typeof data.orders_default_date_filter === "string" ? data.orders_default_date_filter : "",
+    uiVersion: data.ui_version === "v2" ? "v2" : "v1",
+    uiTheme: data.ui_theme === "light" || data.ui_theme === "dark" ? data.ui_theme : "system",
+    uiV2Available: !!data.ui_v2_available,
   };
 }
 
@@ -89,6 +101,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { data, isPending, refetch } = useMe();
   const user = useMemo(() => (data ? toAuthUser(data) : null), [data]);
   const refresh = useCallback(async () => { await refetch(); }, [refetch]);
+  // İyimser güncelleme: önbellekteki /me hemen değişir (görünüm/tema anında
+  // uygulanır), istek başarısız olursa sunucudaki hale geri çekilir.
+  const setUiPreferences = useCallback(async (prefs: UiPreferences) => {
+    queryClient.setQueryData<MeResponse | null>(queryKeys.me, (prev) => (prev ? { ...prev, ...prefs } : prev));
+    const res = await fetch("/api/auth/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(prefs),
+    }).catch(() => null);
+    if (!res || !res.ok) await queryClient.invalidateQueries({ queryKey: queryKeys.me });
+  }, [queryClient]);
 
   // Store sekme başına tutulur — Genel Ayarlar bir sekmede kaydedilince
   // (bkz. notifySettingsChanged) aynı tarayıcıdaki diğer açık panel
@@ -104,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // value sabit tutulur (useMemo) — layout her navigasyonda yeniden render
   // olur, her seferinde yeni bir nesne verilseydi tüm useAuth() kullanan
   // sayfalar gereksiz yere yeniden render olurdu.
-  const value = useMemo(() => ({ user, loading: isPending, refresh }), [user, isPending, refresh]);
+  const value = useMemo(() => ({ user, loading: isPending, refresh, setUiPreferences }), [user, isPending, refresh, setUiPreferences]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

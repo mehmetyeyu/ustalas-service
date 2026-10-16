@@ -18,6 +18,7 @@ import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/we
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
+import { useDialog } from "@/lib/useDialog";
 
 const IMPORT_BATCH_SIZE = 50;
 
@@ -153,6 +154,9 @@ function SearchableCombobox({
         value={value}
         onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
         onFocus={(e) => { setQuery(""); setOpen(true); e.target.select(); }}
+        // Escape önce açık öneri listesini kapatır; içinde bulunduğu pencere
+        // (useDialog) preventDefault'u görüp kapanmaz — ikinci Escape kapatır.
+        onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); } }}
         placeholder={placeholder}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
@@ -469,7 +473,7 @@ function clearOrphanedTypeFields(productType: string): Partial<typeof EMPTY_FORM
 function productTypeBadge(type: string | null) {
   if (!type) return "—";
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] leading-none font-medium ${PRODUCT_TYPE_BADGE_STYLE[type] ?? "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] leading-4 font-medium ${PRODUCT_TYPE_BADGE_STYLE[type] ?? "bg-gray-100 text-gray-600"}`}>
       {type}
     </span>
   );
@@ -478,7 +482,7 @@ function productTypeBadge(type: string | null) {
 function conditionBadge(condition: "Çok İyi" | "İyi" | null) {
   if (!condition) return "—";
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] leading-none font-medium ${condition === "Çok İyi" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] leading-4 font-medium ${condition === "Çok İyi" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
       {condition}
     </span>
   );
@@ -503,7 +507,7 @@ function ProductPreviewCard({ f }: { f: typeof EMPTY_FORM }) {
     : null;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
+    <div className="rounded-xl border border-gray-200 bg-v2-surface-2 p-4">
       <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
         {f.product_type.trim() && productTypeBadge(f.product_type)}
         {f.season.trim() && seasonBadge(f.season)}
@@ -529,7 +533,7 @@ function ProductPreviewCard({ f }: { f: typeof EMPTY_FORM }) {
 function seasonBadge(season: string | null) {
   if (!season) return "—";
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] leading-none font-medium ${season === "Kış" ? "bg-blue-100 text-blue-700"
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] leading-4 font-medium ${season === "Kış" ? "bg-blue-100 text-blue-700"
       : season === "Yaz" ? "bg-yellow-100 text-yellow-700"
         : season === "Dört Mevsim" ? "bg-green-100 text-green-700"
           : "bg-gray-100 text-gray-600"
@@ -706,6 +710,7 @@ export default function ProductsPage() {
   const [movementsLimit, setMovementsLimit] = useState(20);
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
+  const showAddModalDialog = useDialog(() => setShowAddModal(false));
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [barcodeChecking, setBarcodeChecking] = useState(false);
@@ -725,17 +730,20 @@ export default function ProductsPage() {
   // güncellenir — donma sorunu da böylece çözülmüş olur.
   const [sizeComposedOnce, setSizeComposedOnce] = useState(false);
   const [editItem, setEditItem] = useState<ProductBatch | null>(null);
+  const editItemDialog = useDialog(() => setEditItem(null));
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editBarcodeChecking, setEditBarcodeChecking] = useState(false);
   const [editSizeBuilderOpen, setEditSizeBuilderOpen] = useState(false);
   const [editSizeComposedOnce, setEditSizeComposedOnce] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [historyModalProduct, setHistoryModalProduct] = useState<ProductBatch | null>(null);
+  const historyModalProductDialog = useDialog(() => setHistoryModalProduct(null));
   // Mağaza ⇄ Depo kısmi stok taşıma — tek partili ürünlerde grup satırından,
   // çok partili ürünlerde genişletilmiş parti satırından tetiklenir (bkz.
   // openTransfer çağrı yerleri). toLocation sabit (butonun kendisi yönü
   // belirtir, ör. "Depo'ya Taşı") — kasıtlı olarak serbest metin değil.
   const [transferBatch, setTransferBatch] = useState<ProductBatch | null>(null);
+  const transferBatchDialog = useDialog(() => { if (!transferSaving) setTransferBatch(null); });
   const [transferToLocation, setTransferToLocation] = useState("");
   const [transferQty, setTransferQty] = useState("");
   const [transferSaving, setTransferSaving] = useState(false);
@@ -1633,6 +1641,7 @@ export default function ProductsPage() {
               </button>
               {showColPicker && (
                 <ColumnPickerMenu
+                  onClose={() => setShowColPicker(false)}
                   columns={menuColumns}
                   visibleCols={visibleCols}
                   onToggle={toggleVisible}
@@ -1760,7 +1769,7 @@ export default function ProductsPage() {
             </div>
             {movementsTotal > movementsLimit && (
               <div className="flex gap-1 overflow-x-auto">
-                <button
+                <button aria-label="Önceki sayfa"
                   onClick={() => setMovementsPage((p) => Math.max(1, p - 1))}
                   disabled={movementsPage === 1}
                   className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1768,7 +1777,7 @@ export default function ProductsPage() {
                   ‹
                 </button>
                 <span className="px-3 py-1">{movementsPage} / {Math.ceil(movementsTotal / movementsLimit)}</span>
-                <button
+                <button aria-label="Sonraki sayfa"
                   onClick={() => setMovementsPage((p) => p + 1)}
                   disabled={movementsPage * movementsLimit >= movementsTotal}
                   className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1800,7 +1809,7 @@ export default function ProductsPage() {
                         </th>
                       )
                     )}
-                    <th className={`sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
+                    <th className={`v2-actions sticky right-0 z-20 bg-gray-50 border-l border-gray-200 px-2 sm:px-3 py-3 ${productActionsWidth}`}></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1832,7 +1841,7 @@ export default function ProductsPage() {
                                 {c.group(group)}
                               </td>
                             ))}
-                            <td className={`sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
+                            <td className={`v2-actions sticky right-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-l border-gray-100 px-2 sm:px-3 py-3 text-right ${productActionsWidth}`}>
                               <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                 {group.batches.some((b) => (b.stock_qty ?? 0) > 0) && (
                                   <OrderBatchMenu batches={group.batches.filter((b) => (b.stock_qty ?? 0) > 0)} />
@@ -1874,7 +1883,7 @@ export default function ProductsPage() {
                                   {c.batch(batch)}
                                 </td>
                               ))}
-                              <td className={`sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
+                              <td className={`v2-actions sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 px-2 sm:px-3 py-3 ${productActionsWidth}`}>
                                 <div className="flex items-center justify-end gap-0.5 sm:gap-3 whitespace-nowrap">
                                   {(batch.stock_qty ?? 0) > 0 && (
                                     <Link prefetch={false}
@@ -1998,14 +2007,14 @@ export default function ProductsPage() {
             </div>
             {total > limit && (
               <div className="flex gap-1 overflow-x-auto">
-                <button
+                <button aria-label="İlk sayfa"
                   onClick={() => setPage(1)}
                   disabled={page === 1}
                   className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   «
                 </button>
-                <button
+                <button aria-label="Önceki sayfa"
                   onClick={() => setPage((p) => p - 1)}
                   disabled={page === 1}
                   className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2026,6 +2035,7 @@ export default function ProductsPage() {
                       <button
                         key={p}
                         onClick={() => setPage(p as number)}
+                    aria-current={page === p ? "page" : undefined}
                         className={`px-3 py-1 rounded border ${page === p
                           ? "bg-blue-600 text-white border-blue-600"
                           : "border-gray-300 hover:bg-gray-100"
@@ -2035,14 +2045,14 @@ export default function ProductsPage() {
                       </button>
                     )
                   )}
-                <button
+                <button aria-label="Sonraki sayfa"
                   onClick={() => setPage((p) => p + 1)}
                   disabled={page * limit >= total}
                   className="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ›
                 </button>
-                <button
+                <button aria-label="Son sayfa"
                   onClick={() => setPage(Math.ceil(total / limit))}
                   disabled={page * limit >= total}
                   className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2057,12 +2067,12 @@ export default function ProductsPage() {
 
       {/* Yeni Ürün / Parti Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showAddModalDialog} role="dialog" aria-modal="true" aria-label="Yeni Ürün" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <div className="flex items-start justify-between mb-1">
               <h2 className="text-xl font-bold text-gray-800">Yeni Ürün / Parti</h2>
-              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Kapat" onClick={() => setShowAddModal(false)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -2315,12 +2325,12 @@ export default function ProductsPage() {
 
       {/* Düzenle Modal */}
       {editItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={editItemDialog} role="dialog" aria-modal="true" aria-label="Ürünü Düzenle" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
             <div className="flex items-start justify-between mb-5">
               <h2 className="text-xl font-bold text-gray-800">Partiyi Düzenle</h2>
-              <button onClick={() => setEditItem(null)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Kapat" onClick={() => setEditItem(null)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -2556,11 +2566,11 @@ export default function ProductsPage() {
 
       {/* Fiyat Geçmişi Modal */}
       {historyModalProduct && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div ref={historyModalProductDialog} role="dialog" aria-modal="true" aria-label="Fiyat Geçmişi" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between mb-1">
               <h2 className="text-xl font-bold text-gray-800">Fiyat Geçmişi</h2>
-              <button onClick={() => setHistoryModalProduct(null)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Kapat" onClick={() => setHistoryModalProduct(null)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -2670,7 +2680,7 @@ export default function ProductsPage() {
 
       {/* Mağaza ⇄ Depo Taşı */}
       {transferBatch && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4" onClick={() => !transferSaving && setTransferBatch(null)}>
+        <div ref={transferBatchDialog} role="dialog" aria-modal="true" aria-label="Mağaza ⇄ Depo Taşı" className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4" onClick={() => !transferSaving && setTransferBatch(null)}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-semibold text-gray-800 mb-1">{transferToLocation}&apos;ya Taşı</h2>
             <p className="text-xs text-gray-400 mb-4">

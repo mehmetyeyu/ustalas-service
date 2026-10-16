@@ -3,8 +3,10 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
+import { canGoBackInApp } from "@/lib/navHistory";
 import { useViewGuard, usePermission, useAuth } from "../../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -15,6 +17,7 @@ import { useServices, useCustomers, useSuppliers, useProductSizes, useKasalar, i
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { weekYearLabel } from "@/lib/weekYear";
 import { trIncludes } from "@/lib/trSearch";
+import { useDialog } from "@/lib/useDialog";
 
 interface OrderDetail {
   id: number;
@@ -208,8 +211,11 @@ function SearchableCombobox({
         value={value}
         onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
         onFocus={(e) => { setQuery(""); setOpen(true); e.target.select(); }}
+        // Escape önce açık öneri listesini kapatır; içinde bulunduğu pencere
+        // (useDialog) preventDefault'u görüp kapanmaz — ikinci Escape kapatır.
+        onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); } }}
         placeholder={placeholder}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
       {open && filtered.length > 0 && rect && typeof document !== "undefined" && createPortal(
         <ul
@@ -305,16 +311,31 @@ function PaymentTypeSelect({
 // partinin mevcut stoğunu (max_stock, anlık uyarı için) üst bileşene bildirir.
 const NO_CODES: string[] = [];
 
+// Stok Kodu ve Parti, satır ızgarasında İKİ AYRI hücre olarak çizilir
+// (fragment döner; hücre/etiket sınıfları çağırandan gelir). Parti seçimi
+// eskiden kod kutusunun altına küçük bir listeyle sıkışıyor, satırı
+// hizasız uzatıyordu; marka/model ön yazısı da Marka/Model alanlarını
+// tekrarlıyordu (seçilince zaten oralara dolar).
 function TireBatchPicker({
-  supplier, code, productId, onCodeChange, onBatchSelect,
+  supplier, code, productId, onCodeChange, onBatchSelect, cellClassName, labelClassName,
 }: {
   supplier: string;
   code: string;
   productId: number | null;
   onCodeChange: (code: string) => void;
   onBatchSelect: (batch: StockBatch | null) => void;
+  cellClassName: string;
+  labelClassName: string;
 }) {
   const [batches, setBatches] = useState<StockBatch[]>([]);
+  // Partiler çekilirken boş liste "parti yok" sanılmasın diye.
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  // 300ms bekleme yalnızca kullanıcı kodu YAZARKEN anlamlı (her tuşta istek
+  // atılmasın). Kod zaten dolu açılan satırlarda (Düzelt, Ürünler'den
+  // sipariş) açılıştaki koda yapılan çekim beklemeden başlar — Parti alanı
+  // geç dolmasın. (Bir "ilk çalışma" bayrağı yerine açılış değeriyle
+  // karşılaştırılır: Strict Mode'da efekt iki kez çalışsa da doğru kalır.)
+  const initialCodeRef = useRef(code);
   // Tedarikçide stoğu olan kodlar — ortak önbellekten (bkz. useStockCodes);
   // sipariş/ürün kaydında tazelenir, form açık kalsa da eskimez.
   const codeOptions = useStockCodes(supplier).data ?? NO_CODES;
@@ -322,51 +343,60 @@ function TireBatchPicker({
   useEffect(() => {
     if (!supplier.trim() || !code.trim()) {
       setBatches([]);
+      setLoadingBatches(false);
       return;
     }
+    setLoadingBatches(true);
+    const delay = code === initialCodeRef.current ? 0 : 300;
     const t = setTimeout(() => {
       fetch(`/api/products/stock-batches?supplier=${encodeURIComponent(supplier)}&code=${encodeURIComponent(code)}`)
         .then((r) => r.json())
         .then((data: StockBatch[]) => { if (Array.isArray(data)) setBatches(data); })
-        .catch(() => setBatches([]));
-    }, 300);
+        .catch(() => setBatches([]))
+        .finally(() => setLoadingBatches(false));
+    }, delay);
     return () => clearTimeout(t);
   }, [supplier, code]);
 
+  const batchPlaceholder = !code.trim()
+    ? "Önce stok kodu seçin"
+    : loadingBatches
+    ? "Partiler yükleniyor…"
+    : batches.length === 0
+    ? "Bu kodda parti bulunamadı"
+    : "Parti seçin…";
+
   return (
-    <div className="space-y-1">
-      <SearchableCombobox
-        value={code}
-        onChange={(val) => { onCodeChange(val); onBatchSelect(null); }}
-        options={codeOptions}
-        placeholder="Ürün kodu..."
-      />
-      {batches.length > 0 && (batches[0].brand || batches[0].model_name) && (
-        // Marka/Model kod bazında aynıdır (tüm partiler aynı koda ait), bu
-        // yüzden tek partinin (batches[0]) değeri hangisi seçilirse seçilsin
-        // geçerlidir — parti listesinde tekrar tekrar göstermeye gerek yok.
-        <p className="text-xs text-gray-400 truncate">
-          {[batches[0].brand, batches[0].model_name].filter(Boolean).join(" — ")}
-        </p>
-      )}
-      {batches.length > 0 && (
+    <>
+      <div className={cellClassName}>
+        <label className={labelClassName}>Stok Kodu</label>
+        <SearchableCombobox
+          value={code}
+          onChange={(val) => { onCodeChange(val); onBatchSelect(null); }}
+          options={codeOptions}
+          placeholder="Ürün kodu..."
+        />
+      </div>
+      <div className={cellClassName}>
+        <label className={labelClassName}>Parti (Hafta/Yıl)</label>
         <select
           value={productId ?? ""}
+          disabled={batches.length === 0}
           onChange={(e) => {
             const b = batches.find((x) => x.id === Number(e.target.value));
             onBatchSelect(b ?? null);
           }}
-          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <option value="">Parti (Hafta/Yıl) seç...</option>
+          <option value="">{batchPlaceholder}</option>
           {batches.map((b) => (
             <option key={b.id} value={b.id}>
               {weekYearLabel(b.production_week, b.production_year)} — Stok: {b.stock_qty}{b.location ? ` (${b.location})` : ""}
             </option>
           ))}
         </select>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -397,6 +427,7 @@ function OrderDetailPageInner() {
   const [paymentNoteInput, setPaymentNoteInput] = useState("");
   const [closing, setClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const payDialog = useDialog(() => { if (!closing) setShowModal(false); });
 
   // Düzenleme
   const [editing, setEditing] = useState(false);
@@ -461,12 +492,6 @@ function OrderDetailPageInner() {
     services.filter((s) => s.price != null).map((s) => [s.name.toLocaleLowerCase("tr-TR"), Number(s.price)])
   );
   const phoneByCustomer = new Map(customers.map((c) => [c.name.toLocaleLowerCase("tr-TR"), c.phone]));
-  // Stok Kodu ve Ebat sütunları (başlık dahil) yalnızca en az bir ürün/parça
-  // satışı (Lastik/Jant/İkinci El) satırı varsa gösterilir — işçilik
-  // satırlarında bu bilgiler anlamsız. Ebat, önceden sadece "Lastik Satışı"na
-  // özeldi (İkinci El satışlarında hiç girilemiyordu, gerçek bir kullanıcı
-  // raporuydu) — artık hepsine anlamlı.
-  const hasProductSaleLine = editLines.some((l) => productSaleServiceNames.has(l.service_name.trim()));
 
   // İş Emri yazdırma — src/app/admin/storage/page.tsx'teki printLabel ile
   // AYNI desen (HTML string, window.open + document.write + window.print(),
@@ -960,6 +985,75 @@ function OrderDetailPageInner() {
     }
   }
 
+  // Düzelt'te kaydedilmemiş değişiklik koruması. Ekran artık panel çerçevesi
+  // içinde açıldığından (menü görünür) kaydetmeden bir bağlantıya tıklamak
+  // değişiklikleri uyarısız siliyordu. Açılış hali (editBaseline) bir kez
+  // alınır; yalnızca kullanıcının değiştirebildiği alanlar karşılaştırılır
+  // (max_stock gibi açılıştan sonra arka planda gelen bilgiler değil).
+  // Tarayıcının geri tuşu App Router'da güvenilir yakalanamıyor — kapsam dışı.
+  const editSnapshot = editing
+    ? JSON.stringify({
+        plate: editPlate, no: editCustomOrderNo, paymentNote: editPaymentNote,
+        customer: editCustomerName, phone: editCustomerPhone, notes: editNotes,
+        lines: editLines.map((l) => [l.service_name, l.supplier, l.stock_code, l.size_desc, l.brand, l.model_name, l.quantity, l.unit_price, l.cost_price, l.payment_type, l.kasa_id, l.product_id]),
+        payments: editPayments.map((p) => [p.payment_type, p.amount, p.kasa_id]),
+      })
+    : null;
+  const [editBaseline, setEditBaseline] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editing) { setEditBaseline(null); return; }
+    // openEdit'teki tüm başlangıç değerleri aynı render'da gelir; ilk
+    // görüntü açılış hali olarak alınır.
+    setEditBaseline((prev) => prev ?? editSnapshot);
+  }, [editing, editSnapshot]);
+  const editDirty = editing && editBaseline !== null && editSnapshot !== editBaseline;
+
+  async function confirmDiscardEdit(): Promise<boolean> {
+    if (!editDirty) return true;
+    return confirm({
+      title: "Kaydedilmemiş değişiklikler",
+      message: "Bu siparişte yaptığınız değişiklikler kaydedilmedi. Kaydetmeden çıkılsın mı?",
+      confirmText: "Kaydetmeden çık",
+      cancelText: "Düzenlemeye dön",
+      variant: "danger",
+    });
+  }
+
+  async function closeEditGuarded() {
+    if (await confirmDiscardEdit()) setEditing(false);
+  }
+
+  // Değişiklik varken: sayfa yenileme/sekme kapatma (tarayıcının kendi
+  // uyarısı) ve panel içi bağlantılar (menü, üst çubuk, konum yolu) sorulur.
+  // Bağlantı tıklaması capture aşamasında yakalanıp Next Link'e ulaşmadan
+  // durdurulur; onaylanırsa aynı adrese programatik olarak gidilir.
+  useEffect(() => {
+    if (!editDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void confirmDiscardEdit().then((ok) => {
+        if (!ok) return;
+        setEditing(false);
+        router.push(url.pathname + url.search + url.hash);
+      });
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  // confirmDiscardEdit her render'da yeniden oluşur; yalnızca editDirty değişince yeniden bağlanması yeterli.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editDirty]);
+
   if (loading) {
     return <div className="p-12 text-center text-gray-400">Yükleniyor...</div>;
   }
@@ -969,21 +1063,27 @@ function OrderDetailPageInner() {
   if (!allowed) return null;
 
   if (editing && canEdit) {
+    const editKar = editLines.reduce((sum, l) => sum + num(l.unit_price) - num(l.cost_price), 0);
     return (
-      <div className="fixed inset-0 z-40 bg-white overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
-            <button
-              onClick={() => setEditing(false)}
-              className="mb-4 text-sm text-gray-500 hover:text-gray-800"
-            >
-              ← Geri
-            </button>
-
-            <div className="flex items-center justify-between mb-6">
-              <h1 className="text-xl font-bold text-gray-800">Sipariş {order.custom_order_no || `#${order.id}`} — Düzelt</h1>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+      // Panel çerçevesinin içinde açılır (sipariş oluşturma formuyla aynı
+      // düzen: konum yolu + başlık, altında kart) — eskiden tüm ekranı örten
+      // bir katmandı, menü/üst çubuk kayboluyordu.
+      <div className="max-w-6xl">
+        <header className="mb-6">
+          <button
+            type="button"
+            onClick={() => { void closeEditGuarded(); }}
+            className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-v2-fg-subtle hover:text-v2-fg"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
+            Sipariş {order.custom_order_no || `#${order.id}`}
+          </button>
+          <h1 className="text-2xl font-semibold tracking-tight text-v2-fg [overflow-wrap:anywhere]">Sipariş {order.custom_order_no || `#${order.id}`} — Düzelt</h1>
+        </header>
+        <div className="flex flex-col gap-6">
+            <section aria-labelledby="duzelt-bilgiler" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm p-5">
+              <h2 id="duzelt-bilgiler" className="mb-4 text-[15px] font-semibold text-v2-fg">Sipariş Bilgileri</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Araç Plakası {plateRequired
@@ -995,7 +1095,7 @@ function OrderDetailPageInner() {
                   value={editPlate}
                   onChange={(e) => setEditPlate(e.target.value.replace(/\s+/g, ""))}
                   placeholder={plateRequired ? undefined : "Araca bağlı değilse boş bırakın"}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               {/* Ayar sonradan kapatılmış olsa bile, bu sipariş zaten bir
@@ -1013,7 +1113,7 @@ function OrderDetailPageInner() {
                     value={editCustomOrderNo}
                     onChange={(e) => setEditCustomOrderNo(e.target.value)}
                     placeholder={order.custom_order_no_enabled ? undefined : "Boş bırakılırsa otomatik #id kullanılır"}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               )}
@@ -1038,375 +1138,191 @@ function OrderDetailPageInner() {
                   type="tel"
                   value={editCustomerPhone}
                   onChange={(e) => setEditCustomerPhone(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
+            </section>
 
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                İşlem Satırları <span className="text-red-500">*</span>
-              </label>
-              <div className="hidden sm:block border border-gray-200 rounded-lg overflow-x-auto">
-                {/* table-fixed: sütun genişlikleri sabit kalır, Ödeme sütunu
-                    Mail Order için ikinci bir seçici gösterse bile diğer
-                    sütunlar sıkışmaz — taşma yatay kaydırmayla karşılanır. */}
-                <table className="text-sm border-collapse table-fixed" style={{ width: "1452px" }}>
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[160px]">Yapılan İşlem</th>
-                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[150px]">Tedarikçi</th>
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Stok Kodu</th>}
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[220px]">Ebat</th>}
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Marka</th>}
-                      {hasProductSaleLine && <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[110px]">Model</th>}
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[72px]">Adet</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[112px]">Tutar (₺)</th>
-                      <th className="text-right px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[112px]">Maliyet (₺)</th>
-                      <th className="text-left px-2 py-2 font-medium text-gray-600 whitespace-nowrap w-[256px]">Ödeme</th>
-                      <th className="px-2 py-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {editLines.map((line, i) => {
-                      const isProductSale = productSaleServiceNames.has(line.service_name.trim());
-                      const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
-                      return (
-                      <tr key={i}>
-                        <td className="px-2 py-2 align-top">
-                          <SearchableCombobox
-                            value={line.service_name}
-                            onChange={(val) => updateEditLine(i, { service_name: val })}
-                            options={islemOptions}
-                            placeholder="İşlem seç veya yaz..."
-                          />
-                        </td>
-                        <td className="px-2 py-2 align-top">
-                          <SearchableCombobox
-                            value={line.supplier}
-                            onChange={(val) => handleEditSupplierChange(i, line, val)}
-                            options={supplierOptions}
-                            placeholder="Tedarikçi seç veya yaz..."
-                          />
-                        </td>
-                        {hasProductSaleLine && (
-                          <td className="px-2 py-2 align-top">
-                            {isProductSale ? (
-                              <TireBatchPicker
-                                supplier={line.supplier}
-                                code={line.stock_code}
-                                productId={line.product_id}
-                                onCodeChange={(val) => updateEditLine(i, { stock_code: val })}
-                                onBatchSelect={(batch) => {
-                                  const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
-                                  const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
-                                  const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
-                                  updateEditLine(i, {
-                                    product_id: batch?.id ?? null,
-                                    size_desc: batch?.size_desc || line.size_desc,
-                                    brand: batch?.brand || line.brand,
-                                    model_name: batch?.model_name || line.model_name,
-                                    max_stock: batch?.stock_qty ?? null,
-                                    unit_sale_price: salePrice,
-                                    unit_purchase_price: purchasePrice,
-                                    unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
-                                    cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
-                                  });
-                                }}
-                              />
-                            ) : (
-                              <span className="text-gray-300 text-sm">—</span>
-                            )}
-                          </td>
-                        )}
-                        {hasProductSaleLine && (
-                          <td className="px-2 py-2 align-top">
-                            {isProductSale ? (
-                              <SearchableCombobox
-                                value={line.size_desc}
-                                onChange={(val) => updateEditLine(i, { size_desc: val })}
-                                options={sizeOptions}
-                                placeholder="205/60R16"
-                              />
-                            ) : (
-                              <span className="text-gray-300 text-sm">—</span>
-                            )}
-                          </td>
-                        )}
-                        {hasProductSaleLine && (
-                          <td className="px-2 py-2 align-top">
-                            {isProductSale ? (
-                              <input
-                                type="text"
-                                value={line.brand}
-                                onChange={(e) => updateEditLine(i, { brand: e.target.value })}
-                                placeholder="Marka"
-                                className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            ) : (
-                              <span className="text-gray-300 text-sm">—</span>
-                            )}
-                          </td>
-                        )}
-                        {hasProductSaleLine && (
-                          <td className="px-2 py-2 align-top">
-                            {isProductSale ? (
-                              <input
-                                type="text"
-                                value={line.model_name}
-                                onChange={(e) => updateEditLine(i, { model_name: e.target.value })}
-                                placeholder="Model"
-                                className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            ) : (
-                              <span className="text-gray-300 text-sm">—</span>
-                            )}
-                          </td>
-                        )}
-                        <td className="px-2 py-2 align-top">
-                          <input
-                            type="number"
-                            min="1"
-                            value={line.quantity}
-                            onChange={(e) => handleEditQuantityChange(i, line, e.target.value)}
-                            className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
-                          />
-                          {line.product_id != null && line.max_stock != null && (
-                            <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
-                              Stok: {line.max_stock}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 align-top">
-                          <TRNumberInput
-                            value={line.unit_price}
-                            onChange={(raw) => updateEditLinePrice(i, raw)}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-2 py-2 align-top">
-                          <TRNumberInput
-                            value={line.cost_price}
-                            onChange={(raw) => updateEditLine(i, { cost_price: raw })}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-2 py-2 align-top">
-                          <PaymentTypeSelect
-                            value={useUnifiedEditPayment ? editPayments[0].payment_type : line.payment_type}
-                            onChange={(val) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
-                            supplierOptions={supplierOptions}
-                            paymentOptions={paymentOptions}
-                            selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            kasaId={useUnifiedEditPayment ? editPayments[0].kasa_id : line.kasa_id}
-                            onKasaChange={(kasaId) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
-                            kasaOptions={kasaOptions}
-                          />
-                        </td>
-                        <td className="px-2 py-2 align-top text-center pt-4">
-                          {editLines.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeEditLine(i)}
-                              className="text-red-400 hover:text-red-600 text-xs font-medium"
-                            >
-                              Sil
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <section aria-labelledby="duzelt-satirlar" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm">
+              <div className="flex items-center justify-between border-b border-v2-line px-5 py-4">
+                <h2 id="duzelt-satirlar" className="text-[15px] font-semibold text-v2-fg">
+                  İşlem Satırları <span className="text-red-500">*</span>
+                </h2>
+                <span className="text-[13px] text-v2-fg-muted">{editLines.length} satır</span>
               </div>
+              {editLines.map((line, i) => {
+                const isProductSale = productSaleServiceNames.has(line.service_name.trim());
+                const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
+                const name = line.service_name.trim();
+                return (
+                  <div key={i} className="flex flex-col gap-3.5 border-b border-v2-line px-5 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-v2-fg-muted">
+                        Satır {i + 1}{name ? ` · ${name}` : ""}
+                      </span>
+                      {editLines.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeEditLine(i)}
+                          aria-label={`Satır ${i + 1}'i sil`}
+                          title="Satırı sil"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-v2-fg-muted hover:bg-v2-danger-bg hover:text-v2-danger-fg"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>
+                        </button>
+                      )}
+                    </div>
 
-              {/* Mobil: her satır tabloda sığmadığı için kart olarak gösterilir */}
-              <div className="sm:hidden space-y-3">
-                {editLines.map((line, i) => {
-                  const isProductSale = productSaleServiceNames.has(line.service_name.trim());
-                  const overStock = line.product_id != null && line.max_stock != null && Math.round(num(line.quantity)) > line.max_stock;
-                  return (
-                    <div key={i} className="border border-gray-200 rounded-lg bg-gray-50 p-3 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-500">Satır {i + 1}</span>
-                        {editLines.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeEditLine(i)}
-                            className="text-red-400 hover:text-red-600 text-xs font-medium"
-                          >
-                            Sil
-                          </button>
-                        )}
+                    {/* Tüm alanlar TEK ızgarada ve listede sabit yerlerinde (bkz.
+                        src/app/page.tsx satır bloğu notu): ürün satışına özel
+                        alanlar koşullu girer, İşlem/Tedarikçi kutuları taşınmaz —
+                        yazarken odak kaybolmaz. lg'de 24 sütun: normal işlem tek
+                        satır (5+5+2+3+3+6), ürün satışı iki satır (İşlem/
+                        Tedarikçi/Stok Kodu/Parti 6×4 / Ebat 3 + Marka 3 + Model 4
+                        +2+3+3+6). */}
+                    <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-[repeat(24,minmax(0,1fr))]">
+                      <div className={isProductSale ? "col-span-2 min-w-0 sm:col-span-1 lg:col-span-6" : "col-span-2 min-w-0 sm:col-span-1 lg:col-span-5"}>
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Yapılan İşlem</label>
+                        <SearchableCombobox value={line.service_name} onChange={(val) => updateEditLine(i, { service_name: val })} options={islemOptions} placeholder="İşlem seç veya yaz..." />
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Yapılan İşlem</label>
-                        <SearchableCombobox
-                          value={line.service_name}
-                          onChange={(val) => updateEditLine(i, { service_name: val })}
-                          options={islemOptions}
-                          placeholder="İşlem seç veya yaz..."
+                      <div className={isProductSale ? "col-span-2 min-w-0 sm:col-span-1 lg:col-span-6" : "col-span-2 min-w-0 sm:col-span-1 lg:col-span-5"}>
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Tedarikçi</label>
+                        <SearchableCombobox value={line.supplier} onChange={(val) => handleEditSupplierChange(i, line, val)} options={supplierOptions} placeholder="Tedarikçi seç veya yaz..." />
+                      </div>
+                      {isProductSale && (
+                        <TireBatchPicker
+                          supplier={line.supplier}
+                          code={line.stock_code}
+                          productId={line.product_id}
+                          onCodeChange={(val) => updateEditLine(i, { stock_code: val })}
+                          onBatchSelect={(batch) => {
+                            const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
+                            const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
+                            const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
+                            updateEditLine(i, {
+                              product_id: batch?.id ?? null,
+                              size_desc: batch?.size_desc || line.size_desc,
+                              brand: batch?.brand || line.brand,
+                              model_name: batch?.model_name || line.model_name,
+                              max_stock: batch?.stock_qty ?? null,
+                              unit_sale_price: salePrice,
+                              unit_purchase_price: purchasePrice,
+                              unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
+                              cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
+                            });
+                          }}
+  cellClassName="col-span-2 min-w-0 sm:col-span-1 lg:col-span-6"
+                          labelClassName="block text-[13px] font-medium text-gray-700 mb-1.5"
                         />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Tedarikçi</label>
-                        <SearchableCombobox
-                          value={line.supplier}
-                          onChange={(val) => handleEditSupplierChange(i, line, val)}
-                          options={supplierOptions}
-                          placeholder="Tedarikçi seç veya yaz..."
-                        />
-                      </div>
-
+                      )}
                       {isProductSale && (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Stok Kodu</label>
-                          <TireBatchPicker
-                            supplier={line.supplier}
-                            code={line.stock_code}
-                            productId={line.product_id}
-                            onCodeChange={(val) => updateEditLine(i, { stock_code: val })}
-                            onBatchSelect={(batch) => {
-                              const qty = Math.max(1, Math.round(num(line.quantity)) || 1);
-                              const salePrice = batch?.avg_sale_price != null ? Number(batch.avg_sale_price) : null;
-                              const purchasePrice = batch?.avg_purchase_price != null ? Number(batch.avg_purchase_price) : null;
-                              updateEditLine(i, {
-                                product_id: batch?.id ?? null,
-                                size_desc: batch?.size_desc || line.size_desc,
-                                brand: batch?.brand || line.brand,
-                                model_name: batch?.model_name || line.model_name,
-                                max_stock: batch?.stock_qty ?? null,
-                                unit_sale_price: salePrice,
-                                unit_purchase_price: purchasePrice,
-                                unit_price: batch ? amountToStr(salePrice, qty) : line.unit_price,
-                                cost_price: batch ? amountToStr(purchasePrice, qty) : line.cost_price,
-                              });
-                            }}
-                          />
+                        <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-3">
+                          <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Ebat</label>
+                          <SearchableCombobox value={line.size_desc} onChange={(val) => updateEditLine(i, { size_desc: val })} options={sizeOptions} placeholder="205/60R16" />
                         </div>
                       )}
                       {isProductSale && (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
-                          <SearchableCombobox
-                            value={line.size_desc}
-                            onChange={(val) => updateEditLine(i, { size_desc: val })}
-                            options={sizeOptions}
-                            placeholder="205/60R16"
-                          />
+                        <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-3">
+                          <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Marka</label>
+                          <input type="text" value={line.brand} onChange={(e) => updateEditLine(i, { brand: e.target.value })} placeholder="Marka" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
                       )}
                       {isProductSale && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Marka</label>
-                            <input
-                              type="text"
-                              value={line.brand}
-                              onChange={(e) => updateEditLine(i, { brand: e.target.value })}
-                              placeholder="Marka"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Model</label>
-                            <input
-                              type="text"
-                              value={line.model_name}
-                              onChange={(e) => updateEditLine(i, { model_name: e.target.value })}
-                              placeholder="Model"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
+                        <div className="col-span-2 min-w-0 sm:col-span-1 lg:col-span-4">
+                          <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Model</label>
+                          <input type="text" value={line.model_name} onChange={(e) => updateEditLine(i, { model_name: e.target.value })} placeholder="Model" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
                       )}
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Adet</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={line.quantity}
-                            onChange={(e) => handleEditQuantityChange(i, line, e.target.value)}
-                            className={`w-full border rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
-                          />
+                      <div className="lg:col-span-2">
+                        {/* Stok sınırı Adet etiketinin yanında rozet — alanın altındaki
+                            yazı yalnızca bu satırı uzatıp ızgara hizasını bozuyordu. */}
+                        <div className="mb-1.5 flex items-center justify-between gap-1">
+                          <label className="block text-[13px] font-medium text-gray-700">Adet</label>
                           {line.product_id != null && line.max_stock != null && (
-                            <p className={`text-[10px] mt-0.5 whitespace-nowrap ${overStock ? "text-red-500 font-medium" : "text-gray-400"}`}>
-                              Stok: {line.max_stock}
-                            </p>
+                            <span
+                              title="Seçilebilecek en fazla adet: partide kalan stok + bu satırın zaten ayırdığı adet"
+                              className={`whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums ${overStock ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`}
+                            >
+                              Stok {line.max_stock}
+                            </span>
                           )}
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Tutar (₺)</label>
-                          <TRNumberInput
-                            value={line.unit_price}
-                            onChange={(raw) => updateEditLinePrice(i, raw)}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Maliyet (₺)</label>
-                          <TRNumberInput
-                            value={line.cost_price}
-                            onChange={(raw) => updateEditLine(i, { cost_price: raw })}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          value={line.quantity}
+                          onChange={(e) => handleEditQuantityChange(i, line, e.target.value)}
+                          className={`w-full border rounded-lg px-4 py-2.5 text-base text-right focus:outline-none focus:ring-2 focus:ring-blue-500 ${overStock ? "border-red-400" : "border-gray-300"}`}
+                        />
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Ödeme</label>
+                      <div className="lg:col-span-3">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Tutar (₺)</label>
+                        <TRNumberInput value={line.unit_price} onChange={(raw) => updateEditLinePrice(i, raw)} className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 text-right font-semibold" />
+                      </div>
+                      <div className="lg:col-span-3">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Maliyet (₺)</label>
+                        <TRNumberInput value={line.cost_price} onChange={(raw) => updateEditLine(i, { cost_price: raw })} className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 text-right" />
+                      </div>
+                      <div className="col-span-2 min-w-0 lg:col-span-6">
+                        <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Ödeme</label>
                         <PaymentTypeSelect
                           value={useUnifiedEditPayment ? editPayments[0].payment_type : line.payment_type}
                           onChange={(val) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { payment_type: val }) : handleEditLinePaymentChange(i, line, val)}
                           supplierOptions={supplierOptions}
                           paymentOptions={paymentOptions}
-                          selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                           kasaId={useUnifiedEditPayment ? editPayments[0].kasa_id : line.kasa_id}
                           onKasaChange={(kasaId) => useUnifiedEditPayment ? updateUnifiedEditPayment(i, { kasa_id: kasaId }) : updateEditLine(i, { kasa_id: kasaId })}
                           kasaOptions={kasaOptions}
                         />
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
+              <div className="flex flex-col gap-3 p-5">
+                <button
+                  type="button"
+                  onClick={addEditLine}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-v2-line-strong text-sm font-semibold text-v2-link hover:bg-v2-muted"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" d="M12 5v14M5 12h14" /></svg>
+                  Satır Ekle
+                </button>
+                {useUnifiedEditPayment && (
+                  <button
+                    type="button"
+                    onClick={addEditPayment}
+                    className="self-start text-sm font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    + Başka Ödeme Ekle
+                  </button>
+                )}
               </div>
-
-              <button
-                type="button"
-                onClick={addEditLine}
-                className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
-              >
-                + Satır Ekle
-              </button>
-            </div>
-
-            {useUnifiedEditPayment && (
-              <button
-                type="button"
-                onClick={addEditPayment}
-                className="mb-5 -mt-3 block text-sm text-blue-600 hover:text-blue-800 font-medium"
-              >
-                + Başka Ödeme Ekle
-              </button>
-            )}
+            </section>
 
             {editPayments.length > 0 && !useUnifiedEditPayment && (
-              <div className="mb-5">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Ödemeler</label>
-                <div className="space-y-2">
+              <section aria-labelledby="duzelt-odemeler" className="rounded-xl border border-v2-line bg-v2-surface p-5 shadow-sm">
+                {/* Ödemeler satıra değil siparişin tamamına ait — satırlarda
+                    "Karışık" seçili olanların toplamı bu
+                    girişlerle karşılanır (bkz. editCariAmount, syncOrderLedger:
+                    giriş varsa yalnız bunlar sayılır). */}
+                <div className="mb-4">
+                  <h2 id="duzelt-odemeler" className="text-[15px] font-semibold text-v2-fg">Ödemeler — siparişin tamamı</h2>
+                  <p className="mt-0.5 text-[13px] text-v2-fg-muted">
+                    Siparişteki {editLines.length} satırın toplamı ({formatCurrency(editLinesTotalAmount)}) bu ödemelerle karşılanır.
+                  </p>
+                </div>
+                <div className="max-w-3xl space-y-2">
                   {editPayments.map((entry, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_9rem_2.5rem] items-center gap-2">
                       <PaymentTypeSelect
                         value={entry.payment_type}
                         onChange={(val) => updateEditPayment(i, { payment_type: val })}
                         supplierOptions={supplierOptions}
                         paymentOptions={paymentOptions}
-                        selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        selectClassName="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                         kasaId={entry.kasa_id}
                         onKasaChange={(kasaId) => updateEditPayment(i, { kasa_id: kasaId })}
                         kasaOptions={kasaOptions}
@@ -1415,17 +1331,19 @@ function OrderDetailPageInner() {
                         placeholder="Tutar"
                         value={entry.amount}
                         onChange={(raw) => updateEditPayment(i, { amount: raw })}
-                        className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base text-right font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
-                      {editPayments.length > 1 && (
+                      {editPayments.length > 1 ? (
                         <button
                           type="button"
                           onClick={() => removeEditPayment(i)}
-                          className="text-red-400 hover:text-red-600 text-xs font-medium shrink-0"
+                          aria-label={`${i + 1}. ödemeyi sil`}
+                          title="Ödemeyi sil"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-v2-fg-muted hover:bg-v2-danger-bg hover:text-v2-danger-fg"
                         >
-                          Sil
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>
                         </button>
-                      )}
+                      ) : <span aria-hidden="true" />}
                     </div>
                   ))}
                 </div>
@@ -1436,12 +1354,33 @@ function OrderDetailPageInner() {
                 >
                   + Ödeme Ekle
                 </button>
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm flex justify-between">
-                  <span className="text-gray-500">Girilen Toplam</span>
-                  <span className={`font-semibold ${editPaymentsTotal > editLinesTotalAmount ? "text-red-600" : "text-gray-800"}`}>
-                    {formatCurrency(editPaymentsTotal)}
-                  </span>
-                </div>
+                {(() => {
+                  const remaining = editLinesTotalAmount - editPaymentsTotal;
+                  const over = remaining < -0.005;
+                  const done = Math.abs(remaining) < 0.005;
+                  const pct = editLinesTotalAmount > 0 ? Math.min(100, Math.max(0, (editPaymentsTotal / editLinesTotalAmount) * 100)) : 0;
+                  return (
+                    <div className={`mt-3 flex flex-col gap-2.5 rounded-lg border p-3.5 text-sm ${over ? "border-v2-danger-fg/40 bg-v2-danger-bg" : done ? "border-v2-line bg-v2-surface-2" : "border-v2-warning-fg/30 bg-v2-surface-2"}`}>
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <span className="text-v2-fg-muted">
+                          Girilen <strong className="font-semibold tabular-nums text-v2-fg">{formatCurrency(editPaymentsTotal)}</strong>
+                          {" / "}Sipariş toplamı <strong className="font-semibold tabular-nums text-v2-fg">{formatCurrency(editLinesTotalAmount)}</strong>
+                        </span>
+                        <span className={`font-semibold tabular-nums ${over ? "text-v2-danger-fg" : done ? "text-v2-success-fg" : "text-v2-warning-fg"}`}>
+                          {over ? `Fazla ${formatCurrency(-remaining)}` : done ? "Tamamı girildi" : `İndirim ${formatCurrency(remaining)}`}
+                        </span>
+                      </div>
+                      <div role="progressbar" aria-label="Girilen ödeme oranı" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} className="h-1.5 overflow-hidden rounded-full bg-v2-muted">
+                        <div className={`h-full rounded-full ${over ? "bg-v2-danger-fg" : done ? "bg-v2-success-fg" : "bg-v2-warning-fg"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {!over && !done && (
+                        <p className="text-xs text-v2-fg-muted">
+                          Girilen tutar sipariş toplamından az — fark indirim olarak kaydedilir (sipariş detayında “İndirim” görünür).
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 {editPaymentsTotal > editLinesTotalAmount && (
                   <p className="text-xs text-red-500 mt-1">
                     Sipariş tutarını {formatCurrency(editPaymentsTotal - editLinesTotalAmount)} aşıyor.
@@ -1452,66 +1391,59 @@ function OrderDetailPageInner() {
                     {formatCurrency(editCariAmount)} tutarı {editCustomerName.trim() || "müşterinin"} cari hesabına borç olarak eklenecek.
                   </p>
                 )}
-              </div>
+              </section>
             )}
 
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notlar</label>
-              <textarea
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
-            </div>
-
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ödeme Notu
-              </label>
-              <textarea
-                value={editPaymentNote}
-                onChange={(e) => setEditPaymentNote(e.target.value)}
-                rows={2}
-                placeholder="Örn. fatura numarası"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
-            </div>
-
-            <div className="sticky bottom-0 sm:static -mx-6 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0 bg-white sm:bg-transparent border-t border-gray-100 sm:border-t-0 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:shadow-none z-10">
-              {/* Mobil: kompakt tek satır */}
-              <div className="flex sm:hidden items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Toplam Tutar</div>
-                  <div className="text-base font-bold text-green-600 truncate">{formatCurrency(editLinesTotalAmount)}</div>
-                </div>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="shrink-0 border border-gray-300 text-gray-700 font-medium px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
-                >
-                  İptal
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  disabled={savingEdit || (editPayments.length > 0 && editPaymentsTotal > editLinesTotalAmount + 0.01)}
-                  className="shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
-                >
-                  {savingEdit ? "Kaydediliyor..." : "Kaydet"}
-                </button>
+            <section className="rounded-xl border border-v2-line bg-v2-surface shadow-sm grid gap-5 p-5 lg:grid-cols-2">
+              <div>
+                <label htmlFor="duzelt-notlar" className="mb-2.5 block text-[15px] font-semibold text-v2-fg">Notlar</label>
+                <textarea
+                  id="duzelt-notlar"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                />
               </div>
+              <div>
+                <label htmlFor="duzelt-odeme-notu" className="mb-2.5 block text-[15px] font-semibold text-v2-fg">Ödeme Notu</label>
+                <textarea
+                  id="duzelt-odeme-notu"
+                  value={editPaymentNote}
+                  onChange={(e) => setEditPaymentNote(e.target.value)}
+                  rows={3}
+                  placeholder="Örn. fatura numarası"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                />
+              </div>
+            </section>
 
-              {/* Masaüstü: eski görünüm */}
-              <div className="hidden sm:flex gap-3">
+            {/* Mobilde iki satır: üstte toplamlar, altta tam genişlik buton(lar) —
+                önceden buton yarım genişlikte sola yaslı kalıyordu. */}
+            <div className="sticky bottom-3 sm:bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 sm:gap-4 rounded-xl border border-v2-line bg-v2-surface/95 px-4 sm:px-5 py-3 shadow-lg backdrop-blur">
+              <div className="flex items-end gap-6 sm:gap-8">
+                <div className="flex flex-col">
+                  <span className="text-xs text-v2-fg-muted">Toplam Tutar</span>
+                  <span className="text-2xl font-bold leading-8 tracking-tight tabular-nums text-v2-fg">{formatCurrency(editLinesTotalAmount)}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs text-v2-fg-muted">Kâr</span>
+                  <span className={`text-xl font-semibold leading-8 tabular-nums ${editKar >= 0 ? "text-v2-success-fg" : "text-v2-danger-fg"}`}>{formatCurrency(editKar)}</span>
+                </div>
+              </div>
+              <div className="flex w-full gap-3 sm:w-auto">
                 <button
-                  onClick={() => setEditing(false)}
-                  className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50"
+                  type="button"
+                  onClick={() => { void closeEditGuarded(); }}
+                  className="h-12 flex-1 sm:flex-none rounded-xl border border-gray-300 px-6 text-[15px] font-medium text-gray-700 hover:bg-gray-50"
                 >
                   İptal
                 </button>
                 <button
+                  type="button"
                   onClick={handleSaveEdit}
                   disabled={savingEdit || (editPayments.length > 0 && editPaymentsTotal > editLinesTotalAmount + 0.01)}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+                  className="h-12 flex-[2] sm:flex-none rounded-xl bg-blue-600 px-7 text-[15px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-blue-300"
                 >
                   {savingEdit ? "Kaydediliyor..." : "Kaydet"}
                 </button>
@@ -1522,155 +1454,26 @@ function OrderDetailPageInner() {
     );
   }
 
+  function openPayment() {
+    if (!order) return;
+    setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount), kasa_id: null }]);
+    setShowModal(true);
+  }
+
   return (
-    <div className="max-w-2xl mx-auto">
-      <button
-        onClick={() => router.back()}
-        className="mb-4 text-sm text-gray-500 hover:text-gray-800"
-      >
-        ← Geri
-      </button>
-
-      <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <h1 className="text-3xl font-bold font-mono text-gray-800">{order.plate || "Plakasız Satış"}</h1>
-                <p className="text-gray-500 text-sm mt-1">Sipariş {order.custom_order_no || `#${order.id}`}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={printWorkOrder}
-                  className="px-3 py-1 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
-                >
-                  İş Emri Yazdır
-                </button>
-                {canEdit && (
-                  <button
-                    onClick={openEdit}
-                    className="px-3 py-1 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
-                  >
-                    Düzelt
-                  </button>
-                )}
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${order.status === "TAMAMLANDI"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-yellow-100 text-yellow-700"
-                    }`}
-                >
-                  {order.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}
-                </span>
-              </div>
-            </div>
-
-            {/* Müşteri Bilgileri */}
-            {(order.customer_name || order.customer_phone) && (
-              <div className="mb-5 p-4 bg-gray-50 rounded-lg">
-                <h2 className="text-xs font-medium text-gray-500 uppercase mb-2">Müşteri</h2>
-                {order.customer_name && (
-                  <p className="font-medium text-gray-800">{order.customer_name}</p>
-                )}
-                {order.customer_phone && (
-                  <p className="text-gray-600">{order.customer_phone}</p>
-                )}
-              </div>
-            )}
-
-            {/* Hizmetler */}
-            <div className="mb-5">
-              <h2 className="text-xs font-medium text-gray-500 uppercase mb-2">Hizmetler</h2>
-              <div className="space-y-2">
-                {order.services.map((svc) => (
-                  <div key={svc.line_id} className="flex justify-between">
-                    <span className="text-gray-700">
-                      {svc.name}
-                      {svc.quantity > 1 && <span className="text-gray-400"> ×{svc.quantity}</span>}
-                      {svc.size_desc && <span className="text-gray-400"> — {svc.size_desc}</span>}
-                      {(svc.brand || svc.model_name) && (
-                        <span className="text-gray-400"> — {[svc.brand, svc.model_name].filter(Boolean).join(" ")}</span>
-                      )}
-                      {svc.supplier && <span className="text-xs text-gray-400"> ({svc.supplier})</span>}
-                      {svc.payment_type && (
-                        <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-medium">
-                          {svc.payment_type}
-                        </span>
-                      )}
-                    </span>
-                    <span className="font-semibold text-gray-800">
-                      {formatCurrency(svc.unit_price)}
-                    </span>
-                  </div>
-                ))}
-                <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                  <span>Toplam</span>
-                  <span className="text-green-600">{formatCurrency(order.total_amount)}</span>
-                </div>
-                {order.paid_amount != null && order.paid_amount !== order.total_amount && (
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-orange-600 font-medium">Alınan (indirimli)</span>
-                    <span className="text-orange-600 font-semibold">{formatCurrency(order.paid_amount)}</span>
-                  </div>
-                )}
-                {order.paid_amount != null && order.paid_amount === order.total_amount && (
-                  <div className="flex justify-between text-sm mt-1 text-gray-400">
-                    <span>Alınan</span>
-                    <span>{formatCurrency(order.paid_amount)}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Notlar */}
-            {order.notes && (
-              <div className="mb-5 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <h2 className="text-xs font-medium text-yellow-700 uppercase mb-1">Not</h2>
-                <p className="text-gray-700">{order.notes}</p>
-              </div>
-            )}
-
-            {/* Tarih & Ödeme */}
-            <div className="text-sm text-gray-500 space-y-1">
-              <p>Oluşturulma: {formatDate(order.created_at)}</p>
-              {order.payment_type && (
-                <p>
-                  Ödeme: {PAYMENT_LABELS[order.payment_type] ?? order.payment_type} —{" "}
-                  {order.payment_date ? formatDate(order.payment_date) : ""}
-                </p>
-              )}
-              {order.payments.length > 0 && (
-                <div className="pt-1">
-                  {order.payments.map((p) => (
-                    <p key={p.id} className="flex max-w-xs">
-                      <span>{p.payment_type} :</span>
-                      <span className="font-medium text-gray-600"> {formatCurrency(p.amount)}</span>
-                    </p>
-                  ))}
-                </div>
-              )}
-              {order.payment_note && (
-                <p className="pt-1 text-gray-500">
-                  <span className="text-gray-400">Ödeme Notu:</span> {order.payment_note}
-                </p>
-              )}
-            </div>
-
-            {/* Ödeme Al butonu */}
-            {order.status === "BEKLEMEDE" && canApprove && (
-              <button
-                onClick={() => {
-                  setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount), kasa_id: null }]);
-                  setShowModal(true);
-                }}
-                className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors"
-              >
-                Ödeme Al & Kapat
-              </button>
-            )}
-      </div>
+    <div className="max-w-6xl">
+      <OrderDetailV2
+        order={order}
+        canEdit={canEdit}
+        canApprove={canApprove}
+        onPrint={printWorkOrder}
+        onEdit={openEdit}
+        onPay={openPayment}
+      />
 
       {/* Ödeme Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={payDialog} role="dialog" aria-modal="true" aria-label="Ödeme Al" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Ödeme Al</h2>
 
@@ -1708,7 +1511,7 @@ function OrderDetailPageInner() {
                       <button
                         type="button"
                         onClick={() => removePaymentEntry(i)}
-                        className="text-red-400 hover:text-red-600 text-xs font-medium shrink-0"
+                        className="text-red-600 hover:text-red-700 text-xs font-medium shrink-0"
                       >
                         Sil
                       </button>
@@ -1779,6 +1582,229 @@ function OrderDetailPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+// Sipariş detayı (eski ve yeni görünümde ortak) — taslaktaki iki sütunlu düzen: solda
+// işlem satırları + toplamlar ve notlar, sağda müşteri/araç, ödeme ve
+// geçmiş. Sadece mevcut /api/orders/[id] verisini kullanır (ek istek yok);
+// Ödeme Al penceresi, İş Emri ve Düzelt eski görünümle ortak.
+function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay }: {
+  order: OrderDetail;
+  canEdit: boolean;
+  canApprove: boolean;
+  onPrint: () => void;
+  onEdit: () => void;
+  onPay: () => void;
+}) {
+  const router = useRouter();
+  const done = order.status === "TAMAMLANDI";
+  const totalCost = order.services.reduce((sum, s) => sum + Number(s.cost_price || 0), 0);
+  const kar = Number(order.total_amount) - totalCost;
+  const paymentsSum = order.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const collected = order.paid_amount != null ? Number(order.paid_amount) : paymentsSum;
+  // Eski/içe aktarılmış "Tamamlandı" kayıtlarda ödeme hiç kaydedilmemiş
+  // olabilir (paid_amount boş, ödeme kaydı yok) — "₺0 tahsil edildi" gibi
+  // yanıltıcı bir tutar yerine bilginin olmadığı söylenir.
+  const paymentUnknown = order.paid_amount == null && order.payments.length === 0;
+  const discount = done && order.paid_amount != null ? Number(order.total_amount) - Number(order.paid_amount) : 0;
+  const collectedPct = order.total_amount > 0 ? Math.min(100, Math.round((collected / Number(order.total_amount)) * 100)) : 0;
+  const paymentLabel = order.payment_type ? (PAYMENT_LABELS[order.payment_type] ?? order.payment_type) : null;
+  const initials = (order.customer_name || "")
+    .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toLocaleUpperCase("tr-TR")).join("");
+  const card = "rounded-xl border border-v2-line bg-v2-surface shadow-sm";
+  const btn = "inline-flex h-9 items-center gap-2 rounded-lg border border-v2-line bg-v2-surface px-3.5 text-sm font-medium text-v2-fg hover:bg-v2-muted";
+  const orderNo = order.custom_order_no || `#${order.id}`;
+  const history = [
+    ...(done && order.payment_date
+      ? [{ title: `Ödeme alındı ve kapatıldı${paymentLabel ? ` · ${paymentLabel}` : ""}`, at: order.payment_date, tone: "success" as const }]
+      : []),
+    { title: "Sipariş oluşturuldu", at: order.created_at, tone: "muted" as const },
+  ];
+
+  return (
+    <>
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          {/* Detaya Siparişler dışında Müşteriler, Kasa, Ürünler ve
+              Randevular'dan da gelinir — geldiği sayfaya döner. Panel içi
+              geçmiş yoksa (yeni sekme/doğrudan link) Siparişler'e gider. */}
+          <button
+            type="button"
+            onClick={() => (canGoBackInApp() ? router.back() : router.push("/admin/orders"))}
+            className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-v2-fg-subtle hover:text-v2-fg"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
+            Geri
+          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-v2-fg [overflow-wrap:anywhere]">Sipariş {orderNo}</h1>
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${done ? "bg-v2-success-bg text-v2-success-fg" : "bg-v2-warning-bg text-v2-warning-fg"}`}>
+              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+              {done ? "Tamamlandı" : "Beklemede"}
+            </span>
+            <span className="text-sm text-v2-fg-muted">{formatDate(order.created_at)}</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onPrint} className={btn}>İş Emri Yazdır</button>
+          <Link prefetch={false} href={`/?copyFrom=${order.id}`} className={btn} title="Aynı müşteri/işlem satırlarıyla, sadece plakayı değiştirerek yeni bir sipariş oluştur">Kopyala</Link>
+          {canEdit && <button type="button" onClick={onEdit} className={btn}>Düzelt</button>}
+        </div>
+      </header>
+
+      {/* grid-cols-1 = minmax(0,1fr): mobilde tek sütun içeriğe göre
+          genişlemesin — işlem tablosunun 560px en küçük genişliği aksi
+          halde tüm sayfayı ekrandan taşırıyordu (tablo kendi kutusunda kayar). */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <section aria-labelledby="satirlar" className={card}>
+            <div className="flex items-center justify-between border-b border-v2-line px-5 py-4">
+              <h2 id="satirlar" className="text-[15px] font-semibold text-v2-fg">İşlem Satırları</h2>
+              <span className="text-xs text-v2-fg-muted">{order.services.length} kalem</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-v2-fg-muted">
+                    <th scope="col" className="px-5 py-3">İşlem</th>
+                    <th scope="col" className="px-3 py-3">Tedarikçi / Stok</th>
+                    <th scope="col" className="px-3 py-3 text-right">Adet</th>
+                    <th scope="col" className="px-3 py-3 text-right">Tutar</th>
+                    <th scope="col" className="px-5 py-3 text-right">Maliyet</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-v2-line">
+                  {order.services.length === 0 && (
+                    <tr><td colSpan={5} className="px-5 py-6 text-center text-sm text-v2-fg-muted">Bu siparişte işlem satırı yok.</td></tr>
+                  )}
+                  {order.services.map((svc) => {
+                    const detail = [[svc.brand, svc.model_name].filter(Boolean).join(" "), svc.size_desc].filter(Boolean).join(" · ");
+                    return (
+                      <tr key={svc.line_id} className="align-top">
+                        <td className="px-5 py-3.5">
+                          <div className="font-medium text-v2-fg">{svc.name}</div>
+                          {detail && <div className="mt-0.5 text-xs text-v2-fg-muted">{detail}</div>}
+                          {svc.payment_type && (
+                            <span className="mt-1 inline-block rounded-md bg-v2-muted px-1.5 py-0.5 text-[11px] font-medium text-v2-fg-muted">{svc.payment_type}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <div className="text-v2-fg">{svc.supplier || "—"}</div>
+                          {svc.stock_code && <div className="mt-0.5 font-v2-mono text-xs text-v2-fg-muted">{svc.stock_code}</div>}
+                        </td>
+                        <td className="px-3 py-3.5 text-right tabular-nums text-v2-fg">{svc.quantity}</td>
+                        <td className="px-3 py-3.5 text-right font-semibold tabular-nums text-v2-fg whitespace-nowrap">{formatCurrency(svc.unit_price)}</td>
+                        <td className="px-5 py-3.5 text-right tabular-nums text-v2-fg-muted whitespace-nowrap">{formatCurrency(Number(svc.cost_price || 0))}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="border-t border-v2-line px-5 py-4">
+            <dl className="ml-auto flex max-w-xs flex-col gap-2 text-sm">
+              <div className="flex justify-between"><dt className="text-v2-fg-muted">Maliyet</dt><dd className="tabular-nums text-v2-fg">{formatCurrency(totalCost)}</dd></div>
+              <div className="flex justify-between"><dt className="text-v2-fg-muted">Kâr</dt><dd className={`font-medium tabular-nums ${kar >= 0 ? "text-v2-success-fg" : "text-v2-danger-fg"}`}>{formatCurrency(kar)}</dd></div>
+              <div className="flex justify-between border-t border-v2-line pt-2 text-base"><dt className="font-semibold text-v2-fg">Toplam</dt><dd className="font-semibold tabular-nums text-v2-fg">{formatCurrency(order.total_amount)}</dd></div>
+            </dl>
+            </div>
+          </section>
+
+          {order.notes && (
+            <section aria-labelledby="notlar" className={`${card} px-5 py-4`}>
+              <h2 id="notlar" className="mb-2 text-[15px] font-semibold text-v2-fg">Notlar</h2>
+              <p className="whitespace-pre-line text-sm text-v2-fg-muted [overflow-wrap:anywhere]">{order.notes}</p>
+            </section>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <section aria-labelledby="musteri" className={`${card} px-5 py-4`}>
+            <h2 id="musteri" className="mb-4 text-[15px] font-semibold text-v2-fg">Müşteri ve Araç</h2>
+            {order.customer_name || order.customer_phone ? (
+              <div className="mb-4 flex items-center gap-3">
+                <div aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-v2-primary-soft text-sm font-semibold text-v2-link">{initials || "?"}</div>
+                <div className="min-w-0">
+                  <div className="font-medium text-v2-fg [overflow-wrap:anywhere]">{order.customer_name || "İsimsiz müşteri"}</div>
+                  {order.customer_phone && <div className="text-sm text-v2-fg-muted">{order.customer_phone}</div>}
+                </div>
+              </div>
+            ) : (
+              <p className="mb-4 text-sm text-v2-fg-muted">Müşteri bilgisi girilmemiş.</p>
+            )}
+            <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
+              <dt className="text-v2-fg-muted">Plaka</dt>
+              <dd className="text-right">
+                {order.plate ? (
+                  <span className="inline-block rounded-md border border-v2-line-strong bg-v2-surface-2 px-2 py-0.5 font-v2-mono text-[13px] font-medium text-v2-fg">{order.plate}</span>
+                ) : <span className="text-v2-fg-muted">Plakasız satış</span>}
+              </dd>
+            </dl>
+          </section>
+
+          <section aria-labelledby="odeme" className={`${card} px-5 py-4`}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 id="odeme" className="text-[15px] font-semibold text-v2-fg">Ödeme</h2>
+              {paymentLabel && <span className="rounded-md bg-v2-muted px-2 py-0.5 text-xs font-medium text-v2-fg">{paymentLabel}</span>}
+            </div>
+            {done && paymentUnknown ? (
+              <div className="flex flex-col gap-2 text-sm">
+                <p className="text-v2-fg-muted">Ödeme bilgisi kaydedilmemiş.</p>
+                {order.payment_note && <p className="text-v2-fg-muted [overflow-wrap:anywhere]"><span className="text-v2-fg-subtle">Not:</span> {order.payment_note}</p>}
+              </div>
+            ) : done ? (
+              <div className="flex flex-col gap-2 text-sm">
+                <div className="flex justify-between"><span className="text-v2-fg-muted">Tahsil edilen</span><span className="font-semibold tabular-nums text-v2-fg">{formatCurrency(collected)}</span></div>
+                <div role="progressbar" aria-label="Tahsilat oranı" aria-valuenow={collectedPct} aria-valuemin={0} aria-valuemax={100} className="h-1.5 overflow-hidden rounded-full bg-v2-muted">
+                  <div className="h-full rounded-full bg-v2-success-fg" style={{ width: `${collectedPct}%` }} />
+                </div>
+                {discount > 0 && (
+                  <div className="flex justify-between"><span className="text-v2-fg-muted">İndirim</span><span className="tabular-nums text-v2-warning-fg">{formatCurrency(discount)}</span></div>
+                )}
+                {order.payments.length > 1 && (
+                  <ul className="mt-1 flex flex-col gap-1 border-t border-v2-line pt-2">
+                    {order.payments.map((p) => (
+                      <li key={p.id} className="flex justify-between text-v2-fg-muted"><span>{p.payment_type}</span><span className="tabular-nums text-v2-fg">{formatCurrency(p.amount)}</span></li>
+                    ))}
+                  </ul>
+                )}
+                {order.payment_note && <p className="mt-1 text-v2-fg-muted [overflow-wrap:anywhere]"><span className="text-v2-fg-subtle">Not:</span> {order.payment_note}</p>}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 text-sm">
+                <div className="flex justify-between"><span className="text-v2-fg-muted">Tahsil edilecek</span><span className="font-semibold tabular-nums text-v2-fg">{formatCurrency(order.total_amount)}</span></div>
+                {/* Ödeme Notu bekleyen siparişte de Düzelt'ten girilebiliyor —
+                    eski detay ekranı durumdan bağımsız gösteriyordu. */}
+                {order.payment_note && <p className="text-v2-fg-muted [overflow-wrap:anywhere]"><span className="text-v2-fg-subtle">Not:</span> {order.payment_note}</p>}
+                {canApprove ? (
+                  <button type="button" onClick={onPay} className="h-10 w-full rounded-lg bg-v2-primary text-sm font-semibold text-white hover:bg-v2-primary-hover">
+                    Ödeme Al & Kapat
+                  </button>
+                ) : (
+                  <p className="text-v2-fg-muted">Ödeme henüz alınmadı.</p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section aria-labelledby="gecmis" className={`${card} px-5 py-4`}>
+            <h2 id="gecmis" className="mb-4 text-[15px] font-semibold text-v2-fg">Geçmiş</h2>
+            <ol className="flex flex-col gap-4">
+              {history.map((h) => (
+                <li key={h.title} className="flex gap-3">
+                  <span aria-hidden="true" className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${h.tone === "success" ? "bg-v2-success-fg" : "bg-v2-fg-subtle"}`} />
+                  <div className="flex flex-col">
+                    <span className="text-sm text-v2-fg">{h.title}</span>
+                    <span className="text-xs text-v2-fg-muted">{formatDate(h.at)}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      </div>
+    </>
   );
 }
 

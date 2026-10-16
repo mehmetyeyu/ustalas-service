@@ -8,6 +8,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
+import { useDialog } from "@/lib/useDialog";
 
 interface Service {
   id: number;
@@ -30,6 +31,7 @@ export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const showFormDialog = useDialog(() => setShowForm(false));
   const [editSvc, setEditSvc] = useState<Service | null>(null);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -208,7 +210,7 @@ export default function ServicesPage() {
 
       {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showFormDialog} role="dialog" aria-modal="true" aria-label="Hizmet Formu" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               {editSvc ? "Hizmet Düzenle" : "Yeni Hizmet Ekle"}

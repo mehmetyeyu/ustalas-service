@@ -7,6 +7,7 @@ import { RESOURCE_ACTIONS } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useAuth } from "../AuthContext";
+import { useDialog } from "@/lib/useDialog";
 
 const MENU_WIDTH = 192; // w-48
 const MENU_MAX_HEIGHT = 260;
@@ -31,6 +32,7 @@ const ROLES = [
 
 const RESOURCE_LABELS: Record<string, string> = {
   orders: "Siparişler",
+  appointments: "Randevular",
   calendar: "Takvim",
   reports: "Raporlar",
   services: "Hizmetler",
@@ -102,6 +104,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
+  const showFormDialog = useDialog(() => setShowForm(false));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("staff");
@@ -109,14 +112,17 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
 
   const [permTarget, setPermTarget] = useState<User | null>(null);
+  const permTargetDialog = useDialog(() => setPermTarget(null));
   const [permValue, setPermValue] = useState<string[]>([]);
   const [permSaving, setPermSaving] = useState(false);
 
   const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const resetTargetDialog = useDialog(() => setResetTarget(null));
   const [resetPassword, setResetPassword] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
 
   const [renameTarget, setRenameTarget] = useState<User | null>(null);
+  const renameTargetDialog = useDialog(() => setRenameTarget(null));
   const [renameValue, setRenameValue] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
 
@@ -511,7 +517,10 @@ export default function UsersPage() {
                             setOpenMenuId(u.id);
                             setMenuAnchor(e.currentTarget);
                           }}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                          aria-label="İşlemler"
+                          aria-haspopup="menu"
+                          aria-expanded={openMenuId === u.id}
+                          className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
                         >
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                             <circle cx="10" cy="4" r="1.5" />
@@ -596,7 +605,7 @@ export default function UsersPage() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={showFormDialog} role="dialog" aria-modal="true" aria-label="Kullanıcı Formu" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
               <h2 className="text-xl font-bold text-gray-800 mb-4">Yeni Kullanıcı Ekle</h2>
@@ -665,7 +674,7 @@ export default function UsersPage() {
       )}
 
       {resetTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={resetTargetDialog} role="dialog" aria-modal="true" aria-label="Şifre Sıfırla" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               &quot;{resetTarget.username}&quot; Şifresini Sıfırla
@@ -701,7 +710,7 @@ export default function UsersPage() {
       )}
 
       {renameTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={renameTargetDialog} role="dialog" aria-modal="true" aria-label="Kullanıcı Adını Değiştir" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               &quot;{renameTarget.username}&quot; Kullanıcı Adını Değiştir
@@ -737,7 +746,7 @@ export default function UsersPage() {
       )}
 
       {permTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={permTargetDialog} role="dialog" aria-modal="true" aria-label="İzinler" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold text-gray-800 mb-1">
               &quot;{permTarget.username}&quot; Erişim İzinleri

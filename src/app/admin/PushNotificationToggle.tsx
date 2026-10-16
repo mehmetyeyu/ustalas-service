@@ -124,6 +124,7 @@ export function PushNotificationToggle({
         </p>
       </div>
       <Switch
+        label={title}
         checked={status === "subscribed"}
         disabled={busy || status === "denied"}
         onClick={status === "subscribed" ? handleUnsubscribe : handleSubscribe}

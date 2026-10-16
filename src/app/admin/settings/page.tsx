@@ -9,6 +9,7 @@ import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { formatTurkishPhoneInput } from "@/lib/phone";
 import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 import ImageUploadField from "@/components/ImageUploadField";
+import { SettingsPage, SettingsSection } from "@/components/v2/SettingsLayout";
 import { useAuth, notifySettingsChanged } from "../AuthContext";
 
 export default function GeneralSettingsPage() {
@@ -195,10 +196,20 @@ export default function GeneralSettingsPage() {
   }
 
   return (
-    <div className="max-w-lg">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Genel Ayarlar</h1>
-
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+    <SettingsPage
+      title="Genel Ayarlar"
+      description="İşletme bilgileri, marka, ödeme şekilleri ve panel davranışı."
+      footer={
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
+        >
+          {saving ? "Kaydediliyor..." : "Kaydet"}
+        </button>
+      }
+    >
+      <SettingsSection title="İşletme" description="Panelde ve belgelerde görünen işletme adı ile girişte kullanılan firma kodu.">
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-1">İşletme Adı</label>
           <input
@@ -210,14 +221,13 @@ export default function GeneralSettingsPage() {
         </div>
 
         <CopyBox compact label="Firma Kodu (giriş için)" value={code} />
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Şirket Bilgisi</h2>
-        <p className="text-xs text-gray-400 mb-4">
-          Bu bilgiler yalnızca Paylaşılan Stok&apos;ta bir eşleşme bulunduğunda karşı firmaya
-          gösterilir — başka bir yerde paylaşılmaz.
-        </p>
+      <SettingsSection
+        title="Şirket Bilgisi"
+        description={<>Bu bilgiler yalnızca Paylaşılan Stok&apos;ta bir eşleşme bulunduğunda karşı firmaya gösterilir — başka bir yerde paylaşılmaz.</>}
+      >
+        <div className="grid gap-x-4 sm:grid-cols-2">
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">Yetkili Kişi</label>
           <input
@@ -268,13 +278,13 @@ export default function GeneralSettingsPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-      </div>
+        </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-1">Marka</h2>
-        <p className="text-xs text-gray-400 mb-4">
-          Logo panel header&apos;ında, kaşe İş Emri çıktısında, firma logosu ise belgelerin başlığında gösterilir.
-        </p>
+      <SettingsSection
+        title="Marka"
+        description={<>Logo panel header&apos;ında, kaşe İş Emri çıktısında, firma logosu ise belgelerin başlığında gösterilir.</>}
+      >
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
           <ImageUploadField
             label="Firma Logosu"
@@ -298,17 +308,19 @@ export default function GeneralSettingsPage() {
             hint="İş Emri çıktısındaki kaşe kutusunda gösterilir."
           />
         </div>
-      </div>
+      </SettingsSection>
 
       {/* Şirket Bilgisi kartından KASITLI olarak ayrı — o kart Paylaşılan
           Stok eşleşmesinde karşı firmaya gösterilir, buradaki (VKN/Vergi
           Dairesi) ASLA cross-tenant görünmemeli. */}
-      <div className="mb-6">
-        <InvoiceInfoForm description="Fatura kesimi için kullanılan bilgiler — Abonelik sayfasında ödemeden önce de tamamlanması zorunludur." />
-      </div>
+      <SettingsSection
+        title="Fatura Bilgileri"
+        description="Fatura kesimi için kullanılan bilgiler — Abonelik sayfasında ödemeden önce de tamamlanması zorunludur."
+      >
+        <InvoiceInfoForm bare description="Fatura kesimi için kullanılan bilgiler — Abonelik sayfasında ödemeden önce de tamamlanması zorunludur." />
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Ödeme Şekilleri</h2>
+      <SettingsSection title="Ödeme Şekilleri" description="Sipariş kapatırken seçilebilen ödeme şekilleri.">
 
         <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-800 text-xs leading-relaxed">
           Bu listeyi değiştirirseniz şunlar etkilenir: sipariş kapatma/düzenleme ekranındaki ödeme
@@ -362,10 +374,9 @@ export default function GeneralSettingsPage() {
             Ekle
           </button>
         </div>
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Müşteriler</h2>
+      <SettingsSection title="Müşteriler">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium text-gray-700">Müşterileri Otomatik Kaydet</div>
@@ -375,12 +386,11 @@ export default function GeneralSettingsPage() {
               müşteriler yalnızca Müşteriler sayfasından elle eklenmiş olarak listede görünür.
             </p>
           </div>
-          <Switch checked={autoRegisterCustomers} onClick={() => setAutoRegisterCustomers((v) => !v)} />
+          <Switch label="Müşterileri Otomatik Kaydet" checked={autoRegisterCustomers} onClick={() => setAutoRegisterCustomers((v) => !v)} />
         </div>
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Paylaşılan Stok</h2>
+      <SettingsSection title="Paylaşılan Stok">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium text-gray-700">Stoğumu Diğer Firmalarla Paylaş</div>
@@ -390,12 +400,11 @@ export default function GeneralSettingsPage() {
               başkalarının stoğunu da göremezsiniz.
             </p>
           </div>
-          <Switch checked={sharedStockEnabled} onClick={() => setSharedStockEnabled((v) => !v)} />
+          <Switch label="Stoğumu Diğer Firmalarla Paylaş" checked={sharedStockEnabled} onClick={() => setSharedStockEnabled((v) => !v)} />
         </div>
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Sipariş Listesi</h2>
+      <SettingsSection title="Sipariş Listesi" description="Sipariş listesi ve yeni sipariş formunun davranışı.">
         <label className="block text-sm font-medium text-gray-700 mb-1">Varsayılan Tarih Filtresi</label>
         <select
           value={ordersDefaultDateFilter}
@@ -421,7 +430,7 @@ export default function GeneralSettingsPage() {
               devam eder. Daha önce girilmiş siparişler bundan etkilenmez.
             </p>
           </div>
-          <Switch checked={customOrderNoEnabled} onClick={() => setCustomOrderNoEnabled((v) => !v)} />
+          <Switch label="Sipariş Numarasını Elle Gir" checked={customOrderNoEnabled} onClick={() => setCustomOrderNoEnabled((v) => !v)} />
         </div>
 
         <div className="flex items-center justify-between mt-5 pt-5 border-t border-gray-100">
@@ -434,12 +443,11 @@ export default function GeneralSettingsPage() {
               zorundadır. Daha önce girilmiş siparişler bundan etkilenmez.
             </p>
           </div>
-          <Switch checked={plateRequired} onClick={() => setPlateRequired((v) => !v)} />
+          <Switch label="Araç Plakası Zorunlu" checked={plateRequired} onClick={() => setPlateRequired((v) => !v)} />
         </div>
-      </div>
+      </SettingsSection>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Depolama</h2>
+      <SettingsSection title="Depolama">
         <label className="block text-sm font-medium text-gray-700 mb-1">Depoda Bekleme Uyarı Eşiği (ay)</label>
         <input
           type="number"
@@ -452,15 +460,7 @@ export default function GeneralSettingsPage() {
         <p className="text-xs text-gray-400 mt-1">
           Depolama listesinde bu süreden uzun süredir bekleyen lastikler uyarı olarak vurgulanır.
         </p>
-      </div>
-
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
-      >
-        {saving ? "Kaydediliyor..." : "Kaydet"}
-      </button>
-    </div>
+      </SettingsSection>
+    </SettingsPage>
   );
 }

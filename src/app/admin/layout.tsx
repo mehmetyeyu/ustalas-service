@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "./AuthContext";
-import { hasPermission } from "@/lib/permissions";
+import type { NavItem } from "@/lib/adminNav";
 import { trialDaysLeft } from "@/lib/billing";
 import { shouldShowOnboardingTour } from "@/lib/onboardingTour";
 import OnboardingTour from "@/components/OnboardingTour";
+import { forgetUiPref, useApplyUi } from "@/lib/uiTheme";
+import { ROLE_LABELS, visibleAdminNav } from "@/lib/adminNav";
+import { noteInAppNavigation } from "@/lib/navHistory";
+import { useDialog } from "@/lib/useDialog";
+
+// Yeni görünümün (v2) çerçevesi — yalnızca v2'yi seçen kullanıcıya yüklenir.
+const V2Sidebar = dynamic(() => import("@/components/v2/AdminShellV2").then((m) => m.V2Sidebar), { ssr: false });
+const V2Header = dynamic(() => import("@/components/v2/AdminShellV2").then((m) => m.V2Header), { ssr: false });
+
 
 // Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
 // giriyor — sabit kodlanmış tek bir logo yerine, giriş yapan kullanıcının
@@ -24,45 +34,7 @@ function BrandMark({ businessName, panelLogoUrl, className }: { businessName: st
   return <span className={className}>{businessName || DEFAULT_BUSINESS_NAME}</span>;
 }
 
-// `resource: null` → her authenticated kullanıcıya (admin da staff da) her
-// zaman görünür. staff için görünürlük ilgili "<resource>.view" iznine bağlı
-// — bkz. src/lib/permissions.ts (aynı kaynak/aksiyon taksonomisi).
-const navItems = [
-  { href: "/admin/orders", label: "Siparişler", resource: "orders" },
-  { href: "/admin/products", label: "Ürünler", resource: "products" },
-  { href: "/admin/storage", label: "Depolama", resource: "storage" },
-  { href: "/admin/reports", label: "Raporlar", resource: "reports" },
-  { href: "/admin/kasa", label: "Kasa", resource: "kasa" },
-  { href: "/admin/expenses", label: "Masraflar", resource: "expenses" },
-  { href: "/admin/services", label: "Hizmetler", resource: "services" },
-  { href: "/admin/customers", label: "Müşteriler", resource: "customers" },
-  { href: "/admin/suppliers", label: "Tedarikçiler", resource: "suppliers" },
-  { href: "/admin/shared-stock", label: "Paylaşılan Stok", resource: "shared_stock", isNew: true },
-  { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
-  { href: "/admin/takvim", label: "Takvim", resource: "calendar", isNew: true },
-] as const;
-
-// Kullanıcılar/Genel Ayarlar hiçbir zaman staff'a devredilemez (bkz. plan) —
-// bu ikisi resource=null DEĞİL, "adminOnly" — staff için filtrelenirken
-// koşulsuz elenir.
-const settingsItems = [
-  { href: "/admin/profile", label: "Profil", adminOnly: false },
-
-  { href: "/admin/users", label: "Kullanıcılar", adminOnly: true },
-  { href: "/admin/audit-log", label: "Aktivite Geçmişi", adminOnly: true },
-  { href: "/admin/settings", label: "Genel Ayarlar", adminOnly: true },
-  { href: "/admin/appointments/ayarlar", label: "Randevu Ayarları", adminOnly: true },
-  { href: "/admin/appointments/gorunum", label: "Randevu Görünümü", adminOnly: true },
-  // billing_status='exempt' (Ustalas, FB Lastik, Süper Admin'den elle
-  // eklenenler) hiç faturalandırmaya girmez — bu firmalara "Abonelik"
-  // menüsü hiç gösterilmez, bkz. görünürlük filtresi (AdminLayoutInner).
-  { href: "/admin/billing", label: "Abonelik", adminOnly: true },
-    { href: "/admin/destek", label: "Destek", adminOnly: false },
-  { href: "/admin/help", label: "Kullanım Kılavuzu", adminOnly: false },
-
-] as const;
-
-type NavItem = { href: string; label: string; isNew?: boolean };
+// Menü öğeleri ve görünürlük kuralları: src/lib/adminNav.ts.
 
 // Yeni eklenen bir menü öğesini (ör. Paylaşılan Stok) kısa süreliğine
 // vurgulamak için — kullanıcılar keşfetmeden önce fark etsin diye.
@@ -217,8 +189,18 @@ function MobileMenu({
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading } = useAuth();
+  // "‹ Geri" bağlantıları için panel içi gezinme sayacı (bkz. src/lib/navHistory.ts).
+  useEffect(() => { noteInAppNavigation(pathname); }, [pathname]);
+  const { user, loading, setUiPreferences } = useAuth();
   const [showTrialModal, setShowTrialModal] = useState(false);
+  const trialDialog = useDialog(() => setShowTrialModal(false));
+  // Yeni görünüm (v2) tercihi — bkz. database/schema.sql ui_version notu.
+  // Tercih gelene kadar (loading) hiçbir şey uygulanmaz; açılışta son bilinen
+  // tercihi kök layout'taki script zaten uyguladı (renk sıçraması olmasın).
+  const v2 = !loading && user?.uiVersion === "v2";
+  useApplyUi(loading ? null : (user?.uiVersion ?? "v1"), user?.uiTheme ?? "system");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawer = useMemo(() => ({ open: drawerOpen, setOpen: setDrawerOpen }), [drawerOpen]);
   const [showOnboardingTour, setShowOnboardingTour] = useState(false);
 
   // Üstteki amber banner (aşağıda) her sayfada sessizce duruyor, kolayca
@@ -287,26 +269,37 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     fetch("/api/auth/onboarding-tour", { method: "POST" }).catch(() => {});
   }
 
-  // Yüklenirken tüm linkler gösterilir (kısa an) — asıl erişim zaten
-  // middleware + her sayfanın kendi guard'ı ile korunuyor, bu sadece nav'ın
-  // görünürlüğü. admin için filtreleme hiç uygulanmaz (her zaman tam liste).
-  const visibleNavItems: readonly NavItem[] = (loading || user?.role === "admin"
-    ? navItems
-    : navItems.filter((item) => user && hasPermission(user, `${item.resource}.view`))
-  );
-  const visibleSettingsItems = (loading || user?.role === "admin"
-    ? settingsItems
-    : settingsItems.filter((item) => !item.adminOnly)
-  ).filter((item) => item.href !== "/admin/billing" || (!loading && user?.billingStatus !== "exempt"));
+  // Menü görünürlüğü (izinlere göre) — bkz. src/lib/adminNav.ts.
+  const { navItems: visibleNavItems, settingsItems: visibleSettingsItems } = visibleAdminNav(user, loading);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    forgetUiPref();
     router.push("/admin/login");
   }
 
+  // Sayfa içeriği (<main>) iki görünümde de bu div'in AYNI konumunda durur —
+  // önündeki slotlar (menü, üst çubuk, banner'lar) element ya da null olarak
+  // yerini korur. Böylece tercih yüklenip görünüm v1→v2 değişince sayfa
+  // baştan kurulmaz (verisini ikinci kez çekmez); sadece çerçeve değişir.
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-gray-900 text-white px-4 py-3">
+    <div className={v2 ? "min-h-screen bg-v2-bg font-v2-sans text-v2-fg lg:pl-[264px]" : "min-h-screen bg-gray-50"}>
+      {v2 ? (
+        <V2Sidebar
+          pathname={pathname}
+          navItems={visibleNavItems}
+          settingsItems={visibleSettingsItems}
+          businessName={user?.businessName ?? ""}
+          panelLogoUrl={user?.panelLogoUrl ?? null}
+          username={user?.username ?? ""}
+          roleLabel={ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? ""}
+          onLogout={handleLogout}
+          drawer={drawer}
+        />
+      ) : (
+      // v1-chrome: yeni görünüm tercihi olan kullanıcıda açılışta (tercih
+      // sunucudan gelmeden) eski menü bir an görünmesin — globals.css.
+      <nav className="v1-chrome bg-gray-900 text-white px-4 py-3">
         <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} businessName={user?.businessName ?? ""} panelLogoUrl={user?.panelLogoUrl ?? null} />
 
         {/* Desktop: tek satır */}
@@ -342,15 +335,40 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </nav>
+      )}
+      {v2 ? (
+        <V2Header
+          businessName={user?.businessName ?? ""}
+          theme={user?.uiTheme ?? "system"}
+          onThemeChange={(t) => { void setUiPreferences({ ui_theme: t }); }}
+          drawer={drawer}
+        />
+      ) : null}
+      {/* Yeni görünüm daveti — yalnızca erişimi açılmış YÖNETİCİLERE (kademeli
+          açılış, bkz. ui_v2_available). Geri dönüş Profil › Görünüm'de. */}
+      {!loading && !v2 && user?.role === "admin" && user.uiV2Available ? (
+        <div className="v1-chrome flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
+          <span>Yeni panel görünümü hazır: yenilenen tasarım, açık ve koyu mod.</span>
+          <button
+            type="button"
+            onClick={() => { void setUiPreferences({ ui_version: "v2" }); }}
+            className="font-semibold underline underline-offset-2 hover:text-blue-700"
+          >
+            Yeni görünüme geç
+          </button>
+        </div>
+      ) : null}
       {!loading && user?.role === "admin" && user.billingStatus === "trialing" && !pathname.startsWith("/admin/billing") && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-sm text-center py-2 px-4">
+        <div className={v2
+          ? "border-b border-v2-line bg-v2-warning-bg px-4 py-2 text-center text-sm text-v2-warning-fg"
+          : "bg-amber-50 border-b border-amber-200 text-amber-800 text-sm text-center py-2 px-4"}>
           Deneme sürenizin bitmesine {trialDaysLeft(user.trialEndsAt)} gün kaldı —{" "}
           <Link href="/admin/billing" className="font-semibold underline">Abone Ol</Link>
         </div>
       )}
-      <main className="p-4 sm:p-6">{children}</main>
+      <main className={v2 ? "min-w-0 p-4 sm:p-8" : "p-4 sm:p-6"}>{children}</main>
       {showTrialModal && user && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={trialDialog} role="dialog" aria-modal="true" aria-label="Deneme Süreniz Bitmek Üzere" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm text-center">
             <h2 className="text-lg font-bold text-gray-800 mb-2">Deneme Süreniz Bitmek Üzere</h2>
             <p className="text-sm text-gray-500 mb-5">

@@ -13,9 +13,13 @@ import { isInvoiceInfoComplete, type InvoiceInfo } from "@/lib/billing";
 export default function InvoiceInfoForm({
   description = "Fatura kesimi için kullanılan bilgiler.",
   onStatusChange,
+  bare,
 }: {
   description?: string;
   onStatusChange?: (complete: boolean) => void;
+  // Başlık/açıklama ve kart çerçevesi dışarıdan çiziliyorsa (yeni görünüm
+  // Ayarlar düzeni, bkz. components/v2/SettingsLayout) sadece form gövdesi.
+  bare?: boolean;
 }) {
   const toast = useToast();
   const [invoiceInfo, setInvoiceInfo] = useState<(InvoiceInfo & { complete: boolean }) | null>(null);
@@ -91,9 +95,13 @@ export default function InvoiceInfoForm({
   });
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
-      <h2 className="text-sm font-bold text-gray-800 mb-1">Fatura Bilgileri</h2>
-      <p className="text-xs text-gray-400 mb-4">{description}</p>
+    <div className={bare ? undefined : "bg-white rounded-xl shadow-sm p-6"}>
+      {!bare && (
+        <>
+          <h2 className="text-sm font-bold text-gray-800 mb-1">Fatura Bilgileri</h2>
+          <p className="text-xs text-gray-400 mb-4">{description}</p>
+        </>
+      )}
       {loading ? (
         <div className="text-center text-gray-400 py-6 text-sm">Yükleniyor...</div>
       ) : (

@@ -6,6 +6,7 @@ import { buildMonthGrid, monthGridRange, type CalendarDay } from "@/lib/calendar
 import { useViewGuard, usePermission } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { useDialog } from "@/lib/useDialog";
 
 interface Appointment {
   id: number;
@@ -68,6 +69,7 @@ export default function TakvimPage() {
   const [notes, setNotes] = useState<CalendarNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const selectedDateDialog = useDialog(() => setSelectedDate(null));
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
@@ -215,11 +217,11 @@ export default function TakvimPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Takvim</h1>
         <div className="flex items-center gap-2">
-          <button onClick={goPrevMonth} className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100" aria-label="Önceki ay">
+          <button onClick={goPrevMonth} className="p-2.5 sm:p-2 rounded-lg border border-gray-300 hover:bg-gray-100" aria-label="Önceki ay">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <span className="text-sm font-medium text-gray-700 w-32 text-center">{months[month - 1]} {year}</span>
-          <button onClick={goNextMonth} className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100" aria-label="Sonraki ay">
+          <button onClick={goNextMonth} className="p-2.5 sm:p-2 rounded-lg border border-gray-300 hover:bg-gray-100" aria-label="Sonraki ay">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
           </button>
           <button onClick={goToday} className="px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 text-sm font-medium text-gray-600">
@@ -241,11 +243,14 @@ export default function TakvimPage() {
             {grid.map((d: CalendarDay) => {
               const dayAppts = appointmentsFor(d.date);
               const dayNotes = notesFor(d.date);
+              // flex-col + justify-start: buton içeriği varsayılan olarak
+              // dikeyde ortalanıyordu — gün numarası randevulu hücrede yukarı
+              // kayıyor, satırdaki diğer günlerle hizasız kalıyordu.
               return (
                 <button
                   key={d.date}
                   onClick={() => openDay(d.date)}
-                  className={`min-h-[90px] sm:min-h-[110px] border-b border-r border-gray-100 p-1.5 text-left align-top hover:bg-gray-50 transition-colors ${
+                  className={`flex min-h-[90px] min-w-0 flex-col items-start justify-start sm:min-h-[110px] border-b border-r border-gray-100 p-1.5 text-left hover:bg-gray-50 transition-colors ${
                     d.inCurrentMonth ? "bg-white" : "bg-gray-50/50"
                   }`}
                 >
@@ -254,7 +259,7 @@ export default function TakvimPage() {
                   }`}>
                     {d.day}
                   </span>
-                  <div className="mt-1 space-y-0.5">
+                  <div className="mt-1 w-full min-w-0 space-y-0.5">
                     {dayAppts.slice(0, 2).map((a) => (
                       <div key={a.id} className={`text-[10px] px-1 py-0.5 rounded truncate ${STATUS_BADGE[a.status] ?? "bg-gray-100 text-gray-600"}`}>
                         {a.customer_name || a.plate}
@@ -277,7 +282,7 @@ export default function TakvimPage() {
       )}
 
       {selectedDate && selectedDay && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedDate(null)}>
+        <div ref={selectedDateDialog} role="dialog" aria-modal="true" aria-label="Gün Detayı" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedDate(null)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-semibold text-gray-800">
