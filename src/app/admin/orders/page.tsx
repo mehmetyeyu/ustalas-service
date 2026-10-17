@@ -599,7 +599,7 @@ export default function OrdersPage() {
   // bu Excel içe aktarma normalizasyonu için kullanılır (bkz. handleImport).
   // AuthContext store'undan (bkz. /api/auth/me) — ayrı /api/settings isteği yok.
   const { user: authUser, loading: authLoading } = useAuth();
-  const v2 = authUser?.uiVersion === "v2";
+  const { isV2: v2 } = useAuth();
   const orderActionsWidth = (v2 ? ORDER_ACTIONS_WIDTH_V2 : ORDER_ACTIONS_WIDTH)[orderActionCount];
   const settingsPaymentTypes = authUser?.paymentTypes.length ? authUser.paymentTypes : DEFAULT_PAYMENT_TYPES;
   // Genel Ayarlar'daki varsayılan tarih filtresi store'a gelene kadar ilk

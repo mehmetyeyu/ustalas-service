@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { UI_PREF_COOKIE, uiPrefCookieOptions, uiPrefCookieValue } from "@/lib/uiThemeBoot";
 
 // Panel görünümü tercihleri (bkz. database/schema.sql ui_version notu):
 // ui_version ('v1' | 'v2') ve ui_theme ('system' | 'light' | 'dark').
@@ -29,12 +30,16 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    await pool.query(
+    const result = await pool.query<{ ui_version: string; ui_theme: string }>(
       `UPDATE users SET ui_version = COALESCE($1, ui_version), ui_theme = COALESCE($2, ui_theme)
-       WHERE id = $3`,
+       WHERE id = $3 RETURNING ui_version, ui_theme`,
       [uiVersion ?? null, uiTheme ?? null, user.userId]
     );
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    // Açılış betiğinin okuduğu çerez kopyası da güncellenir (bkz. src/lib/uiThemeBoot.ts).
+    const row = result.rows[0];
+    if (row) response.cookies.set(UI_PREF_COOKIE, uiPrefCookieValue(row.ui_version, row.ui_theme), uiPrefCookieOptions());
+    return response;
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

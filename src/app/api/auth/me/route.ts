@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getSessionSettings } from "@/lib/settings";
+import { UI_PREF_COOKIE, uiPrefCookieOptions, uiPrefCookieValue } from "@/lib/uiThemeBoot";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -12,7 +13,7 @@ export async function GET() {
   // tek sorguda (bkz. getSessionSettings). İstemci bunları AuthContext
   // store'unda tutar, sayfalar ayrıca istek atmaz.
   const settings = await getSessionSettings(user.tenantId!);
-  return NextResponse.json({
+  const response = NextResponse.json({
     username: user.username, role: user.role, permissions: user.permissions ?? [],
     billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, plan: user.plan ?? null,
     billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? false, billing_period_ends_at: user.billingPeriodEndsAt ?? null,
@@ -21,4 +22,8 @@ export async function GET() {
     ui_version: user.uiVersion ?? "v1", ui_theme: user.uiTheme ?? "system", ui_v2_available: user.uiV2Available ?? false,
     ...settings,
   });
+  // Görünüm tercihinin çerez kopyasını tazeler (bkz. src/lib/uiThemeBoot.ts)
+  // — başka cihazda değişen tercih ve deploy öncesi açılmış oturumlar için.
+  response.cookies.set(UI_PREF_COOKIE, uiPrefCookieValue(user.uiVersion, user.uiTheme), uiPrefCookieOptions());
+  return response;
 }

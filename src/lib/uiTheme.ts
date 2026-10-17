@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
-import { UI_PREF_STORAGE_KEY } from "./uiThemeBoot";
+import { useEffect, useSyncExternalStore } from "react";
+import { clearShellCache } from "./shellCache";
+import { UI_PREF_COOKIE, UI_PREF_STORAGE_KEY } from "./uiThemeBoot";
 
 // Panel görünümünü (v1/v2) ve v2'nin temasını <html> üzerindeki
 // data-ui / data-theme özniteliklerine uygular — renkler src/app/globals.css'te
@@ -42,6 +43,24 @@ export function forgetUiPref(): void {
   } catch {
     // localStorage kapalı olabilir — kaydı zaten yoktur.
   }
+  // Çıkış rotası da siler; yanıt gelmeden yönlenilirse diye istemcide de.
+  document.cookie = `${UI_PREF_COOKIE}=; Max-Age=0; path=/`;
+  clearShellCache();
+}
+
+// Açılış betiğinin (uiThemeBoot.ts — çerezden) <html>'e koyduğu yeni görünüm
+// işareti. Kullanıcı tercihi (/api/auth/me) gelene kadar çerçeve buna göre
+// çizilir; cevabı beklemeye gerek kalmaz. Sunucu çıktısında her zaman false
+// (sunucu çerezi okumaz — sayfalar statik kalsın, Vercel CPU'su artmasın);
+// tarayıcı devralınca hemen gerçek değerle yeniden çizilir, hidrasyon
+// uyuşmazlığı olmaz.
+const noopSubscribe = () => () => {};
+export function useBootUiV2(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => document.documentElement.dataset.ui === "v2",
+    () => false,
+  );
 }
 
 export function clearUi(): void {

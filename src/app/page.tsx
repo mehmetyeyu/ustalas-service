@@ -10,7 +10,7 @@ import { formatCurrency } from "@/lib/format";
 import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
 import { forgetUiPref, useApplyUi } from "@/lib/uiTheme";
-import { AuthProvider } from "@/app/admin/AuthContext";
+import { AuthProvider, useAuth } from "@/app/admin/AuthContext";
 import StandaloneShellV2 from "@/components/v2/StandaloneShellV2";
 import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter, useStockCodes } from "@/lib/queries";
 
@@ -380,7 +380,7 @@ function OrderPageInner() {
   useApplyUi(me ? (me.ui_version ?? "v1") : null, me?.ui_theme ?? "system");
   // Yeni görünümde form panelin sol menüsü/üst çubuğuyla açılır (bkz.
   // OrderPage → StandaloneShellV2); kendi marka/geri dön/çıkış satırı gizlenir.
-  const v2 = me?.ui_version === "v2";
+  const { isV2: v2 } = useAuth();
   useEffect(() => {
     if (!me) return;
     setPanelPath(getDefaultAdminPath({ role: me.role, permissions: me.permissions ?? [] }));
@@ -670,13 +670,13 @@ function OrderPageInner() {
   }
 
   return (
-    <div className={v2 ? undefined : "min-h-screen bg-gray-50 p-4 sm:p-6"}>
+    <div className={v2 ? undefined : "min-h-screen bg-gray-50 p-4 sm:p-6 v2:min-h-0 v2:p-0"}>
       <div className="w-full max-w-6xl">
-        {v2 && (
-          <header className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-v2-fg">Yeni Sipariş</h1>
-          </header>
-        )}
+        {/* Her zaman çizilir, eski görünümde gizli (v2: varyantı) — tercih
+            yüklenince eklenip formu aşağı itmesin. */}
+        <header className={v2 ? "mb-6" : "mb-6 hidden v2:block"}>
+          <h1 className="text-2xl font-semibold tracking-tight text-v2-fg">Yeni Sipariş</h1>
+        </header>
           <div className={v2 ? "hidden" : "v1-chrome flex items-center justify-between mb-6"}>
             <div>
               {(() => {

@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
 import { queryKeys, useMe, type MeResponse } from "@/lib/queries";
+import { useBootUiV2 } from "@/lib/uiTheme";
 
 interface AuthUser {
   username: string;
@@ -56,9 +57,13 @@ interface AuthState {
   refresh: () => Promise<void>;
   // Görünüm/tema tercihini kaydeder; ekran yanıtı beklemeden değişir.
   setUiPreferences: (prefs: UiPreferences) => Promise<void>;
+  // Yeni görünüm (v2) açık mı — /api/auth/me gelene kadar açılış betiğinin
+  // çerezden koyduğu işarete göre (bkz. useBootUiV2), sonra kullanıcının
+  // gerçek tercihine göre. Çerçeve ve sayfalar cevabı beklemeden çizilir.
+  isV2: boolean;
 }
 
-const AuthContext = createContext<AuthState>({ user: null, loading: true, refresh: async () => {}, setUiPreferences: async () => {} });
+const AuthContext = createContext<AuthState>({ user: null, loading: true, refresh: async () => {}, setUiPreferences: async () => {}, isV2: false });
 
 const SETTINGS_CHANNEL = "ustalas-settings";
 
@@ -127,7 +132,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // value sabit tutulur (useMemo) — layout her navigasyonda yeniden render
   // olur, her seferinde yeni bir nesne verilseydi tüm useAuth() kullanan
   // sayfalar gereksiz yere yeniden render olurdu.
-  const value = useMemo(() => ({ user, loading: isPending, refresh, setUiPreferences }), [user, isPending, refresh, setUiPreferences]);
+  const bootV2 = useBootUiV2();
+  const isV2 = isPending ? bootV2 : user?.uiVersion === "v2";
+  const value = useMemo(() => ({ user, loading: isPending, refresh, setUiPreferences, isV2 }), [user, isPending, refresh, setUiPreferences, isV2]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

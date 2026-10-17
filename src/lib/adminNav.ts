@@ -62,3 +62,16 @@ export function visibleAdminNav(
   ).filter((item) => item.href !== "/admin/billing" || (!loading && user?.billingStatus !== "exempt"));
   return { navItems, settingsItems };
 }
+
+// Yeni görünüm yan menüsü: /api/auth/me gelmeden (açılışta) tarayıcıdaki
+// kopyadan (src/lib/shellCache.ts) hangi öğelerin görüneceği. Kopya yoksa
+// boş — izni olmayana bir an tüm menü gösterilmesin.
+export function cachedAdminNav(
+  cache: { nav: string[]; settings: string[] } | null
+): { navItems: readonly NavItem[]; settingsItems: readonly NavItem[] } {
+  if (!cache) return { navItems: [], settingsItems: [] };
+  return {
+    navItems: NAV_ITEMS.filter((i) => cache.nav.includes(i.href)),
+    settingsItems: SETTINGS_ITEMS.filter((i) => cache.settings.includes(i.href)),
+  };
+}

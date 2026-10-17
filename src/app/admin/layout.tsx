@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "./AuthContext";
 import type { NavItem } from "@/lib/adminNav";
@@ -10,13 +9,15 @@ import { trialDaysLeft } from "@/lib/billing";
 import { shouldShowOnboardingTour } from "@/lib/onboardingTour";
 import OnboardingTour from "@/components/OnboardingTour";
 import { forgetUiPref, useApplyUi } from "@/lib/uiTheme";
-import { ROLE_LABELS, visibleAdminNav } from "@/lib/adminNav";
+import { V2HeaderPlaceholder, V2SidebarPlaceholder } from "@/components/v2/ChromePlaceholder";
+import { ROLE_LABELS, cachedAdminNav, visibleAdminNav } from "@/lib/adminNav";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
+// Yeni görünümün (v2) çerçevesi sayfayla birlikte yüklenir (ayrı parça
+// değil) — tercih çerezden bilindiği için /api/auth/me beklenmeden çizilir.
+import { V2Header, V2Sidebar } from "@/components/v2/AdminShellV2";
 import { noteInAppNavigation } from "@/lib/navHistory";
 import { useDialog } from "@/lib/useDialog";
 
-// Yeni görünümün (v2) çerçevesi — yalnızca v2'yi seçen kullanıcıya yüklenir.
-const V2Sidebar = dynamic(() => import("@/components/v2/AdminShellV2").then((m) => m.V2Sidebar), { ssr: false });
-const V2Header = dynamic(() => import("@/components/v2/AdminShellV2").then((m) => m.V2Header), { ssr: false });
 
 
 // Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
@@ -191,13 +192,13 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   // "‹ Geri" bağlantıları için panel içi gezinme sayacı (bkz. src/lib/navHistory.ts).
   useEffect(() => { noteInAppNavigation(pathname); }, [pathname]);
-  const { user, loading, setUiPreferences } = useAuth();
+  const { user, loading, setUiPreferences, isV2 } = useAuth();
   const [showTrialModal, setShowTrialModal] = useState(false);
   const trialDialog = useDialog(() => setShowTrialModal(false));
-  // Yeni görünüm (v2) tercihi — bkz. database/schema.sql ui_version notu.
-  // Tercih gelene kadar (loading) hiçbir şey uygulanmaz; açılışta son bilinen
-  // tercihi kök layout'taki script zaten uyguladı (renk sıçraması olmasın).
-  const v2 = !loading && user?.uiVersion === "v2";
+  // Yeni görünüm (v2) — bkz. database/schema.sql ui_version notu. Tercih
+  // (/api/auth/me) gelene kadar açılış betiğinin çerezden koyduğu işarete
+  // göre çizilir (AuthContext isV2); renkleri de o betik zaten uyguladı.
+  const v2 = isV2;
   useApplyUi(loading ? null : (user?.uiVersion ?? "v1"), user?.uiTheme ?? "system");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawer = useMemo(() => ({ open: drawerOpen, setOpen: setDrawerOpen }), [drawerOpen]);
@@ -271,6 +272,22 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 
   // Menü görünürlüğü (izinlere göre) — bkz. src/lib/adminNav.ts.
   const { navItems: visibleNavItems, settingsItems: visibleSettingsItems } = visibleAdminNav(user, loading);
+  // Yeni görünüm yan menüsü /me'yi beklemez: açılışta kişiye özel kısım
+  // (görünen öğeler, firma/kullanıcı adı) tarayıcıdaki kopyadan çizilir,
+  // cevap gelince gerçek değerlerle değişir ve kopya tazelenir.
+  const shellCache = loading && v2 ? readShellCache() : null;
+  const sidebarNav = loading ? cachedAdminNav(shellCache) : { navItems: visibleNavItems, settingsItems: visibleSettingsItems };
+  const shellCacheKey = !loading && v2 && user
+    ? JSON.stringify({
+        nav: visibleNavItems.map((i) => i.href),
+        settings: visibleSettingsItems.map((i) => i.href),
+        businessName: user.businessName ?? "",
+        panelLogoUrl: user.panelLogoUrl ?? null,
+        username: user.username,
+        roleLabel: ROLE_LABELS[user.role] ?? user.role,
+      })
+    : null;
+  useEffect(() => { if (shellCacheKey) writeShellCache(JSON.parse(shellCacheKey)); }, [shellCacheKey]);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -283,22 +300,26 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   // yerini korur. Böylece tercih yüklenip görünüm v1→v2 değişince sayfa
   // baştan kurulmaz (verisini ikinci kez çekmez); sadece çerçeve değişir.
   return (
-    <div className={v2 ? "min-h-screen bg-v2-bg font-v2-sans text-v2-fg lg:pl-[264px]" : "min-h-screen bg-gray-50"}>
+    // Tercih yüklenirken (v2 henüz false) açılış betiği yeni görünümü
+    // işaretlediyse v2: sınıfları ve yer tutucular (ChromePlaceholder) menü/üst
+    // çubuk alanını baştan ayırır — içerik önce tam genişlikte çizilip kaymasın.
+    <div className={v2 ? "min-h-screen bg-v2-bg font-v2-sans text-v2-fg lg:pl-[264px]" : "min-h-screen bg-gray-50 v2:lg:pl-[264px]"}>
       {v2 ? (
         <V2Sidebar
           pathname={pathname}
-          navItems={visibleNavItems}
-          settingsItems={visibleSettingsItems}
-          businessName={user?.businessName ?? ""}
-          panelLogoUrl={user?.panelLogoUrl ?? null}
-          username={user?.username ?? ""}
-          roleLabel={ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? ""}
+          navItems={sidebarNav.navItems}
+          settingsItems={sidebarNav.settingsItems}
+          businessName={user?.businessName ?? shellCache?.businessName ?? ""}
+          panelLogoUrl={user ? user.panelLogoUrl ?? null : shellCache?.panelLogoUrl ?? null}
+          username={user?.username ?? shellCache?.username ?? ""}
+          roleLabel={user ? ROLE_LABELS[user.role] ?? user.role : shellCache?.roleLabel ?? ""}
           onLogout={handleLogout}
           drawer={drawer}
         />
-      ) : (
-      // v1-chrome: yeni görünüm tercihi olan kullanıcıda açılışta (tercih
-      // sunucudan gelmeden) eski menü bir an görünmesin — globals.css.
+      ) : (<>
+      <V2SidebarPlaceholder />
+      {/* v1-chrome: yeni görünüm tercihi olan kullanıcıda açılışta (tercih
+          sunucudan gelmeden) eski menü bir an görünmesin — globals.css. */}
       <nav className="v1-chrome bg-gray-900 text-white px-4 py-3">
         <MobileMenu pathname={pathname} onLogout={handleLogout} navItems={visibleNavItems} settingsItems={visibleSettingsItems} businessName={user?.businessName ?? ""} panelLogoUrl={user?.panelLogoUrl ?? null} />
 
@@ -335,15 +356,15 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </nav>
-      )}
+      </>)}
       {v2 ? (
         <V2Header
-          businessName={user?.businessName ?? ""}
+          businessName={user?.businessName ?? shellCache?.businessName ?? ""}
           theme={user?.uiTheme ?? "system"}
           onThemeChange={(t) => { void setUiPreferences({ ui_theme: t }); }}
           drawer={drawer}
         />
-      ) : null}
+      ) : <V2HeaderPlaceholder />}
       {/* Yeni görünüm daveti — yalnızca erişimi açılmış YÖNETİCİLERE (kademeli
           açılış, bkz. ui_v2_available). Geri dönüş Profil › Görünüm'de. */}
       {!loading && !v2 && user?.role === "admin" && user.uiV2Available ? (
@@ -366,7 +387,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <Link href="/admin/billing" className="font-semibold underline">Abone Ol</Link>
         </div>
       )}
-      <main className={v2 ? "min-w-0 p-4 sm:p-8" : "p-4 sm:p-6"}>{children}</main>
+      <main className={v2 ? "min-w-0 p-4 sm:p-8" : "p-4 sm:p-6 v2:min-w-0 v2:sm:p-8"}>{children}</main>
       {showTrialModal && user && (
         <div ref={trialDialog} role="dialog" aria-modal="true" aria-label="Deneme Süreniz Bitmek Üzere" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm text-center">
