@@ -19,6 +19,14 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search");
   const season = searchParams.get("season");
+  // Stok durumu: "in" = stokta olanlar (toplam > 0), "out" = stoğu bitenler
+  // (tüm partilerin toplamı 0), yoksa tümü. Ürünler sayfası varsayılan "in"
+  // gönderir — stoğu 0 kodlar çokken Stok'a göre küçükten büyüğe sıralayınca
+  // ilk sayfaları dolduruyor, stoğu olanlar 3-4. sayfaya itiliyordu
+  // (müşteri şikâyeti). Parametresiz çağıranlar (tek kod tazeleme) eskisi gibi.
+  const stockParam = searchParams.get("stock");
+  const stockFilter = stockParam === "in" || stockParam === "out" ? stockParam : null;
+  const having = stockFilter === "in" ? " HAVING SUM(stock_qty) > 0" : stockFilter === "out" ? " HAVING SUM(stock_qty) <= 0" : "";
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
@@ -49,6 +57,12 @@ export async function GET(request: NextRequest) {
       `(code ILIKE $${values.length - 1} OR brand ILIKE $${values.length - 1} OR supplier ILIKE $${values.length - 1} OR size_desc ILIKE $${values.length - 1} OR REPLACE(size_desc, '/', '') ILIKE $${values.length})`
     );
   }
+  // Stok özeti (aşağıdaki summary sorgusu) mevsim filtresinden BAĞIMSIZ —
+  // kullanıcı filtre seçiliyken de tüm mevsimlerin dağılımını görsün. Bu
+  // yüzden mevsim koşulu ayrı tutulur: liste sorgusu ikisini birlikte,
+  // özet yalnızca arama/tenant koşullarını kullanır.
+  const summaryWhere = " WHERE " + conditions.join(" AND ");
+  const summaryValues = [...values];
   if (season) {
     values.push(season);
     conditions.push(`season = $${values.length}`);
@@ -71,17 +85,56 @@ export async function GET(request: NextRequest) {
               MAX(min_stock_threshold) AS min_stock_threshold,
               SUM(stock_qty)::int AS total_stock, MAX(updated_at) AS last_updated
          FROM products${where}
-         GROUP BY code
+         GROUP BY code${having}
          ORDER BY ${orderBy}
          LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
         [...values, limit, offset]
       ),
+      // Sayfalama toplamı + stok özeti TEK sorguda (ayrı bir sorgu her liste
+      // yüklemesinde sabit bir DB turu maliyeti eklerdi). Önce kod+mevsim,
+      // sonra kod bazında toplanır: mevsim dağılımı, toplam stok/kod ve stoğu
+      // biten (tüm partilerinin toplamı 0) kod sayısı aynı ara sonuçtan çıkar.
+      // Bir kod birden fazla mevsimde partiye sahipse her mevsimde sayılır —
+      // eski "COUNT(DISTINCT code) WHERE season = X" sayfalama toplamıyla aynı.
+      // Ölçüm (geçici tabloda): 5.000 partide ~3,5 ms, 50.000'de ~27 ms
+      // (eski yalnız-sayım 1,2 / 12 ms); liste sorgusuyla paralel çalışır.
       pool.query(
-        `SELECT COUNT(DISTINCT code)::int AS total FROM products${where}`,
-        values
+        `WITH cs AS (
+           SELECT code, season, SUM(stock_qty)::int AS stock
+             FROM products${summaryWhere}
+            GROUP BY code, season
+         ), c AS (
+           SELECT code, SUM(stock)::int AS stock FROM cs GROUP BY code
+         )
+         SELECT (SELECT COUNT(*)::int FROM c) AS total_codes,
+                (SELECT COALESCE(SUM(stock), 0)::int FROM c) AS total_stock,
+                (SELECT COUNT(*)::int FROM c WHERE stock <= 0) AS out_of_stock_codes,
+                (SELECT COALESCE(json_agg(s), '[]'::json)
+                   FROM (SELECT season, COUNT(*)::int AS codes, SUM(stock)::int AS stock,
+                                COUNT(*) FILTER (WHERE stock > 0)::int AS in_stock_codes
+                           FROM cs GROUP BY season) s
+                ) AS by_season`,
+        summaryValues
       ),
     ]);
-    const total: number = countResult.rows[0].total;
+    const sum = countResult.rows[0] as {
+      total_codes: number; total_stock: number; out_of_stock_codes: number;
+      by_season: { season: string | null; codes: number; stock: number; in_stock_codes: number }[];
+    };
+    // Sayfalama toplamı, liste sorgusunun (WHERE season + HAVING) döndüreceği
+    // kod sayısıyla aynı olmalı: mevsim filtresinde kod+mevsim düzeyinde,
+    // değilse kod düzeyinde sayılır.
+    const seasonRow = season ? sum.by_season.find((r) => r.season === season) : undefined;
+    const allCodes = season ? seasonRow?.codes ?? 0 : sum.total_codes;
+    const inCodes = season ? seasonRow?.in_stock_codes ?? 0 : sum.total_codes - sum.out_of_stock_codes;
+    const total: number = stockFilter === "in" ? inCodes : stockFilter === "out" ? allCodes - inCodes : allCodes;
+    // Ürünler sayfasındaki stok özeti kartları (bkz. admin/products/page.tsx).
+    const stockSummary = {
+      totalStock: sum.total_stock,
+      totalCodes: sum.total_codes,
+      outOfStockCodes: sum.out_of_stock_codes,
+      bySeason: sum.by_season.map(({ season: s2, codes, stock }) => ({ season: s2, codes, stock })),
+    };
 
     const codes = groupsResult.rows.map((r) => r.code);
     // avg_purchase_price / avg_sale_price: zararlı satış yapmamak için gösterilen
@@ -168,7 +221,7 @@ export async function GET(request: NextRequest) {
       batches: batchesByCode.get(g.code) ?? [],
     }));
 
-    return NextResponse.json({ items, total, page, limit });
+    return NextResponse.json({ items, total, page, limit, stockSummary });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

@@ -702,6 +702,13 @@ export default function ProductsPage() {
   // önlemek için.
   const debouncedSearch = useDebouncedValue(search, 350);
   const [seasonFilter, setSeasonFilter] = useState("");
+  // Stok durumu filtresi — varsayılan "Stokta olanlar": stoğu 0 kodlar
+  // çokken Stok'a göre sıralayınca ilk sayfaları dolduruyordu (müşteri
+  // şikâyeti). "Stok Biten" kartı "out"a geçirir (bkz. /api/products stock).
+  const [stockFilter, setStockFilter] = useState<"in" | "out" | "">("in");
+  // Stok özeti kartları (bkz. /api/products GET stockSummary) — mevsim
+  // filtresinden bağımsız, aramaya uyar.
+  const [stockSummary, setStockSummary] = useState<StockSummary | null>(null);
   const [viewMode, setViewMode] = useState<"products" | "movements">("products");
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [movementsTotal, setMovementsTotal] = useState(0);
@@ -907,6 +914,7 @@ export default function ProductsPage() {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (seasonFilter) params.set("season", seasonFilter);
+    if (stockFilter) params.set("stock", stockFilter);
     if (sortBy) { params.set("sortBy", sortBy); params.set("sortDir", sortDir); }
     params.set("page", String(targetPage));
     params.set("limit", String(limit));
@@ -914,6 +922,7 @@ export default function ProductsPage() {
     const data = await res.json();
     setItems(data.items ?? []);
     setTotal(data.total ?? 0);
+    setStockSummary(data.stockSummary ?? null);
     setLoading(false);
   }
 
@@ -943,7 +952,7 @@ export default function ProductsPage() {
     setPage(1);
     fetchItems(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, seasonFilter, sortBy, sortDir, limit]);
+  }, [debouncedSearch, seasonFilter, stockFilter, sortBy, sortDir, limit]);
 
   useEffect(() => {
     if (prevPageRef.current === page) return;
@@ -1608,6 +1617,18 @@ export default function ProductsPage() {
         </button>
       </div>
 
+      {viewMode === "products" && (
+        <StockSummaryCards
+          summary={stockSummary}
+          loading={loading && !stockSummary}
+          searching={!!debouncedSearch}
+          seasonFilter={seasonFilter}
+          onSeasonClick={(season) => setSeasonFilter((cur) => (cur === season ? "" : season))}
+          outOfStockActive={stockFilter === "out"}
+          onOutOfStockClick={() => setStockFilter((cur) => (cur === "out" ? "in" : "out"))}
+        />
+      )}
+
       {/* Arama + Filtre + Sütun Seçici */}
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <input
@@ -1628,6 +1649,16 @@ export default function ProductsPage() {
               {SEASON_OPTIONS.map((g) => (
                 <option key={g} value={g}>{g}</option>
               ))}
+            </select>
+            <select
+              value={stockFilter}
+              onChange={(e) => setStockFilter(e.target.value as "in" | "out" | "")}
+              aria-label="Stok durumu"
+              className="flex-1 min-w-0 sm:flex-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="in">Stokta olanlar</option>
+              <option value="out">Stok bitenler</option>
+              <option value="">Tüm stok durumları</option>
             </select>
             <div className="relative shrink-0">
               <button
@@ -1828,7 +1859,9 @@ export default function ProductsPage() {
                     ))
                   ) : items.length === 0 ? (
                     <tr>
-                      <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">Ürün bulunamadı.</td>
+                      <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">
+                        {stockFilter === "in" ? "Stokta ürün bulunamadı." : stockFilter === "out" ? "Stoğu biten ürün yok." : "Ürün bulunamadı."}
+                      </td>
                     </tr>
                   ) : (
                     items.map((group) => {
@@ -2748,5 +2781,105 @@ export default function ProductsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+interface StockSummary {
+  totalStock: number;
+  totalCodes: number;
+  // Tüm partilerinin toplam stoğu 0 olan ürün kodu sayısı (listede durur).
+  outOfStockCodes: number;
+  bySeason: { season: string | null; stock: number; codes: number }[];
+}
+
+// Ürünler › stok özeti: toplam stok ve mevsim bazında dağılım. Kartlar
+// SEASON_OPTIONS sırasında; mevsimi boş ürünler (ör. jant) "Mevsimsiz".
+// Bir mevsim kartına tıklamak listeyi o mevsime filtreler (tekrar tıklayınca
+// kaldırır) — Mevsimsiz için API'de filtre olmadığından o kart tıklanmaz.
+const SEASON_DOT: Record<string, string> = {
+  "Kış": "bg-sky-500",
+  "Yaz": "bg-amber-500",
+  "Dört Mevsim": "bg-emerald-500",
+};
+
+function StockSummaryCards({ summary, loading, searching, seasonFilter, onSeasonClick, outOfStockActive, onOutOfStockClick }: {
+  summary: StockSummary | null;
+  loading: boolean;
+  searching: boolean;
+  seasonFilter: string;
+  onSeasonClick: (season: string) => void;
+  outOfStockActive: boolean;
+  onOutOfStockClick: () => void;
+}) {
+  const fmt = (n: number) => n.toLocaleString("tr-TR");
+  const card = "flex min-w-0 flex-col gap-1 rounded-xl border border-v2-line bg-v2-surface px-4 py-3.5 text-left sm:px-5";
+  const value = "text-xl font-semibold leading-tight tracking-tight tabular-nums text-v2-fg sm:text-2xl";
+  const sub = "text-xs text-v2-fg-muted";
+  const skeleton = <div className="h-7 w-20 animate-pulse rounded bg-v2-muted" />;
+  const total = summary?.totalStock ?? 0;
+  const seasons = [
+    ...SEASON_OPTIONS.map((name) => {
+      const row = summary?.bySeason.find((r) => r.season === name);
+      return { key: name, label: name, stock: row?.stock ?? 0, codes: row?.codes ?? 0, clickable: true };
+    }),
+    ...(summary?.bySeason.some((r) => r.season == null && r.codes > 0)
+      ? [{ key: "", label: "Mevsimsiz", stock: summary.bySeason.find((r) => r.season == null)!.stock, codes: summary.bySeason.find((r) => r.season == null)!.codes, clickable: false }]
+      : []),
+  ];
+
+  return (
+    <section aria-label="Stok özeti" className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className={card}>
+        <span className="text-[13px] font-medium text-v2-fg-muted">{searching ? "Toplam Stok (arama)" : "Toplam Stok"}</span>
+        {loading ? skeleton : <span className={value}>{fmt(total)} <span className="text-sm font-medium text-v2-fg-muted">adet</span></span>}
+        <span className={sub}>{loading ? "\u00a0" : `${fmt(summary?.totalCodes ?? 0)} ürün kodu`}</span>
+      </div>
+      {seasons.map((s) => {
+        const pct = total > 0 ? Math.round((s.stock / total) * 100) : 0;
+        const active = s.clickable && seasonFilter === s.key;
+        const body = (
+          <>
+            <span className="flex items-center gap-1.5 text-[13px] font-medium text-v2-fg-muted">
+              <span aria-hidden="true" className={`h-2 w-2 rounded-full ${SEASON_DOT[s.key] ?? "bg-gray-400"}`} />
+              {s.label}
+            </span>
+            {loading ? skeleton : <span className={value}>{fmt(s.stock)} <span className="text-sm font-medium text-v2-fg-muted">adet</span></span>}
+            <span className={sub}>{loading ? "\u00a0" : `${fmt(s.codes)} ürün kodu · %${pct}`}</span>
+            <div aria-hidden="true" className="mt-1 h-1 overflow-hidden rounded-full bg-v2-muted">
+              <div className={`h-full rounded-full ${SEASON_DOT[s.key] ?? "bg-gray-400"}`} style={{ width: `${loading ? 0 : pct}%` }} />
+            </div>
+          </>
+        );
+        return s.clickable ? (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => onSeasonClick(s.key)}
+            aria-pressed={active}
+            title={active ? "Mevsim filtresini kaldır" : `Listeyi ${s.label} ürünlere filtrele`}
+            className={`${card} transition-colors hover:border-v2-line-strong ${active ? "ring-2 ring-v2-primary/40" : ""}`}
+          >
+            {body}
+          </button>
+        ) : (
+          <div key={s.label} className={card}>{body}</div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={onOutOfStockClick}
+        aria-pressed={outOfStockActive}
+        title={outOfStockActive ? "Stokta olanlara dön" : "Stoğu biten ürünleri listele"}
+        className={`${card} transition-colors hover:border-v2-line-strong ${outOfStockActive ? "ring-2 ring-v2-primary/40" : ""}`}
+      >
+        <span className="text-[13px] font-medium text-v2-fg-muted">Stok Biten</span>
+        {loading ? skeleton : (
+          <span className={`${value} ${(summary?.outOfStockCodes ?? 0) > 0 ? "!text-v2-danger-fg" : ""}`}>
+            {fmt(summary?.outOfStockCodes ?? 0)} <span className="text-sm font-medium text-v2-fg-muted">ürün kodu</span>
+          </span>
+        )}
+        <span className={sub}>{loading ? "\u00a0" : outOfStockActive ? "Listeleniyor · stokta olanlara dön" : "Tüm partileri tükenmiş"}</span>
+      </button>
+    </section>
   );
 }
