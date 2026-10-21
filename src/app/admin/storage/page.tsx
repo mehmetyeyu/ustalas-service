@@ -229,10 +229,27 @@ function isOverdue(islem_tarihi: string | null, thresholdMonths: number): boolea
   return stored < threshold;
 }
 
+// Etiket penceresi tıklama anında (await'ten önce) açılmalı: kayıt isteği,
+// liste yenileme vb. bittikten sonra açılan pencereyi tarayıcı tıklamayla
+// ilişkilendiremeyip açılır pencere olarak engelleyebiliyor (Safari'de süre
+// özellikle kısa). Kaydet butonları pencereyi önce bununla boş açar, kayıt
+// bitince printLabel'a verir; kayıt başarısız olursa kapatır.
+function openLabelWindow(): Window | null {
+  const win = window.open("", "_blank");
+  win?.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Etiket</title></head>
+<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:#555">Etiket hazırlanıyor…</body></html>`);
+  return win;
+}
+
 // Genel Ayarlar > Marka'da yüklenmişse (bkz. src/app/admin/orders/[id]/page.tsx
 // printWorkOrder'daki AYNI desen) firma logosu etikette de gösterilir —
 // yazdırmadan hemen önce çekilir, ayrı bir state/prop olarak taşınmaz.
-async function printLabel(item: StorageItem) {
+// Pencere verilmezse (satırdaki "Etiket" butonu) logo beklenmeden hemen
+// açılır. false → pencere açılamadı (açılır pencere engellendi).
+async function printLabel(item: StorageItem, target?: Window | null): Promise<boolean> {
+  const win = target === undefined ? openLabelWindow() : target;
+  if (!win || win.closed) return false;
+
   const date = item.islem_tarihi
     ? new Date(item.islem_tarihi).toLocaleDateString("tr-TR")
     : new Date().toLocaleDateString("tr-TR");
@@ -284,8 +301,8 @@ async function printLabel(item: StorageItem) {
       </table>
     </div>`;
 
-  const win = window.open("", "_blank");
-  if (!win) return;
+  if (win.closed) return false;
+  win.document.open();
   win.document.write(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Etiket - ${escapeHtml(item.plate)}</title>
 <style>
@@ -332,7 +349,10 @@ async function printLabel(item: StorageItem) {
   <script>window.onload=()=>{window.print();}<\/script>
 </body></html>`);
   win.document.close();
+  return true;
 }
+
+const LABEL_BLOCKED_MSG = "Etiket penceresi açılamadı — tarayıcı açılır pencereyi engelledi. Bu site için açılır pencerelere izin verin ya da satırdaki \"Etiket\" butonunu kullanın.";
 
 export default function StoragePage() {
   const toast = useToast();
@@ -423,6 +443,10 @@ export default function StoragePage() {
       toast.error("Plaka zorunludur.");
       return;
     }
+    // Kaydedilen kaydın etiketi otomatik basılır — pencere tıklama anında
+    // açılır (bkz. openLabelWindow).
+    const labelWin = openLabelWindow();
+    let printed = false;
     setSaving(true);
     try {
       const res = await fetch("/api/storage", {
@@ -436,15 +460,19 @@ export default function StoragePage() {
           production_year: form.production_year ? Number(form.production_year) : null,
         }),
       });
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         toast.error(data.error ?? "Hata oluştu.");
         return;
       }
       setShowAddModal(false);
       setForm(EMPTY_FORM);
+      printed = await printLabel(data, labelWin);
+      if (printed) toast.success("Kayıt eklendi, etiket yazdırılıyor.");
+      else toast.warning(LABEL_BLOCKED_MSG);
       await fetchItems(page);
     } finally {
+      if (!printed) labelWin?.close();
       setSaving(false);
     }
   }
@@ -472,6 +500,8 @@ export default function StoragePage() {
 
   async function handleUpdate() {
     if (!editItem) return;
+    const labelWin = openLabelWindow();
+    let printed = false;
     setSaving(true);
     try {
       const res = await fetch(`/api/storage/${editItem.id}`, {
@@ -485,11 +515,18 @@ export default function StoragePage() {
           production_year: editForm.production_year ? Number(editForm.production_year) : null,
         }),
       });
-      if (!res.ok) return;
       const updated = await res.json();
+      if (!res.ok) {
+        toast.error(updated.error ?? "Kayıt güncellenemedi.");
+        return;
+      }
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
       setEditItem(null);
+      printed = await printLabel(updated, labelWin);
+      if (printed) toast.success("Kayıt güncellendi, etiket yazdırılıyor.");
+      else toast.warning(LABEL_BLOCKED_MSG);
     } finally {
+      if (!printed) labelWin?.close();
       setSaving(false);
     }
   }
@@ -545,6 +582,8 @@ export default function StoragePage() {
 
   async function handleDegisimSubmit() {
     if (!degisimItem) return;
+    const labelWin = openLabelWindow();
+    let printed = false;
     setDegisimSaving(true);
     try {
       const res = await fetch(`/api/storage/${degisimItem.id}/degisim`, {
@@ -563,13 +602,16 @@ export default function StoragePage() {
         return;
       }
       setDegisimItem(null);
+      // Yeni kayıt kaydedilir kaydedilmez etiket otomatik basılır — ayrıca
+      // "Etiket" tıklamaya gerek yok (bkz. sunum, adım 4). Pencere tıklama
+      // anında açıldı (bkz. openLabelWindow); liste yenilemeyi beklemez.
+      printed = await printLabel(data, labelWin);
+      if (printed) toast.success("Değişim tamamlandı, etiket yazdırılıyor.");
+      else toast.warning(LABEL_BLOCKED_MSG);
       await fetchItems(page);
       await fetchOverdueCount();
-      // Yeni kayıt kaydedilir kaydedilmez etiket otomatik basılır — ayrıca
-      // "Etiket" tıklamaya gerek yok (bkz. sunum, adım 4).
-      await printLabel(data);
-      toast.success("Değişim tamamlandı, etiket yazdırılıyor.");
     } finally {
+      if (!printed) labelWin?.close();
       setDegisimSaving(false);
     }
   }
