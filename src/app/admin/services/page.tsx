@@ -9,6 +9,7 @@ import { TRNumberInput } from "@/components/TRNumberInput";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface Service {
   id: number;
@@ -134,8 +135,8 @@ export default function ServicesPage() {
       {loading ? (
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -204,7 +205,7 @@ export default function ServicesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 

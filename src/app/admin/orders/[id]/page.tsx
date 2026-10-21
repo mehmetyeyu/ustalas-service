@@ -18,6 +18,7 @@ import { TRNumberInput } from "@/components/TRNumberInput";
 import { weekYearLabel } from "@/lib/weekYear";
 import { trIncludes } from "@/lib/trSearch";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface OrderDetail {
   id: number;
@@ -1663,7 +1664,7 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay }: {
               <h2 id="satirlar" className="text-[15px] font-semibold text-v2-fg">İşlem Satırları</h2>
               <span className="text-xs text-v2-fg-muted">{order.services.length} kalem</span>
             </div>
-            <div className="overflow-x-auto">
+            <StickyScrollX>
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-v2-fg-muted">
@@ -1701,7 +1702,7 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay }: {
                   })}
                 </tbody>
               </table>
-            </div>
+            </StickyScrollX>
             <div className="border-t border-v2-line px-5 py-4">
             <dl className="ml-auto flex max-w-xs flex-col gap-2 text-sm">
               <div className="flex justify-between"><dt className="text-v2-fg-muted">Maliyet</dt><dd className="tabular-nums text-v2-fg">{formatCurrency(totalCost)}</dd></div>

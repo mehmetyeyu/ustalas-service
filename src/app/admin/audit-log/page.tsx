@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatDate } from "@/lib/format";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface AuditLogEntry {
   id: number;
@@ -63,8 +64,8 @@ export default function AuditLogPage() {
       ) : items.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Henüz bir kayıt yok.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -85,7 +86,7 @@ export default function AuditLogPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">

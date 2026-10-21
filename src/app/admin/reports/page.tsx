@@ -18,6 +18,7 @@ import { formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { TRNumberInput } from "@/components/TRNumberInput";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface DailyDatum {
   date: string;
@@ -313,8 +314,8 @@ function YillikOzetTab() {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -398,7 +399,7 @@ function YillikOzetTab() {
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
         </>
       )}
@@ -717,7 +718,7 @@ export default function ReportsPage() {
               <h2 className="font-semibold text-gray-700">Dönemsel Ciro / Maliyet / Masraf / Kâr</h2>
               <DateRangeControls range={periodRange} onChange={setPeriodRange} />
             </div>
-            <div className="overflow-x-auto">
+            <StickyScrollX>
               <table className="w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -746,7 +747,7 @@ export default function ReportsPage() {
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </StickyScrollX>
           </div>
 
           {/* Hizmet Dağılımı */}
@@ -779,7 +780,7 @@ export default function ReportsPage() {
                     );
                   })}
                 </div>
-                <div className="overflow-x-auto">
+                <StickyScrollX>
                   <table className="w-full text-xs sm:text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
@@ -812,7 +813,7 @@ export default function ReportsPage() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </StickyScrollX>
               </div>
             )}
           </div>

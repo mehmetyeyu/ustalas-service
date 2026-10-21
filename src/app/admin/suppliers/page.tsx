@@ -8,6 +8,7 @@ import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface Supplier {
   id: number;
@@ -122,8 +123,8 @@ export default function SuppliersPage() {
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Tedarikçi bulunamadı.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -170,7 +171,7 @@ export default function SuppliersPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 

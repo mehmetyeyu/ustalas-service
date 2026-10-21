@@ -10,6 +10,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface Expense {
   id: number;
@@ -445,8 +446,8 @@ export default function ExpensesPage() {
           Bu ay için masraf kaydı yok.
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -508,7 +509,7 @@ export default function ExpensesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 

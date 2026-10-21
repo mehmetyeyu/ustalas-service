@@ -8,6 +8,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useAuth } from "../AuthContext";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 const MENU_WIDTH = 192; // w-48
 const MENU_MAX_HEIGHT = 260;
@@ -372,7 +373,8 @@ export default function UsersPage() {
       ) : users.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Kullanıcı bulunamadı.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -601,6 +603,7 @@ export default function UsersPage() {
               })}
             </tbody>
           </table>
+          </StickyScrollX>
         </div>
       )}
 

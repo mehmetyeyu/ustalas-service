@@ -15,6 +15,7 @@ import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 // /api/settings sadece role==='admin' erişebilir (bkz. orders/[id]/page.tsx'teki
 // aynı fetch) — customers.manage_balance izni verilmiş ama admin OLMAYAN bir
@@ -476,8 +477,8 @@ export default function CustomersPage() {
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Müşteri bulunamadı.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -572,7 +573,7 @@ export default function CustomersPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 

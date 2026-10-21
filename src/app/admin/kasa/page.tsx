@@ -13,6 +13,7 @@ import { TRNumberInput } from "@/components/TRNumberInput";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface KasaEntry {
   entry_type: "SIPARIS" | "CARI_TAHSILAT" | "MASRAF" | "MANUEL";
@@ -549,8 +550,8 @@ export default function KasaPage() {
       ) : entries.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Kasa hareketi bulunamadı.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -616,7 +617,7 @@ export default function KasaPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
           {entries.length < total && (
             <div className="p-4 text-center border-t border-gray-100">
               <button

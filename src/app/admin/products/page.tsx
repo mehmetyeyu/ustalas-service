@@ -17,6 +17,7 @@ import { TRNumberInput } from "@/components/TRNumberInput";
 import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/weekYear";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
+import { StickyScrollX } from "@/components/StickyScrollX";
 import { trIncludes } from "@/lib/trSearch";
 import { useDialog } from "@/lib/useDialog";
 
@@ -1692,8 +1693,8 @@ export default function ProductsPage() {
       {viewMode === "movements" ? (
         <>
           {/* Malzeme Hareketleri Tablosu */}
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="bg-white rounded-xl shadow-sm overflow-clip">
+            <StickyScrollX>
               <table className="w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1779,7 +1780,7 @@ export default function ProductsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </StickyScrollX>
           </div>
 
           <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-gray-600">
@@ -1822,8 +1823,8 @@ export default function ProductsPage() {
       ) : (
         <>
           {/* Tablo */}
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="bg-white rounded-xl shadow-sm overflow-clip">
+            <StickyScrollX>
               <table className="w-full text-xs sm:text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -2018,7 +2019,7 @@ export default function ProductsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </StickyScrollX>
           </div>
 
           {/* Pagination */}

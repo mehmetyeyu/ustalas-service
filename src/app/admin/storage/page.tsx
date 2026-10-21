@@ -12,6 +12,7 @@ import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface StorageItem {
   id: number;
@@ -765,8 +766,8 @@ export default function StoragePage() {
       </div>
 
       {/* Tablo */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl shadow-sm overflow-clip">
+        <StickyScrollX>
           <table className="w-full text-xs sm:text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -958,7 +959,7 @@ export default function StoragePage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyScrollX>
       </div>
 
       {/* Pagination */}

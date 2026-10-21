@@ -441,3 +441,29 @@ html[data-ui="v2"] aside :is(button, a[href]):focus-visible {
     min-height: 2.25rem;
   }
 }
+
+/* StickyScrollX'in ekranın altına yapışan kopya yatay çubuğu. Webkit çubuğu
+ * özel stillendiğinde macOS'ta da "kaydırınca beliren" ince çubuk yerine her
+ * zaman görünür olur. Renkler :root'ta da tanımlı v2 token'larından — eski ve
+ * yeni görünümde, açık/koyu temada çalışır. */
+.sticky-scroll-x {
+  height: 14px;
+  background-color: rgb(var(--v2-surface) / 0.95);
+  border-top: 1px solid rgb(var(--v2-line));
+  box-shadow: 0 -4px 12px rgb(0 0 0 / 0.06);
+}
+/* Chrome'da scrollbar-color tanımlıysa ::-webkit-scrollbar yok sayılır ve
+ * macOS'ta çubuk yine gizlenir — standart özellikler yalnızca webkit
+ * çubuğunu tanımayan tarayıcılara (Firefox). */
+@supports not selector(::-webkit-scrollbar) {
+  .sticky-scroll-x { scrollbar-color: rgb(var(--v2-fg-subtle) / 0.55) transparent; }
+}
+.sticky-scroll-x::-webkit-scrollbar { height: 12px; }
+.sticky-scroll-x::-webkit-scrollbar-track { background: transparent; }
+.sticky-scroll-x::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--v2-fg-subtle) / 0.55);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.sticky-scroll-x::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--v2-fg-subtle) / 0.85); }

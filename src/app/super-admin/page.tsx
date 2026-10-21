@@ -9,6 +9,7 @@ import { CopyBox } from "@/components/CopyBox";
 import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payments/route";
 import type { ConsistencyCheckResult, OrphanedSubscription } from "@/app/api/super-admin/consistency-check/route";
 import { trIncludes } from "@/lib/trSearch";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 // paymentStatus'un tam değer haritası iyzico tarafından dokümante edilmemiş
 // — gerçek başarılı ödemelerde gözlemlenen tek değer "SUCCESS" (bkz.
@@ -590,8 +591,8 @@ export default function SuperAdminPage() {
       ) : filteredTenants.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Aramayla eşleşen firma yok.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -679,7 +680,7 @@ export default function SuperAdminPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 

@@ -9,6 +9,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "@/lib/queries";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 interface Appointment {
   id: number;
@@ -200,8 +201,8 @@ export default function AppointmentsPage() {
       ) : items.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Randevu bulunamadı.</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm overflow-clip">
+          <StickyScrollX>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -289,7 +290,7 @@ export default function AppointmentsPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 

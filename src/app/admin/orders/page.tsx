@@ -16,6 +16,7 @@ import { useServices, useSuppliers, useOrderPaymentTypes, invalidateAfter } from
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { useDialog } from "@/lib/useDialog";
+import { StickyScrollX } from "@/components/StickyScrollX";
 
 const IMPORT_BATCH_SIZE = 20;
 
@@ -1430,8 +1431,8 @@ export default function OrdersPage() {
       )}
 
       {/* Tablo */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl shadow-sm overflow-clip">
+        <StickyScrollX>
           <table className="w-full text-xs sm:text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -1613,7 +1614,7 @@ export default function OrdersPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyScrollX>
       </div>
 
       {/* Pagination */}
