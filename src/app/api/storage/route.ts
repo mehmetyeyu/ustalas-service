@@ -3,7 +3,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { getAppSettings } from "@/lib/settings";
-import { escapeLike } from "@/lib/sqlSafety";
+import { parseStorageFilters, buildStorageQuery } from "@/lib/storageFilters";
 import { normalizeYear } from "@/lib/productsExcel";
 
 export async function GET(request: NextRequest) {
@@ -12,31 +12,15 @@ export async function GET(request: NextRequest) {
   if (!hasPermission(user, "storage.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
-  const search = searchParams.get("search");
-  const overdue = searchParams.get("overdue") === "true";
-  const showDelivered = searchParams.get("delivered") === "true";
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  const conditions: string[] = ["tenant_id = $1"];
-  const values: (string | number)[] = [user.tenantId!];
-
-  conditions.push(showDelivered ? `teslim_edildi = true` : `teslim_edildi = false`);
-
-  if (search) {
-    values.push(`%${escapeLike(search)}%`);
-    conditions.push(`(plate ILIKE $${values.length} OR customer_name ILIKE $${values.length})`);
-  }
-  if (overdue) {
-    // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
-    // tenant_id atadığından burada her zaman dolu olur.
-    const { storage_overdue_months } = await getAppSettings(user.tenantId!);
-    values.push(storage_overdue_months);
-    conditions.push(`islem_tarihi < NOW() - ($${values.length} * INTERVAL '1 month')`);
-  }
-
-  const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
+  const filters = parseStorageFilters(searchParams);
+  // Migrasyon bootstrap'ı (bkz. schema.sql) her mevcut kullanıcıya bir
+  // tenant_id atadığından burada her zaman dolu olur.
+  const overdueMonths = filters.overdue ? (await getAppSettings(user.tenantId!)).storage_overdue_months : 0;
+  const { where, values, orderBy } = buildStorageQuery(filters, user.tenantId!, overdueMonths);
 
   try {
     const countResult = await pool.query(
@@ -46,7 +30,7 @@ export async function GET(request: NextRequest) {
     const total: number = countResult.rows[0].total;
 
     const dataResult = await pool.query(
-      `SELECT * FROM storage${where} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      `SELECT * FROM storage${where}${orderBy} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset]
     );
 

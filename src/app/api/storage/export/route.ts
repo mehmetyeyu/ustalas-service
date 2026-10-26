@@ -1,17 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import * as XLSX from "xlsx";
 import { sanitizeExcelRow } from "@/lib/excelSafety";
+import { getAppSettings } from "@/lib/settings";
+import { parseStorageFilters, buildStorageQuery } from "@/lib/storageFilters";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   if (!hasPermission(user, "storage.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const result = await pool.query("SELECT * FROM storage WHERE tenant_id = $1 AND teslim_edildi = false ORDER BY created_at DESC", [user.tenantId]);
+    // Ekrandaki filtrelerle aynı koşullar (bkz. src/lib/storageFilters.ts);
+    // parametresiz çağrı eskisi gibi tüm aktif kayıtları verir.
+    const filters = parseStorageFilters(new URL(request.url).searchParams);
+    const overdueMonths = filters.overdue ? (await getAppSettings(user.tenantId!)).storage_overdue_months : 0;
+    const { where, values, orderBy } = buildStorageQuery(filters, user.tenantId!, overdueMonths);
+    const result = await pool.query(`SELECT * FROM storage${where}${orderBy}`, values);
 
     const rows = result.rows.map((r) => sanitizeExcelRow({
       "Depo No":        r.depo_no ?? "",

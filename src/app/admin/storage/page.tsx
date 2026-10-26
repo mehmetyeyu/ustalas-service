@@ -37,6 +37,12 @@ interface StorageItem {
 
 const MEVSIM_OPTIONS = ["Kışlık", "Yazlık", "Dört Mevsim"];
 
+// Filtrele penceresi — alanlar /api/storage ve /api/storage/export'un query
+// param'larıyla birebir (bkz. src/lib/storageFilters.ts). Mevsim, formdaki
+// MevsimCheckboxes'la aynı virgüllü biçimde tutulur.
+const EMPTY_STORAGE_FILTERS = { overdue: false, mevsim: "", marka: "", ebat: "", model: "", dateFrom: "", dateTo: "" };
+type StorageFilterState = typeof EMPTY_STORAGE_FILTERS;
+
 // "Değişim Yap" açılırken Mevsim alanı için akıllı varsayım — bkz. sunum
 // "Depoda Mevsim Değişimi Akışı"nın "Açık Soru"su: otomatik ters + yine de
 // değiştirilebilir dropdown (Dört Mevsim ihtimaline karşı kilitli değil).
@@ -368,6 +374,12 @@ export default function StoragePage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 350);
+  const [filters, setFilters] = useState<StorageFilterState>(EMPTY_STORAGE_FILTERS);
+  // Metin alanları her tuşta istek atmasın diye (Bekleyenler butonu da aynı
+  // yoldan geçer; 350 ms fark edilmez).
+  const debouncedFilters = useDebouncedValue(filters, 350);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const filterDialog = useDialog(() => setShowFilterModal(false));
   const [showAddModal, setShowAddModal] = useState(false);
   const showAddModalDialog = useDialog(() => setShowAddModal(false));
   const [form, setForm] = useState(EMPTY_FORM);
@@ -401,13 +413,27 @@ export default function StoragePage() {
     setOverdueTotal(data.total ?? 0);
   }
 
+  // Liste ve "Filtreliyi Dışa Aktar" aynı parametreleri kullanır.
+  function buildFilterParams(delivered = showDelivered): URLSearchParams {
+    const params = new URLSearchParams();
+    const f = debouncedFilters;
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (delivered) params.set("delivered", "true");
+    else if (f.overdue) params.set("overdue", "true");
+    f.mevsim.split(",").map((m) => m.trim()).filter(Boolean).forEach((m) => params.append("mevsim", m));
+    if (f.marka.trim()) params.set("marka", f.marka.trim());
+    if (f.ebat.trim()) params.set("ebat", f.ebat.trim());
+    if (f.model.trim()) params.set("model", f.model.trim());
+    if (f.dateFrom) params.set("dateFrom", f.dateFrom);
+    if (f.dateTo) params.set("dateTo", f.dateTo);
+    return params;
+  }
+
   async function fetchItems(targetPage = page, delivered = showDelivered) {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (debouncedSearch) params.set("search", debouncedSearch);
+    const params = buildFilterParams(delivered);
     params.set("page", String(targetPage));
     params.set("limit", String(limit));
-    if (delivered) params.set("delivered", "true");
     const res = await fetch(`/api/storage?${params}`);
     const data = await res.json();
     setItems(data.items ?? []);
@@ -429,7 +455,7 @@ export default function StoragePage() {
     setPage(1);
     fetchItems(1, showDelivered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, showDelivered, limit]);
+  }, [debouncedSearch, showDelivered, limit, debouncedFilters]);
 
   useEffect(() => {
     if (prevPageRef.current === page) return;
@@ -641,6 +667,14 @@ export default function StoragePage() {
     }
   }
 
+  // Teslim edilenler görünümünde "bekleyenler" uygulanmaz, sayılmaz.
+  const activeFilterCount =
+    (filters.overdue && !showDelivered ? 1 : 0) +
+    (filters.mevsim ? 1 : 0) + (filters.marka.trim() ? 1 : 0) + (filters.ebat.trim() ? 1 : 0) +
+    (filters.model.trim() ? 1 : 0) + (filters.dateFrom || filters.dateTo ? 1 : 0);
+  const exportFiltered = activeFilterCount > 0 || !!debouncedSearch || showDelivered;
+  const exportHref = `/api/storage/export?${buildFilterParams()}`;
+
   // + 1: her zaman görünen işlemler sütunu.
   const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
 
@@ -686,10 +720,10 @@ export default function StoragePage() {
               </Tooltip>
             </button>
             <button
-              onClick={() => { window.location.href = "/api/storage/export"; }}
+              onClick={() => { window.location.href = exportHref; }}
               className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
             >
-              Dışa Aktar
+              {exportFiltered ? "Filtreliyi Dışa Aktar" : "Dışa Aktar"}
             </button>
             {canEdit && (
               <button
@@ -733,10 +767,10 @@ export default function StoragePage() {
                   Şablon İndir
                 </button>
                 <button
-                  onClick={() => { setShowMobileActions(false); window.location.href = "/api/storage/export"; }}
+                  onClick={() => { setShowMobileActions(false); window.location.href = exportHref; }}
                   className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                 >
-                  Dışa Aktar
+                  {exportFiltered ? "Filtreliyi Dışa Aktar" : "Dışa Aktar"}
                 </button>
                 {canEdit && (
                   <button
@@ -762,23 +796,60 @@ export default function StoragePage() {
       </div>
 
       {overdueTotal > 0 && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2 text-amber-800 text-sm font-medium">
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex flex-wrap items-center gap-2 text-amber-800 text-sm font-medium">
           <svg className="w-5 h-5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
-          Depoda <span className="font-bold mx-1">{overdueTotal}</span> lastik {overdueMonths} aydan uzun süredir bekliyor.
+          <span className="flex-1 min-w-0">
+            {filters.overdue && !showDelivered
+              ? <>{overdueMonths} aydan uzun bekleyen <span className="font-bold">{overdueTotal}</span> lastik gösteriliyor — en uzun bekleyen en üstte.</>
+              : <>Depoda <span className="font-bold">{overdueTotal}</span> lastik {overdueMonths} aydan uzun süredir bekliyor.</>}
+          </span>
+          {/* Tek tuşla yalnızca bekleyenler (Filtrele'deki "Bekleme süresi"
+              ile aynı filtre); teslim edilenler görünümündeyse önce aktif
+              depolara döner. */}
+          <button
+            onClick={() => {
+              if (filters.overdue && !showDelivered) setFilters((f) => ({ ...f, overdue: false }));
+              else { setShowDelivered(false); setFilters((f) => ({ ...f, overdue: true })); }
+            }}
+            className="shrink-0 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-800 hover:bg-amber-100 text-xs font-semibold"
+          >
+            {filters.overdue && !showDelivered ? "Tümünü göster" : "Bekleyenleri göster"}
+          </button>
         </div>
       )}
 
       {/* Arama + Sütun Seçici */}
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-center justify-between">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value.toUpperCase())}
-          placeholder="Plaka veya müşteri ara..."
-          className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowFilterModal(true); }}
+            className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h18M6 8h12M9 12h6M11 16h2" />
+            </svg>
+            Filtrele
+            {activeFilterCount > 0 && (
+              <span className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[1.25rem] h-5 px-1 flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value.toUpperCase())}
+            placeholder="Plaka veya müşteri ara..."
+            className="flex-1 min-w-0 sm:flex-none sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {activeFilterCount > 0 && (
+            <button onClick={() => setFilters(EMPTY_STORAGE_FILTERS)} className="text-sm text-gray-400 hover:text-gray-700">
+              Filtreleri Temizle
+            </button>
+          )}
+        </div>
         <div className="relative">
           <button
             onClick={(e) => { e.stopPropagation(); setShowColPicker((v) => !v); }}
@@ -846,7 +917,7 @@ export default function StoragePage() {
                 ))
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">Kayıt bulunamadı.</td>
+                  <td colSpan={visibleColCount} className="p-12 text-center text-gray-400">{activeFilterCount > 0 || debouncedSearch ? "Filtrelere uyan kayıt bulunamadı." : "Kayıt bulunamadı."}</td>
                 </tr>
               ) : (
                 items.map((item, index) => (
@@ -1078,6 +1149,130 @@ export default function StoragePage() {
           </div>
         )}
       </div>
+
+      {/* Filtreleme Modalı — bkz. Siparişler'deki aynı yapı; alanlar canlı
+          uygulanır, "Uygula" yalnızca kapatır. */}
+      {showFilterModal && (
+        <div
+          ref={filterDialog}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Depoyu Filtrele"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowFilterModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 pb-4">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-xl font-bold text-gray-800">Depoyu Filtrele</h2>
+                <button aria-label="Kapat" onClick={() => setShowFilterModal(false)} className="-m-2 rounded-lg p-2 text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label htmlFor="sf-overdue" className="block text-xs font-medium text-gray-500 mb-1">Bekleme süresi</label>
+                  <select
+                    id="sf-overdue"
+                    value={filters.overdue && !showDelivered ? "overdue" : ""}
+                    disabled={showDelivered}
+                    onChange={(e) => setFilters((f) => ({ ...f, overdue: e.target.value === "overdue" }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+                  >
+                    <option value="">Tümü</option>
+                    <option value="overdue">{overdueMonths} aydan uzun bekleyenler</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {showDelivered ? "Teslim edilenler görünümünde uygulanmaz." : "Süre Genel Ayarlar'dan değiştirilebilir. En uzun bekleyen en üstte listelenir."}
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="sf-from" className="block text-xs font-medium text-gray-500 mb-1">İşlem tarihi — başlangıç</label>
+                  <input
+                    id="sf-from"
+                    type="date"
+                    value={filters.dateFrom}
+                    max={filters.dateTo || undefined}
+                    onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sf-to" className="block text-xs font-medium text-gray-500 mb-1">İşlem tarihi — bitiş</label>
+                  <input
+                    id="sf-to"
+                    type="date"
+                    value={filters.dateTo}
+                    min={filters.dateFrom || undefined}
+                    onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <span className="block text-xs font-medium text-gray-500 mb-1">Mevsim</span>
+                  <MevsimCheckboxes value={filters.mevsim} onChange={(v) => setFilters((f) => ({ ...f, mevsim: v }))} />
+                </div>
+
+                <div>
+                  <label htmlFor="sf-marka" className="block text-xs font-medium text-gray-500 mb-1">Marka</label>
+                  <input
+                    id="sf-marka"
+                    type="text"
+                    value={filters.marka}
+                    onChange={(e) => setFilters((f) => ({ ...f, marka: e.target.value }))}
+                    placeholder="ör. Michelin"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sf-ebat" className="block text-xs font-medium text-gray-500 mb-1">Ebat</label>
+                  <input
+                    id="sf-ebat"
+                    type="text"
+                    value={filters.ebat}
+                    onChange={(e) => setFilters((f) => ({ ...f, ebat: e.target.value }))}
+                    placeholder="ör. 205/55"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sf-model" className="block text-xs font-medium text-gray-500 mb-1">Model</label>
+                  <input
+                    id="sf-model"
+                    type="text"
+                    value={filters.model}
+                    onChange={(e) => setFilters((f) => ({ ...f, model: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
+              <button
+                onClick={() => setFilters(EMPTY_STORAGE_FILTERS)}
+                className="flex-1 border border-gray-300 text-gray-700 text-sm sm:text-base font-medium py-2 sm:py-2.5 rounded-lg hover:bg-gray-50"
+              >
+                Filtreleri Temizle
+              </button>
+              <button
+                onClick={() => setShowFilterModal(false)}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-semibold py-2 sm:py-2.5 rounded-lg transition-colors"
+              >
+                Uygula
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Yeni Kayıt Modal */}
       {showAddModal && (
