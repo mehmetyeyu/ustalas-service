@@ -5,31 +5,31 @@ import { hasPermission } from "@/lib/permissions";
 import { getAppSettings } from "@/lib/settings";
 import { escapeLike } from "@/lib/sqlSafety";
 
-interface SharedStockRow {
-  code: string;
-  brand: string;
-  size_desc: string;
-  season: string | null;
-  stock_qty: number;
-  production_year: number | null;
-  production_week: number | null;
+// Tablo: her satır bir ürün KODU, her firma bir sütun (müşteri isteği).
+interface Firm {
   tenant_id: number;
   tenant_name: string;
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
 }
-
-interface ShopEntry {
-  tenant_id: number;
-  tenant_name: string;
-  contact_name: string | null;
-  contact_email: string | null;
-  contact_phone: string | null;
+interface CodeRow {
   code: string;
+  brand: string;
+  model_name: string | null;
+  size_desc: string;
+  season: string | null;
+  total_stock: number;
+}
+// Bir hücre: bir firmanın o koddaki toplam stoğu; üretim haftası/yılı firmaya
+// göre değiştiği için hücrede gösterilir (en yeni parti + kaç farklı parti).
+interface Cell {
+  code: string;
+  tenant_id: number;
   qty: number;
   production_year: number | null;
   production_week: number | null;
+  batches: number;
 }
 
 // Firmalar arası opt-in stok görünürlüğü — bkz. plan (Paylaşılan Stok).
@@ -40,11 +40,11 @@ interface ShopEntry {
 //
 // GÜVENLİK: bu sorgu asla purchase_price/sale_price/supplier seçmemeli —
 // bu route'un gizlilik sınırı SQL seviyesinde uygulanır, client-side
-// filtreleme değil. Eşleştirme (brand, size_desc, season) üzerinden yapılır.
-// `code` (müşteri isteğiyle) artık gösteriliyor — her firmanın kendi iç
-// SKU'su olduğundan gruplama ANAHTARI değil, sadece her mağaza satırının
-// YANINDA bilgi amaçlı gösterilir (bkz. aşağıdaki shopsByTenant anahtarı:
-// tenant_id+code, aynı firmanın farklı kodlu partileri AYRI satır olur).
+// filtreleme değil.
+// Tablo (müşteri isteği): her satır bir ürün kodu (aynı kodu kullanan
+// firmalar aynı satırda), her firma ayrı bir sütun — hücrede o firmadaki
+// stok. Firma sütunları filtreye uyan TÜM kodlardaki firmalardır (sayfadan
+// bağımsız; sütunlar sayfa değişince oynamaz).
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -74,8 +74,9 @@ export async function GET(request: NextRequest) {
 
   if (search) {
     values.push(`%${escapeLike(search)}%`, `%${escapeLike(search.replace(/\//g, ""))}%`);
+    const p1 = `$${values.length - 1}`, p2 = `$${values.length}`;
     conditions.push(
-      `(p.brand ILIKE $${values.length - 1} OR p.size_desc ILIKE $${values.length - 1} OR REPLACE(p.size_desc, '/', '') ILIKE $${values.length})`
+      `(p.brand ILIKE ${p1} OR p.size_desc ILIKE ${p1} OR REPLACE(p.size_desc, '/', '') ILIKE ${p2} OR p.code ILIKE ${p1} OR p.model_name ILIKE ${p1})`
     );
   }
   if (season) {
@@ -83,101 +84,80 @@ export async function GET(request: NextRequest) {
     conditions.push(`p.season = $${values.length}`);
   }
 
+  if (minQty > 0) values.push(minQty);
+  const minQtyParam = minQty > 0 ? `$${values.length}` : null;
+  values.push(limit, (page - 1) * limit);
+  const limitParam = `$${values.length - 1}`;
+  const offsetParam = `$${values.length}`;
+
   try {
-    // Tenant sayısı/ürün hacmi bu aşamada küçük olduğundan (ağdaki opt-in
-    // firma sayısı sınırlı), tüm eşleşen satırlar tek sorguda çekilip
-    // gruplama/sayfalama JS tarafında yapılır — SQL'de (brand, size_desc,
-    // season) üçlüsüyle NULL-güvenli eşleştirme/IN sorgusu kurmaktan daha
-    // basit ve hataya daha az açık.
-    const result = await pool.query<SharedStockRow>(
-      `SELECT p.code, p.brand, p.size_desc, p.season, p.stock_qty, p.production_year, p.production_week,
-              t.id AS tenant_id, t.name AS tenant_name, t.contact_name, t.contact_email, t.contact_phone
-       FROM products p
-       JOIN tenants t ON t.id = p.tenant_id
-       JOIN app_settings a ON a.tenant_id = t.id
-       WHERE ${conditions.join(" AND ")}`,
+    // Gruplama, adet eşiği, sıralama, sayfalama, firma sütunları ve yalnızca
+    // bu sayfanın hücreleri SQL'de, TEK sorguda — Vercel'e yalnızca istenen
+    // sayfanın verisi gelir. Önceden filtreye uyan TÜM ürün satırları her
+    // istekte çekilip JS'te gruplanıp sayfalanıyordu (maliyet ağdaki toplam
+    // paylaşılan stokla büyüyordu).
+    // - Sıralama Türkçe ICU kuralıyla (tr-x-icu) — JS localeCompare("tr")
+    //   ile aynı sırayı verir (ikisi de ICU; 2.642 marka/ebat/sezon üçlüsünde
+    //   birebir karşılaştırıldı). Sezonsuz/modelsiz sona.
+    // - Bir kodun marka/model/ebat/sezonu firmalar arasında farklı yazılmış
+    //   olabilir; satırda MAX ile tek değer gösterilir.
+    // - minQty: en az bir firmada o koddan en az N adet olan satırlar.
+    // - base birden çok kez kullanıldığı için Postgres onu bir kez hesaplar.
+    // GÜVENLİK: base asla fiyat/tedarikçi seçmez (bkz. yukarıdaki not).
+    const result = await pool.query<{ total: number; firms: Firm[]; rows: CodeRow[]; cells: Cell[] | null }>(
+      `WITH base AS (
+         SELECT p.code, p.brand, p.model_name, p.size_desc, p.season, p.stock_qty, p.production_year, p.production_week,
+                t.id AS tenant_id, t.name AS tenant_name, t.contact_name, t.contact_email, t.contact_phone
+         FROM products p
+         JOIN tenants t ON t.id = p.tenant_id
+         JOIN app_settings a ON a.tenant_id = t.id
+         WHERE ${conditions.join(" AND ")}
+       ),
+       ct AS (
+         SELECT code, tenant_id, SUM(stock_qty)::int AS qty,
+                (ARRAY_AGG(production_year ORDER BY production_year DESC NULLS LAST, production_week DESC NULLS LAST))[1] AS production_year,
+                (ARRAY_AGG(production_week ORDER BY production_year DESC NULLS LAST, production_week DESC NULLS LAST))[1] AS production_week,
+                COUNT(DISTINCT (production_year, production_week))::int AS batches
+         FROM base GROUP BY code, tenant_id
+       ),
+       g AS (
+         SELECT code, MAX(brand) AS brand, MAX(model_name) AS model_name, MAX(size_desc) AS size_desc,
+                MAX(season) AS season, SUM(stock_qty)::int AS total_stock
+         FROM base GROUP BY code
+         ${minQtyParam ? `HAVING code IN (SELECT code FROM ct WHERE qty >= ${minQtyParam})` : ""}
+       ),
+       pg AS (
+         SELECT g.*, ROW_NUMBER() OVER (ORDER BY brand COLLATE "tr-x-icu", size_desc COLLATE "tr-x-icu",
+                                        (season IS NULL), season COLLATE "tr-x-icu",
+                                        (model_name IS NULL), model_name COLLATE "tr-x-icu", code COLLATE "tr-x-icu") AS ord
+         FROM g
+         ORDER BY ord
+         LIMIT ${limitParam} OFFSET ${offsetParam}
+       )
+       SELECT
+         (SELECT COUNT(*)::int FROM g) AS total,
+         (SELECT COALESCE(json_agg(f ORDER BY f.tenant_name COLLATE "tr-x-icu", f.tenant_id), '[]'::json)
+            FROM (SELECT DISTINCT b.tenant_id, b.tenant_name, b.contact_name, b.contact_email, b.contact_phone
+                  FROM base b JOIN g ON g.code = b.code) f) AS firms,
+         (SELECT COALESCE(json_agg(json_build_object('code', code, 'brand', brand, 'model_name', model_name,
+                                                     'size_desc', size_desc, 'season', season, 'total_stock', total_stock)
+                                   ORDER BY ord), '[]'::json)
+            FROM pg) AS rows,
+         (SELECT json_agg(ct) FROM ct JOIN pg ON pg.code = ct.code) AS cells`,
       values
     );
+    const { total, firms, rows, cells } = result.rows[0];
 
-    interface GroupAcc {
-      brand: string;
-      size_desc: string;
-      season: string | null;
-      total_stock: number;
-      // Anahtar tenant_id+code: aynı firmanın aynı (marka,ebat,sezon) için
-      // FARKLI kodlu partileri tek satırda birleşmez, her kod ayrı satırda
-      // görünür.
-      shopsByTenant: Map<string, ShopEntry>;
+    // Hücreleri satırlara dağıt: { tenant_id: hücre }.
+    const cellsByCode = new Map<string, Record<number, Omit<Cell, "code" | "tenant_id">>>();
+    for (const { code, tenant_id, ...cell } of cells ?? []) {
+      const byFirm = cellsByCode.get(code) ?? {};
+      byFirm[tenant_id] = cell;
+      cellsByCode.set(code, byFirm);
     }
-    const groups = new Map<string, GroupAcc>();
+    const items = rows.map((r) => ({ ...r, stocks: cellsByCode.get(r.code) ?? {} }));
 
-    for (const row of result.rows) {
-      // Ayraç NUL (\u0000) — marka/ebat/sezon metinlerinde asla geçmez.
-      // Boşluk ayraç OLAMAZ: ebatların çoğu boşluk içeriyor ("205/55 R16"),
-      // ebadı "X Yaz"+sezonu boş ile ebadı "X"+sezonu "Yaz" aynı anahtara
-      // düşerdi. Kaynakta ham NUL değil escape dizisi olarak yazılı ki git
-      // dosyayı "binary" saymasın (4ab105f'in boşluğa geçme sebebi buydu).
-      const key = `${row.brand}\u0000${row.size_desc}\u0000${row.season ?? ""}`;
-      let group = groups.get(key);
-      if (!group) {
-        group = { brand: row.brand, size_desc: row.size_desc, season: row.season, total_stock: 0, shopsByTenant: new Map() };
-        groups.set(key, group);
-      }
-      group.total_stock += row.stock_qty;
-
-      const shopKey = `${row.tenant_id}|${row.code}`;
-      const existingShop = group.shopsByTenant.get(shopKey);
-      if (!existingShop) {
-        group.shopsByTenant.set(shopKey, {
-          tenant_id: row.tenant_id,
-          tenant_name: row.tenant_name,
-          contact_name: row.contact_name,
-          contact_email: row.contact_email,
-          contact_phone: row.contact_phone,
-          code: row.code,
-          qty: row.stock_qty,
-          production_year: row.production_year,
-          production_week: row.production_week,
-        });
-      } else {
-        existingShop.qty += row.stock_qty;
-        // Birden fazla parti varsa en yeni üretim tarihini göster.
-        if (
-          (row.production_year ?? 0) > (existingShop.production_year ?? 0) ||
-          ((row.production_year ?? 0) === (existingShop.production_year ?? 0) && (row.production_week ?? 0) > (existingShop.production_week ?? 0))
-        ) {
-          existingShop.production_year = row.production_year;
-          existingShop.production_week = row.production_week;
-        }
-      }
-    }
-
-    let items = Array.from(groups.values())
-      .filter((g) => g.total_stock >= minQty)
-      .map((g) => ({
-        brand: g.brand,
-        size_desc: g.size_desc,
-        season: g.season,
-        total_stock: g.total_stock,
-        shops: Array.from(g.shopsByTenant.values())
-          .sort((a, b) => b.qty - a.qty || a.tenant_id - b.tenant_id || a.code.localeCompare(b.code, "tr")),
-      }))
-      // Sezon da sıralamada olmalı: aynı marka+ebadın Yaz/Kış grupları
-      // eşit sayılınca sıraları SQL'deki (ORDER BY'sız) satır sırasına
-      // kalıyordu, sayfa sınırına denk gelince bir grup iki sayfada birden
-      // görünüp diğeri hiç görünmeyebiliyordu. Sezonsuz grup sona.
-      .sort((a, b) =>
-        a.brand.localeCompare(b.brand, "tr")
-        || a.size_desc.localeCompare(b.size_desc, "tr")
-        || (a.season == null ? 1 : 0) - (b.season == null ? 1 : 0)
-        || (a.season ?? "").localeCompare(b.season ?? "", "tr")
-      );
-
-    const total = items.length;
-    const offset = (page - 1) * limit;
-    items = items.slice(offset, offset + limit);
-
-    return NextResponse.json({ sharingEnabled: true, items, total, page, limit });
+    return NextResponse.json({ sharingEnabled: true, items, firms, total, page, limit });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
