@@ -54,6 +54,19 @@ const CSS = `
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
   .elevire-legal .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 8px 18px -8px rgba(0,0,0,0.45); }
+  .elevire-legal .nav-actions { display: flex; align-items: center; gap: 10px; }
+  .elevire-legal .nav-login {
+    display: inline-flex; align-items: center; font-weight: 600; font-size: 0.9rem;
+    color: #ffffff; padding: 11px 20px; border-radius: 999px; white-space: nowrap; text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.6); background: rgba(0,0,0,0.22);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .elevire-legal .nav-login:hover { background: rgba(255,255,255,0.16); border-color: #ffffff; }
+  @media (max-width: 400px) {
+    .elevire-legal .nav-actions { gap: 6px; }
+    .elevire-legal .nav-login, .elevire-legal .nav-cta { padding: 9px 13px; font-size: 0.8rem; }
+  }
 
   .elevire-legal main { max-width: 1200px; margin: 0 auto; padding: 48px 24px 64px; }
   .elevire-legal h1 {
@@ -145,7 +158,12 @@ export default function ElevireLegalLayout({ children }: { children: React.React
           <a className="logo" href="/elevire" aria-label="Elevire">
             <Logomark className="logo-mark" />
           </a>
-          <a className="nav-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
+          {/* Mevcut müşteriler için giriş — önceden landing'deki tüm butonlar
+              yalnızca /kayit'a gidiyordu, panele dönmenin yolu yoktu. */}
+          <div className="nav-actions">
+            <a className="nav-login" href="/admin/login">Giriş Yap</a>
+            <a className="nav-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
+          </div>
         </nav>
       </div>
       <main>{children}</main>
