@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { getDefaultAdminPath } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 
-// Paylaşılan deploymentta artık birden fazla firma (tenant) aynı panele
-// giriyor — sabit kodlanmış tek bir logo yerine, Firma Kodu yazıldıkça
-// (henüz kimlik doğrulanmadan) o firmanın işletme adı canlı gösterilir
-// (bkz. /api/auth/branding).
-const DEFAULT_BUSINESS_NAME = "Lastik Servis Paneli";
+// Başlık sabit: Firma Kodu yazıldıkça firmanın adını gösteren önizleme
+// (eski /api/auth/branding, kimlik doğrulamasız) kaldırıldı — her girişte
+// gereksiz bir istek atıyordu ve bir firma kodunun var olup olmadığını
+// dışarıya hafifçe ifşa ediyordu. Firma adı girişten sonra panelde görünür.
+const LOGIN_TITLE = "Lastik Servis Paneli";
 
 export default function LoginPage() {
   const toast = useToast();
@@ -17,27 +17,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [businessName, setBusinessName] = useState(DEFAULT_BUSINESS_NAME);
-
-  // Firma Kodu yazıldıkça (debounce'lu) hangi firmaya ait olduğunu gösterir —
-  // henüz kimlik doğrulanmadığından bu genel bir uca gider (bkz.
-  // /api/auth/branding). Kod tam 6 haneye ulaşmadan istek atılmaz (kod sabit
-  // uzunlukta olduğundan ara adımlarda sorgu atmanın anlamı yok).
-  useEffect(() => {
-    const trimmed = code.trim();
-    if (trimmed.length !== 6) {
-      setBusinessName(DEFAULT_BUSINESS_NAME);
-      return;
-    }
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      fetch(`/api/auth/branding?code=${encodeURIComponent(trimmed)}`)
-        .then((r) => r.json())
-        .then((d) => { if (!cancelled) setBusinessName(d.business_name || DEFAULT_BUSINESS_NAME); })
-        .catch(() => { if (!cancelled) setBusinessName(DEFAULT_BUSINESS_NAME); });
-    }, 400);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [code]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +45,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-gray-800 mb-1">{businessName}</h1>
+            <h1 className="text-2xl font-bold text-gray-800 mb-1">{LOGIN_TITLE}</h1>
             <p className="text-gray-500 text-sm">Yönetici Girişi</p>
           </div>
 
