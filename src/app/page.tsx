@@ -13,6 +13,7 @@ import { forgetUiPref, useApplyUi } from "@/lib/uiTheme";
 import { AuthProvider, useAuth } from "@/app/admin/AuthContext";
 import StandaloneShellV2 from "@/components/v2/StandaloneShellV2";
 import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter, useStockCodes } from "@/lib/queries";
+import { resolveUiVersion } from "@/lib/uiVersion";
 
 interface Service {
   id: number;
@@ -377,7 +378,7 @@ function OrderPageInner() {
   // Sipariş formu panel layout'unun dışında — panelde seçilen görünüm/tema
   // (yeni görünüm + koyu/açık) burada da uygulanır, aksi halde koyu temadan
   // forma geçince sayfa beyaz kalıyordu. Formdan çıkınca temizlenir.
-  useApplyUi(me ? (me.ui_version ?? "v1") : null, me?.ui_theme ?? "system");
+  useApplyUi(me ? resolveUiVersion(me.ui_version, me.ui_beta_version ?? null) : null, me?.ui_theme ?? "system");
   // Yeni görünümde form panelin sol menüsü/üst çubuğuyla açılır (bkz.
   // OrderPage → StandaloneShellV2); kendi marka/geri dön/çıkış satırı gizlenir.
   const { isV2: v2 } = useAuth();

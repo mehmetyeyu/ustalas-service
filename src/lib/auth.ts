@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { resolveBetaVersion, resolveUiVersion, type UiVersion } from "./uiVersion";
 import { cookies, headers } from "next/headers";
 import * as Sentry from "@sentry/nextjs";
 import pool from "./db";
@@ -41,9 +42,12 @@ export interface JwtPayload {
   onboardingTourCompletedAt?: string | null;
   // Panel görünümü tercihleri (bkz. database/schema.sql ui_version notu) —
   // aynı kullanıcı sorgusundan gelir, ek sorgu yok.
-  uiVersion?: "v1" | "v2";
+  // uiVersion: kullanıcının GERÇEKTE gördüğü sürüm (emekli sürüm güncele
+  // çözülür); uiBetaVersion: önizleyebileceği sonraki sürüm (bkz.
+  // src/lib/uiVersion.ts).
+  uiVersion?: UiVersion;
   uiTheme?: "system" | "light" | "dark";
-  uiV2Available?: boolean;
+  uiBetaVersion?: UiVersion | null;
   iat?: number;
   iatMs?: number;
 }
@@ -86,7 +90,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
   const result = await pool.query(
     `SELECT u.username, u.role, u.permissions, u.is_active, u.tokens_invalid_before,
             u.is_primary_admin, u.onboarding_tour_completed_at,
-            u.ui_version, u.ui_theme, u.ui_v2_available,
+            u.ui_version, u.ui_theme, u.ui_beta_version,
             u.tenant_id, t.name AS tenant_name, t.is_active AS tenant_is_active,
             t.billing_status, t.trial_ends_at, t.plan,
             t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error
@@ -139,9 +143,9 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     billingLastPaymentError: user.billing_last_payment_error ?? null,
     isPrimaryAdmin: user.is_primary_admin ?? false,
     onboardingTourCompletedAt: user.onboarding_tour_completed_at ?? null,
-    uiVersion: user.ui_version === "v2" ? "v2" : "v1",
+    uiVersion: resolveUiVersion(user.ui_version, resolveBetaVersion(user.ui_beta_version)),
     uiTheme: user.ui_theme === "light" || user.ui_theme === "dark" ? user.ui_theme : "system",
-    uiV2Available: user.ui_v2_available ?? false,
+    uiBetaVersion: resolveBetaVersion(user.ui_beta_version),
   };
 }
 

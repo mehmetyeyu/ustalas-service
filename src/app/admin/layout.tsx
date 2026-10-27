@@ -17,6 +17,7 @@ import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { V2Header, V2Sidebar } from "@/components/v2/AdminShellV2";
 import { noteInAppNavigation } from "@/lib/navHistory";
 import { useDialog } from "@/lib/useDialog";
+import { CURRENT_UI_VERSION } from "@/lib/uiVersion";
 
 
 
@@ -199,7 +200,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   // (/api/auth/me) gelene kadar açılış betiğinin çerezden koyduğu işarete
   // göre çizilir (AuthContext isV2); renkleri de o betik zaten uyguladı.
   const v2 = isV2;
-  useApplyUi(loading ? null : (user?.uiVersion ?? "v1"), user?.uiTheme ?? "system");
+  useApplyUi(loading ? null : (user?.uiVersion ?? CURRENT_UI_VERSION), user?.uiTheme ?? "system");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawer = useMemo(() => ({ open: drawerOpen, setOpen: setDrawerOpen }), [drawerOpen]);
   const [showOnboardingTour, setShowOnboardingTour] = useState(false);
@@ -365,20 +366,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           drawer={drawer}
         />
       ) : <V2HeaderPlaceholder />}
-      {/* Yeni görünüm daveti — yalnızca erişimi açılmış YÖNETİCİLERE (kademeli
-          açılış, bkz. ui_v2_available). Geri dönüş Profil › Görünüm'de. */}
-      {!loading && !v2 && user?.role === "admin" && user.uiV2Available ? (
-        <div className="v1-chrome flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
-          <span>Yeni panel görünümü hazır: yenilenen tasarım, açık ve koyu mod.</span>
-          <button
-            type="button"
-            onClick={() => { void setUiPreferences({ ui_version: "v2" }); }}
-            className="font-semibold underline underline-offset-2 hover:text-blue-700"
-          >
-            Yeni görünüme geç
-          </button>
-        </div>
-      ) : null}
+      {/* "Yeni görünüme geç" daveti 2026-10-27'de kaldırıldı (v2 herkes
+          için kalıcı). Bir sonraki sürümün kademeli açılışı Profil › Görünüm
+          üzerinden yapılır (bkz. src/lib/uiVersion.ts). */}
       {!loading && user?.role === "admin" && user.billingStatus === "trialing" && !pathname.startsWith("/admin/billing") && (
         <div className={v2
           ? "border-b border-v2-line bg-v2-warning-bg px-4 py-2 text-center text-sm text-v2-warning-fg"

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
 import { queryKeys, useMe, type MeResponse } from "@/lib/queries";
 import { useBootUiV2 } from "@/lib/uiTheme";
+import { resolveUiVersion, type UiVersion } from "@/lib/uiVersion";
 
 interface AuthUser {
   username: string;
@@ -40,14 +41,15 @@ interface AuthUser {
   paymentTypes: string[];
   storageOverdueMonths: number;
   ordersDefaultDateFilter: string;
-  // Panel görünümü (bkz. database/schema.sql ui_version notu): v1 = bugünkü,
-  // v2 = yeni "premium" görünüm; tema yalnızca v2'de anlamlı.
-  uiVersion: "v1" | "v2";
+  // Panel görünümü (bkz. src/lib/uiVersion.ts): uiVersion kullanıcının
+  // gördüğü sürüm (emekli sürüm güncele çözülmüş), uiBetaVersion
+  // önizleyebileceği sonraki sürüm (yoksa null).
+  uiVersion: UiVersion;
   uiTheme: "system" | "light" | "dark";
-  uiV2Available: boolean;
+  uiBetaVersion: UiVersion | null;
 }
 
-export type UiPreferences = { ui_version?: "v1" | "v2"; ui_theme?: "system" | "light" | "dark" };
+export type UiPreferences = { ui_version?: UiVersion; ui_theme?: "system" | "light" | "dark" };
 
 interface AuthState {
   user: AuthUser | null;
@@ -89,9 +91,9 @@ function toAuthUser(data: MeResponse): AuthUser {
     paymentTypes: Array.isArray(data.payment_types) ? data.payment_types : [],
     storageOverdueMonths: typeof data.storage_overdue_months === "number" ? data.storage_overdue_months : 6,
     ordersDefaultDateFilter: typeof data.orders_default_date_filter === "string" ? data.orders_default_date_filter : "",
-    uiVersion: data.ui_version === "v2" ? "v2" : "v1",
+    uiVersion: resolveUiVersion(data.ui_version, data.ui_beta_version ?? null),
     uiTheme: data.ui_theme === "light" || data.ui_theme === "dark" ? data.ui_theme : "system",
-    uiV2Available: !!data.ui_v2_available,
+    uiBetaVersion: data.ui_beta_version ?? null,
   };
 }
 

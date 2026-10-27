@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { BCRYPT_COST } from "@/lib/password";
 import pool from "@/lib/db";
 import { UI_PREF_COOKIE, uiPrefCookieOptions, uiPrefCookieValue } from "@/lib/uiThemeBoot";
+import { resolveBetaVersion, resolveUiVersion } from "@/lib/uiVersion";
 import { signToken, REMEMBER_ME_EXPIRES_IN, REMEMBER_ME_MAX_AGE_SECONDS } from "@/lib/auth";
 
 const MAX_ATTEMPTS = 5;
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
     // görünümle çizilsin (bkz. src/lib/uiThemeBoot.ts). Oturumla aynı ömür.
     response.cookies.set(
       UI_PREF_COOKIE,
-      uiPrefCookieValue(user.ui_version, user.ui_theme),
+      uiPrefCookieValue(resolveUiVersion(user.ui_version, resolveBetaVersion(user.ui_beta_version)), user.ui_theme),
       uiPrefCookieOptions(rememberMe === true ? REMEMBER_ME_MAX_AGE_SECONDS : 60 * 60 * 12),
     );
 

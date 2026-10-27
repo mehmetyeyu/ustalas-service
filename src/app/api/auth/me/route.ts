@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getSessionSettings } from "@/lib/settings";
 import { UI_PREF_COOKIE, uiPrefCookieOptions, uiPrefCookieValue } from "@/lib/uiThemeBoot";
+import { CURRENT_UI_VERSION } from "@/lib/uiVersion";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -19,7 +20,7 @@ export async function GET() {
     billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? false, billing_period_ends_at: user.billingPeriodEndsAt ?? null,
     billing_last_payment_error: user.billingLastPaymentError ?? null,
     is_primary_admin: user.isPrimaryAdmin ?? false, onboarding_tour_completed_at: user.onboardingTourCompletedAt ?? null,
-    ui_version: user.uiVersion ?? "v1", ui_theme: user.uiTheme ?? "system", ui_v2_available: user.uiV2Available ?? false,
+    ui_version: user.uiVersion ?? CURRENT_UI_VERSION, ui_theme: user.uiTheme ?? "system", ui_beta_version: user.uiBetaVersion ?? null,
     ...settings,
   });
   // Görünüm tercihinin çerez kopyasını tazeler (bkz. src/lib/uiThemeBoot.ts)

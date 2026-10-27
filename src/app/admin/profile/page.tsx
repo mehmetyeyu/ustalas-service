@@ -110,7 +110,7 @@ export default function ProfilePage() {
         </div>
       </SettingsSection>
 
-      {(user?.uiV2Available || user?.uiVersion === "v2") && <AppearanceSettings />}
+      <AppearanceSettings />
 
       <SettingsSection title="Kullanıcı Adı" description="Panele girişte kullandığınız kullanıcı adı.">
 

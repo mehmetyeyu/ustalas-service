@@ -1677,3 +1677,18 @@ CREATE INDEX IF NOT EXISTS orders_tenant_customer_name_idx ON orders(tenant_id, 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_version VARCHAR(4) NOT NULL DEFAULT 'v1';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_theme VARCHAR(8) NOT NULL DEFAULT 'system';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_v2_available BOOLEAN NOT NULL DEFAULT false;
+
+-- 2026-10-27: v2 tüm firmalar için kalıcı, v1 emekli (bkz. src/lib/uiVersion.ts
+-- — sürümlerin TEK kaynağı). Kayıtlı ui_version='v1' değerleri bilerek
+-- güncellenmez: kod emekli/bilinmeyen sürümü güncel sürüme çözer (toplu
+-- UPDATE yok, gerekirse geri alınabilir). Yeni kullanıcılar da güncel
+-- sürümle başlar.
+-- ui_beta_version: kullanıcının önizleyebileceği SONRAKİ sürüm (ör. 'v3');
+--   yalnızca uiVersion.ts'teki NEXT_UI_VERSION'a eşitse geçerlidir. Evet/hayır
+--   yerine sürüm adı tutulur ki eski bir betaya kalmış işaret yeni bir
+--   sürüme kendiliğinden erişim vermesin. Kademeli açılış: seçilen
+--   kullanıcılara UPDATE users SET ui_beta_version = 'v3' WHERE ...
+-- ui_v2_available: artık kullanılmıyor (v2 kademeli açılışının işareti);
+--   kolon geçmiş için duruyor.
+ALTER TABLE users ALTER COLUMN ui_version SET DEFAULT 'v2';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_beta_version VARCHAR(4);

@@ -1,4 +1,5 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query";
+import type { UiVersion } from "./uiVersion";
 
 // Sunucu verisi için sorgu anahtarları ve hook'lar (TanStack Query, bkz.
 // src/components/QueryProvider.tsx). Bir sayfa sunucudan veri okurken fetch
@@ -44,7 +45,7 @@ export interface MeResponse {
   is_primary_admin?: boolean; onboarding_tour_completed_at?: string | null;
   custom_order_no_enabled?: boolean; plate_required?: boolean;
   payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string;
-  ui_version?: "v1" | "v2"; ui_theme?: "system" | "light" | "dark"; ui_v2_available?: boolean;
+  ui_version?: UiVersion; ui_theme?: "system" | "light" | "dark"; ui_beta_version?: UiVersion | null;
 }
 
 // Oturum yoksa (401) hata değil null — "giriş yapılmamış" geçerli bir durum.

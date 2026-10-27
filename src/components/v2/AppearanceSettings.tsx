@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/app/admin/AuthContext";
 import type { UiTheme, UiVersion } from "@/lib/uiTheme";
+import { CURRENT_UI_VERSION, UI_VERSION_LABELS, selectableUiVersions } from "@/lib/uiVersion";
 import { SettingsSection } from "./SettingsLayout";
 
-// Profil › Görünüm: panel görünümü (yeni/eski) ve yeni görünümün teması.
-// Kullanıcı başına sunucuda saklanır (bkz. /api/auth/preferences), her
-// cihazda geçerli olur. Yalnızca yeni görünüme erişimi açılmış ya da zaten
-// yeni görünümde olan kullanıcıya gösterilir (bkz. profile/page.tsx).
+// Profil › Görünüm: tema (açık/koyu/sistem) ve — yalnızca bir sonraki
+// sürüme erişimi açılmış kullanıcıda — panel sürümü seçimi (bkz.
+// src/lib/uiVersion.ts). Kullanıcı başına sunucuda saklanır (bkz.
+// /api/auth/preferences), her cihazda geçerli olur.
 
 const THEMES: { value: UiTheme; label: string }[] = [
   { value: "light", label: "Açık" },
@@ -47,23 +48,21 @@ export default function AppearanceSettings() {
   // Seçim yerel durumda anında güncellenir — store (TanStack önbelleği) bir
   // sonraki tick'te güncellendiğinden, sadece ona bağlı kontrollü radio
   // tıklamada bir an eski değere dönüp geri geliyordu.
-  const [version, setVersion] = useState<UiVersion>(user?.uiVersion ?? "v1");
+  const [version, setVersion] = useState<UiVersion>(user?.uiVersion ?? CURRENT_UI_VERSION);
   const [theme, setTheme] = useState<UiTheme>(user?.uiTheme ?? "system");
   useEffect(() => { if (user) setVersion(user.uiVersion); }, [user?.uiVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (user) setTheme(user.uiTheme); }, [user?.uiTheme]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!user) return null;
-  const v2 = version === "v2";
+  const versions = selectableUiVersions(user.uiBetaVersion);
 
   return (
     <SettingsSection title="Görünüm" description="Seçiminiz bu kullanıcı için kaydedilir ve tüm cihazlarınızda geçerli olur.">
 
+      {versions.length > 1 && (
       <fieldset className="mb-5">
         <legend className="block text-sm font-medium text-gray-700 mb-2">Panel görünümü</legend>
         <div className="flex flex-wrap gap-2">
-          {[
-            { value: "v2" as const, label: "Yeni görünüm" },
-            { value: "v1" as const, label: "Eski görünüm" },
-          ].map((opt) => (
+          {versions.map((value) => ({ value, label: value === CURRENT_UI_VERSION ? UI_VERSION_LABELS[value] : `${UI_VERSION_LABELS[value]} (deneme)` })).map((opt) => (
             <label
               key={opt.value}
               className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
@@ -75,7 +74,6 @@ export default function AppearanceSettings() {
                 name="ui_version"
                 value={opt.value}
                 checked={version === opt.value}
-                disabled={opt.value === "v2" && !user.uiV2Available}
                 onChange={() => { setVersion(opt.value); void setUiPreferences({ ui_version: opt.value }); }}
                 className="h-4 w-4"
               />
@@ -84,8 +82,9 @@ export default function AppearanceSettings() {
           ))}
         </div>
       </fieldset>
+      )}
 
-      {v2 && (
+      {version !== "v1" && (
         <fieldset>
           <legend className="block text-sm font-medium text-gray-700 mb-2">Tema</legend>
           <div className="grid grid-cols-3 gap-3">
