@@ -513,12 +513,14 @@ function OrderDetailPageInner() {
       if (res.ok) company = await res.json();
     } catch { /* firma bilgisi olmadan da yazdırılabilir, sessizce devam */ }
 
+    // order_services.unit_price adına rağmen SATIR TOPLAMI (bkz. src/app/page.tsx
+    // "total = Σ unit_price") — birim fiyat adede bölünerek bulunur.
     const rowsHtml = order.services.map((s) => `
       <tr>
         <td>${escapeHtml(s.name)}</td>
         <td class="c">${s.quantity}</td>
+        <td class="r">${formatCurrency(s.quantity > 0 ? s.unit_price / s.quantity : s.unit_price)}</td>
         <td class="r">${formatCurrency(s.unit_price)}</td>
-        <td class="r">${formatCurrency(s.unit_price * s.quantity)}</td>
       </tr>`).join("");
 
     const win = window.open("", "_blank");

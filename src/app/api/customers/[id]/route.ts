@@ -11,24 +11,56 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   if (!hasPermission(user, "customers.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
-  try {
-    const { id } = await params;
-    const { name, phone } = await request.json();
-    if (!name || !String(name).trim()) {
-      return NextResponse.json({ error: "Müşteri adı zorunludur." }, { status: 400 });
-    }
+  const { id } = await params;
+  const { name, phone } = await request.json();
+  if (!name || !String(name).trim()) {
+    return NextResponse.json({ error: "Müşteri adı zorunludur." }, { status: 400 });
+  }
+  const newName = String(name).trim();
 
-    const result = await pool.query(
-      "UPDATE customers SET name = $1, phone = $2 WHERE id = $3 AND tenant_id = $4",
-      [String(name).trim(), phone ? String(phone).trim() : null, id, user.tenantId]
+  // orders/appointments müşteriye FK ile değil, customer_name metniyle bağlı
+  // (bkz. DELETE yorumu). Ad yalnızca customers'ta değişirse, eski bir
+  // sipariş düzenlendiğinde customerLedger eski adla YENİ bir müşteri açıp
+  // borcu oraya yazıyordu — cari ikiye bölünüyordu. Bu yüzden eski adı
+  // taşıyan siparişler ve randevular aynı transaction'da yeni ada taşınır.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query<{ name: string }>(
+      "SELECT name FROM customers WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      [id, user.tenantId]
     );
-    if (result.rowCount === 0) {
+    if (current.rows.length === 0) {
+      await client.query("ROLLBACK");
       return NextResponse.json({ error: "Müşteri bulunamadı." }, { status: 404 });
     }
+    const oldName = current.rows[0].name;
+
+    await client.query(
+      "UPDATE customers SET name = $1, phone = $2 WHERE id = $3 AND tenant_id = $4",
+      [newName, phone ? String(phone).trim() : null, id, user.tenantId]
+    );
+    if (oldName !== newName) {
+      await client.query(
+        "UPDATE orders SET customer_name = $1 WHERE tenant_id = $2 AND customer_name = $3",
+        [newName, user.tenantId, oldName]
+      );
+      await client.query(
+        "UPDATE appointments SET customer_name = $1 WHERE tenant_id = $2 AND customer_name = $3",
+        [newName, user.tenantId, oldName]
+      );
+    }
+    await client.query("COMMIT");
     return NextResponse.json({ success: true });
   } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      return NextResponse.json({ error: "Bu isimde başka bir müşteri zaten var." }, { status: 409 });
+    }
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });
+  } finally {
+    client.release();
   }
 }
 
