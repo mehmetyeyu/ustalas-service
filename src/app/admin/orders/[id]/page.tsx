@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
@@ -13,10 +12,10 @@ import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
 import { MAIL_ORDER_SUFFIX } from "@/lib/paymentTypes";
 import { escapeHtml } from "@/lib/htmlEscape";
-import { useServices, useCustomers, useSuppliers, useProductSizes, useKasalar, invalidateAfter, useStockCodes } from "@/lib/queries";
+import { useServices, useCustomers, useSuppliers, useProductSizes, useKasalar, invalidateAfter } from "@/lib/queries";
+import SearchableCombobox from "@/components/order/SearchableCombobox";
+import TireBatchPicker, { type StockBatch } from "@/components/order/TireBatchPicker";
 import { TRNumberInput } from "@/components/TRNumberInput";
-import { weekYearLabel } from "@/lib/weekYear";
-import { trIncludes } from "@/lib/trSearch";
 import { useDialog } from "@/lib/useDialog";
 import { StickyScrollX } from "@/components/StickyScrollX";
 
@@ -99,19 +98,6 @@ interface EditLine {
   unit_purchase_price: number | null;
 }
 
-interface StockBatch {
-  id: number;
-  production_week: number | null;
-  production_year: number | null;
-  size_desc: string | null;
-  stock_qty: number;
-  location: string | null;
-  brand: string | null;
-  model_name: string | null;
-  avg_purchase_price: string | number | null;
-  avg_sale_price: string | number | null;
-}
-
 
 
 // Eski enum değerleri (NAKIT/KREDI_KARTI/HAVALE) geçmiş siparişlerde hâlâ olabilir;
@@ -152,92 +138,6 @@ function num(v: string): number {
 function amountToStr(unitPrice: number | null, qty: number): string {
   if (unitPrice == null) return "";
   return String(Math.round(unitPrice * qty * 100) / 100);
-}
-
-function SearchableCombobox({
-  value, onChange, options, placeholder,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  options: string[];
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const filtered = query
-    ? options.filter((o) => trIncludes(o, query))
-    : options;
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (
-        containerRef.current && !containerRef.current.contains(e.target as Node) &&
-        !(e.target as HTMLElement).closest("[data-combobox-list]")
-      ) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  // Dropdown, İşlem Satırları tablosunun yatay kaydırma alanı (overflow-x-auto)
-  // tarafından kırpılmasın diye document.body'e portal ile taşınır; konumu
-  // input'un ekran koordinatlarına göre hesaplanır.
-  useEffect(() => {
-    if (!open) return;
-    function updateRect() {
-      if (!inputRef.current) return;
-      const r = inputRef.current.getBoundingClientRect();
-      setRect({ top: r.bottom, left: r.left, width: r.width });
-    }
-    updateRect();
-    window.addEventListener("scroll", updateRect, true);
-    window.addEventListener("resize", updateRect);
-    return () => {
-      window.removeEventListener("scroll", updateRect, true);
-      window.removeEventListener("resize", updateRect);
-    };
-  }, [open]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setQuery(e.target.value); setOpen(true); }}
-        onFocus={(e) => { setQuery(""); setOpen(true); e.target.select(); }}
-        // Escape önce açık öneri listesini kapatır; içinde bulunduğu pencere
-        // (useDialog) preventDefault'u görüp kapanmaz — ikinci Escape kapatır.
-        onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); } }}
-        placeholder={placeholder}
-        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      {open && filtered.length > 0 && rect && typeof document !== "undefined" && createPortal(
-        <ul
-          data-combobox-list
-          style={{ position: "fixed", top: rect.top + 4, left: rect.left, width: rect.width }}
-          className="z-50 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
-        >
-          {filtered.map((opt) => (
-            <li
-              key={opt}
-              onMouseDown={(e) => { e.preventDefault(); onChange(opt); setOpen(false); }}
-              className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-700 ${value === opt ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}
-            >
-              {opt}
-            </li>
-          ))}
-        </ul>,
-        document.body
-      )}
-    </div>
-  );
 }
 
 // Ödeme tipi seçici — "Mail Order" seçilince ikinci bir tedarikçi seçici belirir;
@@ -302,102 +202,6 @@ function PaymentTypeSelect({
         />
       )}
     </div>
-  );
-}
-
-// tracks_size işaretli bir satırdaki (bkz. Hizmetler ekranı) Stok Kodu
-// hücresi: kod seçilir/yazılır (seçilen tedarikçide stoğu olan kodlar
-// önerilir), kod bir partiyle eşleşince altında
-// Üretim Haftası/Yılı seçici belirir — seçilen parti product_id + Ebat + o
-// partinin mevcut stoğunu (max_stock, anlık uyarı için) üst bileşene bildirir.
-const NO_CODES: string[] = [];
-
-// Stok Kodu ve Parti, satır ızgarasında İKİ AYRI hücre olarak çizilir
-// (fragment döner; hücre/etiket sınıfları çağırandan gelir). Parti seçimi
-// eskiden kod kutusunun altına küçük bir listeyle sıkışıyor, satırı
-// hizasız uzatıyordu; marka/model ön yazısı da Marka/Model alanlarını
-// tekrarlıyordu (seçilince zaten oralara dolar).
-function TireBatchPicker({
-  supplier, code, productId, onCodeChange, onBatchSelect, cellClassName, labelClassName,
-}: {
-  supplier: string;
-  code: string;
-  productId: number | null;
-  onCodeChange: (code: string) => void;
-  onBatchSelect: (batch: StockBatch | null) => void;
-  cellClassName: string;
-  labelClassName: string;
-}) {
-  const [batches, setBatches] = useState<StockBatch[]>([]);
-  // Partiler çekilirken boş liste "parti yok" sanılmasın diye.
-  const [loadingBatches, setLoadingBatches] = useState(false);
-  // 300ms bekleme yalnızca kullanıcı kodu YAZARKEN anlamlı (her tuşta istek
-  // atılmasın). Kod zaten dolu açılan satırlarda (Düzelt, Ürünler'den
-  // sipariş) açılıştaki koda yapılan çekim beklemeden başlar — Parti alanı
-  // geç dolmasın. (Bir "ilk çalışma" bayrağı yerine açılış değeriyle
-  // karşılaştırılır: Strict Mode'da efekt iki kez çalışsa da doğru kalır.)
-  const initialCodeRef = useRef(code);
-  // Tedarikçide stoğu olan kodlar — ortak önbellekten (bkz. useStockCodes);
-  // sipariş/ürün kaydında tazelenir, form açık kalsa da eskimez.
-  const codeOptions = useStockCodes(supplier).data ?? NO_CODES;
-
-  useEffect(() => {
-    if (!supplier.trim() || !code.trim()) {
-      setBatches([]);
-      setLoadingBatches(false);
-      return;
-    }
-    setLoadingBatches(true);
-    const delay = code === initialCodeRef.current ? 0 : 300;
-    const t = setTimeout(() => {
-      fetch(`/api/products/stock-batches?supplier=${encodeURIComponent(supplier)}&code=${encodeURIComponent(code)}`)
-        .then((r) => r.json())
-        .then((data: StockBatch[]) => { if (Array.isArray(data)) setBatches(data); })
-        .catch(() => setBatches([]))
-        .finally(() => setLoadingBatches(false));
-    }, delay);
-    return () => clearTimeout(t);
-  }, [supplier, code]);
-
-  const batchPlaceholder = !code.trim()
-    ? "Önce stok kodu seçin"
-    : loadingBatches
-    ? "Partiler yükleniyor…"
-    : batches.length === 0
-    ? "Bu kodda parti bulunamadı"
-    : "Parti seçin…";
-
-  return (
-    <>
-      <div className={cellClassName}>
-        <label className={labelClassName}>Stok Kodu</label>
-        <SearchableCombobox
-          value={code}
-          onChange={(val) => { onCodeChange(val); onBatchSelect(null); }}
-          options={codeOptions}
-          placeholder="Ürün kodu..."
-        />
-      </div>
-      <div className={cellClassName}>
-        <label className={labelClassName}>Parti (Hafta/Yıl)</label>
-        <select
-          value={productId ?? ""}
-          disabled={batches.length === 0}
-          onChange={(e) => {
-            const b = batches.find((x) => x.id === Number(e.target.value));
-            onBatchSelect(b ?? null);
-          }}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <option value="">{batchPlaceholder}</option>
-          {batches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {weekYearLabel(b.production_week, b.production_year)} — Stok: {b.stock_qty}{b.location ? ` (${b.location})` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
-    </>
   );
 }
 
