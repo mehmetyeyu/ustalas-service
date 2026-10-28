@@ -168,8 +168,16 @@ export async function GET(request: NextRequest) {
           ),
           pool.query(
             `SELECT p.code,
-                    SUM(e.quantity * e.purchase_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.purchase_price IS NOT NULL), 0) AS avg_purchase_price,
-                    SUM(e.quantity * e.sale_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.sale_price IS NOT NULL), 0) AS avg_sale_price
+                    COALESCE(
+                      SUM(e.quantity * e.purchase_price) FILTER (WHERE p.stock_qty > 0)
+                        / NULLIF(SUM(e.quantity) FILTER (WHERE e.purchase_price IS NOT NULL AND p.stock_qty > 0), 0),
+                      SUM(e.quantity * e.purchase_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.purchase_price IS NOT NULL), 0)
+                    ) AS avg_purchase_price,
+                    COALESCE(
+                      SUM(e.quantity * e.sale_price) FILTER (WHERE p.stock_qty > 0)
+                        / NULLIF(SUM(e.quantity) FILTER (WHERE e.sale_price IS NOT NULL AND p.stock_qty > 0), 0),
+                      SUM(e.quantity * e.sale_price) / NULLIF(SUM(e.quantity) FILTER (WHERE e.sale_price IS NOT NULL), 0)
+                    ) AS avg_sale_price
              FROM product_stock_entries e
              JOIN products p ON p.id = e.product_id
              WHERE p.code = ANY($1) AND p.tenant_id = $2
@@ -187,9 +195,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Kod seviyesindeki genel Alış Maliyeti/Satış Fiyatı (Ort.): aynı koda ait
-    // TÜM partilerin (farklı tedarikçi/hafta-yılı fark etmeksizin) tüm stok
-    // girişlerinin miktar ağırlıklı ortalamasıdır — parti bazlı ortalamaların
-    // kendisinin de miktar ağırlıklı ortalamasına eşittir.
+    // STOKTA KALAN partilerin (farklı tedarikçi/hafta-yılı fark etmeksizin)
+    // stok girişlerinin miktar ağırlıklı ortalamasıdır. Tükenmiş partiler
+    // bilerek dışarıda — eskiden onlar da girdiğinden, ucuza alınıp satılmış
+    // bir parti elde kalan pahalı stoğun maliyetini düşük gösteriyordu
+    // (Ustalas 1037775: elde 6.210,60'lık 4 adet varken 5.140,40 görünüyordu,
+    // zararına satış riski). Kodun tüm partileri tükenmişse son bilinen fiyat
+    // fikri versin diye tüm girişlerin ortalamasına düşülür.
     const avgByCode = new Map<string, { purchase: number | null; sale: number | null }>();
     for (const row of codeAvgResult.rows) {
       avgByCode.set(row.code, { purchase: row.avg_purchase_price, sale: row.avg_sale_price });
