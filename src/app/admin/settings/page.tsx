@@ -38,6 +38,7 @@ export default function GeneralSettingsPage() {
   const [ordersDefaultDateFilter, setOrdersDefaultDateFilter] = useState("");
   const [customOrderNoEnabled, setCustomOrderNoEnabled] = useState(false);
   const [plateRequired, setPlateRequired] = useState(true);
+  const [quoteNoFormat, setQuoteNoFormat] = useState("simple");
   // Randevu Ayarları sayfasının düzenlediği WhatsApp alanları — aynı sebeple
   // (yukarıdaki widget yorumuna bkz.) burada da olduğu gibi korunması
   // gerekiyor. Token burada hiç tutulmuyor/gönderilmiyor — boş string PUT'ta
@@ -87,6 +88,7 @@ export default function GeneralSettingsPage() {
         setOrdersDefaultDateFilter(data.orders_default_date_filter ?? "");
         setCustomOrderNoEnabled(!!data.custom_order_no_enabled);
         setPlateRequired(data.plate_required !== false);
+        setQuoteNoFormat(data.quote_no_format === "yearly" ? "yearly" : "simple");
         setWhatsappEnabled(!!data.whatsapp_enabled);
         setSharedStockEnabled(!!data.shared_stock_enabled);
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id ?? null);
@@ -164,6 +166,7 @@ export default function GeneralSettingsPage() {
           orders_default_date_filter: ordersDefaultDateFilter,
           custom_order_no_enabled: customOrderNoEnabled,
           plate_required: plateRequired,
+          quote_no_format: quoteNoFormat,
           whatsapp_enabled: whatsappEnabled,
           shared_stock_enabled: sharedStockEnabled,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
@@ -445,6 +448,21 @@ export default function GeneralSettingsPage() {
           </div>
           <Switch label="Araç Plakası Zorunlu" checked={plateRequired} onClick={() => setPlateRequired((v) => !v)} />
         </div>
+      </SettingsSection>
+
+      <SettingsSection title="Teklifler" description="Müşteriye verilen fiyat tekliflerinin numaralandırması.">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Teklif Numarası Biçimi</label>
+        <select
+          value={quoteNoFormat}
+          onChange={(e) => setQuoteNoFormat(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="simple">Sıralı — T-0001, T-0002…</option>
+          <option value="yearly">Yıllık — T-{new Date().getFullYear()}-0001 (her yıl 1&rsquo;den başlar)</option>
+        </select>
+        <p className="text-xs text-gray-400 mt-1">
+          Yeni tekliflere uygulanır; daha önce verilmiş tekliflerin numarası değişmez.
+        </p>
       </SettingsSection>
 
       <SettingsSection title="Depolama">

@@ -1692,3 +1692,113 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_v2_available BOOLEAN NOT NULL DEFA
 --   kolon geçmiş için duruyor.
 ALTER TABLE users ALTER COLUMN ui_version SET DEFAULT 'v2';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_beta_version VARCHAR(4);
+
+-- Teklif modülü — müşteriye sipariş öncesi fiyat teklifi hazırlanır,
+-- yazdırılır/WhatsApp ile gönderilir, kabul edilirse tek adımda siparişe
+-- dönüştürülür. Kararlar (kullanıcıyla netleşti, 2026-10):
+-- * KDV dahil/hariç ve oranı (%20/10/1/0) teklif başına seçilir ve teklifte
+--   saklanır — firma ayarı değil, her teklif kendi kuralıyla yazdırılır.
+-- * Geçerlilik tarihi (valid_until) teklif başına; "süresi doldu" durumu
+--   saklanmaz, valid_until < bugün'den hesaplanır (gece çalışan bir iş
+--   gerekmesin).
+-- * Stok rezerve EDİLMEZ — dönüştürmede stok düşer (siparişle aynı yol).
+-- * Siparişe dönüştürülen teklif kilitlenir (status='SIPARIS', düzenlenemez).
+-- Müşteri bağlantısı orders ile aynı desende metin (customer_name) — teklif
+-- verilen kişi henüz kayıtlı müşteri olmayabilir.
+CREATE TABLE IF NOT EXISTS quotes (
+  id             SERIAL PRIMARY KEY,
+  tenant_id      INT NOT NULL REFERENCES tenants(id),
+  quote_no       VARCHAR(30) NOT NULL,
+  customer_name  VARCHAR(100),
+  customer_phone VARCHAR(20),
+  plate          VARCHAR(20),
+  status         VARCHAR(20) NOT NULL DEFAULT 'TASLAK'
+                 CHECK (status IN ('TASLAK', 'GONDERILDI', 'KABUL', 'RED', 'SIPARIS')),
+  vat_mode       VARCHAR(6) NOT NULL DEFAULT 'dahil' CHECK (vat_mode IN ('dahil', 'haric')),
+  vat_rate       SMALLINT NOT NULL DEFAULT 20 CHECK (vat_rate IN (0, 1, 10, 20)),
+  valid_until    DATE NOT NULL,
+  notes          TEXT,
+  -- KDV dahil genel toplam — satırlardan hesaplanır (src/lib/quotes.ts),
+  -- liste ekranı satırları toplamadan gösterebilsin diye aynı transaction'da
+  -- yazılır.
+  total_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  order_id       INT,
+  converted_at   TIMESTAMPTZ,
+  created_by     INT REFERENCES users(id),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS quotes_id_tenant_unique ON quotes(id, tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS quotes_tenant_quote_no_unique ON quotes(tenant_id, quote_no);
+-- Bir sipariş en fazla bir tekliften doğar — eşzamanlı iki "Siparişe
+-- Dönüştür" isteğinin ikinci kopyayı açmasının son güvencesi (asıl kontrol
+-- dönüştürmedeki FOR UPDATE).
+CREATE UNIQUE INDEX IF NOT EXISTS quotes_order_unique ON quotes(order_id) WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS quotes_tenant_created_idx ON quotes(tenant_id, created_at DESC);
+-- Sipariş silinirse teklif kaydı (geçmiş) kalır, sadece bağlantı kopar —
+-- SET NULL (order_id): composite FK'nin tenant_id'yi de NULL'lamaması için
+-- sadece order_id sütunu (PG15+). Panelden silmede DELETE /api/orders/[id]
+-- ayrıca teklifi 'KABUL'e geri alır (kilit açılır, yeniden dönüştürülebilir);
+-- bu FK yalnızca başka bir yoldan silinen siparişler için güvence.
+DO $$ BEGIN
+  ALTER TABLE quotes ADD CONSTRAINT quotes_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id) ON DELETE SET NULL (order_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Teklif satırları — order_services ile aynı alanlar, tek fark: unit_price
+-- burada GERÇEK birim fiyattır, line_total ayrıca saklanır (order_services.
+-- unit_price satır toplamıdır — dönüştürmede line_total oraya yazılır).
+-- Fiyatlar teklifin vat_mode'una göre girilmiş hâliyle saklanır.
+-- cost_total: order_services.cost_price gibi satırın TOPLAM maliyeti; teklif
+-- çıktısında hiç gösterilmez.
+CREATE TABLE IF NOT EXISTS quote_lines (
+  id          SERIAL PRIMARY KEY,
+  tenant_id   INT NOT NULL REFERENCES tenants(id),
+  quote_id    INT NOT NULL,
+  position    SMALLINT NOT NULL DEFAULT 0,
+  service_id  INT NOT NULL,
+  product_id  INT,
+  supplier    VARCHAR(100),
+  stock_code  VARCHAR(50),
+  size_desc   VARCHAR(100),
+  brand       VARCHAR(100),
+  model_name  VARCHAR(80),
+  quantity    INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit_price  DECIMAL(12,2) NOT NULL,
+  line_total  DECIMAL(12,2) NOT NULL,
+  cost_total  DECIMAL(12,2)
+);
+CREATE INDEX IF NOT EXISTS quote_lines_quote_idx ON quote_lines(tenant_id, quote_id, position);
+DO $$ BEGIN
+  ALTER TABLE quote_lines ADD CONSTRAINT quote_lines_quote_tenant_fk
+    FOREIGN KEY (quote_id, tenant_id) REFERENCES quotes(id, tenant_id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE quote_lines ADD CONSTRAINT quote_lines_service_tenant_fk
+    FOREIGN KEY (service_id, tenant_id) REFERENCES services(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE quote_lines ADD CONSTRAINT quote_lines_product_tenant_fk
+    FOREIGN KEY (product_id, tenant_id) REFERENCES products(id, tenant_id) ON DELETE SET NULL (product_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Teklif numarası biçimi firma ayarıdır (teklif başına değil — numaralar tek
+-- bir seri olmalı): 'simple' → T-0001, 'yearly' → T-2026-0001 (her yıl 1'den).
+-- Sayaç ayrı tabloda, UPSERT ... RETURNING ile atomik artar — MAX()+1 gibi
+-- eşzamanlı iki teklifin aynı numarayı alma yarışı yok. 'simple' için year=0.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS quote_no_format VARCHAR(8) NOT NULL DEFAULT 'simple';
+DO $$ BEGIN
+  ALTER TABLE app_settings ADD CONSTRAINT app_settings_quote_no_format_check
+    CHECK (quote_no_format IN ('simple', 'yearly'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE TABLE IF NOT EXISTS quote_counters (
+  tenant_id INT NOT NULL REFERENCES tenants(id),
+  year      SMALLINT NOT NULL,
+  last_no   INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (tenant_id, year)
+);

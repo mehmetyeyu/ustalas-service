@@ -1,5 +1,6 @@
 import pool from "./db";
 import { getAppSettings } from "./settings";
+import { normalizeToE164TR } from "./phone";
 
 const GRAPH_API_VERSION = "v21.0";
 const GRAPH_API_TIMEOUT_MS = 10_000;
@@ -20,18 +21,6 @@ interface AppointmentConfirmedPayload {
   requestedAt: Date;
 }
 
-// Türkiye telefon numaralarını WhatsApp'ın beklediği "ülke kodu + rakamlar,
-// başında + veya 0 olmadan" biçimine (ör. 90XXXXXXXXXX) çevirir — randevu
-// formundaki telefon alanı hiç normalize edilmeden saklanıyor (kullanıcı ne
-// yazarsa o), bu yüzden gönderim ANINDA burada normalize ediliyor. Emin
-// olunamayan bir biçim varsa null döner (gönderim sessizce atlanır).
-export function normalizeToE164TR(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("90")) return digits;
-  if (digits.length === 11 && digits.startsWith("0")) return `90${digits.slice(1)}`;
-  if (digits.length === 10 && digits.startsWith("5")) return `90${digits}`;
-  return null;
-}
 
 // Randevu ONAYLANDI olduğunda (otomatik veya manuel onay) müşteriye WhatsApp
 // bildirimi — her tenant KENDİ Meta WhatsApp Business hesabını app_settings

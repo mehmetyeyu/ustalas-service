@@ -101,6 +101,14 @@ export async function DELETE(
         await restoreStock(client, user.tenantId!, row.product_id, row.quantity);
       }
 
+      // Teklif üzerinden açılmış bir siparişse teklif "Kabul Edildi"ye döner
+      // ve kilidi açılır — yoksa bağlı siparişi olmayan, düzenlenemeyen ve
+      // tekrar dönüştürülemeyen bir teklif kalırdı.
+      await client.query(
+        "UPDATE quotes SET status = 'KABUL', order_id = NULL, converted_at = NULL, updated_at = NOW() WHERE order_id = $1 AND tenant_id = $2",
+        [id, user.tenantId]
+      );
+
       const result = await client.query<{ id: number; plate: string | null; customer_name: string | null }>(
         "DELETE FROM orders WHERE id = $1 AND tenant_id = $2 RETURNING id, plate, customer_name",
         [id, user.tenantId]

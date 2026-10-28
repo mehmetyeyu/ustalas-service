@@ -20,6 +20,7 @@ export const NAV_ITEMS = [
   { href: "/admin/shared-stock", label: "Paylaşılan Stok", resource: "shared_stock", isNew: true },
   { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
   { href: "/admin/takvim", label: "Takvim", resource: "calendar", isNew: true },
+  { href: "/admin/quotes", label: "Teklifler", resource: "quotes", isNew: true },
 ] as const;
 
 // Kullanıcılar/Genel Ayarlar hiçbir zaman staff'a devredilemez (bkz. plan) —

@@ -44,6 +44,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   expenses: "Masraflar",
   kasa: "Kasa",
   shared_stock: "Paylaşılan Stok",
+  quotes: "Teklifler",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -54,6 +55,8 @@ const ACTION_LABELS: Record<string, string> = {
   approve: "Onayla",
   manage_balance: "Cari Bakiye Yönetimi",
   manage: "Kasa Hareketi Yönetimi",
+  convert: "Siparişe Dönüştür",
+  view_cost: "Maliyet/Kâr Gör",
 };
 
 function isLocked(u: User): boolean {

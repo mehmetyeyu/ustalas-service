@@ -44,6 +44,7 @@ export interface AppSettings {
   // boş bırakılabilir; bu durumda Plaka/Müşteri Adı'ndan en az biri zorunlu
   // olur (bkz. POST/PUT /api/orders).
   plate_required: boolean;
+  quote_no_format: import("./quotes").QuoteNoFormat;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -74,6 +75,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   shared_stock_enabled: false,
   custom_order_no_enabled: false,
   plate_required: true,
+  quote_no_format: "simple",
 };
 
 export async function getAppSettings(tenantId: number): Promise<AppSettings> {
@@ -86,7 +88,7 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_radius, booking_widget_density, booking_widget_heading_size,
             auto_register_customers, orders_default_date_filter, whatsapp_enabled, whatsapp_access_token,
             whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
-            shared_stock_enabled, custom_order_no_enabled, plate_required
+            shared_stock_enabled, custom_order_no_enabled, plate_required, quote_no_format
      FROM app_settings WHERE tenant_id = $1`,
     [tenantId]
   );

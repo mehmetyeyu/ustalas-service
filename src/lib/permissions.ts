@@ -19,6 +19,9 @@ export const RESOURCE_ACTIONS = {
   expenses: ["view", "create", "edit", "delete"],
   kasa: ["view", "manage"],
   shared_stock: ["view"],
+  // view_cost: teklif ekranında satır maliyeti/kârı görmek (çıktıda hiçbir
+  // zaman yok) — fiyatı veren personel her zaman maliyeti görmek zorunda değil.
+  quotes: ["view", "create", "edit", "delete", "convert", "view_cost"],
 } as const;
 
 export type Resource = keyof typeof RESOURCE_ACTIONS;
@@ -64,6 +67,7 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/expenses", resource: "expenses" },
   { prefix: "/admin/kasa", resource: "kasa" },
   { prefix: "/admin/shared-stock", resource: "shared_stock" },
+  { prefix: "/admin/quotes", resource: "quotes" },
   { prefix: "/admin/billing", resource: null },
   { prefix: "/admin/profile", resource: null },
   // Destek Talepleri, herhangi bir kaynak iznine bağlı değil — panele giren
@@ -89,7 +93,7 @@ export function canAccessPath(user: PermissionUser, pathname: string): boolean {
 // sayfayı döner; hiçbir sayfa izni yoksa null (o zaman header'da panel linki
 // gösterilmez, sadece çıkış).
 const LANDING_ORDER: Resource[] = [
-  "orders", "appointments", "calendar", "storage", "products", "reports", "kasa", "expenses", "services", "customers", "suppliers", "shared_stock",
+  "orders", "appointments", "calendar", "storage", "products", "reports", "kasa", "expenses", "services", "customers", "suppliers", "shared_stock", "quotes",
 ];
 
 export function getDefaultAdminPath(user: PermissionUser): string | null {

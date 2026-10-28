@@ -5,6 +5,7 @@ import { getAppSettings } from "@/lib/settings";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { invalidateBookingConfigCache } from "@/lib/publicBookingConfigCache";
 import { normalizeTurkishPhone } from "@/lib/phone";
+import { QUOTE_NO_FORMATS } from "@/lib/quotes";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -86,6 +87,9 @@ export async function PUT(request: NextRequest) {
     const shared_stock_enabled = !!body.shared_stock_enabled;
     const custom_order_no_enabled = !!body.custom_order_no_enabled;
     const plate_required = !!body.plate_required;
+    // Gönderilmezse (ör. ayarı henüz bilmeyen eski bir sekme) mevcut değer
+    // korunur — aşağıdaki UPDATE'teki COALESCE.
+    const quote_no_format = body.quote_no_format == null ? null : String(body.quote_no_format);
     const contact_name = body.contact_name ? String(body.contact_name).trim().slice(0, 150) || null : null;
     const contact_email = body.contact_email ? String(body.contact_email).trim().slice(0, 150) || null : null;
     // İyzico faturalandırma akışı (bkz. src/lib/iyzico.ts:normalizeGsmNumber)
@@ -150,6 +154,9 @@ export async function PUT(request: NextRequest) {
     if (!["", "bugun", "bu_hafta", "bu_ay"].includes(orders_default_date_filter)) {
       return NextResponse.json({ error: "Geçersiz varsayılan tarih filtresi." }, { status: 400 });
     }
+    if (quote_no_format !== null && !(QUOTE_NO_FORMATS as readonly string[]).includes(quote_no_format)) {
+      return NextResponse.json({ error: "Geçersiz teklif numarası biçimi." }, { status: 400 });
+    }
     if (contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact_email)) {
       return NextResponse.json({ error: "Geçersiz e-posta adresi." }, { status: 400 });
     }
@@ -167,6 +174,7 @@ export async function PUT(request: NextRequest) {
            whatsapp_enabled=$20, whatsapp_access_token=CASE WHEN $21 = '' THEN whatsapp_access_token ELSE $21 END,
            whatsapp_phone_number_id=$22, whatsapp_business_account_id=$23, whatsapp_template_name=$24,
            shared_stock_enabled=$25, custom_order_no_enabled=$26, plate_required=$28,
+           quote_no_format=COALESCE($29, quote_no_format),
            updated_at=CURRENT_TIMESTAMP
        WHERE tenant_id=$27`,
       [
@@ -180,7 +188,7 @@ export async function PUT(request: NextRequest) {
         whatsapp_enabled, whatsapp_access_token_input,
         whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
         shared_stock_enabled, custom_order_no_enabled,
-        user.tenantId, plate_required,
+        user.tenantId, plate_required, quote_no_format,
       ]
     );
 

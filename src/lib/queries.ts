@@ -137,6 +137,8 @@ const AFFECTS = {
   kasa: [queryKeys.kasalar],
   customer: [queryKeys.customers],
   companyInfo: [queryKeys.companyInfo],
+  // Teklif kaydı listede olmayan işlem adlarını Hizmetler'e ekler (resolveServiceIds).
+  quote: [queryKeys.services],
 } as const;
 
 export function invalidateAfter(queryClient: QueryClient, what: keyof typeof AFFECTS) {
