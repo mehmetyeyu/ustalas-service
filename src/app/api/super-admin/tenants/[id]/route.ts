@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { cancelSubscription } from "@/lib/iyzico";
+import { TENANT_ID_TABLES_IN_DELETE_ORDER } from "@/lib/tenantDeletion";
 
 // Bir firmayı Aktif/Pasif yapar — bkz. src/lib/auth.ts (getAuthUserByToken)
 // ve src/app/api/auth/login/route.ts: is_active=false olan bir firmanın
@@ -41,50 +42,7 @@ export async function PATCH(
 // kullanıcı — her şey) KALICI olarak siler. Geri alınamaz — bkz. Süper Admin
 // Paneli'ndeki "isim yazarak onayla" adımı (src/app/super-admin/page.tsx).
 // Test firmalarını temizlemek için (Pasif Yap tersine çevrilebilir, bu değil).
-//
-// Silme sırası, database/schema.sql'deki tüm tenant_id/composite FK'ların
-// RESTRICT (varsayılan) olduğu gerçek bağımlılık grafiğini takip eder —
-// sıra yanlış olsa bile bir sonraki adım FK ihlaliyle başarısız olur ve TÜM
-// transaction geri alınır (asla yarım/sessiz veri kalmaz), ama doğru sırayla
-// tek seferde tamamlanması amaçlanır. orders/products'a CASCADE ile bağlı
-// alt tablolar (order_services, order_payments, product_stock_entries)
-// ayrıca silinmez — ebeveynleri silinince otomatik gider.
-// NOT (bulundu 2026-10-01): iyzico_checkout_sessions/iyzico_payments/
-// billing_events/audit_log/support_ticket_messages/support_tickets/
-// calendar_notes eksikti — bu 7 tablodan herhangi birinde satırı olan bir
-// firma (ör. destek talebi açmış, takvim notu eklemiş, bir iyzico ödeme
-// denemesi geçmiş) silinmeye çalışılınca foreign key hatasıyla patlardı.
-// Sıra: support_ticket_messages → support_tickets VE calendar_notes,
-// users'tan ÖNCE gelmeli (created_by/sender_id NOT NULL değil ama CASCADE
-// da değil) — diğer 4 yeni tablo sadece tenant_id'ye bağlı, herhangi bir yere
-// eklenebilir.
-const TENANT_ID_TABLES_IN_DELETE_ORDER = [
-  "push_subscriptions",
-  "whatsapp_message_log",
-  "iyzico_checkout_sessions",
-  "iyzico_payments",
-  "billing_events",
-  "audit_log",
-  "appointments",
-  "customer_ledger_entries",
-  "cash_ledger_entries",
-  "expenses",
-  "recurring_expenses",
-  "orders",
-  "products",
-  "kasalar",
-  "currency_rates",
-  "customers",
-  "suppliers",
-  "services",
-  "storage",
-  "app_settings",
-  "support_ticket_messages",
-  "support_tickets",
-  "calendar_notes",
-  "users",
-] as const;
-
+// Silme sırası: src/lib/tenantDeletion.ts.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
