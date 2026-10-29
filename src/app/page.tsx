@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getDefaultAdminPath } from "@/lib/permissions";
+import { getDefaultAdminPath, hasPermission } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { formatCurrency } from "@/lib/format";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,8 +12,11 @@ import { AuthProvider, useAuth } from "@/app/admin/AuthContext";
 import StandaloneShellV2 from "@/components/v2/StandaloneShellV2";
 import { useMe, useServices, useCustomers, useSuppliers, useProductSizes, invalidateAfter } from "@/lib/queries";
 import SearchableCombobox from "@/components/order/SearchableCombobox";
+import { CreditLimitWarning } from "@/components/CreditLimitWarning";
+import { applyDiscount, canonicalCustomerName } from "@/lib/customers";
 import TireBatchPicker, { type StockBatch } from "@/components/order/TireBatchPicker";
 import { resolveUiVersion } from "@/lib/uiVersion";
+import { formatPlate, isValidTrPlate, normalizePlate } from "@/lib/plate";
 
 interface Service {
   id: number;
@@ -26,6 +29,9 @@ interface Customer {
   id: number;
   name: string;
   phone: string | null;
+  is_corporate?: boolean;
+  discount_rate?: number | null;
+  has_credit_limit?: boolean;
 }
 
 interface OrderLine {
@@ -104,6 +110,20 @@ function pickProductSaleService(saleServices: Service[], productType: string | n
   return saleServices.find((s) => !lower(s.name).startsWith("ikinci el")) ?? saleServices[0];
 }
 
+// GET /api/vehicles/lookup yanıtı — plaka yazılınca gösterilen kısa araç bilgisi.
+interface VehicleHint {
+  plate: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  last_visit: string | null;
+  order_count: number;
+  active_storage: { depo_no: number | null; mevsim: string | null; adet: number | null; marka: string | null; ebat: string | null } | null;
+  driver_name: string | null;
+  driver_phone: string | null;
+  // Araç bir kurumsal müşteriye bağlıysa (bkz. vehicles.customer_id).
+  fleet: { id: number; name: string; phone: string | null } | null;
+}
+
 function OrderPageInner() {
   const toast = useToast();
   const router = useRouter();
@@ -146,6 +166,17 @@ function OrderPageInner() {
   // çekilmeden önceki ilk render'da bile Plaka zorunlu görünsün diye.
   const [plateRequired, setPlateRequired] = useState(true);
   const [customOrderNo, setCustomOrderNo] = useState("");
+  // "Plakasız satış" — araca bağlı olmayan satışta (ör. lastiği alıp giden
+  // müşteri) personel plaka uydurmak yerine bunu seçer; uydurma plakalar
+  // araç kartlarını kirletiyordu (bkz. src/lib/plate.ts). Plaka zorunlu olsa
+  // bile açıkça seçilmiş bir istisna olarak kabul edilir; o zaman müşteri adı
+  // zorunludur (bkz. POST /api/orders no_plate).
+  const [noPlate, setNoPlate] = useState(false);
+  const [vehicleHint, setVehicleHint] = useState<VehicleHint | null>(null);
+  // Kurumsal siparişte aracı getiren kişi (bkz. orders.driver_name).
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
+  const [driverOptions, setDriverOptions] = useState<{ name: string; phone: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
   // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
@@ -239,6 +270,15 @@ function OrderPageInner() {
   // gelince yazılır, çünkü hangi İşlem'e yazılacağı hizmet listesine bağlı.
   // Bu sürede İşlem Satırları yerine yükleniyor göstergesi çıkar ve kaydet
   // kilitlenir — yoksa personel boş satırla kaydetmeye çalışabilirdi.
+  // Araç kartındaki "Bu Araç İçin Sipariş" (/?plate=34ABC123) — plaka dolu açılır.
+  useEffect(() => {
+    const p = searchParams.get("plate");
+    if (!p) return;
+    setPlate(p.replace(/\s+/g, "").toUpperCase().slice(0, 20));
+    router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [productLoading, setProductLoading] = useState(() => !!searchParams.get("product"));
   const [prefillBatch, setPrefillBatch] = useState<StockBatch | null>(null);
   const productFetchStarted = useRef(false);
@@ -297,6 +337,65 @@ function OrderPageInner() {
     plateInputRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillBatch, servicesLoaded]);
+
+  // Plaka geçerli biçimdeyse kayıtlı aracın kısa bilgisi çekilir (yazmayı
+  // bekleyip — her tuşta istek atılmaz). Müşteri alanı boşsa aracın son
+  // müşterisiyle doldurulur.
+  const normalizedPlate = normalizePlate(plate);
+  const plateLooksValid = isValidTrPlate(normalizedPlate);
+  useEffect(() => {
+    if (noPlate || !plateLooksValid) { setVehicleHint(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch(`/api/vehicles/lookup?plate=${encodeURIComponent(normalizedPlate)}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { vehicle: VehicleHint | null } | null) => {
+          if (cancelled) return;
+          const v = data?.vehicle ?? null;
+          setVehicleHint(v);
+          // Filo aracında müşteri firmanın kendisidir (son siparişte başka
+          // bir ad yazılmış olsa bile); aracı son getiren kişi de önerilir.
+          const fillName = v?.fleet?.name ?? v?.customer_name;
+          if (v && fillName) {
+            const fillPhone = v.fleet ? v.fleet.phone : v.customer_phone;
+            setCustomerName((cur) => cur.trim() ? cur : fillName);
+            setCustomerPhone((cur) => cur.trim() ? cur : fillPhone || "");
+          }
+          if (v?.fleet && v.driver_name && v.customer_name === v.fleet.name) {
+            setDriverName((cur) => cur.trim() ? cur : v.driver_name!);
+            setDriverPhone((cur) => cur.trim() ? cur : v.driver_phone || "");
+          }
+        })
+        .catch(() => { if (!cancelled) setVehicleHint(null); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [normalizedPlate, plateLooksValid, noPlate]);
+  const sameName = (a: string, b: string) => a.toLocaleLowerCase("tr-TR") === b.trim().toLocaleLowerCase("tr-TR");
+  const fleetDiffers = !!vehicleHint?.fleet && !!customerName.trim() && !sameName(vehicleHint.fleet.name, customerName);
+  const customerDiffers = !vehicleHint?.fleet && !!vehicleHint?.customer_name && !!customerName.trim()
+    && !sameName(vehicleHint.customer_name, customerName);
+  // Yazılan ad dizindeki kayıtlı yazımına eşlenir; kayıt, indirim, limit ve
+  // getiren önerileri hep bu adla yapılır (bkz. canonicalCustomerName).
+  const trimmedCustomer = useMemo(
+    () => canonicalCustomerName(customerName, customers.map((c) => c.name)),
+    [customerName, customers]
+  );
+  const customerRecord = customers.find((c) => c.name === trimmedCustomer);
+  const customerDiscount = customerRecord?.is_corporate && customerRecord.discount_rate ? customerRecord.discount_rate : null;
+  // "Aracı Getiren" alanları kurumsal müşteride (ya da filo aracında) görünür.
+  const isCorporateOrder = !!trimmedCustomer
+    && (!!customerRecord?.is_corporate || (!!vehicleHint?.fleet && !fleetDiffers));
+  useEffect(() => {
+    if (!isCorporateOrder) { setDriverOptions([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch(`/api/customers/drivers?customer=${encodeURIComponent(trimmedCustomer)}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((rows) => { if (!cancelled) setDriverOptions(Array.isArray(rows) ? rows : []); })
+        .catch(() => { if (!cancelled) setDriverOptions([]); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [isCorporateOrder, trimmedCustomer]);
 
   // Fiyatı girilmemiş hizmetler otomatik doldurmaz — Tutar elle girilir.
   const priceByName = new Map(
@@ -387,11 +486,15 @@ function OrderPageInner() {
     // davranış) doğrudan Plaka aranır; kapalıysa ikisi BİRDEN boş olmasın
     // yeter — sipariş hiçbir şeyle tanımlanamaz bir kayıt olmasın diye
     // (gerçek bir kullanıcı raporuyla bulundu).
-    if (plateRequired && !plate.trim()) {
-      toast.error("Araç plakası zorunludur.");
+    if (noPlate && !customerName.trim()) {
+      toast.error("Plakasız satışta müşteri adı zorunludur.");
       return;
     }
-    if (!plateRequired && !plate.trim() && !customerName.trim()) {
+    if (!noPlate && plateRequired && !plate.trim()) {
+      toast.error("Araç plakası zorunludur — araca bağlı değilse \"Plakasız satış\"ı seçin.");
+      return;
+    }
+    if (!noPlate && !plateRequired && !plate.trim() && !customerName.trim()) {
       toast.error("Plaka veya müşteri adından en az biri girilmelidir.");
       return;
     }
@@ -416,10 +519,13 @@ function OrderPageInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          plate: plate.replace(/\s+/g, "").toUpperCase(),
+          plate: noPlate ? "" : plate.replace(/\s+/g, "").toUpperCase(),
+          no_plate: noPlate,
           custom_order_no: customOrderNoEnabled ? customOrderNo.trim() : undefined,
-          customer_name: customerName.trim() || null,
+          customer_name: trimmedCustomer || null,
           customer_phone: customerPhone.trim() || null,
+          driver_name: isCorporateOrder ? driverName.trim() || null : null,
+          driver_phone: isCorporateOrder ? driverPhone.trim() || null : null,
           notes: notes.trim() || null,
           order_date: orderDate || null,
           lines: validLines.map((l) => ({
@@ -445,9 +551,13 @@ function OrderPageInner() {
       toast.success("Sipariş başarıyla kaydedildi!");
       invalidateAfter(queryClient, "order");
       setPlate("");
+      setNoPlate(false);
+      setVehicleHint(null);
       setCustomOrderNo("");
       setCustomerName("");
       setCustomerPhone("");
+      setDriverName("");
+      setDriverPhone("");
       setNotes("");
       setOrderDate(new Date().toISOString().slice(0, 10));
       setLines([{ ...EMPTY_LINE }]);
@@ -523,19 +633,38 @@ function OrderPageInner() {
               <h2 id="siparis-bilgileri" className="mb-4 text-[15px] font-semibold text-v2-fg">Sipariş Bilgileri</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Araç Plakası {plateRequired
-                    ? <span className="text-red-500">*</span>
-                    : <span className="text-gray-400 font-normal">(opsiyonel)</span>}
-                </label>
-                <input
-                  ref={plateInputRef}
-                  type="text"
-                  value={plate}
-                  onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
-                  placeholder={plateRequired ? "34 ABC 123" : "Araca bağlı değilse boş bırakın"}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label htmlFor="siparis-plaka" className="block text-sm font-medium text-gray-700">
+                    Araç Plakası {noPlate
+                      ? null
+                      : plateRequired
+                        ? <span className="text-red-500">*</span>
+                        : <span className="text-gray-400 font-normal">(opsiyonel)</span>}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { setNoPlate((v) => !v); setPlate(""); }}
+                    aria-pressed={noPlate}
+                    className="text-xs font-semibold text-v2-link hover:underline"
+                  >
+                    {noPlate ? "Plaka gir" : "Plakasız satış"}
+                  </button>
+                </div>
+                {noPlate ? (
+                  <div className="flex h-[46px] items-center rounded-lg border border-dashed border-gray-300 px-4 text-sm text-gray-500">
+                    Plakasız satış — araca bağlanmaz
+                  </div>
+                ) : (
+                  <input
+                    id="siparis-plaka"
+                    ref={plateInputRef}
+                    type="text"
+                    value={plate}
+                    onChange={(e) => setPlate(e.target.value.replace(/\s+/g, ""))}
+                    placeholder={plateRequired ? "34 ABC 123" : "Araca bağlı değilse boş bırakın"}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
               </div>
               {customOrderNoEnabled && (
                 <div>
@@ -592,7 +721,71 @@ function OrderPageInner() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {isCorporateOrder && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Aracı Getiren <span className="text-gray-400 font-normal">(opsiyonel)</span>
+                    </label>
+                    <SearchableCombobox
+                      value={driverName}
+                      onChange={(val) => {
+                        setDriverName(val);
+                        const known = driverOptions.find((d) => sameName(d.name, val));
+                        if (known?.phone && !driverPhone) setDriverPhone(known.phone);
+                      }}
+                      options={driverOptions.map((d) => d.name)}
+                      placeholder="Şoför / çalışan adı"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Getirenin Telefonu <span className="text-gray-400 font-normal">(opsiyonel)</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={driverPhone}
+                      onChange={(e) => setDriverPhone(e.target.value)}
+                      placeholder="0555 000 00 00"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              )}
             </div>
+            {vehicleHint && (
+              <div role="status" className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-lg border border-v2-line bg-v2-info-bg px-4 py-3 text-sm text-v2-info-fg">
+                <strong className="font-semibold">{vehicleHint.fleet ? "Filo aracı" : "Kayıtlı araç"} · {formatPlate(vehicleHint.plate)}</strong>
+                {vehicleHint.fleet && <span>Firma: {vehicleHint.fleet.name}</span>}
+                {vehicleHint.customer_name && (!vehicleHint.fleet || !sameName(vehicleHint.fleet.name, vehicleHint.customer_name)) && <span>Son müşteri: {vehicleHint.customer_name}</span>}
+                {vehicleHint.fleet && vehicleHint.driver_name && <span>Son getiren: {vehicleHint.driver_name}</span>}
+                {vehicleHint.last_visit && <span>Son ziyaret: {new Date(vehicleHint.last_visit).toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" })} · {vehicleHint.order_count} sipariş</span>}
+                {vehicleHint.active_storage && (
+                  <span>Depoda: {vehicleHint.active_storage.adet ?? ""} {vehicleHint.active_storage.mevsim ? vehicleHint.active_storage.mevsim.toLocaleLowerCase("tr-TR") + " " : ""}lastik{vehicleHint.active_storage.depo_no != null ? ` (Depo ${vehicleHint.active_storage.depo_no})` : ""}</span>
+                )}
+                {me && hasPermission({ role: me.role, permissions: me.permissions ?? [] }, "orders.view") && (
+                  <Link prefetch={false} href={`/admin/vehicles/${vehicleHint.plate}`} className="ml-auto font-semibold underline-offset-2 hover:underline">Araç kartı</Link>
+                )}
+              </div>
+            )}
+            {/* Sipariş henüz cariye yazılmaz (kapatırken ödeme tipine bağlı) —
+                burada "cari ile kapatılırsa" diye önceden uyarılır. */}
+            {customerDiscount != null && total > 0 && (
+              <p className="mt-2 text-sm text-v2-info-fg">
+                Kurumsal indirim %{customerDiscount.toLocaleString("tr-TR")}: Ödeme Al &amp; Kapat&apos;ta tutar <b>{formatCurrency(applyDiscount(total, customerDiscount))}</b> olarak gelir.
+              </p>
+            )}
+            <CreditLimitWarning enabled={!!customerRecord?.has_credit_limit} customerName={trimmedCustomer} amount={customerDiscount != null ? applyDiscount(total, customerDiscount) : total} prefix="Bu sipariş cari ile kapatılırsa" />
+            {fleetDiffers && (
+              <p role="alert" className="mt-2 text-sm text-v2-warning-fg">
+                Bu araç <b>{vehicleHint!.fleet!.name}</b> firmasına kayıtlı. Sipariş firmanın carisine yazılacaksa müşteri adını firma adıyla değiştirin.
+              </p>
+            )}
+            {customerDiffers && (
+              <p role="alert" className="mt-2 text-sm text-v2-warning-fg">
+                Bu araç son olarak <b>{vehicleHint!.customer_name}</b> adına işlem görmüş. Plaka ya da müşteri yanlışsa düzeltin; araç el değiştirdiyse devam edebilirsiniz.
+              </p>
+            )}
             </section>
 
             <section aria-labelledby="islem-satirlari" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm">

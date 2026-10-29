@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { linkVehicle } from "@/lib/vehicles";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -76,7 +77,10 @@ export async function PATCH(
       }
       const sets: string[] = [];
       const values: (string | number | null)[] = [];
-      if (plate !== undefined) { values.push(String(plate).replace(/\s+/g, "").toUpperCase()); sets.push(`plate = $${values.length}`); }
+      if (plate !== undefined) {
+        values.push(String(plate).replace(/\s+/g, "").toUpperCase()); sets.push(`plate = $${values.length}`);
+        values.push(await linkVehicle(pool, user.tenantId!, plate)); sets.push(`vehicle_id = $${values.length}`);
+      }
       if (customer_name !== undefined) { values.push(String(customer_name).trim()); sets.push(`customer_name = $${values.length}`); }
       if (customer_phone !== undefined) { values.push(customer_phone || null); sets.push(`customer_phone = $${values.length}`); }
       if (service_id !== undefined) { values.push(service_id || null); sets.push(`service_id = $${values.length}`); }

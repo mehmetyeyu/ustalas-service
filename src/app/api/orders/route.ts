@@ -10,6 +10,7 @@ import { getOrderCreationSettings } from "@/lib/settings";
 import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
 import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
 import { logAudit } from "@/lib/auditLog";
+import { linkVehicle } from "@/lib/vehicles";
 
 interface OrderLineInput {
   service_name: string;
@@ -197,7 +198,10 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
 
   try {
-    const { plate, customer_name, customer_phone, notes, lines, order_date, custom_order_no } = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, order_date, custom_order_no, no_plate, driver_name, driver_phone } = await request.json();
+    // Kurumsal siparişte aracı getiren kişi (bkz. database/schema.sql).
+    const driverName = String(driver_name ?? "").trim().slice(0, 100) || null;
+    const driverPhone = String(driver_phone ?? "").trim().slice(0, 20) || null;
 
     if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json(
@@ -217,7 +221,15 @@ export async function POST(request: NextRequest) {
     // satırından TEK sorguda — 3 ayrı round-trip yerine (bkz. settings.ts
     // getOrderCreationSettings notu).
     const { plateRequired, customOrderNoEnabled, autoRegisterCustomers } = await getOrderCreationSettings(user.tenantId!);
-    if (plateRequired && !plateValue) {
+    // "Plakasız satış" (no_plate) formda AÇIKÇA seçilmiş bir istisnadır — plaka
+    // zorunlu olsa bile kabul edilir (amaç personelin plaka uydurmaması, bkz.
+    // src/lib/plate.ts), ama sipariş bir şeyle tanımlanabilsin diye müşteri
+    // adı zorunlu olur.
+    const noPlate = no_plate === true && !plateValue;
+    if (noPlate && !customerNameTrimmed) {
+      return NextResponse.json({ error: "Plakasız satışta müşteri adı zorunludur." }, { status: 400 });
+    }
+    if (!noPlate && plateRequired && !plateValue) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
     }
     if (!plateRequired && !plateValue && !customerNameTrimmed) {
@@ -281,10 +293,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const vehicleId = await linkVehicle(client, user.tenantId!, plateValue);
       const orderResult = await client.query(
-        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, created_at, custom_order_no)
-         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', COALESCE($7, CURRENT_TIMESTAMP), $8) RETURNING id`,
-        [user.tenantId, plateValue, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt, customOrderNo]
+        `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, created_at, custom_order_no, vehicle_id, driver_name, driver_phone)
+         VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', COALESCE($7, CURRENT_TIMESTAMP), $8, $9, $10, $11) RETURNING id`,
+        [user.tenantId, plateValue, customer_name || null, customer_phone || null, notes || null, totalAmount, createdAt, customOrderNo, vehicleId, driverName, driverPhone]
       );
 
       const orderId = orderResult.rows[0].id;

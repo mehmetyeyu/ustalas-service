@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { linkVehicle } from "@/lib/vehicles";
 import pool from "@/lib/db";
 import { resolveTenantBySlug } from "@/lib/publicTenant";
 import { isSlotStillAvailable, isWithinBookableWindow, DEFAULT_DURATION_MINUTES, type WorkingHours } from "@/lib/appointmentSlots";
@@ -139,9 +140,10 @@ export async function POST(
       }
 
       const status = autoApprove ? "ONAYLANDI" : "BEKLEMEDE";
+      const vehicleId = await linkVehicle(client, tenant.id, plate);
       const result = await client.query<{ id: number }>(
-        `INSERT INTO appointments (tenant_id, plate, customer_name, customer_phone, service_id, requested_at, status, ip_address)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        `INSERT INTO appointments (tenant_id, plate, customer_name, customer_phone, service_id, requested_at, status, ip_address, vehicle_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [
           tenant.id,
           String(plate).replace(/\s+/g, "").toUpperCase(),
@@ -151,6 +153,7 @@ export async function POST(
           requestedAt.toISOString(),
           status,
           ip,
+          vehicleId,
         ]
       );
       await client.query("COMMIT");

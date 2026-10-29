@@ -68,6 +68,8 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/kasa", resource: "kasa" },
   { prefix: "/admin/shared-stock", resource: "shared_stock" },
   { prefix: "/admin/quotes", resource: "quotes" },
+  // Araç kartı sipariş geçmişini (tutarlarla) gösterir.
+  { prefix: "/admin/vehicles", resource: "orders" },
   { prefix: "/admin/billing", resource: null },
   { prefix: "/admin/profile", resource: null },
   // Destek Talepleri, herhangi bir kaynak iznine bağlı değil — panele giren

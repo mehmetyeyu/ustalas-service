@@ -81,7 +81,7 @@ export interface ServiceItem {
 }
 export interface SupplierItem { id: number; name: string }
 export interface KasaItem { id: number; name: string; linked_payment_type: string | null; currency: string }
-export interface CustomerItem { id: number; name: string; phone: string | null }
+export interface CustomerItem { id: number; name: string; phone: string | null; is_corporate?: boolean; discount_rate?: number | null; has_credit_limit?: boolean }
 
 export function useServices() {
   return useQuery({ queryKey: queryKeys.services, queryFn: () => fetchJson<ServiceItem[]>("/api/services"), staleTime: REFERENCE_STALE_MS });

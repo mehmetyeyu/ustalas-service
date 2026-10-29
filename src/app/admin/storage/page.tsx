@@ -1,11 +1,13 @@
 "use client";
 
+import PlateLink from "@/components/PlateLink";
 import { useEffect, useState, useRef } from "react";
 import { Tooltip } from "@/components/Tooltip";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { escapeHtml } from "@/lib/htmlEscape";
+import { oppositeMevsim } from "@/lib/seasonChange";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/weekYear";
 import { useColumnPrefs } from "@/hooks/useColumnPrefs";
@@ -46,11 +48,7 @@ type StorageFilterState = typeof EMPTY_STORAGE_FILTERS;
 // "Değişim Yap" açılırken Mevsim alanı için akıllı varsayım — bkz. sunum
 // "Depoda Mevsim Değişimi Akışı"nın "Açık Soru"su: otomatik ters + yine de
 // değiştirilebilir dropdown (Dört Mevsim ihtimaline karşı kilitli değil).
-function oppositeMevsim(mevsim: string | null): string {
-  if (mevsim === "Kışlık") return "Yazlık";
-  if (mevsim === "Yazlık") return "Kışlık";
-  return "";
-}
+// Toplu değişimle ortak: src/lib/seasonChange.ts.
 
 const TIRE_BRANDS = [
   "Bridgestone", "Continental", "Dunlop", "Falken", "Firestone",
@@ -367,6 +365,7 @@ export default function StoragePage() {
   const canCreate = usePermission("storage.create");
   const canEdit = usePermission("storage.edit");
   const canDelete = usePermission("storage.delete");
+  const canSeeVehicle = usePermission("orders.view");
   const [items, setItems] = useState<StorageItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -926,7 +925,7 @@ export default function StoragePage() {
                     {visibleCols.plate && (
                       <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          {item.plate ?? "—"}
+                          {item.plate ? <PlateLink plate={item.plate} canLink={canSeeVehicle} /> : "—"}
                           {isOverdue(item.islem_tarihi, overdueMonths) && (
                             <span title={`${overdueMonths} aydan uzun süredir depoda`}>
                               <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

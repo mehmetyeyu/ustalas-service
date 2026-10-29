@@ -1802,3 +1802,92 @@ CREATE TABLE IF NOT EXISTS quote_counters (
   last_no   INT NOT NULL DEFAULT 0,
   PRIMARY KEY (tenant_id, year)
 );
+
+-- Araç kaydı (Filo Faz 0 — araç kartı). Firmalar geçmişte perakende
+-- satışlarda plakayı uydurarak giriyordu ve eski kayıtlar DÜZELTİLMEYECEK
+-- (kullanıcı kararı, 2026-10-29). Bu yüzden araç plaka metninden geriye dönük
+-- türetilmez: bu tablo boş başlar, bundan sonra sipariş/depolama/randevuya
+-- Türk plaka biçimine uyan bir plaka yazıldıkça kendiliğinden dolar
+-- (src/lib/vehicles.ts linkVehicle). Araç kartı yalnızca vehicle_id ile
+-- BAĞLANMIŞ kayıtları gösterir — eski uydurma plakalar hiçbir karta karışmaz.
+-- plate normalize edilmiş hâlidir (boşluksuz, büyük harf: "34ABC123").
+CREATE TABLE IF NOT EXISTS vehicles (
+  id           SERIAL PRIMARY KEY,
+  tenant_id    INT NOT NULL REFERENCES tenants(id),
+  plate        VARCHAR(12) NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS vehicles_tenant_plate_unique ON vehicles(tenant_id, plate);
+CREATE UNIQUE INDEX IF NOT EXISTS vehicles_id_tenant_unique ON vehicles(id, tenant_id);
+
+-- Kayıt silinmez, araç silinirse yalnızca bağlantı kopar (SET NULL (vehicle_id):
+-- composite FK tenant_id'yi NULL'lamasın).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS vehicle_id INT;
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS vehicle_id INT;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS vehicle_id INT;
+DO $$ BEGIN
+  ALTER TABLE orders ADD CONSTRAINT orders_vehicle_tenant_fk
+    FOREIGN KEY (vehicle_id, tenant_id) REFERENCES vehicles(id, tenant_id) ON DELETE SET NULL (vehicle_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE storage ADD CONSTRAINT storage_vehicle_tenant_fk
+    FOREIGN KEY (vehicle_id, tenant_id) REFERENCES vehicles(id, tenant_id) ON DELETE SET NULL (vehicle_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE appointments ADD CONSTRAINT appointments_vehicle_tenant_fk
+    FOREIGN KEY (vehicle_id, tenant_id) REFERENCES vehicles(id, tenant_id) ON DELETE SET NULL (vehicle_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS orders_tenant_vehicle_idx ON orders(tenant_id, vehicle_id, created_at) WHERE vehicle_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS storage_tenant_vehicle_idx ON storage(tenant_id, vehicle_id) WHERE vehicle_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS appointments_tenant_vehicle_idx ON appointments(tenant_id, vehicle_id) WHERE vehicle_id IS NOT NULL;
+
+-- Kurumsal müşteri ve filo araçları (Filo Faz 1). Kurumsal müşteri ayrı bir
+-- tablo değil, mevcut müşteri dizinindeki (customers) bir işarettir — cari
+-- hesabı, tahsilatları olduğu gibi kalır. Galeri/bayi gibi her seferinde
+-- başka araç getiren kurumsal müşteriler de işaretlenebilir; araç listesi
+-- (vehicles.customer_id) yalnızca gerçek filolar için elle doldurulur.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_corporate BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_no VARCHAR(20);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_name VARCHAR(100);
+
+-- Aracın ait olduğu firma. Siparişten otomatik KURULMAZ (galeri müşterisinin
+-- getirdiği araç galerinin değildir) — Müşteri Detayı'ndaki "Araç Ekle" ile
+-- elle kurulur. Bir araç en fazla bir firmaya bağlıdır. Müşteri silinirse
+-- araç kalır, yalnızca bağlantı kopar (SET NULL (customer_id)).
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS customer_id INT;
+DO $$ BEGIN
+  ALTER TABLE vehicles ADD CONSTRAINT vehicles_customer_tenant_fk
+    FOREIGN KEY (customer_id, tenant_id) REFERENCES customers(id, tenant_id) ON DELETE SET NULL (customer_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS vehicles_tenant_customer_idx ON vehicles(tenant_id, customer_id) WHERE customer_id IS NOT NULL;
+
+-- Kurumsal siparişlerde aracı getiren kişi (şoför/çalışan). Ayrı sürücü
+-- tablosu yok: aynı aracı farklı kişiler getirebilir, öneri listesi bu
+-- müşterinin geçmiş siparişlerinden çıkar (GET /api/customers/drivers).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_name VARCHAR(100);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_phone VARCHAR(20);
+
+-- Cari limiti (risk limiti, Filo Faz 2). Kullanıcı kararı (2026-10-29): limit
+-- aşılınca sipariş/kapatma ENGELLENMEZ, yalnızca uyarı gösterilir (bkz. GET
+-- /api/customers/credit). NULL = limit yok.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit DECIMAL(12,2);
+DO $$ BEGIN
+  ALTER TABLE customers ADD CONSTRAINT customers_credit_limit_check CHECK (credit_limit IS NULL OR credit_limit >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Kurumsal indirim (Filo Faz 2). Kullanıcı kararı (2026-10-29): şimdilik
+-- müşteri başına TEK oran (işçilik/lastik ayrımı yok). Satır fiyatlarına
+-- dokunulmaz; Ödeme Al & Kapat'ta tutar indirimli önerilir — mevcut indirim
+-- modeliyle aynı (paid_amount < total_amount, raporlar/cari bunu zaten
+-- işliyor). NULL/0 = indirim yok.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS discount_rate DECIMAL(5,2);
+DO $$ BEGIN
+  ALTER TABLE customers ADD CONSTRAINT customers_discount_rate_check CHECK (discount_rate IS NULL OR (discount_rate >= 0 AND discount_rate < 100));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

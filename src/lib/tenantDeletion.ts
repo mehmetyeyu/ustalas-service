@@ -54,6 +54,9 @@ export const TENANT_ID_TABLES_IN_DELETE_ORDER = [
   // updated_by → users
   "monthly_financials",
   "users",
+  // orders/storage/appointments.vehicle_id SET NULL — onlardan sonra da
+  // silinebilir, ama en sona konunca bağlantı hiç güncellenmez.
+  "vehicles",
 ] as const;
 
 // orders/products/quotes'a ON DELETE CASCADE ile bağlı alt tablolar —

@@ -557,9 +557,64 @@ Kilit `src/middleware.ts`'te **üç ayrı yerde** uygulanır: (1) `/admin/*` say
 
 ### 24. Aktivite Geçmişi ve Kullanım Kılavuzu
 
-**Aktivite Geçmişi** (`/admin/audit-log`, yalnızca admin): `audit_log` tablosundaki "kim, ne zaman, neyi değiştirdi" kayıtları, sayfalı. Kayıt `src/lib/auditLog.ts` `logAudit` ile best-effort atılır (loglama hatası asıl işlemi bozmaz). Kaydedilen işlemler: `order.create/update/delete/payment`, `quote.create/update/status/delete/convert`, `customer.ledger_add/update/delete`, `user.update/delete`. Türkçe etiketler sayfadaki `ACTION_LABELS`'ta — yeni bir action eklenince oraya da eklenmeli, yoksa ham kod görünür.
+**Aktivite Geçmişi** (`/admin/audit-log`, yalnızca admin): `audit_log` tablosundaki "kim, ne zaman, neyi değiştirdi" kayıtları, sayfalı. Kayıt `src/lib/auditLog.ts` `logAudit` ile best-effort atılır (loglama hatası asıl işlemi bozmaz). Kaydedilen işlemler: `order.create/update/delete/payment`, `quote.create/update/status/delete/convert`, `customer.ledger_add/update/delete`, `customer.vehicle_add/vehicle_remove/season_change`, `user.update/delete`. Türkçe etiketler sayfadaki `ACTION_LABELS`'ta — yeni bir action eklenince oraya da eklenmeli, yoksa ham kod görünür.
 
 **Kullanım Kılavuzu** (`/admin/help`, herkes): panelin tüm sayfalarını rol rozetleriyle anlatan statik sayfa. Yeni bir modül/özellik eklendiğinde buraya da bölüm eklenmelidir.
+
+---
+
+### 25. Araç Kartı (Filo Faz 0)
+
+**Amaç:** bir plakanın siparişleri, depolama kayıtları ve randevuları tek ekranda (`/admin/vehicles/:plate`, `orders.view`). Kurumsal müşteri ve filo (Bölüm 26) bunun üstüne kuruldu.
+
+**Geçmiş veri kararı (kullanıcı, 2026-10-29):** firmalar perakende satışlarda plaka zorunlu olduğu için plakayı uyduruyordu ve **eski kayıtlar düzeltilmeyecek**. Bu yüzden araçlar plaka metninden geriye dönük türetilmez: `vehicles` boş başlar; bundan sonra sipariş (`POST/PUT /api/orders`, randevu ve teklif dönüştürme), depolama (`POST/PATCH /api/storage`, değişim) ve randevu (personel/public `POST`, `PATCH` plaka) kayıtlarına **Türk plaka biçimine uyan** bir plaka yazıldıkça araç açılır/bulunur ve kayıt `vehicle_id` ile bağlanır (`src/lib/vehicles.ts` `linkVehicle`). Araç kartı yalnızca bu bağlantılı kayıtları gösterir — plaka metniyle eşleştirme bilerek yapılmaz. Excel içe aktarımları (geçmiş veri) araç bağlamaz.
+
+**Plaka biçimi** (`src/lib/plate.ts`): `normalizePlate` (boşluk/tire atılır, büyük harf, İ→I), `isValidTrPlate` (il kodu 01–81; 1 harf + 4–5 rakam, 2 harf + 3–4, 3 harf + 2–3; Q/W/X ve Türkçe karakter yok; rakamların hepsi 0 olamaz). Biçime uymayan plaka siparişte metin olarak kalır, araca bağlanmaz.
+
+**Sipariş formu:** "Plakasız satış" seçeneği (plaka zorunlu olsa bile açıkça seçilmiş istisna — `no_plate`, o zaman müşteri adı zorunlu); geçerli plaka yazılınca `GET /api/vehicles/lookup` ile kayıtlı aracın kısa bilgisi (son müşteri, son ziyaret, sipariş sayısı, depodaki lastik — tutar dönmez, form herkese açık) ve müşteri alanı boşsa otomatik doldurma; yazılan müşteri aracın son müşterisinden farklıysa uyarı. `/?plate=` formu plaka dolu açar. Listelerdeki plakalar (`src/components/PlateLink.tsx`) geçerli biçimdeyse karta bağlantıdır.
+
+---
+
+### 26. Kurumsal Müşteri ve Filo (Filo Faz 1–2)
+
+**Model:** kurumsal müşteri ayrı tablo değil, `customers.is_corporate` işareti (+ isteğe bağlı `tax_no`, `contact_name`); cari hesap (Bölüm 13) olduğu gibi kalır. Prod verisinde (2026-10-29, Ustalas) iki tür kurumsal müşteri görüldü: **gerçek filo** (Sarıyer Emniyet — aynı araçlar tekrar geliyor) ve **galeri/bayi** (Yunus Oto, Ram Oto — neredeyse her sipariş farklı araç). Bu yüzden araç–firma bağlantısı (`vehicles.customer_id`, composite FK `SET NULL (customer_id)`) siparişten **otomatik kurulmaz**; firma sayfasındaki "Araç Ekle" ile elle kurulur. Bir araç en fazla bir firmaya bağlıdır; başka firmadaki araç `move: true` olmadan taşınmaz (ekran onay sorar). Araçlı firmanın kurumsal işareti kaldırılamaz (409).
+
+**Firma sayfası** (`/admin/customers/:id`, `customers.view`): yetkili/telefon/vergi no, araç sayısı, bu ayın toplamı (`orders.view`), cari bakiye, araç listesi (son servis, sipariş sayısı, toplam harcama, depodaki lastik), siparişler (Aracı Getiren sütunuyla). Araç istatistikleri bu müşterinin **kendi siparişlerinden** hesaplanır: `vehicle_id` ile bağlı olanlar + araç kaydından önceki siparişlerin plaka metni (`plateNormalizeSql`, `src/lib/vehicles.ts`). Bu yalnızca okumadır — eski kayıtlara `vehicle_id` yazılmaz (Bölüm 25 geçmiş veri kararı); araç kartının kendisi yine yalnızca bağlı kayıtları gösterir.
+
+**Araç Ekle:** elle plaka (satır/virgülle) + öneri listesi (`GET /api/customers/:id/vehicles` — firmanın geçmiş siparişlerindeki biçime uyan, henüz bu firmada olmayan plakalar; başka firmadaysa sahibiyle). Kullanıcı onayladı (2026-10-29): öneri göstermek geriye dönük düzeltme sayılmaz.
+
+**Aracı Getiren:** `orders.driver_name`, `orders.driver_phone` — ayrı sürücü tablosu yok (aynı aracı farklı kişiler getirebilir). Sipariş formunda müşteri kurumsalsa ya da plaka bir filo aracıysa görünür; öneriler `GET /api/customers/drivers?customer=` (bu müşterinin geçmiş siparişlerindeki kişiler). Sipariş detayında gösterilir ve Düzelt'te değiştirilebilir (`PUT` alan gönderilmezse mevcut değer korunur).
+
+**Sipariş formu:** `GET /api/vehicles/lookup` filo aracında `fleet` (firma adı/telefonu) ve son getireni döner; müşteri alanı boşsa firma adıyla, getiren alanı boşsa son getirenle dolar. Başka bir müşteri adı yazılırsa "Bu araç X firmasına kayıtlı" uyarısı çıkar. Araç kartında "Filo aracı · X" rozeti firma sayfasına bağlanır.
+
+**Cari limiti (risk limiti, Faz 2):** `customers.credit_limit` (NULL = limit yok; her müşteriye girilebilir, yalnızca kurumsala değil). **Kullanıcı kararı (2026-10-29): limit aşılınca yalnızca uyarı, engel yok.** `GET /api/customers/credit?customer=&amount=&exclude_order=` "bakiye + cariye eklenecek tutar > limit" kontrolünü yapar (`exceedsCreditLimit`, `src/lib/customers.ts`); `exclude_order` düzenlenen/kapatılan siparişin mevcut SIPARIS borcunu düşer (iki kez sayılmasın). Tutarlar (limit/bakiye) yalnızca `customers.view` ile döner, diğerleri sadece "aşıyor" bilgisini görür. Uyarı (`src/components/CreditLimitWarning.tsx`) üç yerde: sipariş formu ("cari ile kapatılırsa", sipariş toplamıyla), Ödeme Al & Kapat ve Düzelt (Cari'ye düşen tutarla). Müşteriler listesinde limiti geçen borçta "Limit aşıldı" rozeti, firma sayfasında "Cari Limiti" kartı (kalan/aşan tutar). Toplu ödeme tipi değiştirme (`/api/orders/bulk-payment-type`) uyarı göstermez. Sipariş formu ve Ödeme Al, limiti olmayan müşteride bu isteği hiç atmaz (`GET /api/customers` ucuz listede `has_credit_limit`; tutar dönmez).
+
+**İzin (güvenlik testi, 2026-10-29):** `credit_limit` ve `discount_rate` yalnızca `customers.manage_balance` (Cari Bakiye Yönetimi) ile konur/değiştirilir — `customers.edit` yetmez (403); form bu alanları mevcut değerleriyle gönderdiği için değişmedikçe izin istenmez, izni olmayan kullanıcıya alanlar salt okunur görünür.
+
+**Kurumsal indirim (Faz 2):** `customers.discount_rate` (%, 0–100, NULL = yok; yalnızca kurumsal müşteride — işaret kalkınca NULL'lanır). **Kullanıcı kararı (2026-10-29): şimdilik tek oran** (işçilik/lastik ayrımı yok). Satır fiyatlarına dokunulmaz; Ödeme Al & Kapat'ta ödeme tutarı `applyDiscount` ile indirimli önerilir ("İndirimsiz al" / "İndirimi uygula" ile değiştirilebilir). Böylece mevcut indirim modeli (`paid_amount < total_amount` — sipariş detayındaki "İndirim" satırı, raporlar, cari tutarı) aynen kullanılır, yeni bir alan gerekmez. Sipariş formunda "Kurumsal indirim %X: tutar ₺Y olarak gelir" bilgisi ve cari limiti uyarısı indirimli tutarla. Teklifler indirimi otomatik uygulamaz.
+
+**Aylık ekstre (Faz 2):** `/admin/customers/:id/ekstre?month=YYYY-AA` (firma sayfasındaki "Ekstre" düğmesi ve Müşteriler → Cari Hareketleri modalındaki "Aylık Ekstre" — kurumsal olmayan cari müşteriler için de çalışır). `GET /api/customers/:id/statement?month=` (`customers.view` + `orders.view`; `&format=xlsx` Excel, "Cari Hareketler" + "Araçlar" sayfaları). İki bölüm: (1) **cari hareketler** — devreden bakiye (`entry_date < ay başı`), ayın SIPARIS/MANUEL kayıtları (`entry_date`, plaka, aracı getiren, işlem özeti), yürüyen bakiye, ay sonu; (2) **araç bazında tamamlanan işlemler** — firmanın o ay TAMAMLANDI siparişleri ödeme şeklinden bağımsız, plaka (normalize) bazında; ay sınırı `created_at` için İstanbul'a göre. Belgeler `src/lib/statement.ts` (yazdırma/PDF HTML, WhatsApp özeti, Excel satırları; `statement.test.ts`). Ekranda geleceğe (bu aydan sonraya) gidilmez.
+
+**Toplu mevsim değişimi (Faz 2):** firma sayfasındaki "Toplu Mevsim Değişimi" (`storage.edit`; firmanın depoda lastiği olan araçları varsa görünür) → `POST /api/customers/:id/season-change`. Her seçilen kayıtta tekli "Değişim Yap" ile aynı model: eski depo kaydı `teslim_edildi` (teslim tarihi = işlem tarihi), aynı depo no/plaka/müşteriyle araçtan çıkan lastiğin kaydı açılır. Çıkan lastiğin bilgileri depodakinden kopyalanır, mevsim tersine çevrilir (`oppositeMevsim`, `src/lib/seasonChange.ts` — tekli değişimle ortak), satırda düzeltilebilir. **Kullanıcı kararı (2026-10-29): sipariş açma bir seçenek** — işaretlenirse her araç için seçilen hizmet + araç başı tutarla BEKLEMEDE sipariş açılır (not: "Toplu mevsim değişimi — Depo No N"); ödeme/cari/kurumsal indirim her siparişin Ödeme Al & Kapat'ında. Elle Sipariş No açık firmada her satır için Sipariş No zorunlu. Kayıt bu firmanın olmalı (firma aracına bağlı ya da firma adıyla girilmiş); tamamı tek transaction (biri hatalıysa hiçbiri yapılmaz), en fazla 100 araç. Audit: `customer.season_change`. Yeni depo etiketleri Depolama ekranından yazdırılır.
+
+**Mühendislik incelemesi sonrası (2026-10-29):**
+- **Müşteri adı eşleme:** Sipariş formu ve Düzelt, yazılan adı dizindeki kayıtlı yazıma eşler (`canonicalCustomerName`, `src/lib/customers.ts`: tam eşleşme, yoksa tek harf-duyarsız eşleşme). Cari kaydı müşteriyi tam adla bulduğu için "test filo" yazılınca yeni müşteri açılıp borç oraya düşüyordu, oysa form kurumsal indirimi göstermişti. Sunucu (POST/PUT /api/orders) eşleme yapmaz; tek istemci formdur.
+- **`POST /api/customers` aynı adla:** Kayıt varsa yalnızca boş alanları doldurur. Kurumsal işaret kaldırılamaz, limit ve indirim silinemez; bunlar PATCH denetimlerinden geçer. İndirim yalnızca kurumsal müşteriye yazılır (POST ve PATCH).
+- **Müşteri adı değişikliği:** Siparişler ve randevuların yanında `storage.customer_name` de yeni ada taşınır. Firma sayfası, toplu değişim ve öneriler, araca bağlanmamış eski depo kayıtlarını adla bulur.
+- **Toplu mevsim değişimi:** İleri işlem tarihi sunucuda reddedilir. Geçmiş tarih seçilince siparişler de o güne yazılır (POST /api/orders `order_date` ile aynı desen).
+- **Ekstre Excel dosya adı:** ASCII `filename` (Türkçe harfler sadeleştirilmiş) ve `filename*=UTF-8''` birlikte (`statementFileName`).
+
+**Performans:** Firma sayfasındaki araç istatistikleri tek geçişli bir sorguyla hesaplanır (`GET /api/customers/:id`; CTE'ler: filo araçları → `vehicle_id` ya da normalize plakayla eşleşen siparişler → depo özeti). Dev'de 20.000 siparişle 637 ms'den 46 ms'ye indi; eşleşen sipariş sayısı eskisiyle aynı (14.000). Limiti olmayan müşteride limit kontrolü isteği atılmaz (`has_credit_limit`).
+
+**Bilerek bırakılanlar (2026-10-29):**
+- Ad eşleme yalnızca ekranda yapılır (yukarıda). Sunucuya alınırsa, eski kayıtlarda büyük/küçük harf farkıyla açılmış müşterilerin davranışı değişir.
+- `PATCH /api/storage/:id` ve `PATCH /api/appointments/:id` araç kaydını, kaydın varlığı denetlenmeden önce açar (`linkVehicle`). İşlem başarısız olursa geride boş bir araç satırı kalabilir; zararsızdır.
+- İndirim önerisi önbellekteki müşteri listesinden gelir. Başka bir cihazda değiştirilen oran Ödeme Al'a en geç 2 dakika içinde yansır; tutar zaten yalnızca bir öneridir.
+- `GET /api/customers/credit` yalnızca `exceeds` bilgisini döndürür. Yine de farklı tutarlarla tekrar tekrar sorgulanarak kalan limit tahmin edilebilir. `GET /api/customers/drivers` ve `/api/vehicles/lookup` getirenin telefonunu oturumu olan her kullanıcıya döndürür; sipariş formu herkese açık olduğu için gereklidir.
+
+**Ekran görüntülü anlatım:** Gerçek ekranlardan alınmış görüntülerle (dev, örnek firma "Örnek Lojistik A.Ş.") Claude tasarım tuvali: https://claude.ai/artifact/NE24JCZnzZty6Viog2htE5 (özel; paylaşım tuvalin Paylaş menüsünden).
+
+Filo planının tüm fazları tamamlandı (2026-10-29).
 
 ---
 
@@ -600,10 +655,10 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 |---|---|
 | `tenants` | Firmalar (çoklu firma altyapısı, Bölüm 16) — `name`, `slug`, `code` (6 haneli Firma Kodu), `is_active`, `is_platform` (yalnızca dahili "Platform Yönetimi" tenant'ında `true` — Süper Admin hesaplarını barındırır, bkz. Bölüm 17), `contact_name`/`contact_email`/`contact_phone`/`landline_phone`/`website` (Bölüm 15/18/19), `logo_url`/`panel_logo_url`/`stamp_url` (Bölüm 4/15 — Vercel Blob), faturalandırma (Bölüm 20): `plan`, `billing_provider`, `billing_customer_id`, `billing_status`, `trial_ends_at`, `billing_subscription_ref`, `billing_period_ends_at`, `billing_cancel_at_period_end`, `billing_checkout_lock_at`, `billing_pricing_plan_ref`, `billing_repriced_for_period_end`, `billing_last_payment_error`, `privacy_policy_accepted_at`, `terms_accepted_at`, `billing_entity_type`/`billing_tax_id`/`billing_tax_office`/`billing_invoice_title`/`billing_city`/`billing_district`/`billing_address` (Fatura Bilgileri, VUK md. 231/5) |
 | `services` | Yapılan İşlem listesi; `price` opsiyonel; `bookable`, `duration_minutes` (Online Randevu'ya açık mı, bkz. Bölüm 12) |
-| `orders` | Siparişler; `status`, `payment_type` (serbest metin), `paid_amount`, `import_ref` (Excel tekilleştirme) |
+| `orders` | Siparişler; `status`, `payment_type` (serbest metin), `paid_amount`, `import_ref` (Excel tekilleştirme), `vehicle_id` (Bölüm 25), `driver_name`/`driver_phone` (Aracı Getiren, Bölüm 26) |
 | `order_services` | Sipariş satırları; `quantity`, `cost_price`, `supplier`, `stock_code`, `size_desc`, `brand`/`model_name` (serbest metin, Stok Kodu/Ebat ile aynı desen — bkz. Bölüm 1), işlem bazlı `payment_type` (yalnızca Excel içe aktarımı doldurur), `product_id` (Lastik Satışı'nda bağlı parti — bkz. Bölüm 1 ve `src/lib/productStock.ts`), `kasa_id` (bkz. Bölüm 14) |
 | `order_payments` | "Ödeme Al & Kapat" ile kapatılan siparişlerin parçalı ödeme kayıtları — `order_id`, `payment_type`, `amount` (bkz. Bölüm 5), `kasa_id` (bkz. Bölüm 14) |
-| `customers`, `suppliers` | Öneri/yönetim dizinleri |
+| `customers`, `suppliers` | Öneri/yönetim dizinleri — `customers.is_corporate`, `tax_no`, `contact_name` kurumsal müşteri için, `credit_limit` cari limiti, `discount_rate` kurumsal indirim (Bölüm 26) |
 | `users` | Kullanıcılar — `role` (`admin`/`staff`/`super_admin` — sonuncusu hiçbir firmaya ait olmayan platform rolü, bkz. Bölüm 17), şifre bcrypt hash, `failed_attempts`/`locked_until` (brute-force kilidi), `is_active` (devre dışı bırakma), `tokens_invalid_before` (zorla oturum sonlandırma), `last_login_at`; `(tenant_id, username)` composite unique (bkz. Bölüm 16 — Firma Kodu) |
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır); `barcode` (`(tenant_id, barcode)` PARÇALI benzersiz, NULL olabilir), `product_type`, `width_mm`/`profile_pct`/`rim_diameter` (Ebat'ın yapılandırılmış hâli, `size_desc`'e ek), `tread_depth_mm` (İkinci El Lastik), `model_name`, `load_speed_index`, `eu_fuel_class`/`eu_wet_grip_class`/`eu_noise_db`/`eu_noise_class` (AB Lastik Etiketi), `rim_size`/`pcd`/`offset_et` (Jant Bilgileri), `min_stock_threshold` (kod bazlı, tüm partilere senkronlanır — bkz. Bölüm 9, Katalog Alanları Faz 1/Faz 2) |
@@ -630,6 +685,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `audit_log` | Aktivite Geçmişi (Bölüm 24) — `user_id`, `username`, `action`, `table_name`, `record_id`, `detail` |
 | `monthly_financials` | Raporlar → Yıllık Özet — admin'in "Kaydet"le sabitlediği aylık `income`/`expense` (`(tenant_id, year, month)` benzersiz, `updated_by`) |
 | `push_subscriptions` | Tarayıcı push bildirimi abonelikleri (Bölüm 12/21) |
+| `vehicles` | Araç kaydı (Bölüm 25) — `plate` (normalize, `(tenant_id, plate)` benzersiz), `created_at`, `last_seen_at`, `customer_id` (filo aracıysa kurumsal müşteri, Bölüm 26); `orders`/`storage`/`appointments.vehicle_id` buna `SET NULL (vehicle_id)` ile bağlanır |
 
 > `tenants` hariç yukarıdaki tüm tablolarda bir `tenant_id` kolonu vardır (bkz. Bölüm 16) — tüm route'lar artık buna göre filtreler, paylaşılan tek deploymentta firmalar arası veri sızıntısı yoktur (Faz 3-9 tamamlandı).
 >
@@ -648,7 +704,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | Method | Endpoint | Açıklama |
 |---|---|---|
 | GET | `/api/orders` | Satır bazlı, sayfalı sipariş listesi — `{ items, total, totalAmount, page, limit }` döner (`totalAmount`: uygulanan filtrelere uyan TÜM satırların toplam tutarı, yalnızca görünen sayfanın değil — aynı COUNT sorgusunda `SUM(unit_price)` ile, ekstra tarama gerektirmeden); filtreler: status, dateFrom/dateTo, customer_name, plate, service_name (çoklu), supplier (çoklu), stock_code, size_desc, payment_type (çoklu), search (hızlı arama, birden çok alanda VEYA); sortBy/sortDir (whitelist tabanlı) |
-| POST | `/api/orders` | Yeni sipariş oluştur; `product_id` içeren satırlarda stok düşer |
+| POST | `/api/orders` | Yeni sipariş oluştur; `product_id` içeren satırlarda stok düşer; geçerli plakada araca bağlanır; `no_plate: true` = Plakasız satış (bkz. Bölüm 25) |
 | GET | `/api/orders/:id` | Sipariş detayı |
 | PATCH | `/api/orders/:id` | Siparişi kapat — `{ payments: [{payment_type, amount}, ...] }` (parçalı ödeme, bkz. Bölüm 5) |
 | PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır); `payments` gönderilirse (sipariş daha önce kapatıldıysa) `order_payments` de baştan yazılır (bkz. Bölüm 5, Ödeme düzeltme) |
@@ -680,6 +736,13 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST/GET | `/api/products/import`, `/api/products/export` | Excel içe/dışa aktarma |
 | GET/POST | `/api/customers`, `/api/customers/:id` (PATCH/DELETE) | Müşteri dizini |
 | GET | `/api/customers/export` | Bakiyesi olan müşterilerin Borç/Alacak listesini Excel'e aktarır (bkz. Bölüm 13) |
+| GET | `/api/customers/:id` | Firma sayfası — müşteri bilgisi, cari bakiye, bu ay, filo araçları (`customers.view`; tutarlar `orders.view`, depo `storage.view`) — Bölüm 26 |
+| GET/POST | `/api/customers/:id/vehicles` | Araç Ekle önerileri / plakaları firmaya bağla (`customers.edit`; `move` olmadan başka firmadaki araç taşınmaz) |
+| DELETE | `/api/customers/:id/vehicles/:vehicleId` | Aracı firmadan çıkar (araç kaydı kalır) |
+| GET | `/api/customers/drivers?customer=` | Sipariş formu "Aracı Getiren" önerileri (oturum yeterli) |
+| POST | `/api/customers/:id/season-change` | Toplu mevsim değişimi, isteğe bağlı araç başı sipariş (`storage.edit`) — Bölüm 26 |
+| GET | `/api/customers/:id/statement?month=YYYY-AA[&format=xlsx]` | Aylık cari ekstre (`customers.view` + `orders.view`) — Bölüm 26 |
+| GET | `/api/customers/credit?customer=&amount=&exclude_order=` | Cari limiti aşım kontrolü — yalnızca uyarı (tutarlar `customers.view` ile) |
 | GET | `/api/customers/:id/orders` | Müşterinin sipariş geçmişi (`customers.view` + `orders.view` gerektirir) |
 | GET | `/api/customers/:id/ledger` | Cari hareket dökümü + canlı kümülatif bakiye (bkz. Bölüm 13) |
 | POST | `/api/customers/:id/payments` | Manuel Cari tahsilat/borç kaydı ekle (bkz. Bölüm 13) |
@@ -693,6 +756,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET/POST | `/api/quotes` | Teklif listesi (`?status=` acik/suresi_doldu/KABUL/RED/SIPARIS, `?q=` arama, sayfalı; sekme sayılarıyla) / yeni teklif (`quotes.create`, numara atomik sayaçtan) — bkz. Bölüm 23 |
 | GET/PUT/PATCH/DELETE | `/api/quotes/:id` | Detay (maliyet yalnızca `quotes.view_cost` ile) / tam düzenleme (satırlar baştan yazılır) / durum değiştir (`SIPARIS` hariç) / sil — siparişe dönüşmüş teklifte PUT/PATCH/DELETE 409 |
 | POST | `/api/quotes/:id/convert` | Teklifi `BEKLEMEDE` siparişe dönüştürür (`quotes.convert`; `{ plate?, custom_order_no? }`), stok düşer, teklif kilitlenir |
+| GET | `/api/vehicles/:plate` | Araç kartı — bağlı siparişler, depolama, randevular (`orders.view`; depolama/randevu ilgili izin yoksa boş) — bkz. Bölüm 25 |
+| GET | `/api/vehicles/lookup?plate=` | Sipariş formu için kısa araç bilgisi (oturum yeterli, tutar dönmez) |
 | GET/POST | `/api/calendar/notes` | Takvim: `?from=&to=` aralığındaki günlere bağlı notları listele / yeni not ekle (bkz. Bölüm 22) |
 | PATCH/DELETE | `/api/calendar/notes/:id` | Takvim notunu düzenle/sil (tenant_id ile sınırlı) |
 | GET/POST | `/api/support-tickets` | Destek Talepleri: kendi firmasının taleplerini listele (son mesaj önizlemeli) / yeni talep aç (bkz. Bölüm 21) |
@@ -749,6 +814,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/storage                → Depolama yönetimi (admin)
 /admin/products               → Ürün Kataloğu + Malzeme Hareketleri (admin)
 /admin/customers              → Müşteri dizini + Cari (admin)
+/admin/customers/:id          → Firma sayfası (kurumsal müşteri, filo araçları — Bölüm 26) (admin veya `customers.view` izinli staff)
+/admin/customers/:id/ekstre   → Aylık cari ekstre — yazdır/PDF, Excel, WhatsApp (`customers.view` + `orders.view`)
 /admin/suppliers              → Tedarikçi dizini (admin)
 /admin/shared-stock           → Paylaşılan Stok (bkz. Bölüm 19) (admin veya `shared_stock.view` izinli staff)
 /admin/appointments           → Randevular (bkz. Bölüm 12, admin)
@@ -761,6 +828,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/profile                → Profil (oturum açmış herkes)
 /admin/users                  → Kullanıcı yönetimi (admin)
 /admin/settings               → Genel ayarlar (admin)
+/admin/vehicles/:plate        → Araç kartı (bkz. Bölüm 25) (admin veya `orders.view` izinli staff)
 /admin/audit-log              → Aktivite Geçmişi (bkz. Bölüm 24) (admin)
 /admin/help                   → Kullanım Kılavuzu (oturum açmış herkes)
 /super-admin                  → Süper Admin Paneli — firma dizini, yeni firma, kalıcı silme (bkz. Bölüm 17, ayrı `super_admin` rolü, admin/staff giremez)

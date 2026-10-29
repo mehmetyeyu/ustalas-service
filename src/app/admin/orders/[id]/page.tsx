@@ -1,5 +1,6 @@
 "use client";
 
+import PlateLink from "@/components/PlateLink";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -18,6 +19,8 @@ import TireBatchPicker, { type StockBatch } from "@/components/order/TireBatchPi
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { useDialog } from "@/lib/useDialog";
 import { StickyScrollX } from "@/components/StickyScrollX";
+import { CreditLimitWarning } from "@/components/CreditLimitWarning";
+import { applyDiscount, canonicalCustomerName } from "@/lib/customers";
 
 interface OrderDetail {
   id: number;
@@ -27,6 +30,8 @@ interface OrderDetail {
   plate: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  driver_name: string | null;
+  driver_phone: string | null;
   notes: string | null;
   total_amount: number;
   paid_amount: number | null;
@@ -72,6 +77,9 @@ interface Customer {
   id: number;
   name: string;
   phone: string | null;
+  is_corporate?: boolean;
+  discount_rate?: number | null;
+  has_credit_limit?: boolean;
 }
 const NO_CUSTOMERS: Customer[] = [];
 interface EditLine {
@@ -241,6 +249,8 @@ function OrderDetailPageInner() {
   const [editPaymentNote, setEditPaymentNote] = useState("");
   const [editCustomerName, setEditCustomerName] = useState("");
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
+  const [editDriverName, setEditDriverName] = useState("");
+  const [editDriverPhone, setEditDriverPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editLines, setEditLines] = useState<EditLine[]>([]);
   const [editPayments, setEditPayments] = useState<{ payment_type: string; amount: string; kasa_id: number | null }[]>([]);
@@ -297,6 +307,10 @@ function OrderDetailPageInner() {
     services.filter((s) => s.price != null).map((s) => [s.name.toLocaleLowerCase("tr-TR"), Number(s.price)])
   );
   const phoneByCustomer = new Map(customers.map((c) => [c.name.toLocaleLowerCase("tr-TR"), c.phone]));
+  // "Aracı Getiren" kurumsal müşteride ya da zaten doluysa düzenlenebilir.
+  const editCanonicalName = canonicalCustomerName(editCustomerName, customers.map((c) => c.name));
+  const editIsCorporate = customers.some((c) => c.is_corporate && c.name === editCanonicalName);
+  const showDriverEdit = editIsCorporate || !!order?.driver_name || !!editDriverName;
 
   // İş Emri yazdırma — src/app/admin/storage/page.tsx'teki printLabel ile
   // AYNI desen (HTML string, window.open + document.write + window.print(),
@@ -378,6 +392,7 @@ function OrderDetailPageInner() {
     <div><div class="lbl">Müşteri</div>${escapeHtml(order.customer_name) || "—"}</div>
     <div><div class="lbl">Telefon</div>${escapeHtml(order.customer_phone) || "—"}</div>
     <div><div class="lbl">Durum</div>${order.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede"}</div>
+    ${order.driver_name ? `<div><div class="lbl">Aracı Getiren</div>${escapeHtml(order.driver_name)}${order.driver_phone ? ` · ${escapeHtml(order.driver_phone)}` : ""}</div>` : ""}
   </div>
 
   <table>
@@ -423,6 +438,8 @@ function OrderDetailPageInner() {
     setEditPaymentNote(order.payment_note || "");
     setEditCustomerName(order.customer_name || "");
     setEditCustomerPhone(order.customer_phone || "");
+    setEditDriverName(order.driver_name || "");
+    setEditDriverPhone(order.driver_phone || "");
     setEditNotes(order.notes || "");
     const initialLines = order.services.map((svc) => ({
       id: svc.line_id,
@@ -677,8 +694,11 @@ function OrderDetailPageInner() {
           plate: editPlate.replace(/\s+/g, "").toUpperCase(),
           custom_order_no: (order?.custom_order_no_enabled || order?.custom_order_no) ? editCustomOrderNo.trim() : undefined,
           payment_note: editPaymentNote.trim() || null,
-          customer_name: editCustomerName.trim() || null,
+          // Kayıtlı yazıma eşlenir (bkz. canonicalCustomerName) — cari aynı müşteride kalsın.
+          customer_name: canonicalCustomerName(editCustomerName, customers.map((c) => c.name)) || null,
           customer_phone: editCustomerPhone.trim() || null,
+          driver_name: editDriverName.trim() || null,
+          driver_phone: editDriverPhone.trim() || null,
           notes: editNotes.trim() || null,
           lines: validLines.map((l) => ({
             id: l.id,
@@ -801,7 +821,7 @@ function OrderDetailPageInner() {
   const editSnapshot = editing
     ? JSON.stringify({
         plate: editPlate, no: editCustomOrderNo, paymentNote: editPaymentNote,
-        customer: editCustomerName, phone: editCustomerPhone, notes: editNotes,
+        customer: editCustomerName, phone: editCustomerPhone, driver: editDriverName, driverPhone: editDriverPhone, notes: editNotes,
         lines: editLines.map((l) => [l.service_name, l.supplier, l.stock_code, l.size_desc, l.brand, l.model_name, l.quantity, l.unit_price, l.cost_price, l.payment_type, l.kasa_id, l.product_id]),
         payments: editPayments.map((p) => [p.payment_type, p.amount, p.kasa_id]),
       })
@@ -948,6 +968,29 @@ function OrderDetailPageInner() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {showDriverEdit && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Aracı Getiren</label>
+                    <input
+                      type="text"
+                      value={editDriverName}
+                      onChange={(e) => setEditDriverName(e.target.value)}
+                      maxLength={100}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Getirenin Telefonu</label>
+                    <input
+                      type="tel"
+                      value={editDriverPhone}
+                      onChange={(e) => setEditDriverPhone(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              )}
             </div>
             </section>
 
@@ -1198,6 +1241,9 @@ function OrderDetailPageInner() {
                     {formatCurrency(editCariAmount)} tutarı {editCustomerName.trim() || "müşterinin"} cari hesabına borç olarak eklenecek.
                   </p>
                 )}
+                {editCariAmount > 0 && (
+                  <CreditLimitWarning enabled={customers.some((c) => c.has_credit_limit && c.name === editCanonicalName)} customerName={editCanonicalName} amount={editCariAmount} excludeOrderId={order.id} prefix="Bu tutarla" className="mt-1 text-xs text-v2-warning-fg" />
+                )}
               </section>
             )}
 
@@ -1261,9 +1307,20 @@ function OrderDetailPageInner() {
     );
   }
 
+  // Kurumsal indirim (customers.discount_rate): tutar indirimli önerilir,
+  // satır fiyatları değişmez — fark mevcut "İndirim" olarak görünür
+  // (paid_amount < total_amount). Personel "İndirimsiz al" ile geri alabilir.
+  // Kayıtlı siparişin adı cariyle TAM eşleşir — indirim de aynı müşteriden.
+  const orderCustomer = order?.customer_name
+    ? customers.find((c) => c.name === order.customer_name!.trim())
+    : undefined;
+  const discountRate = orderCustomer?.is_corporate && orderCustomer.discount_rate ? orderCustomer.discount_rate : null;
+  const discountedTotal = order && discountRate ? applyDiscount(Number(order.total_amount), discountRate) : null;
+
   function openPayment() {
     if (!order) return;
-    setPaymentEntries([{ payment_type: "Nakit", amount: String(order.total_amount), kasa_id: null }]);
+    const amount = discountedTotal ?? Number(order.total_amount);
+    setPaymentEntries([{ payment_type: "Nakit", amount: String(amount), kasa_id: null }]);
     setShowModal(true);
   }
 
@@ -1289,6 +1346,23 @@ function OrderDetailPageInner() {
               <span className="font-semibold text-gray-700">
                 {formatCurrency(order.total_amount)}
               </span>
+              {discountRate != null && discountedTotal != null && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-v2-info-fg">
+                  <span>
+                    Kurumsal indirim %{discountRate.toLocaleString("tr-TR")}: <b>{formatCurrency(discountedTotal)}</b>
+                    {" "}(−{formatCurrency(Number(order.total_amount) - discountedTotal)})
+                  </span>
+                  {paymentEntries.length === 1 && Math.abs(Number(paymentEntries[0].amount) - discountedTotal) < 0.005 ? (
+                    <button type="button" onClick={() => updatePaymentEntry(0, { amount: String(order.total_amount) })} className="text-xs font-semibold text-v2-link hover:underline">
+                      İndirimsiz al
+                    </button>
+                  ) : paymentEntries.length === 1 && (
+                    <button type="button" onClick={() => updatePaymentEntry(0, { amount: String(discountedTotal) })} className="text-xs font-semibold text-v2-link hover:underline">
+                      İndirimi uygula
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="mb-5">
@@ -1354,6 +1428,9 @@ function OrderDetailPageInner() {
                 <p className="text-xs text-blue-600 mt-1">
                   {formatCurrency(cariAmount)} tutarı {order.customer_name || "müşterinin"} cari hesabına borç olarak eklenecek.
                 </p>
+              )}
+              {cariAmount > 0 && order.customer_name && (
+                <CreditLimitWarning enabled={!!orderCustomer?.has_credit_limit} customerName={order.customer_name} amount={cariAmount} excludeOrderId={order.id} prefix="Bu tutarla" className="mt-1 text-xs text-v2-warning-fg" />
               )}
             </div>
 
@@ -1544,9 +1621,18 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay }: {
               <dt className="text-v2-fg-muted">Plaka</dt>
               <dd className="text-right">
                 {order.plate ? (
-                  <span className="inline-block rounded-md border border-v2-line-strong bg-v2-surface-2 px-2 py-0.5 font-v2-mono text-[13px] font-medium text-v2-fg">{order.plate}</span>
+                  <PlateLink plate={order.plate} className="inline-block rounded-md border border-v2-line-strong bg-v2-surface-2 px-2 py-0.5 font-v2-mono text-[13px] font-medium text-v2-fg" />
                 ) : <span className="text-v2-fg-muted">Plakasız satış</span>}
               </dd>
+              {order.driver_name && (
+                <>
+                  <dt className="text-v2-fg-muted">Aracı Getiren</dt>
+                  <dd className="text-right text-v2-fg [overflow-wrap:anywhere]">
+                    {order.driver_name}
+                    {order.driver_phone && <a href={`tel:${order.driver_phone}`} className="block text-v2-link">{order.driver_phone}</a>}
+                  </dd>
+                </>
+              )}
             </dl>
           </section>
 

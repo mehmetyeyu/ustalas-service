@@ -1,5 +1,6 @@
 "use client";
 
+import PlateLink from "@/components/PlateLink";
 import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -219,7 +220,7 @@ const COLUMNS: OrderColumnDef[] = [
     tdClassName: "px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap",
     // v2: plaka rozeti — eski görünümde span stilsiz kalır, görünüm değişmez.
     cell: (r) => r.plate ? (
-      <span className="v2:inline-block v2:rounded-md v2:border v2:border-v2-line-strong v2:bg-v2-surface-2 v2:px-2 v2:py-0.5 v2:text-[13px] v2:font-medium">{r.plate}</span>
+      <PlateLink plate={r.plate} className="v2:inline-block v2:rounded-md v2:border v2:border-v2-line-strong v2:bg-v2-surface-2 v2:px-2 v2:py-0.5 v2:text-[13px] v2:font-medium" />
     ) : "—",
   },
   {

@@ -1,5 +1,6 @@
 "use client";
 
+import PlateLink from "@/components/PlateLink";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
@@ -53,6 +54,7 @@ export default function AppointmentsPage() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const allowed = useViewGuard("appointments");
+  const canSeeVehicle = usePermission("orders.view");
   const canApprove = usePermission("appointments.approve");
   const canDelete = usePermission("appointments.delete");
   const { user } = useAuth();
@@ -220,7 +222,7 @@ export default function AppointmentsPage() {
                   return (
                     <tr key={a.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{formatDate(a.requested_at)}</td>
-                      <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap">{a.plate}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-gray-800 whitespace-nowrap"><PlateLink plate={a.plate} canLink={canSeeVehicle} /></td>
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                         {a.customer_name || "—"}
                         {a.customer_phone && <span className="text-gray-400 text-xs"> · {a.customer_phone}</span>}

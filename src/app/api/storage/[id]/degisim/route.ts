@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { linkVehicle } from "@/lib/vehicles";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -53,14 +54,15 @@ export async function POST(
     );
 
     const inserted = await client.query(
-      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
         user.tenantId, old.depo_no, old.plate, old.customer_name, old.phone,
         ebat || null, marka || null, dis_derinligi || null, adet || 4,
         mevsim || null, aciklama || null, islem_tarihi || today,
         model_name || null, production_week || null, production_year ? normalizeYear(Number(production_year)) : null, load_speed_index || null,
+        await linkVehicle(client, user.tenantId!, old.plate),
       ]
     );
 

@@ -1,6 +1,7 @@
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock } from "@/lib/productStock";
+import { linkVehicle } from "@/lib/vehicles";
 import { computeQuoteTotals, isVatRate, lineTotal, orderLineAmounts, type QuoteStatus, type VatMode, type VatRate } from "@/lib/quotes";
 
 // Teklif API'lerinin (POST /api/quotes, PUT /api/quotes/[id]) ortak sunucu
@@ -273,10 +274,11 @@ export async function convertQuoteToOrder(
   }
 
   const notes = [`Teklif ${quote.quote_no} üzerinden oluşturuldu.`, quote.notes].filter(Boolean).join("\n");
+  const vehicleId = await linkVehicle(client, tenantId, plate);
   const orderResult = await client.query<{ id: number }>(
-    `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, custom_order_no)
-     VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', $7) RETURNING id`,
-    [tenantId, plate, quote.customer_name, quote.customer_phone, notes, total, customOrderNo]
+    `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, custom_order_no, vehicle_id)
+     VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', $7, $8) RETURNING id`,
+    [tenantId, plate, quote.customer_name, quote.customer_phone, notes, total, customOrderNo, vehicleId]
   );
   const orderId = orderResult.rows[0].id;
 

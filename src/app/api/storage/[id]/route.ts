@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { linkVehicle } from "@/lib/vehicles";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -21,9 +22,10 @@ export async function PATCH(
       return NextResponse.json({ error: "Geçersiz adet." }, { status: 400 });
     }
 
+    const vehicleId = await linkVehicle(pool, user.tenantId!, plate);
     const result = await pool.query(
       `UPDATE storage SET
-        depo_no=$1, plate=$2, customer_name=$3, phone=$4, ebat=$5,
+        depo_no=$1, plate=$2, vehicle_id=$20, customer_name=$3, phone=$4, ebat=$5,
         marka=$6, dis_derinligi=$7, adet=$8, mevsim=$9, aciklama=$10, islem_tarihi=$11,
         teslim_edildi=$12, teslim_tarihi=$13, model_name=$16, production_week=$17,
         production_year=$18, load_speed_index=$19
@@ -31,7 +33,7 @@ export async function PATCH(
       [depo_no || null, plate || null, customer_name || null, phone || null, ebat || null,
        marka || null, dis_derinligi || null, adet || 4, mevsim || null, aciklama || null,
        islem_tarihi || null, teslim_edildi ?? false, teslim_tarihi || null, id, user.tenantId,
-       model_name || null, production_week || null, production_year ? normalizeYear(Number(production_year)) : null, load_speed_index || null]
+       model_name || null, production_week || null, production_year ? normalizeYear(Number(production_year)) : null, load_speed_index || null, vehicleId]
     );
 
     if (result.rowCount === 0) {

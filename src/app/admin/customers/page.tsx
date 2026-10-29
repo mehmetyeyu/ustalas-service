@@ -31,6 +31,11 @@ interface Customer {
   id: number;
   name: string;
   phone: string | null;
+  is_corporate: boolean;
+  tax_no: string | null;
+  contact_name: string | null;
+  credit_limit: number | null;
+  discount_rate: number | null;
   order_count: number;
   balance: number;
   has_cari_activity: boolean;
@@ -107,12 +112,18 @@ export default function CustomersPage() {
   const [editItem, setEditItem] = useState<Customer | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [isCorporate, setIsCorporate] = useState(false);
+  const [taxNo, setTaxNo] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
+  const [discountRate, setDiscountRate] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   // Cari (en az bir cari hareketi olan) ile perakende (hiç olmayan) müşteriler
   // aynı listede karışıyordu (bkz. görüşme notları) — has_cari_activity
   // (bkz. GET /api/customers) üzerinden ayrılıyor, yeni bir alan gerekmedi.
-  const [activeTab, setActiveTab] = useState<"cari" | "perakende">("cari");
+  // Kurumsal müşteriler (is_corporate) kendi sekmesinde — diğer ikisine girmez.
+  const [activeTab, setActiveTab] = useState<"cari" | "kurumsal" | "perakende">("cari");
   const {
     visibleCols, toggleVisible, showColPicker, setShowColPicker,
     orderedColumns, menuColumns,
@@ -309,6 +320,11 @@ export default function CustomersPage() {
     setEditItem(null);
     setName("");
     setPhone("");
+    setIsCorporate(activeTab === "kurumsal");
+    setTaxNo("");
+    setContactName("");
+    setCreditLimit("");
+    setDiscountRate("");
     setShowForm(true);
   }
 
@@ -316,6 +332,11 @@ export default function CustomersPage() {
     setEditItem(c);
     setName(c.name);
     setPhone(c.phone || "");
+    setIsCorporate(c.is_corporate);
+    setTaxNo(c.tax_no || "");
+    setContactName(c.contact_name || "");
+    setCreditLimit(c.credit_limit != null ? String(c.credit_limit) : "");
+    setDiscountRate(c.discount_rate != null ? String(c.discount_rate) : "");
     setShowForm(true);
   }
 
@@ -329,7 +350,15 @@ export default function CustomersPage() {
       const res = await fetch(editItem ? `/api/customers/${editItem.id}` : "/api/customers", {
         method: editItem ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim() || null }),
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim() || null,
+          is_corporate: isCorporate,
+          tax_no: isCorporate ? taxNo.trim() || null : null,
+          contact_name: isCorporate ? contactName.trim() || null : null,
+          credit_limit: creditLimit.trim() ? Number(creditLimit) : null,
+          discount_rate: isCorporate && discountRate.trim() ? Number(discountRate) : null,
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Kaydetme başarısız.");
       setShowForm(false);
@@ -354,9 +383,10 @@ export default function CustomersPage() {
     await fetchCustomers();
   }
 
-  const cariCustomers = customers.filter((c) => c.has_cari_activity);
-  const perakendeCustomers = customers.filter((c) => !c.has_cari_activity);
-  const tabCustomers = activeTab === "cari" ? cariCustomers : perakendeCustomers;
+  const kurumsalCustomers = customers.filter((c) => c.is_corporate);
+  const cariCustomers = customers.filter((c) => !c.is_corporate && c.has_cari_activity);
+  const perakendeCustomers = customers.filter((c) => !c.is_corporate && !c.has_cari_activity);
+  const tabCustomers = activeTab === "cari" ? cariCustomers : activeTab === "kurumsal" ? kurumsalCustomers : perakendeCustomers;
   const filtered = search
     ? tabCustomers.filter((c) => trIncludes(c.name, search))
     : tabCustomers;
@@ -429,6 +459,12 @@ export default function CustomersPage() {
           Cari Müşteriler ({cariCustomers.length})
         </button>
         <button
+          onClick={() => setActiveTab("kurumsal")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "kurumsal" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+        >
+          Kurumsal ({kurumsalCustomers.length})
+        </button>
+        <button
           onClick={() => setActiveTab("perakende")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "perakende" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
         >
@@ -475,7 +511,11 @@ export default function CustomersPage() {
       {loading ? (
         <div className="text-center text-gray-400 py-12">Yükleniyor...</div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">Müşteri bulunamadı.</div>
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+          {activeTab === "kurumsal" && !search
+            ? "Henüz kurumsal müşteri yok. Bir müşteriyi Düzenle'den \"Kurumsal müşteri\" olarak işaretleyebilirsiniz."
+            : "Müşteri bulunamadı."}
+        </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-clip">
           <StickyScrollX>
@@ -493,12 +533,21 @@ export default function CustomersPage() {
                   <tr key={c.id} className="hover:bg-gray-50">
                     {orderedColumns.filter((col) => visibleCols[col.key]).map((col) => (
                       <td key={col.key} className={`px-4 py-3 whitespace-nowrap ${col.align === "right" ? "text-right" : ""} ${col.key === "name" ? "font-medium text-gray-800" : "text-gray-600"}`}>
-                        {col.key === "name" && c.name}
+                        {col.key === "name" && (c.is_corporate ? (
+                          <Link prefetch={false} href={`/admin/customers/${c.id}`} className="text-blue-700 hover:underline">
+                            {c.name}
+                          </Link>
+                        ) : c.name)}
                         {col.key === "phone" && (c.phone || "-")}
                         {col.key === "order_count" && c.order_count}
                         {col.key === "balance" && (
                           c.balance > 0.009 ? (
-                            <span className="text-red-600 font-medium">{formatCurrency(c.balance)} (Borçlu)</span>
+                            <span className="text-red-600 font-medium">
+                              {formatCurrency(c.balance)} (Borçlu)
+                              {c.credit_limit != null && c.balance > c.credit_limit + 0.005 && (
+                                <span title={`Cari limiti ${formatCurrency(c.credit_limit)}`} className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">Limit aşıldı</span>
+                              )}
+                            </span>
                           ) : c.balance < -0.009 ? (
                             <span className="text-green-600 font-medium">{formatCurrency(Math.abs(c.balance))} (Alacaklı)</span>
                           ) : (
@@ -605,6 +654,76 @@ export default function CustomersPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cari Limiti <span className="font-normal text-gray-400">(opsiyonel)</span>
+                </label>
+                {canManageBalance ? (
+                  <TRNumberInput
+                    value={creditLimit}
+                    onChange={setCreditLimit}
+                    placeholder="Limit yok"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                ) : (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-gray-500">{creditLimit ? formatCurrency(Number(creditLimit)) : "Limit yok"}</div>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Borç bu tutarı geçecekse sipariş ve kapatma ekranında uyarı çıkar; kayıt engellenmez.
+                  {!canManageBalance && " Değiştirmek için Cari Bakiye Yönetimi izni gerekir."}
+                </p>
+              </div>
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={isCorporate}
+                  onChange={(e) => setIsCorporate(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                />
+                <span>
+                  <span className="font-medium">Kurumsal müşteri</span>
+                  <span className="block text-xs text-gray-500">Filo, galeri, kurum… Firma sayfası ve araç listesi açılır.</span>
+                </span>
+              </label>
+              {isCorporate && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Yetkili Kişi <span className="font-normal text-gray-400">(opsiyonel)</span></label>
+                    <input
+                      type="text"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      maxLength={100}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Kurumsal İndirim (%) <span className="font-normal text-gray-400">(opsiyonel)</span></label>
+                    {canManageBalance ? (
+                      <TRNumberInput
+                        value={discountRate}
+                        onChange={setDiscountRate}
+                        placeholder="İndirim yok"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-gray-500">{discountRate ? `%${discountRate}` : "İndirim yok"}</div>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">Ödeme Al &amp; Kapat&apos;ta tutar bu oranla indirimli gelir.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vergi No <span className="font-normal text-gray-400">(opsiyonel)</span></label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={taxNo}
+                      onChange={(e) => setTaxNo(e.target.value)}
+                      maxLength={20}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -711,14 +830,23 @@ export default function CustomersPage() {
               </button>
             </div>
 
-            {canManageBalance && (
-              <button
-                onClick={() => openPaymentModal(ledgerModalCustomer)}
-                className="mb-4 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+            <div className="mb-4 flex flex-wrap gap-2">
+              {canManageBalance && (
+                <button
+                  onClick={() => openPaymentModal(ledgerModalCustomer)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+                >
+                  Tahsilat Al / Borç Ekle
+                </button>
+              )}
+              <Link
+                prefetch={false}
+                href={`/admin/customers/${ledgerModalCustomer.id}/ekstre`}
+                className="border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium px-4 py-2 rounded-lg text-sm transition-colors"
               >
-                Tahsilat Al / Borç Ekle
-              </button>
-            )}
+                Aylık Ekstre
+              </Link>
+            </div>
 
             {ledgerLoading ? (
               <div className="py-8 text-center text-gray-400 text-sm">Yükleniyor...</div>

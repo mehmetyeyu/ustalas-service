@@ -35,6 +35,7 @@ const TOC: { group: string; items: { href: string; label: string }[] }[] = [
       { href: "#siparis-listesi", label: "Sipariş Listesi" },
       { href: "#odeme", label: "Ödeme & Kapatma" },
       { href: "#teklifler", label: "Teklifler" },
+      { href: "#arac-karti", label: "Araç Kartı" },
     ],
   },
   {
@@ -49,6 +50,7 @@ const TOC: { group: string; items: { href: string; label: string }[] }[] = [
     group: "Müşteri İlişkileri",
     items: [
       { href: "#musteriler", label: "Müşteriler & Cari" },
+      { href: "#kurumsal", label: "Kurumsal Müşteri & Filo" },
       { href: "#tedarikciler", label: "Tedarikçiler" },
       { href: "#randevular", label: "Online Randevu" },
       { href: "#takvim", label: "Takvim" },
@@ -171,6 +173,10 @@ export default function HelpPage() {
           <Section id="yeni-siparis" title="Yeni Sipariş" path="Ana sayfa ( / )" role="all" lede="Müşteri karşılandığında ilk açılan ekran. Plaka, müşteri bilgisi ve yapılan işlemler girilip kaydedilir — sipariş Beklemede statüsünde açılır, ödeme bilgisi daha sonra (Yönetici tarafından) girilir.">
             <List>
               <li><b>Plaka</b> varsayılan olarak zorunludur, otomatik büyük harfe çevrilir. Araca bağlı olmayan düz satışlar için Genel Ayarlar&apos;dan &quot;Araç Plakası Zorunlu&quot; kapatılabilir; o zaman plaka ya da müşteri adından biri yeterlidir.</li>
+              <li><b>Plakasız satış</b> — araca bağlı olmayan satışta (ör. lastiği alıp giden müşteri) plaka alanının üstündeki &quot;Plakasız satış&quot; seçilir; plaka uydurmaya gerek kalmaz. Bu durumda müşteri adı zorunludur.</li>
+              <li>Daha önce gelmiş bir aracın plakası yazılınca altında <b>kayıtlı araç</b> bilgisi çıkar (son müşteri, son ziyaret, depodaki lastik) ve müşteri alanı boşsa kendiliğinden dolar. Yazılan müşteri adı aracın son müşterisinden farklıysa uyarı verilir.</li>
+              <li>Plaka bir kurumsal müşterinin <b>filo aracı</b>ysa müşteri alanı firmanın adıyla dolar. Kurumsal müşteride <b>Aracı Getiren</b> (şoför/çalışan) adı ve telefonu da girilebilir; daha önce yazılmış kişiler öneri olarak gelir.</li>
+              <li>Müşterinin <b>kurumsal indirimi</b> varsa formda, Ödeme Al &amp; Kapat&apos;ta gelecek indirimli tutar gösterilir (satır fiyatları değişmez). Sipariş cariye yazılınca <b>cari limiti</b> aşılacaksa uyarı çıkar. Firma adı büyük/küçük harf farkıyla yazılsa da kayıtlı firmaya bağlanır, ikinci bir müşteri açılmaz.</li>
               <li>Müşteri adı yazılınca daha önce kaydedilmiş müşteriler önerilir, seçilince telefonu varsa otomatik dolar.</li>
               <li><b>Tarih</b> bugündür; girmeyi unuttuğunuz geçmiş bir günün siparişi için geriye alınabilir (ileri bir tarih seçilemez).</li>
               <li>Genel Ayarlar&apos;da &quot;Sipariş Numarasını Elle Gir&quot; açıksa <b>Sipariş No</b> alanı çıkar ve zorunludur; kapalıyken sistem #numara verir.</li>
@@ -238,6 +244,16 @@ export default function HelpPage() {
             </List>
           </Section>
 
+          <Section id="arac-karti" title="Araç Kartı" path="Plakaya tıklayınca" role="staff" lede="Bir aracın siparişleri, depodaki lastikleri ve randevuları tek ekranda. Sipariş Listesi, sipariş detayı, Depolama ve Randevular'daki plakaya tıklanınca açılır (Siparişler görüntüleme izni gerekir).">
+            <List>
+              <li>Üstte toplam harcama, son ziyaret ve depodaki lastik sayısı; altta tüm işlemler tarih sırasıyla tek zaman çizelgesinde.</li>
+              <li>&quot;+ Bu Araç İçin Sipariş&quot; sipariş formunu plaka dolu açar.</li>
+              <li>Araç kartı bu özellik açıldıktan sonra girilen kayıtlarla dolar; daha eski kayıtlar karta eklenmez. Yalnızca gerçek plaka biçimine uyan plakalar (ör. 34 ABC 123) araç olarak takip edilir — &quot;11&quot;, &quot;X&quot; gibi girişler sipariş olarak kaydedilir ama bir araca bağlanmaz.</li>
+              <li>Bir araçta birden fazla farklı müşteri adı geçiyorsa kartta belirtilir (araç el değiştirmiş ya da yanlış girilmiş olabilir).</li>
+              <li>Araç bir kurumsal müşteriye bağlıysa kartın üstünde <b>Filo aracı</b> rozeti ve firma sayfasına bağlantı görünür.</li>
+            </List>
+          </Section>
+
           <Section id="urunler" title="Ürün Kataloğu" path="Ürünler" role="staff" lede="Stoktaki lastik/jant/aksesuar partilerinin takip edildiği yer. Aynı ürün kodu farklı üretim haftası/tedarikçiyle birden fazla &quot;parti&quot;ye ayrılabilir; liste kod bazında gruplanır, partiler açılıp kapanır.">
             <SubHeading>Temel kullanım</SubHeading>
             <List>
@@ -288,12 +304,30 @@ export default function HelpPage() {
             <List>
               <li>Bir sipariş &quot;Cari&quot; ödeme tipiyle kapatılırsa, o tutar otomatik olarak müşterinin borcuna yazılır.</li>
               <li>Müşteri sayfasındaki &quot;Cari Hareketleri&quot; modalından <b>Tahsilat Al</b> veya <b>Borç Ekle</b> ile elle kayıt girilebilir; bir tahsilat isterseniz bir kasaya da bağlanabilir.</li>
+              <li><b>Cari Limiti</b> — müşteri formunda isteğe bağlı bir limit girilebilir. Borç bu limiti geçecekse sipariş formunda, Ödeme Al &amp; Kapat ve Düzelt ekranında uyarı çıkar; kayıt engellenmez. Limiti aşmış müşteriler listede &quot;Limit aşıldı&quot; rozetiyle görünür. Cari limiti ve kurumsal indirimi yalnızca <b>Cari Bakiye Yönetimi</b> izni olanlar değiştirebilir.</li>
+              <li><b>Aylık Ekstre</b> — Cari Hareketleri penceresindeki &quot;Aylık Ekstre&quot; (kurumsal müşteride firma sayfasındaki &quot;Ekstre&quot;) seçilen ayın devreden bakiyesini, borç ve tahsilatlarını, ay sonu bakiyesini ve araç bazında tamamlanan işleri gösterir (araç özetine nakitle ödenen işler de girer, bekleyen siparişler girmez; henüz gelmemiş bir ay seçilemez). Yazdırılabilir/PDF olarak kaydedilebilir, Excel&apos;e indirilebilir ya da özeti WhatsApp ile gönderilebilir.</li>
               <li>Tahsilatlar en eski borçtan başlayarak otomatik düşülür — bir siparişin &quot;ödendi&quot; sayılması için o siparişe özel bir tahsilat girmeniz gerekmez.</li>
               <li>Üstte <b>Toplam Borç/Alacak</b> özeti; &quot;Borç/Alacak Listesini İndir&quot; ile en yüksek borçtan başlayarak Excel&apos;e aktarılabilir.</li>
             </List>
             <SubHeading>Müşteri adını değiştirmek</SubHeading>
             <List>
-              <li>Müşterinin adı düzenlendiğinde o isimle girilmiş geçmiş siparişler ve randevular da yeni isme taşınır, cari geçmişi aynı müşteride kalır. Aynı isimde başka bir müşteri zaten varsa değişiklik engellenir.</li>
+              <li>Müşterinin adı düzenlendiğinde o isimle girilmiş geçmiş siparişler, randevular ve depo kayıtları da yeni isme taşınır, cari geçmişi aynı müşteride kalır. Aynı isimde başka bir müşteri zaten varsa değişiklik engellenir.</li>
+            </List>
+          </Section>
+
+          <Section id="kurumsal" title="Kurumsal Müşteri & Filo" path="Müşteriler → Kurumsal" role="staff" lede="Filo, galeri, kurum gibi kurumsal müşteriler için firma sayfası ve araç listesi. Kurumsal müşteri ayrı bir kayıt değildir — mevcut müşteri Düzenle'den &quot;Kurumsal müşteri&quot; olarak işaretlenir, cari hesabı olduğu gibi kalır.">
+            <List>
+              <li>Kurumsal müşteriler Müşteriler sayfasında kendi sekmesinde listelenir; adına tıklanınca <b>firma sayfası</b> açılır: yetkili kişi, vergi no, bu ayın toplamı, cari bakiye, araçlar ve siparişler.</li>
+              <li><b>+ Araç Ekle</b> ile firmanın araçları eklenir: plakaları yazabilir ya da firmanın geçmiş siparişlerinde geçen plakalardan seçebilirsiniz. Eski siparişler değiştirilmez; öneri yalnızca kolaylık içindir.</li>
+              <li>Araçlar listesinde her aracın son servisi, sipariş sayısı, toplam harcaması ve depodaki lastiği görünür. Bu rakamlar firmanın adıyla girilmiş siparişlerden hesaplanır.</li>
+              <li>Bir araç tek bir firmaya bağlı olabilir. Başka firmadaki bir aracı eklemek isterseniz taşımak için onay istenir. &quot;Çıkar&quot; aracı firmadan ayırır, geçmişini silmez.</li>
+              <li>Galeri/bayi gibi her seferinde başka araç getiren müşterileri de kurumsal işaretleyebilirsiniz; bunlar için araç eklemeniz gerekmez (o araçlar galerinin değil, sahiplerinindir).</li>
+              <li><b>Kurumsal indirim</b> — müşteri formunda bir indirim oranı (%) girilebilir. Ödeme Al &amp; Kapat&apos;ta tutar bu oranla indirimli gelir; &quot;İndirimsiz al&quot; ile tam tutara dönülebilir. Fark siparişte &quot;İndirim&quot; olarak görünür, cariye indirimli tutar yazılır.</li>
+              <li><b>Toplu Mevsim Değişimi</b> — firma sayfasından, depoda lastiği olan araçlar tek seferde değiştirilir: depodaki kayıt teslim edilmiş sayılır, araçtan çıkan lastik aynı depo numarasına kaydedilir. Çıkan lastiğin bilgileri depodakinden dolar ve mevsim tersine çevrilir; farklıysa satırda düzeltilir. İsterseniz &quot;Her araç için sipariş aç&quot; ile seçtiğiniz hizmet ve tutarla her araca bir sipariş açılır (Beklemede). Yeni depo etiketleri Depolama ekranından yazdırılır.</li>
+              <li>Toplu değişimde <b>İşlem Tarihi</b> geçmiş bir gün olabilir, ileri bir tarih olamaz; sipariş açıldıysa siparişler de o güne yazılır. &quot;Sipariş Numarasını Elle Gir&quot; açıksa her satıra sipariş numarası girilmelidir. Tek seferde en fazla 100 araç değiştirilir; satırlardan biri hatalıysa hiçbiri kaydedilmez. Bu işlem için Depolama düzenleme izni gerekir.</li>
+              <li>Aracı getiren kişi sipariş detayında görünür, Düzelt ile değiştirilebilir ve İş Emri çıktısında yer alır.</li>
+              <li>Firmaya bağlı araç varken kurumsal işareti kaldırılamaz; önce araçları çıkarın.</li>
+              <li>Araç ekleme/çıkarma için Müşteriler düzenleme izni gerekir; tutarlar Siparişler görüntüleme izni olanlara görünür.</li>
             </List>
           </Section>
 

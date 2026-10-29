@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { parseCorporateFields, parseCreditLimit, parseDiscountRate } from "@/lib/customers";
 
 // Sipariş oluşturma ekranındaki Müşteri alanı için dizin listesi.
 export async function GET(request: NextRequest) {
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
     }
     const result = await pool.query(
       withCounts
-        ? `SELECT c.id, c.name, c.phone, COUNT(DISTINCT o.id)::int AS order_count${
+        ? `SELECT c.id, c.name, c.phone, c.is_corporate, c.tax_no, c.contact_name, c.credit_limit::float AS credit_limit, c.discount_rate::float AS discount_rate, COUNT(DISTINCT o.id)::int AS order_count${
             // has_cari_activity: Cari/Perakende tab ayrımı için (bkz.
             // Müşteriler sayfası) — bakiyenin kendisi (0 olabilir, tam
             // ödenmiş bir Cari müşteride de 0'dır) bu ayrımı yapamaz, bu
@@ -47,9 +48,14 @@ export async function GET(request: NextRequest) {
                : ""
            }
            WHERE c.tenant_id = $1
-           GROUP BY c.id, c.name, c.phone${withBalance ? ", bal.balance, bal.entry_count" : ""}
+           GROUP BY c.id, c.name, c.phone, c.is_corporate, c.tax_no, c.contact_name, c.credit_limit, c.discount_rate${withBalance ? ", bal.balance, bal.entry_count" : ""}
            ORDER BY c.name`
-        : `SELECT id, name, phone FROM customers WHERE tenant_id = $1 ORDER BY name`,
+        // is_corporate: sipariş formu kurumsal müşteride "Aracı Getiren"
+        // alanlarını gösterir; discount_rate: Ödeme Al'da indirimli tutar;
+        // has_credit_limit: limiti olmayan müşteride limit kontrolü isteği
+        // hiç atılmaz (tutarın kendisi burada dönmez).
+        : `SELECT id, name, phone, is_corporate, discount_rate::float AS discount_rate, credit_limit IS NOT NULL AS has_credit_limit
+           FROM customers WHERE tenant_id = $1 ORDER BY name`,
       [user.tenantId]
     );
     return NextResponse.json(result.rows);
@@ -65,19 +71,45 @@ export async function POST(request: NextRequest) {
   if (!hasPermission(user, "customers.create")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { name, phone } = await request.json();
+    const body = await request.json();
+    const { name, phone } = body;
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Müşteri adı zorunludur." }, { status: 400 });
+    }
+    const corporate = parseCorporateFields(body);
+    const credit = parseCreditLimit(body);
+    if (credit.provided && "error" in credit) return NextResponse.json({ error: credit.error }, { status: 400 });
+    const discount = parseDiscountRate(body);
+    if (discount.provided && "error" in discount) return NextResponse.json({ error: discount.error }, { status: 400 });
+    // Cari limiti ve indirim yalnızca "Cari Bakiye Yönetimi" izniyle (bkz. PATCH).
+    if (!hasPermission(user, "customers.manage_balance")
+        && ((credit.provided && "value" in credit && credit.value != null)
+            || (discount.provided && "value" in discount && discount.value != null))) {
+      return NextResponse.json({ error: "Cari limiti ve indirim oranı için Cari Bakiye Yönetimi izni gerekir." }, { status: 403 });
     }
 
     // Aynı isimle (ör. sipariş oluştururken) tekrar eklenirse, boş bırakılan
     // telefon mevcut kaydı sessizce silmesin diye orders.ts'teki upsertle aynı
-    // COALESCE deseni kullanılır.
+    // COALESCE deseni kullanılır. Aynı isimde kayıt zaten varsa bu uç yalnızca
+    // BOŞ alanları doldurur: kurumsal işaret kaldırılamaz, limit/indirim
+    // silinemez — o değişiklikler PATCH'in denetimlerinden (araçlı firma,
+    // Cari Bakiye Yönetimi izni) geçmeli.
     const result = await pool.query(
-      `INSERT INTO customers (tenant_id, name, phone) VALUES ($1, $2, $3)
-       ON CONFLICT (tenant_id, name) DO UPDATE SET phone = COALESCE(EXCLUDED.phone, customers.phone)
-       RETURNING id, name, phone`,
-      [user.tenantId, String(name).trim(), phone ? String(phone).trim() : null]
+      `INSERT INTO customers (tenant_id, name, phone, is_corporate, tax_no, contact_name, credit_limit, discount_rate)
+       VALUES ($1, $2, $3, COALESCE($4, false), $5, $6, $8, CASE WHEN COALESCE($4, false) THEN $10::numeric END)
+       ON CONFLICT (tenant_id, name) DO UPDATE SET
+         phone = COALESCE(EXCLUDED.phone, customers.phone),
+         is_corporate = customers.is_corporate OR EXCLUDED.is_corporate,
+         tax_no = COALESCE(customers.tax_no, EXCLUDED.tax_no),
+         contact_name = COALESCE(customers.contact_name, EXCLUDED.contact_name),
+         credit_limit = CASE WHEN $7 THEN COALESCE(customers.credit_limit, EXCLUDED.credit_limit) ELSE customers.credit_limit END,
+         discount_rate = CASE WHEN $9 AND (customers.is_corporate OR EXCLUDED.is_corporate)
+                              THEN COALESCE(customers.discount_rate, EXCLUDED.discount_rate) ELSE customers.discount_rate END
+       RETURNING id, name, phone, is_corporate, tax_no, contact_name, credit_limit::float AS credit_limit, discount_rate::float AS discount_rate`,
+      [user.tenantId, String(name).trim(), phone ? String(phone).trim() : null,
+       corporate.isCorporate, corporate.taxNo, corporate.contactName,
+       credit.provided, credit.provided && "value" in credit ? credit.value : null,
+       discount.provided, discount.provided && "value" in discount ? discount.value : null]
     );
     return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error) {

@@ -10,6 +10,7 @@ import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
 import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
 import { createKasaResolver, InvalidKasaError } from "@/lib/kasalar";
 import { logAudit } from "@/lib/auditLog";
+import { linkVehicle } from "@/lib/vehicles";
 
 interface EditLineInput {
   id?: number;
@@ -287,7 +288,13 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { plate, customer_name, customer_phone, notes, lines, payments, custom_order_no, payment_note } = await request.json();
+    const body = await request.json();
+    const { plate, customer_name, customer_phone, notes, lines, payments, custom_order_no, payment_note } = body;
+    // "Aracı Getiren" yalnızca gönderildiyse güncellenir (eski istemci
+    // göndermezse mevcut değer kalır).
+    const driverProvided = "driver_name" in body || "driver_phone" in body;
+    const driverName = String(body.driver_name ?? "").trim().slice(0, 100) || null;
+    const driverPhone = String(body.driver_phone ?? "").trim().slice(0, 20) || null;
 
     if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "En az bir satır zorunludur." }, { status: 400 });
@@ -472,11 +479,16 @@ export async function PUT(
       // doğrulanmış değer; kapalıyken alan gönderildiyse kullanıcının
       // düzenlediği/bilerek boşalttığı değer; hiç gönderilmediyse mevcut
       // değer) — burada doğrudan yazılır, ayrıca bir CASE'e gerek yok.
+      // Plaka düzeltilince araç bağlantısı da yeni plakaya göre yeniden kurulur
+      // (biçime uymuyorsa bağlantı kalkar).
+      const vehicleId = await linkVehicle(client, user.tenantId!, plateValue);
       await client.query(
         `UPDATE orders SET plate = $1, customer_name = $2, customer_phone = $3, notes = $4,
-                            total_amount = $5, paid_amount = $6, custom_order_no = $9, payment_note = $10
+                            total_amount = $5, paid_amount = $6, custom_order_no = $9, payment_note = $10, vehicle_id = $11,
+                            driver_name = CASE WHEN $12 THEN $13 ELSE driver_name END,
+                            driver_phone = CASE WHEN $12 THEN $14 ELSE driver_phone END
          WHERE id = $7 AND tenant_id = $8`,
-        [plateValue, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo, paymentNote]
+        [plateValue, customer_name || null, customer_phone || null, notes || null, totalAmount, newPaidAmount, id, user.tenantId, customOrderNo, paymentNote, vehicleId, driverProvided, driverName, driverPhone]
       );
 
       const existingResult = await client.query<{ id: number; product_id: number | null; quantity: number }>(

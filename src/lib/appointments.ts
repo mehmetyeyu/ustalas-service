@@ -1,5 +1,6 @@
 import { resolveServiceIds } from "./serviceCatalog";
 import { upsertDirectoryNames } from "./directories";
+import { linkVehicle } from "./vehicles";
 
 interface QueryClient {
   query<T = unknown>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -107,10 +108,11 @@ export async function convertAppointmentToOrder(
     }
   }
 
+  const vehicleId = await linkVehicle(client, tenantId, appt.plate);
   const orderResult = await client.query<{ id: number }>(
-    `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, custom_order_no)
-     VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', $7) RETURNING id`,
-    [tenantId, appt.plate, appt.customer_name, appt.customer_phone, appt.notes, unitPrice, resolvedCustomOrderNo]
+    `INSERT INTO orders (tenant_id, plate, customer_name, customer_phone, notes, total_amount, status, custom_order_no, vehicle_id)
+     VALUES ($1, $2, $3, $4, $5, $6, 'BEKLEMEDE', $7, $8) RETURNING id`,
+    [tenantId, appt.plate, appt.customer_name, appt.customer_phone, appt.notes, unitPrice, resolvedCustomOrderNo, vehicleId]
   );
   const orderId = orderResult.rows[0].id;
 

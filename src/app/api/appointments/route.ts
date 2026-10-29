@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { linkVehicle } from "@/lib/vehicles";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -121,9 +122,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Geçerli bir randevu zamanı gerekli." }, { status: 400 });
     }
 
+    const vehicleId = await linkVehicle(pool, user.tenantId!, plate);
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO appointments (tenant_id, plate, customer_name, customer_phone, service_id, requested_at, status, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, 'ONAYLANDI', $7) RETURNING id`,
+      `INSERT INTO appointments (tenant_id, plate, customer_name, customer_phone, service_id, requested_at, status, notes, vehicle_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'ONAYLANDI', $7, $8) RETURNING id`,
       [
         user.tenantId,
         String(plate).replace(/\s+/g, "").toUpperCase(),
@@ -132,6 +134,7 @@ export async function POST(request: NextRequest) {
         service_id || null,
         new Date(requested_at).toISOString(),
         notes || null,
+        vehicleId,
       ]
     );
     await notifyTenantAdmins(user.tenantId!, {
