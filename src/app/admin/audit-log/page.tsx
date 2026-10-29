@@ -27,6 +27,11 @@ const ACTION_LABELS: Record<string, string> = {
   "customer.ledger_delete": "Cari Hareket Silindi",
   "user.update": "Kullanıcı Güncellendi",
   "user.delete": "Kullanıcı Silindi",
+  "quote.create": "Teklif Oluşturuldu",
+  "quote.update": "Teklif Düzenlendi",
+  "quote.status": "Teklif Durumu Değişti",
+  "quote.delete": "Teklif Silindi",
+  "quote.convert": "Teklif Siparişe Dönüştürüldü",
 };
 
 const LIMIT = 30;
@@ -55,7 +60,7 @@ export default function AuditLogPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Aktivite Geçmişi</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Sipariş, cari ve kullanıcı işlemlerinde kimin ne değiştirdiğinin kaydı.
+          Sipariş, teklif, cari ve kullanıcı işlemlerinde kimin ne değiştirdiğinin kaydı.
         </p>
       </div>
 

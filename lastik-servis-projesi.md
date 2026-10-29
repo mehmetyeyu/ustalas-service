@@ -34,7 +34,7 @@ Kullanıcı oluşturma ve rol/izin ataması `/admin/users` ekranından (yönetic
 
 ### Sayfa/Aksiyon Bazlı İzin Sistemi
 
-Admin rolü değişmeden tam yetkili kalır; `staff` kullanıcılarına ise admin sayfalarının çoğu için (Siparişler, Raporlar, Hizmetler, Depolama, Ürünler, Müşteriler, Tedarikçiler, Masraflar, Randevular, Takvim, Kasa) **görüntüle / ekle / düzenle / sil** izinleri ayrı ayrı verilebilir — siparişte ve Randevular'da ayrıca bir de **onayla** izni (siparişte Ödeme Al & Kapat, Randevular'da randevu onaylama), Müşteriler'de bir **bakiye yönetimi** (`manage_balance` — Cari'de Tahsilat Al/Borç Ekle, bkz. Bölüm 13) izni, Kasa'da ise sadece **görüntüle/yönet** (`kasa.manage` — kasa oluşturma/düzenleme/silme, transfer, döviz kuru girme) izni vardır (tek doğruluk kaynağı `src/lib/permissions.ts`: `RESOURCE_ACTIONS`). **Kullanıcılar**, **Genel Ayarlar** ve Randevu'nun alt sayfaları olan **Randevu Ayarları**/**Randevu Görünümü** izin sistemine hiç girmez, her zaman yalnızca `admin`'e özeldir (`"__admin_only__"` olarak işaretlidir). **Destek** (Bölüm 21) ise hiçbir kaynak iznine bağlı değildir (`resource: null`, Profil/Abonelik ile aynı desen) — panele giren herkes erişir.
+Admin rolü değişmeden tam yetkili kalır; `staff` kullanıcılarına ise admin sayfalarının çoğu için (Siparişler, Raporlar, Hizmetler, Depolama, Ürünler, Müşteriler, Tedarikçiler, Masraflar, Randevular, Takvim, Kasa, Teklifler) **görüntüle / ekle / düzenle / sil** izinleri ayrı ayrı verilebilir — siparişte ve Randevular'da ayrıca bir de **onayla** izni (siparişte Ödeme Al & Kapat, Randevular'da randevu onaylama), Müşteriler'de bir **bakiye yönetimi** (`manage_balance` — Cari'de Tahsilat Al/Borç Ekle, bkz. Bölüm 13) izni, Kasa'da ise sadece **görüntüle/yönet** (`kasa.manage` — kasa oluşturma/düzenleme/silme, transfer, döviz kuru girme) izni vardır; Teklifler'de ayrıca **siparişe dönüştür** (`quotes.convert`) ve **maliyet/kâr gör** (`quotes.view_cost`) izinleri vardır (bkz. Bölüm 23) (tek doğruluk kaynağı `src/lib/permissions.ts`: `RESOURCE_ACTIONS`). **Kullanıcılar**, **Genel Ayarlar** ve Randevu'nun alt sayfaları olan **Randevu Ayarları**/**Randevu Görünümü** izin sistemine hiç girmez, her zaman yalnızca `admin`'e özeldir (`"__admin_only__"` olarak işaretlidir). **Destek** (Bölüm 21) ise hiçbir kaynak iznine bağlı değildir (`resource: null`, Profil/Abonelik ile aynı desen) — panele giren herkes erişir.
 
 Tek doğruluk kaynağı `src/lib/permissions.ts`'tir (`RESOURCE_ACTIONS`, `PAGE_RESOURCE`, `hasPermission`, `canAccessPath`) — hem sunucu hem istemci bunu import eder. Güvenlik sınırı **üç katmanda** uygulanır:
 1. **`middleware.ts`** — sayfa erişimi (staff, izni olmayan bir `/admin/*` sayfasına gitmeye çalışırsa `/`'e yönlendirilir).
@@ -209,7 +209,7 @@ Plaka, sipariş no, statü; müşteri bilgileri; hizmet listesi (her satırda mi
 Her satır bir **PARTİ**dir: aynı Ürün Kodu farklı **Üretim Haftası/Yılı** (DOT kodu, ör. "10/26" = 10. hafta 2026 — takvim tarihi değil) ve/veya farklı **Tedarikçi** ile birden çok partiye ayrılabilir, her partinin kendi stok/fiyatı vardır. Liste **Ürün Kodu bazında gruplanır** (kod tek satır, altında partiler açılıp kapanır).
 
 - **Stoğu 0 olan bir parti listeden (ve stok seçicilerinden) otomatik kalkar** — tükenen tedarikçiler ekranda yer kaplamaz. Geçmişi kaybolmaz, "Malzeme Hareketleri" sekmesinde görünmeye devam eder.
-- **Alış Maliyeti (Ort.) / Satış Fiyatı (Ort.)** — ham/son girilen fiyat değil, o partiye (veya kod genelinde tüm partilere) ait tüm stok girişlerinin **miktar ağırlıklı ortalaması**; zararlı satış yapılmaması için.
+- **Alış Maliyeti (Ort.) / Satış Fiyatı (Ort.)** — ham/son girilen fiyat değil, stok girişlerinin **miktar ağırlıklı ortalaması**; zararlı satış yapılmaması için. Parti satırında o partinin tüm girişleri; **kod (grup) satırında yalnızca stokta kalan (`stock_qty > 0`) partilerin girişleri** — tükenmiş ucuz bir parti elde kalan stoğun maliyetini düşük göstermesin diye (Ustalas 1037775 vakası, 2026-10: elde 6.210,60'lık stok varken 5.140,40 görünüyordu). Kodun tüm partileri tükenmişse son bilinen fiyat için tüm girişlerin ortalamasına düşülür (`GET /api/products`).
 - **Mevsim** rozeti sadece kod (grup) satırında bir kez gösterilir, her partide tekrarlanmaz.
 - **Marka** alanı, mevcut ürünlerde kullanılan markalardan dinamik olarak önerilir (ayrı bir dizin tablosu yok, `products` üzerinden distinct).
 - Sütun görünürlüğü özelleştirilebilir (`localStorage`) — Üretim Haftası/Mevsim/Tedarikçi/Konum/fiyatların yanında **Ürün Tipi/Barkod/Kondisyon** için de opsiyonel sütunlar vardır (varsayılan kapalı, mevcut kullanıcıların görünümünü değiştirmez).
@@ -419,7 +419,7 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 - **"Bu Ay Gerçek Net Gelir"** (`GET /api/super-admin/revenue?month=YYYY-MM`) — yukarıdaki vitrin-fiyatlı MRR tahmininden tamamen ayrı, iyzico Raporlama Servisi'nden GÜN GÜN (bu uç aralık değil tek tarih kabul eder) çekilip toplanan gerçek işlemlere dayanır; sadece `transactionType = "PAYMENT"` olanlar sayılır, `merchantPayoutAmount`/`paidPrice`/komisyon toplanır. Günler `Promise.all` ile hepsi birden değil, `CONCURRENCY=2` ile küçük gruplar halinde (aralarında 400ms bekleyerek) ve başarısız bir gün için üstel geri çekilmeli (2s/4s/8s) tekrar denemeyle çekilir — tüm günlerin aynı anda çekilmesi gerçek bir denemede iyzico'nun (sandbox'ta bile düşük olan, ~18-20 eşzamanlı istekte tetiklenen) rate limit'ine takılmıştı; bir gün tüm denemelerde başarısız olursa o gün 0 katkı sayılıp devam edilir (tek günün hatası tüm ayı düşürmesin diye).
 - **Faturalandırma Olay Günlüğü** ("Son Faturalandırma Olayları" tablosu, `GET /api/super-admin/billing-events`, `billing_events` tablosundan en yeni 100 kayıt) — webhook başarılı/başarısız, eşleşmeyen webhook/IFN, iptal edilmiş abonelikte yoksayılan yenileme, repricing başarılı/başarısız, tutarlılık düzeltmesi gibi olayları Tarih/Firma/Olay (renk kodlu rozet)/Detay sütunlarıyla gösterir — önceden bu olaylar yalnızca sunucu loglarına (`console.warn`/`error`) düşüyordu, panelde hiç görünmüyordu.
 
-**Silme kapsamı ve sırası:** `TENANT_ID_TABLES_IN_DELETE_ORDER` (`src/app/api/super-admin/tenants/[id]/route.ts`) — sırasıyla `push_subscriptions`, `whatsapp_message_log`, `appointments`, `customer_ledger_entries`, `cash_ledger_entries`, `expenses`, `recurring_expenses`, `orders`, `products`, `kasalar`, `currency_rates`, `customers`, `suppliers`, `services`, `storage`, `app_settings`, `users` — bu tam sırayla tek bir transaction içinde `tenant_id`'ye göre silinir, en sonda `tenants` satırının kendisi silinir. Sıra, `database/schema.sql`'deki `tenant_id`/composite FK'ların (varsayılan `RESTRICT`) gerçek bağımlılık grafiğini takip eder; `order_services`/`order_payments`/`product_stock_entries` gibi `orders`/`products`'a zaten `CASCADE` ile bağlı çocuk tablolar ayrıca listede yer almaz (ebeveyn silinince otomatik gider). Firma satırı transaction başında `SELECT ... FOR UPDATE` ile kilitlenir (adı okunup onay girdisiyle karşılaştırılırken başka bir isteğin araya girmesini engeller); sıra bir noktada yanlış olsa bile bir sonraki `DELETE` FK ihlaliyle başarısız olup TÜM transaction'ı geri alır — yarım/sessiz veri kalması mümkün değildir. Gerçek çapraz-referanslı test verisiyle (sipariş, kasa, Cari, masraf) uçtan uca doğrulanmıştır.
+**Silme kapsamı ve sırası:** `TENANT_ID_TABLES_IN_DELETE_ORDER` (`src/lib/tenantDeletion.ts`, şema kapsamını `tenantDeletion.test.ts` doğrular) — `tenant_id`'li tüm tablolar bağımlılık sırasıyla (ör. `quotes` → `services`/`users`'tan önce, `monthly_financials` → `users`'tan önce) — bu sırayla tek bir transaction içinde `tenant_id`'ye göre silinir, en sonda `tenants` satırının kendisi silinir. Sıra, `database/schema.sql`'deki `tenant_id`/composite FK'ların (varsayılan `RESTRICT`) gerçek bağımlılık grafiğini takip eder; `order_services`/`order_payments`/`product_stock_entries`/`quote_lines` gibi `orders`/`products`/`quotes`'a zaten `CASCADE` ile bağlı çocuk tablolar ayrıca listede yer almaz (ebeveyn silinince otomatik gider). Firma satırı transaction başında `SELECT ... FOR UPDATE` ile kilitlenir (adı okunup onay girdisiyle karşılaştırılırken başka bir isteğin araya girmesini engeller); sıra bir noktada yanlış olsa bile bir sonraki `DELETE` FK ihlaliyle başarısız olup TÜM transaction'ı geri alır — yarım/sessiz veri kalması mümkün değildir. Gerçek çapraz-referanslı test verisiyle (sipariş, kasa, Cari, masraf) uçtan uca doğrulanmıştır.
 
 **İlgili güvenlik düzeltmesi:** bu panelden Pasif yapılan bir firmanın kullanıcılarının, ilk API çağrısına kadar kısa süre sayfa kabuğunu görmeye devam edebildiği bir sorun bu çalışmayla aynı dönemde bulunup düzeltildi — bkz. Güvenlik Notları.
 
@@ -532,6 +532,37 @@ Kilit `src/middleware.ts`'te **üç ayrı yerde** uygulanır: (1) `/admin/*` say
 
 ---
 
+### 23. Teklifler (Fiyat Teklifi)
+
+**Amaç:** müşteriye sipariş öncesi fiyat teklifi hazırlamak, yazdırıp/WhatsApp'tan göndermek ve kabul edilince tek adımda siparişe dönüştürmek. **Stok rezerve etmez** — stok ancak dönüştürmede düşer.
+
+**Sayfalar:** `/admin/quotes` (liste: Tümü / Açık / Süresi Doldu / Kabul / Siparişe Dönüştü / Red sekmeleri, teklif no/müşteri/plaka/telefon araması), `/admin/quotes/new`, `/admin/quotes/:id` (detay, durum düğmeleri, Yazdır/PDF, WhatsApp, Siparişe Dönüştür), `/admin/quotes/:id/edit`. Form, Yeni Sipariş'in seçicilerini (`src/components/order/SearchableCombobox`, `TireBatchPicker`) kullanır.
+
+**Kurallar (tek kaynak `src/lib/quotes.ts`, sunucu tarafı `src/lib/quoteStore.ts`):**
+- **KDV dahil/hariç ve oran (%20/10/1/0)** teklif başına seçilir ve teklifte saklanır. Fiyat **birim fiyat** olarak girilir; `quote_lines.unit_price` gerçek birim fiyat, `line_total` = adet × birim (sunucuda hesaplanır — istemcinin gönderdiği toplam yok sayılır). Ara Toplam/KDV/Genel Toplam `computeQuoteTotals` ile; net + KDV her zaman toplamı kuruşu kuruşuna verir. Katalog/parti fiyatları KDV dahil kabul edilir, KDV hariç teklife otomatik doldururken nete çevrilir (`priceForVatMode`); mod sonradan değişirse girilmiş fiyatlar çevrilmez.
+- **Geçerlilik** (`valid_until`, `DATE`) teklif başına — 7/15/30 gün kısayolu veya tarih, varsayılan 15. "Süresi doldu" saklanan bir durum değildir: açık (TASLAK/GONDERILDI) ve `valid_until < bugün (İstanbul)` olan teklif öyle gösterilir.
+- **Durumlar:** `TASLAK` → `GONDERILDI` → `KABUL` / `RED`; `SIPARIS` yalnızca dönüştürmeyle verilir (PATCH ile atanamaz). Reddedilen teklif "Yeniden Aç" ile açılır. **Siparişe dönüşen teklif kilitlidir** — düzenlenemez, silinemez.
+- **Numara:** firma ayarı `app_settings.quote_no_format` — `simple` (T-0001) veya `yearly` (T-2026-0001, her yıl 1'den; yıl İstanbul saatine göre). Sayaç `quote_counters`'ta `INSERT … ON CONFLICT DO UPDATE … RETURNING` ile atomik artar (eşzamanlı iki teklif aynı numarayı alamaz); silinen teklifin numarası tekrar kullanılmaz.
+- **Maliyet:** `quote_lines.cost_total` (satır toplam maliyeti, `order_services.cost_price` ile aynı anlam). `quotes.view_cost` izni olmayan kullanıcıya API maliyeti hiç döndürmez; böyle bir kullanıcı teklifi düzenlerse önceki maliyet korunur (parti/adet değişmediyse), değiştiyse partinin alış ortalamasından yeniden hesaplanır. Maliyet/kâr müşteriye giden çıktıda ve WhatsApp mesajında **hiçbir zaman** yer almaz (`src/lib/quoteDocument.ts` tipinde bile yok).
+
+**Gönderme:** "Yazdır / PDF" İş Emri ile aynı desende (`window.open` + `document.write`, tüm alanlar `escapeHtml`'den geçer) "FİYAT TEKLİFİ" A4 çıktısı üretir. "WhatsApp ile Gönder" `wa.me/<90…>?text=` ile teklif özetini hazır mesaj olarak açar (telefon `normalizeToE164TR` ile; tanınmazsa kişi seçtirir); TASLAK teklif bununla `GONDERILDI`'ye geçer. wa.me dosya ekleyemez — PDF gerekiyorsa yazdırma ekranından kaydedilip ayrıca eklenir.
+
+**Siparişe dönüştürme** (`POST /api/quotes/:id/convert`, `convertQuoteToOrder`): tek transaction'da teklif `FOR UPDATE` ile kilitlenir (aynı anda iki istek ikinci siparişi açamaz; son güvence `quotes_order_unique`), POST /api/orders ile aynı kurallar uygulanır (plaka zorunluluğu, elle Sipariş No, müşteri/tedarikçi otomatik kaydı), satırlar `order_services`'e yazılır ve partili satırların stoğu `deductStock` ile düşer (yetersizse tüm işlem geri alınır). `order_services.unit_price` satır **toplamı** ve müşterinin ödediği KDV dahil tutardır (`orderLineAmounts` — KDV hariç teklifte KDV eklenir, yuvarlama farkı son satıra yazılır, sipariş toplamı teklif genel toplamına birebir eşittir). Teklif satırında maliyet yoksa partiden hesaplanır. Sipariş notuna "Teklif T-xxxx üzerinden oluşturuldu." yazılır. Dönüştürme penceresi plakasız teklifte plakayı, gerekiyorsa Sipariş No'yu sorar ve partilerin güncel stoğu yetmiyorsa önceden uyarır.
+
+**Sipariş silinirse:** `DELETE /api/orders/:id` bağlı teklifi `KABUL`'e geri alır (kilit açılır, yeniden dönüştürülebilir). FK `ON DELETE SET NULL (order_id)` yalnızca başka bir yoldan silinen siparişler için güvencedir.
+
+**Güvenlik ve performans testi (2026-10-29, dev):** başka firmanın teklifine okuma/düzenleme/durum/dönüştürme/silme (hepsi 404), başka firmanın stok partisini teklife bağlama (reddedildi), oturumsuz/bozuk token (401), yetkisiz personelin sayfalara doğrudan girişi (yönlendirme), SQL enjeksiyonu, gövdeden `tenant_id`/`status`/tutar enjeksiyonu (yok sayıldı), aşırı girdi (adet/satır/metin sınırları), eşzamanlı çift dönüştürme denendi. 20.000 teklif + 60.000 satırlık veriyle: liste ilk sayfa 0,13 ms, arama < 1 ms, sekme sayıları ~10 ms, son sayfa 9 ms (sayfalama alt sorguda yapılır; dışarıda yapılınca orders tam taranıyordu, 93 ms).
+
+---
+
+### 24. Aktivite Geçmişi ve Kullanım Kılavuzu
+
+**Aktivite Geçmişi** (`/admin/audit-log`, yalnızca admin): `audit_log` tablosundaki "kim, ne zaman, neyi değiştirdi" kayıtları, sayfalı. Kayıt `src/lib/auditLog.ts` `logAudit` ile best-effort atılır (loglama hatası asıl işlemi bozmaz). Kaydedilen işlemler: `order.create/update/delete/payment`, `quote.create/update/status/delete/convert`, `customer.ledger_add/update/delete`, `user.update/delete`. Türkçe etiketler sayfadaki `ACTION_LABELS`'ta — yeni bir action eklenince oraya da eklenmeli, yoksa ham kod görünür.
+
+**Kullanım Kılavuzu** (`/admin/help`, herkes): panelin tüm sayfalarını rol rozetleriyle anlatan statik sayfa. Yeni bir modül/özellik eklendiğinde buraya da bölüm eklenmelidir.
+
+---
+
 ## Ortam Değişkenleri (.env.local)
 
 ```env
@@ -577,7 +608,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `storage` | Depolama kayıtları; `teslim_edildi`/`teslim_tarihi` ile teslim takibi |
 | `products` | Ürün partileri; benzersizlik `(code, production_year, production_week, COALESCE(supplier,''))` (tarihli) veya `(code)` (tarihsiz "temel" satır); `barcode` (`(tenant_id, barcode)` PARÇALI benzersiz, NULL olabilir), `product_type`, `width_mm`/`profile_pct`/`rim_diameter` (Ebat'ın yapılandırılmış hâli, `size_desc`'e ek), `tread_depth_mm` (İkinci El Lastik), `model_name`, `load_speed_index`, `eu_fuel_class`/`eu_wet_grip_class`/`eu_noise_db`/`eu_noise_class` (AB Lastik Etiketi), `rim_size`/`pcd`/`offset_et` (Jant Bilgileri), `min_stock_threshold` (kod bazlı, tüm partilere senkronlanır — bkz. Bölüm 9, Katalog Alanları Faz 1/Faz 2) |
 | `product_stock_entries` | Her partinin stok girişi / fiyat geçmişi (Malzeme Hareketleri'nin "Giriş" kaynağı) |
-| `app_settings` | Genel ayarlar — firma başına bir satır (`PRIMARY KEY(tenant_id)`, bkz. Bölüm 16): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 15), `orders_default_date_filter`, `auto_register_customers`, `booking_*` (Online Randevu ayarları, Bölüm 12), `whatsapp_*` (Bölüm 12), `shared_stock_enabled` (varsayılan `false`, bkz. Bölüm 19) |
+| `app_settings` | Genel ayarlar — firma başına bir satır (`PRIMARY KEY(tenant_id)`, bkz. Bölüm 16): `business_name`, `storage_overdue_months`, `payment_types` (bkz. Bölüm 15), `orders_default_date_filter`, `auto_register_customers`, `booking_*` (Online Randevu ayarları, Bölüm 12), `whatsapp_*` (Bölüm 12), `shared_stock_enabled` (varsayılan `false`, bkz. Bölüm 19), `custom_order_no_enabled` (elle Sipariş No → `orders.custom_order_no`), `plate_required` (varsayılan `true`; kapalıysa plaka veya müşteri adı yeterli), `quote_no_format` (`simple`/`yearly`, bkz. Bölüm 23) |
 | `expenses` | Masraflar (Bölüm 11) — `expense_date`, `category`, `description`, `amount`, `payment_type`, `recurring_expense_id` (opsiyonel, bkz. `recurring_expenses`), `kasa_id` (bkz. Bölüm 14) |
 | `recurring_expenses` | Sabit gider şablonları (Bölüm 11) — `category`, `description`, `amount`, `payment_type`, `is_active`, `kasa_id`; "Sabit Giderleri Ekle" bunlardan `expenses` satırı üretir |
 | `appointments` | Online Randevu talepleri (Bölüm 12) — `plate`, `customer_name`, `customer_phone`, `service_id`, `requested_at`, `status` (`BEKLEMEDE`/`ONAYLANDI`/`REDDEDILDI`/`TAMAMLANDI`/`IPTAL`/`GELMEDI`), `order_id` (dönüştürüldüyse), `ip_address` (hız sınırı için) |
@@ -593,8 +624,16 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `calendar_notes` | Takvim (Bölüm 22) — güne bağlı serbest not: `note_date` (`DATE`, saatsiz), `title`, `body` (azami 5000 karakter), `created_by` |
 | `support_tickets` | Destek Talepleri (Bölüm 21) — `subject`, `status` (`ACIK`/`KAPALI`, yeni mesajda otomatik yeniden açılır), `created_by`, `updated_at` (liste bu sütuna göre sıralanır) |
 | `support_ticket_messages` | Destek Talepleri (Bölüm 21) — thread: `ticket_id`, `sender_id`, `is_super_admin_reply` (hangi taraftan geldiğini kalıcı taşır), `body` |
+| `quotes` | Teklifler (Bölüm 23) — `quote_no` (`(tenant_id, quote_no)` benzersiz), `customer_name`/`customer_phone`/`plate`, `status` (`TASLAK`/`GONDERILDI`/`KABUL`/`RED`/`SIPARIS`), `vat_mode` (`dahil`/`haric`), `vat_rate` (0/1/10/20), `valid_until` (`DATE`), `notes`, `total_amount` (KDV dahil genel toplam, liste için), `order_id` (benzersiz; `ON DELETE SET NULL (order_id)`), `converted_at`, `created_by` |
+| `quote_lines` | Teklif satırları (Bölüm 23) — `position`, `service_id`, `product_id` (`SET NULL (product_id)`), `supplier`/`stock_code`/`size_desc`/`brand`/`model_name`, `quantity`, `unit_price` (gerçek birim fiyat), `line_total`, `cost_total`; teklif silinince CASCADE |
+| `quote_counters` | Teklif numarası sayacı (Bölüm 23) — `(tenant_id, year)` PK, `last_no`; `simple` biçimde `year=0` |
+| `audit_log` | Aktivite Geçmişi (Bölüm 24) — `user_id`, `username`, `action`, `table_name`, `record_id`, `detail` |
+| `monthly_financials` | Raporlar → Yıllık Özet — admin'in "Kaydet"le sabitlediği aylık `income`/`expense` (`(tenant_id, year, month)` benzersiz, `updated_by`) |
+| `push_subscriptions` | Tarayıcı push bildirimi abonelikleri (Bölüm 12/21) |
 
 > `tenants` hariç yukarıdaki tüm tablolarda bir `tenant_id` kolonu vardır (bkz. Bölüm 16) — tüm route'lar artık buna göre filtreler, paylaşılan tek deploymentta firmalar arası veri sızıntısı yoktur (Faz 3-9 tamamlandı).
+>
+> **Yeni bir `tenant_id`'li tablo eklerken** Süper Admin'in firma silme sırasına (`src/lib/tenantDeletion.ts`) da eklenmelidir — aksi halde o tabloda satırı olan firma silinemez. `src/lib/tenantDeletion.test.ts` şemayı tarayıp eksik tabloyu yakalar (2026-10-29'da `quotes`/`quote_counters` ve önceden beri eksik olan `monthly_financials` bu yüzden eklendi).
 
 **İndeksler** (performans): `orders(created_at)`, `orders(status)`, `orders(customer_name)` (Müşteri Detayı/silme kontrolü için), `order_services(order_id)`, `order_services(service_id)`, `order_services(product_id)`, `order_services(supplier)`, `order_services(payment_type)` (Sipariş Listesi'ndeki Filtrele modalının çoklu seçim filtreleri için), `order_payments(order_id)`, `product_stock_entries(product_id)`, `storage(teslim_edildi)`, `storage(created_at)`, `storage(islem_tarihi)`, `storage(depo_no)` (yalnızca aktif kayıtlarda benzersiz — bkz. `storage_active_depo_no_unique`), `products(code)`, `products(supplier)`, `products(season)`, `products` üzerindeki iki benzersizlik indeksi (kod bazlı) + `products(tenant_id, barcode)` PARÇALI benzersizlik indeksi (barkod, bkz. Bölüm 9), `customer_ledger_entries(tenant_id, order_id)` (Sipariş Listesi'ndeki FIFO Cari uzlaşma sorgusu için — bkz. Bölüm 3/13; mevcut `customer_ledger_entries_order_siparis_unique` PARÇALI bir index olduğundan bu sorguda kullanılamıyordu, `EXPLAIN ANALYZE` ile Seq Scan doğrulanıp eklendi).
 
@@ -613,7 +652,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET | `/api/orders/:id` | Sipariş detayı |
 | PATCH | `/api/orders/:id` | Siparişi kapat — `{ payments: [{payment_type, amount}, ...] }` (parçalı ödeme, bkz. Bölüm 5) |
 | PUT | `/api/orders/:id` | Sipariş + satırları düzenle (id eşleşenler güncellenir, eksik olanlar silinir, yeni olanlar eklenir; stok farkı otomatik uygulanır); `payments` gönderilirse (sipariş daha önce kapatıldıysa) `order_payments` de baştan yazılır (bkz. Bölüm 5, Ödeme düzeltme) |
-| DELETE | `/api/orders/:id` | Siparişi sil (bağlı stok geri eklenir, order_services cascade) |
+| DELETE | `/api/orders/:id` | Siparişi sil (bağlı stok geri eklenir, order_services cascade; tekliften açıldıysa teklif `KABUL`'e döner) |
 | POST | `/api/orders/import` | Excel'den toplu içe aktar; yanıtta `changedDuplicates` — mükerrer sayılıp atlanan ama satır sayısı değişmiş gruplar |
 | GET | `/api/orders/payment-types` | Filtrele modalı için gerçekten kullanılmış Ödeme Şekli değerleri (distinct) |
 | PATCH | `/api/orders/bulk-payment-type` | Seçili sipariş satırlarının Ödeme Şeklini toplu değiştirir, etkilenen siparişlerin özet `payment_type`'ını yeniden hesaplar (bkz. Bölüm 3) |
@@ -646,11 +685,14 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST | `/api/customers/:id/payments` | Manuel Cari tahsilat/borç kaydı ekle (bkz. Bölüm 13) |
 | PUT/DELETE | `/api/customers/:id/payments/:entryId` | Manuel Cari kaydını düzenle/sil (yalnızca `MANUEL`, `SIPARIS` kayıtları hariç) |
 | GET/POST | `/api/suppliers`, `/api/suppliers/:id` (PATCH/DELETE) | Tedarikçi dizini |
-| GET/PUT | `/api/settings` | Genel ayarlar — işletme adı, depoda bekleme uyarı eşiği, ödeme şekilleri, `orders_default_date_filter`, `auto_register_customers`, Online Randevu (`booking_*`) ve WhatsApp (`whatsapp_*`) ayarları (admin) |
+| GET/PUT | `/api/settings` | Genel ayarlar — işletme adı, depoda bekleme uyarı eşiği, ödeme şekilleri, `orders_default_date_filter`, `auto_register_customers`, `custom_order_no_enabled`, `plate_required`, `quote_no_format` (gönderilmezse mevcut değer korunur), Online Randevu (`booking_*`) ve WhatsApp (`whatsapp_*`) ayarları (admin) |
 | POST | `/api/settings/regenerate-slug` | Randevu formunun public bağlantısını (`tenants.slug`) rastgele yeniler (admin, bkz. Bölüm 12) |
 | GET/POST | `/api/appointments` | Randevu listesi (filtre: status; opsiyonel `?from=&to=` — Takvim'in aylık overlay'i için, bkz. Bölüm 22) / personelin elle randevu girmesi (bkz. Bölüm 12) |
 | PATCH/DELETE | `/api/appointments/:id` | Statü değiştir (onayla/reddet/vb. — `ONAYLANDI`da WhatsApp bildirimi tetikler) / sil |
 | POST | `/api/appointments/:id/convert` | Onaylanmış randevuyu `BEKLEMEDE` bir siparişe dönüştürür |
+| GET/POST | `/api/quotes` | Teklif listesi (`?status=` acik/suresi_doldu/KABUL/RED/SIPARIS, `?q=` arama, sayfalı; sekme sayılarıyla) / yeni teklif (`quotes.create`, numara atomik sayaçtan) — bkz. Bölüm 23 |
+| GET/PUT/PATCH/DELETE | `/api/quotes/:id` | Detay (maliyet yalnızca `quotes.view_cost` ile) / tam düzenleme (satırlar baştan yazılır) / durum değiştir (`SIPARIS` hariç) / sil — siparişe dönüşmüş teklifte PUT/PATCH/DELETE 409 |
+| POST | `/api/quotes/:id/convert` | Teklifi `BEKLEMEDE` siparişe dönüştürür (`quotes.convert`; `{ plate?, custom_order_no? }`), stok düşer, teklif kilitlenir |
 | GET/POST | `/api/calendar/notes` | Takvim: `?from=&to=` aralığındaki günlere bağlı notları listele / yeni not ekle (bkz. Bölüm 22) |
 | PATCH/DELETE | `/api/calendar/notes/:id` | Takvim notunu düzenle/sil (tenant_id ile sınırlı) |
 | GET/POST | `/api/support-tickets` | Destek Talepleri: kendi firmasının taleplerini listele (son mesaj önizlemeli) / yeni talep aç (bkz. Bölüm 21) |
@@ -697,6 +739,10 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/login                  → Yönetici girişi (Firma Kodu + Kullanıcı Adı + Şifre, bkz. Bölüm 16)
 /admin/orders                 → Sipariş listesi (admin)
 /admin/orders/:id             → Sipariş detayı / düzenleme (admin)
+/admin/quotes                 → Teklifler (bkz. Bölüm 23) (admin veya `quotes.view` izinli staff)
+/admin/quotes/new             → Yeni teklif
+/admin/quotes/:id             → Teklif detayı — yazdır, WhatsApp, durum, siparişe dönüştür
+/admin/quotes/:id/edit        → Teklif düzenle (siparişe dönüşmemişse)
 /admin/reports                → İstatistik & raporlama (admin)
 /admin/expenses               → Masraflar (admin)
 /admin/services               → Hizmet & fiyat yönetimi (admin)
@@ -715,6 +761,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 /admin/profile                → Profil (oturum açmış herkes)
 /admin/users                  → Kullanıcı yönetimi (admin)
 /admin/settings               → Genel ayarlar (admin)
+/admin/audit-log              → Aktivite Geçmişi (bkz. Bölüm 24) (admin)
+/admin/help                   → Kullanım Kılavuzu (oturum açmış herkes)
 /super-admin                  → Süper Admin Paneli — firma dizini, yeni firma, kalıcı silme (bkz. Bölüm 17, ayrı `super_admin` rolü, admin/staff giremez)
 /super-admin/destek           → Süper Admin: tüm firmaların Destek Talepleri'ni görüp yanıtlama (bkz. Bölüm 21)
 ```

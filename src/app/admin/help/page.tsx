@@ -34,6 +34,7 @@ const TOC: { group: string; items: { href: string; label: string }[] }[] = [
       { href: "#yeni-siparis", label: "Yeni Sipariş" },
       { href: "#siparis-listesi", label: "Sipariş Listesi" },
       { href: "#odeme", label: "Ödeme & Kapatma" },
+      { href: "#teklifler", label: "Teklifler" },
     ],
   },
   {
@@ -50,6 +51,7 @@ const TOC: { group: string; items: { href: string; label: string }[] }[] = [
       { href: "#musteriler", label: "Müşteriler & Cari" },
       { href: "#tedarikciler", label: "Tedarikçiler" },
       { href: "#randevular", label: "Online Randevu" },
+      { href: "#takvim", label: "Takvim" },
     ],
   },
   {
@@ -65,7 +67,10 @@ const TOC: { group: string; items: { href: string; label: string }[] }[] = [
     group: "Yönetim",
     items: [
       { href: "#kullanicilar", label: "Kullanıcılar" },
+      { href: "#aktivite", label: "Aktivite Geçmişi" },
       { href: "#ayarlar", label: "Genel Ayarlar" },
+      { href: "#profil", label: "Profil & Görünüm" },
+      { href: "#destek", label: "Destek" },
       { href: "#abonelik", label: "Abonelik" },
     ],
   },
@@ -165,9 +170,13 @@ export default function HelpPage() {
 
           <Section id="yeni-siparis" title="Yeni Sipariş" path="Ana sayfa ( / )" role="all" lede="Müşteri karşılandığında ilk açılan ekran. Plaka, müşteri bilgisi ve yapılan işlemler girilip kaydedilir — sipariş Beklemede statüsünde açılır, ödeme bilgisi daha sonra (Yönetici tarafından) girilir.">
             <List>
-              <li><b>Plaka</b> zorunludur, otomatik büyük harfe çevrilir. Müşteri adı yazılınca daha önce kaydedilmiş müşteriler önerilir, seçilince telefonu varsa otomatik dolar.</li>
+              <li><b>Plaka</b> varsayılan olarak zorunludur, otomatik büyük harfe çevrilir. Araca bağlı olmayan düz satışlar için Genel Ayarlar&apos;dan &quot;Araç Plakası Zorunlu&quot; kapatılabilir; o zaman plaka ya da müşteri adından biri yeterlidir.</li>
+              <li>Müşteri adı yazılınca daha önce kaydedilmiş müşteriler önerilir, seçilince telefonu varsa otomatik dolar.</li>
+              <li><b>Tarih</b> bugündür; girmeyi unuttuğunuz geçmiş bir günün siparişi için geriye alınabilir (ileri bir tarih seçilemez).</li>
+              <li>Genel Ayarlar&apos;da &quot;Sipariş Numarasını Elle Gir&quot; açıksa <b>Sipariş No</b> alanı çıkar ve zorunludur; kapalıyken sistem #numara verir.</li>
               <li>Her satırda <b>Yapılan İşlem</b> seçilir/yazılır — mevcut bir hizmetle eşleşirse Tutar otomatik dolar. Eşleşmeyen bir isim girilirse otomatik yeni bir hizmet olarak kaydedilir.</li>
-              <li><b>Lastik Satışı</b>&apos;nda ayrıca Tedarikçi → Stok Kodu → Üretim Haftası/Yılı sırasıyla seçilir; seçilen partinin Ebat/Fiyatı otomatik dolar ve stoktan düşülür.</li>
+              <li><b>Lastik Satışı</b>&apos;nda ayrıca Tedarikçi → Stok Kodu → Üretim Haftası/Yılı sırasıyla seçilir; seçilen partinin Ebat/Marka/Model/Fiyat/Maliyeti otomatik dolar ve stoktan düşülür. Adet alanının yanındaki rozet partide kalan stoğu gösterir; stoktan fazla adet girilirse kayıt engellenir.</li>
+              <li>Ürün Kataloğu&apos;ndaki <b>Sipariş</b> düğmesi bu ekranı o parti seçili olarak açar; sipariş detayındaki <b>Kopyala</b> ise aynı müşteri ve satırlarla, plakası boş yeni bir sipariş hazırlar (stok partisi bağlantısı kopyalanmaz, gerekirse yeniden seçilir).</li>
               <li>&quot;+ Satır Ekle&quot; ile aynı siparişe birden fazla işlem eklenir.</li>
               <li>Kaydet&apos;e basınca ekran sıfırlanır, sıradaki müşteriye hazır hale gelir.</li>
             </List>
@@ -185,6 +194,8 @@ export default function HelpPage() {
             <List>
               <li>Bir siparişe girince tüm satırlar, toplam, notlar ve ödeme bilgisi görünür; <b>&quot;İş Emri Yazdır&quot;</b> ile firma logolu, imza/kaşe kutulu A4 çıktı alınır.</li>
               <li><b>&quot;Düzelt&quot;</b> ile satırlar (işlem, tutar, tedarikçi, stok bağlantısı, ödeme tipi) tam ekranda düzenlenir.</li>
+              <li><b>Ödeme Notu</b> — fatura numarası gibi ödemeye ait bir bilgi, kapatırken ya da sonradan Düzelt ekranından kaydedilir.</li>
+              <li>Tekliften oluşturulan siparişlerin notunda hangi tekliften geldiği yazar. Böyle bir sipariş silinirse teklif &quot;Kabul Edildi&quot; durumuna döner ve yeniden dönüştürülebilir.</li>
             </List>
           </Section>
 
@@ -197,10 +208,43 @@ export default function HelpPage() {
             </List>
           </Section>
 
+          <Section id="teklifler" title="Teklifler" path="Yönetici Paneli → Teklifler" role="staff" lede="Müşteriye sipariş öncesi fiyat teklifi hazırlanır, yazdırılır ya da WhatsApp ile gönderilir; müşteri kabul edince tek tıkla siparişe dönüştürülür. Teklif stok ayırmaz — stok ancak siparişe dönüştürülünce düşer.">
+            <SubHeading>Teklif hazırlama</SubHeading>
+            <List>
+              <li>&quot;+ Yeni Teklif&quot; ile müşteri, telefon ve (opsiyonel) plaka girilir; satırlar Yeni Sipariş ekranındaki gibi işlem/tedarikçi/stok kodu/parti seçilerek eklenir.</li>
+              <li>Fiyat <b>birim fiyat</b> olarak girilir, Tutar = Adet × Birim Fiyat kendiliğinden hesaplanır.</li>
+              <li><b>KDV Dahil / KDV Hariç</b> ve <b>KDV oranı</b> (%20, %10, %1, %0) her teklif için ayrı seçilir; alt çubukta Ara Toplam, KDV ve Genel Toplam görünür. Katalogdan/partiden gelen fiyatlar KDV dahil kabul edilir, KDV hariç teklifte otomatik nete çevrilir.</li>
+              <li><b>Geçerlilik</b> 7, 15 veya 30 gün düğmeleriyle ya da tarih seçilerek belirlenir (varsayılan 15 gün). Süresi geçen açık teklifler listede &quot;Süresi Doldu&quot; olarak görünür.</li>
+              <li>Seçilen partide yeterli stok yoksa Adet yanındaki rozet turuncu olur; teklif yine kaydedilir.</li>
+              <li>Teklif numarası otomatik verilir (T-0001 veya T-2026-0001 — Genel Ayarlar&apos;dan seçilir).</li>
+            </List>
+            <SubHeading>Gönderme ve takip</SubHeading>
+            <List>
+              <li><b>Yazdır / PDF</b> — firma logolu, kaşeli A4 &quot;Fiyat Teklifi&quot; çıktısı; yazdırma ekranında &quot;PDF olarak kaydet&quot; seçilerek dosya alınabilir.</li>
+              <li><b>WhatsApp ile Gönder</b> — müşterinin numarasıyla WhatsApp açılır, teklifin özeti hazır yazılmış gelir. Taslak teklif bu düğmeyle gönderilince &quot;Gönderildi&quot; olarak işaretlenir.</li>
+              <li>Durum düğmeleriyle teklif <b>Gönderildi / Kabul Edildi / Reddedildi</b> işaretlenir; reddedilen teklif &quot;Yeniden Aç&quot; ile tekrar açılabilir.</li>
+              <li>Liste sekmeleri: Tümü, Açık, Süresi Doldu, Kabul, Siparişe Dönüştü, Red. Teklif no, müşteri, plaka veya telefonla aranır.</li>
+            </List>
+            <SubHeading>Siparişe dönüştürme</SubHeading>
+            <List>
+              <li><b>Siparişe Dönüştür</b> teklifteki satırlarla Beklemede bir sipariş açar, seçili partilerin stoğunu düşer ve sizi siparişe götürür; ödeme siparişten alınır.</li>
+              <li>Teklifte plaka yoksa ve plaka zorunluysa, ya da Sipariş No elle giriliyorsa, dönüştürme penceresi bunları sorar. Stok artık yetmiyorsa pencere uyarır ve sipariş açılmaz.</li>
+              <li>Siparişe dönüşen teklif kilitlenir — düzenlenemez, silinemez.</li>
+            </List>
+            <SubHeading>Yetkiler</SubHeading>
+            <List>
+              <li>Personel için Kullanıcılar sayfasında Teklifler satırından Görüntüle / Ekle / Düzenle / Sil / Siparişe Dönüştür ayrı ayrı verilir.</li>
+              <li><b>Maliyet/Kâr Gör</b> izni olmayan kullanıcı teklif ekranında maliyet ve kârı hiç görmez. Maliyet ve kâr müşteriye giden çıktıda ve WhatsApp mesajında hiçbir zaman yer almaz.</li>
+            </List>
+          </Section>
+
           <Section id="urunler" title="Ürün Kataloğu" path="Ürünler" role="staff" lede="Stoktaki lastik/jant/aksesuar partilerinin takip edildiği yer. Aynı ürün kodu farklı üretim haftası/tedarikçiyle birden fazla &quot;parti&quot;ye ayrılabilir; liste kod bazında gruplanır, partiler açılıp kapanır.">
             <SubHeading>Temel kullanım</SubHeading>
             <List>
-              <li>Alış/Satış Fiyatı ekranda her zaman <b>o partideki tüm girişlerin ortalaması</b> olarak gösterilir.</li>
+              <li>Parti satırındaki Alış/Satış Fiyatı <b>o partideki tüm girişlerin ortalamasıdır</b>. Kodun özet satırındaki ortalama ise yalnızca <b>stokta kalan</b> partilerden hesaplanır — tükenmiş ucuz bir parti, elinizdeki stoğun maliyetini düşük göstermez. Bir kodun tüm partileri tükenmişse son bilinen fiyat için tüm girişlerin ortalaması gösterilir.</li>
+              <li>Üstteki <b>stok özeti</b> kartları toplam stoğu, mevsimlere göre dağılımı ve stoğu biten kod sayısını gösterir; bir karta tıklanınca liste o mevsime ya da stoğu bitenlere süzülür.</li>
+              <li><b>Min. Stok</b> eşiği girilen kodlarda stok rozeti eşiğe inince turuncu, tükenince kırmızı olur.</li>
+              <li>Her satırdaki <b>Sipariş</b> düğmesi, o partiyle doldurulmuş Yeni Sipariş ekranını açar.</li>
               <li>Stoğu biten bir parti listeden otomatik kalkar, geçmişi &quot;Malzeme Hareketleri&quot; sekmesinde kalır.</li>
               <li>&quot;Stok Girişi&quot; ile mevcut bir partiye miktar eklenir; kod+hafta/yıl+tedarikçi eşleşmezse yeni parti açılır.</li>
               <li>Bir partiyi başka bir partiyle aynı kimliğe getirirseniz iki satır otomatik <b>birleştirilir</b>.</li>
@@ -247,6 +291,10 @@ export default function HelpPage() {
               <li>Tahsilatlar en eski borçtan başlayarak otomatik düşülür — bir siparişin &quot;ödendi&quot; sayılması için o siparişe özel bir tahsilat girmeniz gerekmez.</li>
               <li>Üstte <b>Toplam Borç/Alacak</b> özeti; &quot;Borç/Alacak Listesini İndir&quot; ile en yüksek borçtan başlayarak Excel&apos;e aktarılabilir.</li>
             </List>
+            <SubHeading>Müşteri adını değiştirmek</SubHeading>
+            <List>
+              <li>Müşterinin adı düzenlendiğinde o isimle girilmiş geçmiş siparişler ve randevular da yeni isme taşınır, cari geçmişi aynı müşteride kalır. Aynı isimde başka bir müşteri zaten varsa değişiklik engellenir.</li>
+            </List>
           </Section>
 
           <Section id="tedarikciler" title="Tedarikçiler" role="staff" lede="Tedarikçi dizini — Sipariş ve Ürün Kataloğu ekranlarındaki Tedarikçi alanlarını besler. Yeni bir isim ilk kullanıldığında otomatik eklenir, ayrıca elle de yönetilebilir." />
@@ -259,6 +307,15 @@ export default function HelpPage() {
               <li>Onaylanan bir randevu tek tıkla <b>&quot;Siparişe Dönüştür&quot;</b> ile Yeni Sipariş akışındaki bir siparişe çevrilir.</li>
               <li>Yeni talep geldiğinde tarayıcı bildirimi alabilir, onaylanan randevularda müşteriye otomatik WhatsApp bildirimi gönderilebilir (kendi WhatsApp Business hesabınızı bağlamanız gerekir).</li>
               <li>Formun görünümü &quot;Randevu Görünümü&quot; sayfasından, kendi web sitenizin diline uyacak şekilde özelleştirilebilir.</li>
+            </List>
+          </Section>
+
+          <Section id="takvim" title="Takvim" path="Takvim" role="staff" lede="Aylık işletme takvimi — randevular kendiliğinden görünür, üstüne belirli bir güne bağlı hatırlatma/not eklenebilir.">
+            <List>
+              <li>Ay görünümünde oklarla ay değiştirilir, &quot;Bugün&quot; ile bugüne dönülür.</li>
+              <li>O aya düşen randevular günlerin altında salt-okunur olarak görünür; randevunun kendisi Randevular sayfasından yönetilir.</li>
+              <li>Bir güne tıklanınca başlık ve ayrıntıyla <b>not</b> eklenir; notlar sonradan düzenlenip silinebilir.</li>
+              <li>Personel için Kullanıcılar sayfasındaki Takvim satırından ayrıca izin verilir.</li>
             </List>
           </Section>
 
@@ -286,6 +343,7 @@ export default function HelpPage() {
               <li>Tüm rakamlar hizmetin <b>girildiği</b> tarihe göredir (ödemenin alındığı tarihe göre değil).</li>
               <li>Henüz masrafa dönüştürülmemiş aktif sabit gider varsa, o ayın kârının gerçekte daha düşük olabileceğini hatırlatan bir rozet gösterilir.</li>
               <li>&quot;Kasa (Nakit) — Tüm Zamanlar&quot; kartı, ay filtresinden bağımsız, açılıştan bugüne toplam nakit durumunu özetler.</li>
+              <li><b>Yıllık Özet</b> sekmesi her ay için Gelir (Ciro − Maliyet), Gider (Masraf) ve Kâr/Zarar gösterir. Kaydedilmemiş aylarda rakamlar sistemden önerilir; Yönetici &quot;Kaydet&quot;e bastığında o ayın rakamı sabitlenir, sonradan veriler değişse de kayıtlı hâli kalır.</li>
             </List>
           </Section>
 
@@ -298,14 +356,39 @@ export default function HelpPage() {
             </List>
           </Section>
 
+          <Section id="aktivite" title="Aktivite Geçmişi" path="Ayarlar → Aktivite Geçmişi" role="admin" lede="Hassas işlemlerde kimin, ne zaman, neyi değiştirdiğinin kaydı.">
+            <List>
+              <li>Sipariş oluşturma/düzenleme/silme ve ödeme alma, teklif oluşturma/düzenleme/durum değişikliği/silme/siparişe dönüştürme, cari hareketler ve kullanıcı değişiklikleri kaydedilir.</li>
+              <li>Her kayıtta işlemi yapan kullanıcı, tarih-saat ve kısa bir açıklama (ör. plaka ve tutar) görünür. Kayıtlar değiştirilemez.</li>
+            </List>
+          </Section>
+
           <Section id="ayarlar" title="Genel Ayarlar" role="admin" lede="İşletmenizin panel genelindeki tercihleri — Ayarlar menüsü altında.">
             <List>
               <li><b>Marka</b> — Firma Logosu, Panel Logosu ve Firma Kaşesi görselleri; İş Emri çıktısında ve panel başlığında kullanılır.</li>
               <li><b>Şirket Bilgisi</b> — yetkili adı, telefon, web sitesi; Paylaşılan Stok&apos;ta karşı firmaya gösterilen iletişim bilgisidir.</li>
               <li><b>Fatura Bilgileri</b> — VKN/TCKN, vergi dairesi, adres; abonelik faturanız için kullanılır, kimseyle paylaşılmaz.</li>
               <li><b>Ödeme Şekilleri</b> — Nakit/POS/Cari/Mail Order dışında kendi ödeme tiplerinizi ekleyip kaldırabilirsiniz.</li>
+              <li><b>Sipariş Numarasını Elle Gir</b> ve <b>Araç Plakası Zorunlu</b> — sipariş formunun davranışı (bkz. Yeni Sipariş). Daha önce girilmiş siparişler etkilenmez.</li>
+              <li><b>Teklif Numarası Biçimi</b> — Sıralı (T-0001) veya Yıllık (T-2026-0001, her yıl 1&apos;den başlar). Yalnızca yeni teklifler etkilenir.</li>
+              <li><b>Stoğumu Diğer Firmalarla Paylaş</b> — Paylaşılan Stok özelliğini açar/kapatır.</li>
               <li><b>Depolama uyarı eşiği</b>, <b>Sipariş Listesi varsayılan tarih filtresi</b>, <b>Müşterileri Otomatik Kaydet</b> gibi küçük davranış ayarları.</li>
               <li><b>Firma Kodu</b> — girişte kullanılan 6 haneli kod, salt okunur olarak burada görüntülenir.</li>
+            </List>
+          </Section>
+
+          <Section id="profil" title="Profil & Görünüm" path="Ayarlar → Profil" role="all" lede="Kendi hesabınızın ayarları.">
+            <List>
+              <li>Kullanıcı adınızı ve şifrenizi değiştirebilirsiniz (şifre değişikliğinde mevcut şifre istenir).</li>
+              <li><b>Görünüm</b> — Açık, Koyu veya Sistem (cihazınızın ayarını izler) teması. Seçim kullanıcınıza kaydedilir, tüm cihazlarınızda geçerli olur.</li>
+            </List>
+          </Section>
+
+          <Section id="destek" title="Destek" path="Ayarlar → Destek" role="all" lede="Bir sorun ya da isteğinizi bize doğrudan panelden iletebileceğiniz talep sistemi.">
+            <List>
+              <li>&quot;Yeni Destek Talebi&quot; ile konu ve mesaj yazılır; yanıtlar aynı talebin altında yazışma olarak görünür.</li>
+              <li>Size yanıt verildiğinde talep &quot;Sıra sizde&quot; olarak işaretlenir. Sayfadaki düğmeyle bu cihazda tarayıcı bildirimlerini açarsanız yanıt geldiğinde bildirim de alırsınız (yeni randevu bildirimleri Randevu Ayarları&apos;ndan açılır).</li>
+              <li>Destek hiçbir izne bağlı değildir — firmanızdaki her kullanıcı talep açabilir.</li>
             </List>
           </Section>
 
