@@ -1641,6 +1641,16 @@ CREATE TABLE IF NOT EXISTS monthly_financials (
   UNIQUE (tenant_id, year, month)
 );
 
+-- Yıllık Özet'te Ciro/Maliyet'in elle girilmesi — kullanıcı isteği
+-- (2026-11-02): firma sistemi kullanmaya başlamadan önceki aylarda sistemde
+-- sipariş olmadığı için Ciro/Maliyet 0 görünüyordu ve değiştirilemiyordu.
+-- NULL = elle girilmedi, sistemdeki siparişlerden canlı hesaplanır (eski
+-- davranış aynen sürer); dolu = o ayın Ciro/Maliyet'i budur. İstemci yalnızca
+-- sistem değerinden farklı girilen değeri gönderir, yani sistemle çalışılan
+-- aylar canlı kalır.
+ALTER TABLE monthly_financials ADD COLUMN IF NOT EXISTS ciro DECIMAL(14,2);
+ALTER TABLE monthly_financials ADD COLUMN IF NOT EXISTS maliyet DECIMAL(14,2);
+
 -- Depolama — Ürünler'deki (bkz. Faz 2) Model/Üretim Haftası-Yılı/Yük-Hız
 -- Endeksi alanlarının depolanan müşteri lastiklerinde de takip edilmesi
 -- isteği: hangi tam model olduğu, DOT yaşı (uzun süre depoda kalan

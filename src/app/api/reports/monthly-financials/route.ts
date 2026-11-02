@@ -32,8 +32,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const [savedResult, ciroResult, maliyetResult, masrafResult] = await Promise.all([
-      pool.query<{ month: number; income: string; expense: string }>(
-        "SELECT month, income, expense FROM monthly_financials WHERE tenant_id = $1 AND year = $2",
+      pool.query<{ month: number; income: string; expense: string; ciro: string | null; maliyet: string | null }>(
+        "SELECT month, income, expense, ciro, maliyet FROM monthly_financials WHERE tenant_id = $1 AND year = $2",
         [user.tenantId, year]
       ),
       pool.query<{ month: number; ciro: number }>(
@@ -78,19 +78,26 @@ export async function GET(request: NextRequest) {
     // yüzden kaydedilmiş eski bir ayda sistemdeki veri sonradan değişirse
     // Ciro-Maliyet, dondurulmuş Gelir'e tam eşit çıkmayabilir; bu normaldir,
     // admin o ay için Gelir'i elle onaylamış/değiştirmiş olabilir.
+    //
+    // İstisna: Ciro/Maliyet elle girilmişse (monthly_financials.ciro/maliyet
+    // dolu, sistem öncesi aylar — bkz. schema.sql) o değer gösterilir;
+    // systemCiro/systemMaliyet her zaman canlı değerdir (istemci elle girilen
+    // değeri bununla karşılaştırır).
     const months = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
-      const ciro = round2(ciroByMonth.get(month) ?? 0);
-      const maliyet = round2(maliyetByMonth.get(month) ?? 0);
+      const systemCiro = round2(ciroByMonth.get(month) ?? 0);
+      const systemMaliyet = round2(maliyetByMonth.get(month) ?? 0);
       const saved = savedByMonth.get(month);
       if (saved) {
+        const ciro = saved.ciro != null ? round2(Number(saved.ciro)) : systemCiro;
+        const maliyet = saved.maliyet != null ? round2(Number(saved.maliyet)) : systemMaliyet;
         const income = round2(Number(saved.income));
         const expense = round2(Number(saved.expense));
-        return { month, ciro, maliyet, income, expense, kar: round2(income - expense), isSaved: true };
+        return { month, ciro, maliyet, systemCiro, systemMaliyet, income, expense, kar: round2(income - expense), isSaved: true };
       }
-      const income = round2(ciro - maliyet);
+      const income = round2(systemCiro - systemMaliyet);
       const expense = round2(masrafByMonth.get(month) ?? 0);
-      return { month, ciro, maliyet, income, expense, kar: round2(income - expense), isSaved: false };
+      return { month, ciro: systemCiro, maliyet: systemMaliyet, systemCiro, systemMaliyet, income, expense, kar: round2(income - expense), isSaved: false };
     });
 
     const totals = months.reduce(
@@ -113,11 +120,14 @@ export async function PUT(request: NextRequest) {
   if (user.role !== "admin") return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { year, month, income, expense } = await request.json();
+    const { year, month, income, expense, ciro, maliyet } = await request.json();
     const yearNum = Number(year);
     const monthNum = Number(month);
     const incomeNum = Number(income);
     const expenseNum = Number(expense);
+    // Ciro/Maliyet isteğe bağlı: boş/null = elle girilmedi, sistemden hesaplanır.
+    const ciroNum = ciro == null || ciro === "" ? null : Number(ciro);
+    const maliyetNum = maliyet == null || maliyet === "" ? null : Number(maliyet);
 
     if (!Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 2100) {
       return NextResponse.json({ error: "Geçersiz yıl." }, { status: 400 });
@@ -128,14 +138,18 @@ export async function PUT(request: NextRequest) {
     if (!Number.isFinite(incomeNum) || incomeNum < 0 || !Number.isFinite(expenseNum) || expenseNum < 0) {
       return NextResponse.json({ error: "Gelir ve Gider 0 veya üzeri bir sayı olmalıdır." }, { status: 400 });
     }
+    if ((ciroNum !== null && !(Number.isFinite(ciroNum) && ciroNum >= 0)) || (maliyetNum !== null && !(Number.isFinite(maliyetNum) && maliyetNum >= 0))) {
+      return NextResponse.json({ error: "Ciro ve Maliyet 0 veya üzeri bir sayı olmalıdır." }, { status: 400 });
+    }
 
     const result = await pool.query(
-      `INSERT INTO monthly_financials (tenant_id, year, month, income, expense, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO monthly_financials (tenant_id, year, month, income, expense, ciro, maliyet, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
        ON CONFLICT (tenant_id, year, month)
-       DO UPDATE SET income = EXCLUDED.income, expense = EXCLUDED.expense, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+       DO UPDATE SET income = EXCLUDED.income, expense = EXCLUDED.expense, ciro = EXCLUDED.ciro, maliyet = EXCLUDED.maliyet,
+                     updated_by = EXCLUDED.updated_by, updated_at = NOW()
        RETURNING year, month, income, expense`,
-      [user.tenantId, yearNum, monthNum, incomeNum, expenseNum, user.userId]
+      [user.tenantId, yearNum, monthNum, incomeNum, expenseNum, ciroNum, maliyetNum, user.userId]
     );
 
     const row = result.rows[0];

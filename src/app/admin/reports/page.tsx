@@ -191,11 +191,15 @@ interface MonthlyFinancialRow {
   month: number;
   ciro: number;
   maliyet: number;
+  systemCiro: number;
+  systemMaliyet: number;
   income: number;
   expense: number;
   kar: number;
   isSaved: boolean;
 }
+
+type MonthlyDraft = { ciro: string; maliyet: string; income: string; expense: string };
 
 const MONTH_NAMES_SHORT = [
   "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -209,6 +213,10 @@ const MONTH_NAMES_SHORT = [
 // sistemden önerilir (sarı "öneri" rozetiyle işaretlenir) ama admin
 // "Kaydet"e basana kadar hiçbir şey yazılmaz. Gelir = Ciro - Maliyet,
 // Gider = Masraf (müşteri isteğiyle netleştirildi, bkz. route.ts yorumu).
+// Ciro/Maliyet de elle girilebilir (sistem öncesi aylar için, kullanıcı
+// isteği 2026-11-02); değiştirilince Gelir taslağı Ciro - Maliyet olarak
+// güncellenir. Sistem değerinden farklı olmayan Ciro/Maliyet gönderilmez,
+// o ay canlı hesaplanmaya devam eder.
 function YillikOzetTab() {
   const toast = useToast();
   const { user } = useAuth();
@@ -219,8 +227,9 @@ function YillikOzetTab() {
   const [months, setMonths] = useState<MonthlyFinancialRow[]>([]);
   const [totals, setTotals] = useState({ ciro: 0, maliyet: 0, income: 0, expense: 0, kar: 0 });
   const [loading, setLoading] = useState(true);
-  const [drafts, setDrafts] = useState<Record<number, { income: string; expense: string }>>({});
+  const [drafts, setDrafts] = useState<Record<number, MonthlyDraft>>({});
   const [savingMonth, setSavingMonth] = useState<number | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -229,34 +238,50 @@ function YillikOzetTab() {
       .then((d: { months: MonthlyFinancialRow[]; totals: typeof totals }) => {
         setMonths(d.months);
         setTotals(d.totals);
-        setDrafts(Object.fromEntries(d.months.map((m) => [m.month, { income: String(m.income), expense: String(m.expense) }])));
+        setDrafts(Object.fromEntries(d.months.map((m) => [m.month, { ciro: String(m.ciro), maliyet: String(m.maliyet), income: String(m.income), expense: String(m.expense) }])));
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [year]);
+  }, [year, reloadKey]);
+
+  // Ciro/Maliyet değişince Gelir = Ciro - Maliyet önerilir (Gelir yine elle
+  // değiştirilebilir).
+  function updateDraft(month: number, field: keyof MonthlyDraft, raw: string) {
+    setDrafts((prev) => {
+      const next = { ...prev[month], [field]: raw };
+      if (field === "ciro" || field === "maliyet") {
+        next.income = String(Math.round(((Number(next.ciro) || 0) - (Number(next.maliyet) || 0)) * 100) / 100);
+      }
+      return { ...prev, [month]: next };
+    });
+  }
 
   async function handleSave(month: number) {
     const draft = drafts[month];
-    if (!draft) return;
+    const row = months.find((m) => m.month === month);
+    if (!draft || !row) return;
     setSavingMonth(month);
     try {
       const res = await fetch("/api/reports/monthly-financials", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ year, month, income: draft.income, expense: draft.expense }),
+        body: JSON.stringify({
+          year,
+          month,
+          income: draft.income,
+          expense: draft.expense,
+          ciro: Number(draft.ciro) !== row.systemCiro ? draft.ciro : null,
+          maliyet: Number(draft.maliyet) !== row.systemMaliyet ? draft.maliyet : null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error ?? "Kaydedilemedi.");
         return;
       }
-      setMonths((prev) => {
-        // PUT yanıtı ciro/maliyet döndürmez (bkz. route.ts yorumu, bunlar
-        // hiç saklanmaz) — önceki satırdaki canlı değerler korunur.
-        const next = prev.map((m) => (m.month === month ? { ...m, ...(data as Partial<MonthlyFinancialRow>) } : m));
-        setTotals(next.reduce((acc, m) => ({ ciro: acc.ciro + m.ciro, maliyet: acc.maliyet + m.maliyet, income: acc.income + m.income, expense: acc.expense + m.expense, kar: acc.kar + m.kar }), { ciro: 0, maliyet: 0, income: 0, expense: 0, kar: 0 }));
-        return next;
-      });
+      // Ciro/Maliyet elle girilenden sisteme dönmüş olabilir — canlı değerler
+      // için yıl yeniden çekilir.
+      setReloadKey((k) => k + 1);
       toast.success(`${MONTH_NAMES_SHORT[month - 1]} kaydedildi.`);
     } finally {
       setSavingMonth(null);
@@ -314,6 +339,11 @@ function YillikOzetTab() {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        {canEdit && (
+          <p className="text-xs text-gray-500 mb-2">
+            Sistemi kullanmaya başlamadan önceki aylar için Ciro ve Maliyet&apos;i elle girip Kaydet&apos;e basabilirsiniz.
+          </p>
+        )}
         <div className="bg-white rounded-xl shadow-sm overflow-clip">
           <StickyScrollX>
             <table className="w-full text-sm">
@@ -330,9 +360,11 @@ function YillikOzetTab() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {months.map((m) => {
-                  const draft = drafts[m.month] ?? { income: "0", expense: "0" };
+                  const draft = drafts[m.month] ?? { ciro: "0", maliyet: "0", income: "0", expense: "0" };
                   const draftKar = (Number(draft.income) || 0) - (Number(draft.expense) || 0);
-                  const dirty = Number(draft.income) !== m.income || Number(draft.expense) !== m.expense;
+                  const dirty =
+                    Number(draft.income) !== m.income || Number(draft.expense) !== m.expense ||
+                    Number(draft.ciro) !== m.ciro || Number(draft.maliyet) !== m.maliyet;
                   return (
                     <tr key={m.month} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
@@ -343,13 +375,33 @@ function YillikOzetTab() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatCurrency(m.ciro)}</td>
-                      <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatCurrency(m.maliyet)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {canEdit ? (
+                          <TRNumberInput
+                            value={draft.ciro}
+                            onChange={(raw) => updateDraft(m.month, "ciro", raw)}
+                            className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          <span className="text-gray-500 whitespace-nowrap">{formatCurrency(m.ciro)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {canEdit ? (
+                          <TRNumberInput
+                            value={draft.maliyet}
+                            onChange={(raw) => updateDraft(m.month, "maliyet", raw)}
+                            className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          <span className="text-gray-500 whitespace-nowrap">{formatCurrency(m.maliyet)}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         {canEdit ? (
                           <TRNumberInput
                             value={draft.income}
-                            onChange={(raw) => setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], income: raw } }))}
+                            onChange={(raw) => updateDraft(m.month, "income", raw)}
                             className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (
@@ -360,7 +412,7 @@ function YillikOzetTab() {
                         {canEdit ? (
                           <TRNumberInput
                             value={draft.expense}
-                            onChange={(raw) => setDrafts((prev) => ({ ...prev, [m.month]: { ...prev[m.month], expense: raw } }))}
+                            onChange={(raw) => updateDraft(m.month, "expense", raw)}
                             className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (

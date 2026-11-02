@@ -683,7 +683,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `quote_lines` | Teklif satırları (Bölüm 23) — `position`, `service_id`, `product_id` (`SET NULL (product_id)`), `supplier`/`stock_code`/`size_desc`/`brand`/`model_name`, `quantity`, `unit_price` (gerçek birim fiyat), `line_total`, `cost_total`; teklif silinince CASCADE |
 | `quote_counters` | Teklif numarası sayacı (Bölüm 23) — `(tenant_id, year)` PK, `last_no`; `simple` biçimde `year=0` |
 | `audit_log` | Aktivite Geçmişi (Bölüm 24) — `user_id`, `username`, `action`, `table_name`, `record_id`, `detail` |
-| `monthly_financials` | Raporlar → Yıllık Özet — admin'in "Kaydet"le sabitlediği aylık `income`/`expense` (`(tenant_id, year, month)` benzersiz, `updated_by`) |
+| `monthly_financials` | Raporlar → Yıllık Özet — admin'in "Kaydet"le sabitlediği aylık `income`/`expense` (`(tenant_id, year, month)` benzersiz, `updated_by`); `ciro`/`maliyet` NULL = siparişlerden canlı, dolu = elle girilmiş (sistem öncesi aylar, 2026-11-02) |
 | `push_subscriptions` | Tarayıcı push bildirimi abonelikleri (Bölüm 12/21) |
 | `vehicles` | Araç kaydı (Bölüm 25) — `plate` (normalize, `(tenant_id, plate)` benzersiz), `created_at`, `last_seen_at`, `customer_id` (filo aracıysa kurumsal müşteri, Bölüm 26); `orders`/`storage`/`appointments.vehicle_id` buna `SET NULL (vehicle_id)` ile bağlanır |
 
