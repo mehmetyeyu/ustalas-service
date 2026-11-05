@@ -39,6 +39,13 @@ export const TENANT_ID_TABLES_IN_DELETE_ORDER = [
   // de önce gelmeli.
   "quotes",
   "quote_counters",
+  // e-Fatura (docs/e-fatura-tasarim.md): invoices, invoice_orders'ı CASCADE
+  // ile götürür; invoice_orders.order_id orders'a RESTRICT bağlı — orders'tan
+  // önce. created_by/connected_by/granted_by → users.
+  "invoices",
+  "einvoice_product_map",
+  "einvoice_connections",
+  "tenant_addons",
   "orders",
   "products",
   "kasalar",
@@ -59,6 +66,6 @@ export const TENANT_ID_TABLES_IN_DELETE_ORDER = [
   "vehicles",
 ] as const;
 
-// orders/products/quotes'a ON DELETE CASCADE ile bağlı alt tablolar —
+// orders/products/quotes/invoices'a ON DELETE CASCADE ile bağlı alt tablolar —
 // tenant_id'leri var ama ebeveynle birlikte gittikleri için listede yoklar.
-export const TENANT_CASCADE_CHILD_TABLES = ["order_services", "order_payments", "product_stock_entries", "quote_lines"] as const;
+export const TENANT_CASCADE_CHILD_TABLES = ["order_services", "order_payments", "product_stock_entries", "quote_lines", "invoice_orders"] as const;

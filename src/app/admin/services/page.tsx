@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/format";
-import { useViewGuard, usePermission } from "../AuthContext";
+import { useAddon, useViewGuard, usePermission } from "../AuthContext";
+import { VAT_RATES } from "@/lib/einvoice/vat";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { TRNumberInput } from "@/components/TRNumberInput";
@@ -19,6 +20,7 @@ interface Service {
   bookable: boolean;
   duration_minutes: number | null;
   tracks_size: boolean;
+  vat_rate: number | null;
 }
 
 export default function ServicesPage() {
@@ -39,6 +41,9 @@ export default function ServicesPage() {
   const [bookable, setBookable] = useState(false);
   const [duration, setDuration] = useState("");
   const [tracksSize, setTracksSize] = useState(false);
+  // Fatura KDV oranı — yalnızca e-Fatura modülü açıkken gösterilir/gönderilir.
+  const einvoice = useAddon("einvoice");
+  const [vatRate, setVatRate] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function fetchServices() {
@@ -62,6 +67,7 @@ export default function ServicesPage() {
     setBookable(false);
     setDuration("");
     setTracksSize(false);
+    setVatRate("");
     setShowForm(true);
   }
 
@@ -72,6 +78,7 @@ export default function ServicesPage() {
     setBookable(svc.bookable);
     setDuration(svc.duration_minutes != null ? String(svc.duration_minutes) : "");
     setTracksSize(svc.tracks_size);
+    setVatRate(svc.vat_rate != null ? String(svc.vat_rate) : "");
     setShowForm(true);
   }
 
@@ -88,14 +95,14 @@ export default function ServicesPage() {
         const res = await fetch(`/api/services/${editSvc.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active, bookable, duration_minutes: durationValue, tracks_size: tracksSize }),
+          body: JSON.stringify({ name: name.trim(), price: priceValue, is_active: editSvc.is_active, bookable, duration_minutes: durationValue, tracks_size: tracksSize, ...(einvoice ? { vat_rate: vatRate } : {}) }),
         });
         if (!res.ok) throw new Error("Güncelleme başarısız.");
       } else {
         const res = await fetch("/api/services", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), price: priceValue, bookable, duration_minutes: durationValue, tracks_size: tracksSize }),
+          body: JSON.stringify({ name: name.trim(), price: priceValue, bookable, duration_minutes: durationValue, tracks_size: tracksSize, ...(einvoice ? { vat_rate: vatRate } : {}) }),
         });
         if (!res.ok) throw new Error("Ekleme başarısız.");
       }
@@ -237,6 +244,21 @@ export default function ServicesPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {einvoice && (
+                <div>
+                  <label htmlFor="hizmet-kdv" className="block text-sm font-medium text-gray-700 mb-1">Faturada KDV Oranı</label>
+                  <select
+                    id="hizmet-kdv"
+                    value={vatRate}
+                    onChange={(e) => setVatRate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Varsayılan (%20)</option>
+                    {VAT_RATES.map((r) => <option key={r} value={r}>%{r}</option>)}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">Sipariş tutarları KDV dahildir; fatura kesilirken KDV bu orana göre ayrılır.</p>
+                </div>
+              )}
               <div className="border-t border-gray-100 pt-4">
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
                   <input

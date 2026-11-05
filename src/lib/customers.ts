@@ -1,3 +1,5 @@
+import { classifyTaxId, normalizeTaxId } from "./taxId";
+
 // Kurumsal müşteri alanları (bkz. database/schema.sql "Kurumsal müşteri ve
 // filo araçları"). is_corporate gönderilmediyse null — çağıran mevcut değeri
 // korur.
@@ -74,4 +76,31 @@ export function canonicalCustomerName(input: string, names: readonly string[]): 
   const key = trimmed.toLocaleLowerCase("tr-TR");
   const matches = names.filter((n) => n.toLocaleLowerCase("tr-TR") === key);
   return matches.length === 1 ? matches[0] : trimmed;
+}
+
+// Müşterinin fatura bilgileri (e-Fatura/e-Arşiv alıcısı, bkz.
+// docs/e-fatura-tasarim.md §3.2). Gönderilmeyen alan provided=false sayılır
+// ve çağıran mevcut değeri korur; boş metin alanı temizler. Vergi no
+// gönderildiyse geçerli bir VKN (10) ya da TCKN (11) olmalı.
+export const INVOICE_INFO_FIELDS = ["tax_no", "tax_office", "address", "city", "district", "email"] as const;
+export type InvoiceInfoField = (typeof INVOICE_INFO_FIELDS)[number];
+const INVOICE_INFO_MAX: Record<InvoiceInfoField, number> = { tax_no: 11, tax_office: 100, address: 500, city: 50, district: 50, email: 150 };
+
+export function parseInvoiceInfo(body: Record<string, unknown>):
+  | { ok: true; values: Partial<Record<InvoiceInfoField, string | null>> }
+  | { ok: false; error: string } {
+  const values: Partial<Record<InvoiceInfoField, string | null>> = {};
+  for (const f of INVOICE_INFO_FIELDS) {
+    if (!(f in body)) continue;
+    const raw = f === "tax_no" ? normalizeTaxId(body[f]) : String(body[f] ?? "").trim();
+    if (raw.length > INVOICE_INFO_MAX[f]) return { ok: false, error: "Fatura bilgilerinden biri çok uzun." };
+    values[f] = raw || null;
+  }
+  if (values.tax_no && !classifyTaxId(values.tax_no)) {
+    return { ok: false, error: "Vergi no geçerli bir VKN (10 hane) ya da TC kimlik no (11 hane) olmalı." };
+  }
+  if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
+    return { ok: false, error: "E-posta adresi geçerli değil." };
+  }
+  return { ok: true, values };
 }

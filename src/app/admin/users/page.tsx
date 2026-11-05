@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatDate } from "@/lib/format";
-import { RESOURCE_ACTIONS } from "@/lib/permissions";
+import { ADDON_RESOURCES, RESOURCE_ACTIONS, type Resource } from "@/lib/permissions";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useAuth } from "../AuthContext";
@@ -45,6 +45,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   kasa: "Kasa",
   shared_stock: "Paylaşılan Stok",
   quotes: "Teklifler",
+  invoices: "e-Fatura",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -57,6 +58,8 @@ const ACTION_LABELS: Record<string, string> = {
   manage: "Kasa Hareketi Yönetimi",
   convert: "Siparişe Dönüştür",
   view_cost: "Maliyet/Kâr Gör",
+  issue: "Fatura Kes",
+  cancel: "İptal Et",
 };
 
 function isLocked(u: User): boolean {
@@ -68,12 +71,16 @@ function isLocked(u: User): boolean {
 // hem burada hem middleware/API route'larda kullanılıyor). Kullanıcılar ve
 // Genel Ayarlar bilinçli olarak bu listede yok (hep sadece gerçek admin).
 function PermissionMatrix({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+  const addons = useAuth().user?.addons ?? [];
   function toggle(key: string) {
     onChange(value.includes(key) ? value.filter((v) => v !== key) : [...value, key]);
   }
   return (
     <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
-      {Object.entries(RESOURCE_ACTIONS).map(([resource, actions]) => (
+      {Object.entries(RESOURCE_ACTIONS).filter(([resource]) => {
+        const addon = ADDON_RESOURCES[resource as Resource];
+        return !addon || addons.includes(addon);
+      }).map(([resource, actions]) => (
         <div key={resource} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
           <span className="w-24 shrink-0 text-sm font-medium text-gray-700">{RESOURCE_LABELS[resource]}</span>
           <div className="flex flex-wrap gap-x-4 gap-y-1">

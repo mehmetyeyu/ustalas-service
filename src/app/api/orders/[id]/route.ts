@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { getActiveInvoiceForOrder, invoicedLinesChanged, orderLockedMessage } from "@/lib/einvoice/orderLock";
 import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
@@ -91,6 +92,12 @@ export async function DELETE(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+
+      const invoice = await getActiveInvoiceForOrder(client, user.tenantId!, id);
+      if (invoice) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: orderLockedMessage(invoice) }, { status: 409 });
+      }
 
       // Sipariş tamamen silinmeden önce, stoktan düşülmüş partili satırlar
       // varsa stok geri eklenir.
@@ -474,6 +481,30 @@ export async function PUT(
       const newPaidAmount = editedPaymentsTotal != null
         ? editedPaymentsTotal
         : (oldPaid == null ? null : (oldPaid === oldTotal ? totalAmount : oldPaid));
+
+      // Resmi faturası olan siparişte tutar/satır değişmez (plaka, not vb. serbest).
+      const invoice = await getActiveInvoiceForOrder(client, user.tenantId!, id);
+      if (invoice) {
+        const current = await client.query<{ id: number; service_id: number; quantity: number; unit_price: string }>(
+          "SELECT id, service_id, quantity, unit_price FROM order_services WHERE order_id = $1 AND tenant_id = $2",
+          [id, user.tenantId]
+        );
+        const incoming = (lines as EditLineInput[]).map((l) => ({
+          id: l.id ?? null,
+          serviceId: serviceIdByName.get(String(l.service_name).trim()) ?? -1,
+          quantity: Math.max(1, Math.round(Number(l.quantity) || 1)),
+          unitPrice: Number(l.unit_price) || 0,
+        }));
+        const linesChanged = invoicedLinesChanged(
+          current.rows.map((r) => ({ id: r.id, serviceId: r.service_id, quantity: r.quantity, unitPrice: Number(r.unit_price) })),
+          incoming
+        );
+        const cents = (n: number | null) => (n == null ? null : Math.round(n * 100));
+        if (linesChanged || cents(totalAmount) !== cents(oldTotal) || cents(newPaidAmount) !== cents(oldPaid)) {
+          await client.query("ROLLBACK");
+          return NextResponse.json({ error: orderLockedMessage(invoice) }, { status: 409 });
+        }
+      }
 
       // customOrderNo yukarıda zaten doğru şekilde çözüldü (ayar açıksa yeni
       // doğrulanmış değer; kapalıyken alan gönderildiyse kullanıcının

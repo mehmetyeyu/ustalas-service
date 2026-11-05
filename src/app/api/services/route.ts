@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { parseServiceVatRate } from "@/lib/einvoice/vat";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 
@@ -25,7 +26,11 @@ export async function POST(request: NextRequest) {
   if (!hasPermission(user, "services.create")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   try {
-    const { name, price, bookable, duration_minutes, tracks_size } = await request.json();
+    const body = await request.json();
+    const { name, price, bookable, duration_minutes, tracks_size } = body;
+    const vat = parseServiceVatRate(body);
+    if (vat.provided && "error" in vat) return NextResponse.json({ error: vat.error }, { status: 400 });
+    const vatValue = vat.provided && "value" in vat ? vat.value : null;
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
     }
@@ -39,11 +44,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await pool.query(
-      "INSERT INTO services (tenant_id, name, price, bookable, duration_minutes, tracks_size) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-      [user.tenantId, String(name).trim(), priceValue, !!bookable, durationValue, !!tracks_size]
+      "INSERT INTO services (tenant_id, name, price, bookable, duration_minutes, tracks_size, vat_rate) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+      [user.tenantId, String(name).trim(), priceValue, !!bookable, durationValue, !!tracks_size, vatValue]
     );
     return NextResponse.json(
-      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1, bookable: !!bookable, duration_minutes: durationValue, tracks_size: !!tracks_size },
+      { id: result.rows[0].id, name: String(name).trim(), price: priceValue, is_active: 1, bookable: !!bookable, duration_minutes: durationValue, tracks_size: !!tracks_size, vat_rate: vatValue },
       { status: 201 }
     );
   } catch (error: unknown) {

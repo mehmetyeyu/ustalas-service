@@ -35,6 +35,11 @@ const ACTION_LABELS: Record<string, string> = {
   "quote.status": "Teklif Durumu Değişti",
   "quote.delete": "Teklif Silindi",
   "quote.convert": "Teklif Siparişe Dönüştürüldü",
+  "invoice.issue": "Fatura Kesildi",
+  "invoice.retry": "Fatura Tekrar Denendi",
+  "invoice.cancel": "Fatura İptal Edildi",
+  "einvoice.connect": "e-Fatura Bağlantısı Kuruldu",
+  "einvoice.disconnect": "e-Fatura Bağlantısı Kesildi",
 };
 
 const LIMIT = 30;

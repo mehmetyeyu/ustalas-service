@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAuthUser } from "@/lib/auth";
+import { getAuthUser, hasUserAddon } from "@/lib/auth";
+import { ADDONS } from "@/lib/addons";
 import { getSessionSettings } from "@/lib/settings";
 import { UI_PREF_COOKIE, uiPrefCookieOptions, uiPrefCookieValue } from "@/lib/uiThemeBoot";
 import { CURRENT_UI_VERSION } from "@/lib/uiVersion";
@@ -19,6 +20,9 @@ export async function GET() {
     billing_status: user.billingStatus ?? null, trial_ends_at: user.trialEndsAt ?? null, plan: user.plan ?? null,
     billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? false, billing_period_ends_at: user.billingPeriodEndsAt ?? null,
     billing_last_payment_error: user.billingLastPaymentError ?? null,
+    // Kullanılabilir ek özellikler (hak + ücretli abonelik) — menü ve ekranlar
+    // ek istek atmadan karar verir.
+    addons: ADDONS.filter((a) => hasUserAddon(user, a)),
     is_primary_admin: user.isPrimaryAdmin ?? false, onboarding_tour_completed_at: user.onboardingTourCompletedAt ?? null,
     ui_version: user.uiVersion ?? CURRENT_UI_VERSION, ui_theme: user.uiTheme ?? "system", ui_beta_version: user.uiBetaVersion ?? null,
     ...settings,

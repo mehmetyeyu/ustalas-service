@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
+import type { Addon } from "@/lib/addons";
 import { queryKeys, useMe, type MeResponse } from "@/lib/queries";
 import { useBootUiV2 } from "@/lib/uiTheme";
 import { resolveUiVersion, type UiVersion } from "@/lib/uiVersion";
@@ -22,6 +23,9 @@ interface AuthUser {
   billingCancelAtPeriodEnd: boolean;
   billingPeriodEndsAt: string | null;
   billingLastPaymentError: string | null;
+  // Şu an kullanılabilir ücretli ek özellikler (hak + ücretli abonelik, sunucu
+  // hesaplar — bkz. src/lib/addons.ts). Bkz. useAddon.
+  addons: string[];
   // Onboarding turu (bkz. src/lib/onboardingTour.ts) — admin/layout.tsx
   // bunlarla shouldShowOnboardingTour()'u çağırır.
   isPrimaryAdmin: boolean;
@@ -85,6 +89,7 @@ function toAuthUser(data: MeResponse): AuthUser {
     billingStatus: data.billing_status ?? null, trialEndsAt: data.trial_ends_at ?? null, plan: data.plan ?? null,
     billingCancelAtPeriodEnd: !!data.billing_cancel_at_period_end, billingPeriodEndsAt: data.billing_period_ends_at ?? null,
     billingLastPaymentError: data.billing_last_payment_error ?? null,
+    addons: Array.isArray(data.addons) ? data.addons : [],
     isPrimaryAdmin: !!data.is_primary_admin, onboardingTourCompletedAt: data.onboarding_tour_completed_at ?? null,
     customOrderNoEnabled: !!data.custom_order_no_enabled,
     plateRequired: data.plate_required !== false,
@@ -140,8 +145,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+const noopSubscribe = () => () => {};
+
 export function useAuth(): AuthState {
-  return useContext(AuthContext);
+  const ctx = useContext(AuthContext);
+  // Hidrasyon render'ında isV2 sunucunun çizdiği değer (false) olmalı. Suspense
+  // içinde geç hidrasyon olan bir bileşen (ör. sipariş formu, useSearchParams)
+  // /me cevabı geldikten sonra hidrasyona girerse context'teki isV2 zaten
+  // true olur ve React sunucu çıktısıyla uyuşmazlık verip eski sınıfları
+  // yerinde bırakır. useSyncExternalStore hidrasyonda sunucu değerini,
+  // hemen ardından gerçek değeri verir.
+  const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  return useMemo(() => (hydrated || !ctx.isV2 ? ctx : { ...ctx, isV2: false }), [ctx, hydrated]);
 }
 
 // Yüklenirken (henüz /api/auth/me dönmediyse) false döner — useViewGuard'ın
@@ -156,6 +171,14 @@ export function usePermission(key: string): boolean {
   if (loading) return false;
   if (!user) return false;
   return hasPermission(user, key);
+}
+
+// Ek özellik açık mı (bkz. AuthUser.addons). usePermission gibi "fail closed":
+// yüklenirken false — kapalı bir modülün düğmesi bir an bile görünmesin.
+export function useAddon(addon: Addon): boolean {
+  const { user, loading } = useAuth();
+  if (loading || !user) return false;
+  return user.addons.includes(addon);
 }
 
 // Her admin sayfasının en üstünde çağrılır: "<resource>.view" izni yoksa

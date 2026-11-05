@@ -21,6 +21,8 @@ export const NAV_ITEMS = [
   { href: "/admin/appointments", label: "Randevular", resource: "appointments" },
   { href: "/admin/takvim", label: "Takvim", resource: "calendar", isNew: true },
   { href: "/admin/quotes", label: "Teklifler", resource: "quotes", isNew: true },
+  // Ücretli ek özellik (src/lib/addons.ts) — yalnızca firmada açıkken görünür.
+  { href: "/admin/invoices", label: "Faturalar", resource: "invoices", addon: "einvoice", isNew: true },
 ] as const;
 
 // Kullanıcılar/Genel Ayarlar hiçbir zaman staff'a devredilemez (bkz. plan) —
@@ -51,12 +53,15 @@ export const ROLE_LABELS: Record<string, string> = { admin: "Yönetici", staff: 
 // middleware + her sayfanın kendi guard'ı ile korunuyor, bu sadece menünün
 // görünürlüğü. admin için filtreleme hiç uygulanmaz (her zaman tam liste).
 export function visibleAdminNav(
-  user: (PermissionUser & { billingStatus: string | null }) | null,
+  user: (PermissionUser & { billingStatus: string | null; addons?: string[] }) | null,
   loading: boolean
 ): { navItems: readonly NavItem[]; settingsItems: readonly NavItem[] } {
-  const navItems: readonly NavItem[] = loading || user?.role === "admin"
+  // Ek özellik menüleri yüklenirken de gizli — kapalı firmada bir an bile
+  // görünmesin.
+  const addonOk = (item: (typeof NAV_ITEMS)[number]) => !("addon" in item) || (!loading && !!user?.addons?.includes(item.addon));
+  const navItems: readonly NavItem[] = (loading || user?.role === "admin"
     ? NAV_ITEMS
-    : NAV_ITEMS.filter((item) => user && hasPermission(user, `${item.resource}.view`));
+    : NAV_ITEMS.filter((item) => user && hasPermission(user, `${item.resource}.view`))).filter(addonOk);
   const settingsItems = (loading || user?.role === "admin"
     ? SETTINGS_ITEMS
     : SETTINGS_ITEMS.filter((item) => !item.adminOnly)

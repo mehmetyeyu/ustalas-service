@@ -22,7 +22,15 @@ export const RESOURCE_ACTIONS = {
   // view_cost: teklif ekranında satır maliyeti/kârı görmek (çıktıda hiçbir
   // zaman yok) — fiyatı veren personel her zaman maliyeti görmek zorunda değil.
   quotes: ["view", "create", "edit", "delete", "convert", "view_cost"],
+  // e-Fatura / e-Arşiv (ücretli ek özellik, bkz. docs/e-fatura-tasarim.md).
+  // issue: fatura kesmek/tekrar denemek; cancel: e-Arşiv iptali. Sağlayıcı
+  // bağlantısı ve ayarları yalnızca admin.
+  invoices: ["view", "issue", "cancel"],
 } as const;
+
+// Yalnızca ilgili ek özellik açıkken anlamlı kaynaklar — personel izin
+// ekranında ek özellik kapalıysa gizlenir.
+export const ADDON_RESOURCES: Partial<Record<Resource, string>> = { invoices: "einvoice" };
 
 export type Resource = keyof typeof RESOURCE_ACTIONS;
 
@@ -68,6 +76,7 @@ export const PAGE_RESOURCE: { prefix: string; resource: Resource | null | "__adm
   { prefix: "/admin/kasa", resource: "kasa" },
   { prefix: "/admin/shared-stock", resource: "shared_stock" },
   { prefix: "/admin/quotes", resource: "quotes" },
+  { prefix: "/admin/invoices", resource: "invoices" },
   // Araç kartı sipariş geçmişini (tutarlarla) gösterir.
   { prefix: "/admin/vehicles", resource: "orders" },
   { prefix: "/admin/billing", resource: null },

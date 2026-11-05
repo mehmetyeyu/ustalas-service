@@ -23,6 +23,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   try {
     const customerResult = await pool.query(
       `SELECT c.id, c.name, c.phone, c.is_corporate, c.tax_no, c.contact_name, c.credit_limit::float AS credit_limit, c.discount_rate::float AS discount_rate,
+              c.tax_office, c.address, c.city, c.district, c.email,
               COALESCE((SELECT SUM(e.amount * e.direction) FROM customer_ledger_entries e
                          WHERE e.tenant_id = c.tenant_id AND e.customer_id = c.id), 0)::float AS balance
        FROM customers c WHERE c.id = $1 AND c.tenant_id = $2`,

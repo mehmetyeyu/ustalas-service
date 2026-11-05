@@ -10,9 +10,11 @@ import { formatTurkishPhoneInput } from "@/lib/phone";
 import InvoiceInfoForm from "@/components/InvoiceInfoForm";
 import ImageUploadField from "@/components/ImageUploadField";
 import { SettingsPage, SettingsSection } from "@/components/v2/SettingsLayout";
-import { useAuth, notifySettingsChanged } from "../AuthContext";
+import { useAddon, useAuth, notifySettingsChanged } from "../AuthContext";
+import { EInvoiceSettingsSection } from "@/components/einvoice/EInvoiceSettingsSection";
 
 export default function GeneralSettingsPage() {
+  const einvoice = useAddon("einvoice");
   const toast = useToast();
   const { refresh: refreshAuth } = useAuth();
   const [businessName, setBusinessName] = useState("");
@@ -464,6 +466,8 @@ export default function GeneralSettingsPage() {
           Yeni tekliflere uygulanır; daha önce verilmiş tekliflerin numarası değişmez.
         </p>
       </SettingsSection>
+
+      {einvoice && <EInvoiceSettingsSection />}
 
       <SettingsSection title="Depolama">
         <label className="block text-sm font-medium text-gray-700 mb-1">Depoda Bekleme Uyarı Eşiği (ay)</label>

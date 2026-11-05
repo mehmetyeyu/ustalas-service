@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useViewGuard, usePermission } from "../../AuthContext";
+import { useAddon, useViewGuard, usePermission } from "../../AuthContext";
+import { InvoiceInfoSection, type InvoiceInfo } from "@/components/einvoice/InvoiceInfoSection";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useDialog } from "@/lib/useDialog";
@@ -29,7 +30,7 @@ interface FleetVehicle {
   } | null;
 }
 interface CustomerDetail {
-  customer: { id: number; name: string; phone: string | null; is_corporate: boolean; tax_no: string | null; contact_name: string | null; balance: number; credit_limit: number | null; discount_rate: number | null };
+  customer: { id: number; name: string; phone: string | null; is_corporate: boolean; tax_no: string | null; contact_name: string | null; balance: number; credit_limit: number | null; discount_rate: number | null } & InvoiceInfo;
   month: { order_count: number; total: number } | null;
   vehicles: FleetVehicle[];
   can_view_orders: boolean;
@@ -52,6 +53,8 @@ export default function CustomerDetailPage() {
   const canEdit = usePermission("customers.edit");
   const canViewOrders = usePermission("orders.view");
   const canEditStorage = usePermission("storage.edit");
+  const einvoice = useAddon("einvoice");
+  const canEditInvoiceInfo = usePermission("invoices.issue");
   const [showSeason, setShowSeason] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
@@ -245,6 +248,16 @@ export default function CustomerDetailPage() {
           </div>
         ))}
       </div>
+
+      {einvoice && (
+        <InvoiceInfoSection
+          customerId={customer.id}
+          isCorporate={customer.is_corporate}
+          info={customer}
+          canEdit={canEdit || canEditInvoiceInfo}
+          onSaved={(next) => setData((d) => (d ? { ...d, customer: { ...d.customer, ...next } } : d))}
+        />
+      )}
 
       {customer.is_corporate ? (
         <section aria-labelledby="filo-araclar" className="mb-6 min-w-0 overflow-clip rounded-xl border border-v2-line bg-v2-surface shadow-sm">

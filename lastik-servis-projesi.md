@@ -616,6 +616,24 @@ Kilit `src/middleware.ts`'te **üç ayrı yerde** uygulanır: (1) `/admin/*` say
 
 Filo planının tüm fazları tamamlandı (2026-10-29).
 
+### 27. e-Fatura / e-Arşiv (ücretli ek özellik — Faz 0)
+
+Tam tasarım: [docs/e-fatura-tasarim.md](docs/e-fatura-tasarim.md); Paraşüt API referansı: [docs/parasut-api-referans.md](docs/parasut-api-referans.md). **Durum (2026-11-05): Faz 0 tamam, Paraşüt bağlantısı çalışıyor** — fatura akışı dev'de **sahte sağlayıcıyla** uçtan uca çalışıyor; Paraşüt'e bağlanma (OAuth) staging'de doğrulandı, fatura adımlarının Paraşüt istemcisi (`parasut.ts`) sırada. Üretimde sahte sağlayıcı kapalı → modül açık olsa da henüz fatura kesilemez.
+
+**Paraşüt bağlantısı** (2026'dan itibaren Paraşüt'ün yeni giriş sistemi — Keycloak OIDC, Authorization Code + PKCE zorunlu; eski `api.parasut.com/oauth` ve e-posta/şifreyle token alma 10 Aralık 2026'da kapanır): Ayarlar → e-Fatura → "Paraşüt'e Bağlan" (`GET /api/einvoice/connect`) PKCE + state üretir, şifreli kısa ömürlü bir httpOnly çerezde (`einv_oauth`, 10 dk) taşıyıp Paraşüt girişine yönlendirir; aynı sekmede yönlendirme bilinçli (Paraşüt giriş sayfası iframe/modal içinde açılamaz). Dönüş `GET /api/einvoice/callback`: state + çerez + oturum aynı kullanıcı mı kontrol edilir, kod token'a çevrilir, `/v4/me` ile **satış faturası yazma yetkisi olan** firmalar bulunur — tek firma → bağlantı aktif, birden çok → `status='pending'`, Ayarlar'da seçilir (`POST /api/einvoice/connection/company`). Token'lar `secretBox` ile şifreli; access 2 saat, satır kilitlenerek yenilenir (refresh token her yenilemede döner), 401'de bir kez zorla yenilenir, yenileme reddedilirse `status='reauth'` → "Yeniden Bağlan". 403'te tekrar denenmez (Paraşüt çok sayıda 401/403 alan istemciyi engelleyebilir); mesaj kullanıcıya Paraşüt'teki **Ayarlar > Kullanıcılar > Düzenle > Uygulama Entegrasyonları** yetkisini açmasını söyler — bu yetki şirket sahibi dahil varsayılan kapalıdır. "Bağlantıyı Test Et" (`GET /api/einvoice/connection/test`) yalnızca okur. "Bağlantıyı Kes" token'ı Paraşüt'te de iptal eder. Kullanıcı Paraşüt'te erişimi durdurursa bağlantı `reauth`'a düşer.
+
+**Ek özellik (kullanıcı kararları 2026-10-30):** aylık/yıllık plana dahil değil, **tek seferlik** satın alınır ve **yalnızca ücretli abonelik sürdükçe** (ya da `exempt`) çalışır; **deneme süresinde yok**. Hak `tenant_addons` (`source` purchase/grant, `revoked_at`), kural `hasAddon` (`src/lib/addons.ts`). Süper Admin firma satırında her ek modül için "<Modül> Hediye Et / Geri Al" (`ADDONS` listesinden üretilir; yeni modül = listeye ekleme) (`POST /api/super-admin/tenants/:id/addons`, `billing_events: addon.einvoice.grant/revoke`) — Ustalas'a böyle açılır. Kullanılabilir ek özellikler `/api/auth/me` → `addons`; istemcide `useAddon("einvoice")`. Kapalıyken menüdeki Faturalar, Ayarlar'daki bölüm, sipariş kartı, müşteri Fatura Bilgileri ve hizmet KDV alanı görünmez; uçlar 403 `addon_required`. iyzico ile tek seferlik satın alma (tasarım §13.2) henüz yapılmadı.
+
+**Kurallar:** sipariş tutarları her zaman KDV dahil; net/KDV `buildInvoiceAmounts` (`src/lib/einvoice/amounts.ts`) ile ayrıştırılır, sipariş indirimi satırlara orantılı dağıtılır (kuruş kaybolmaz). KDV varsayılan %20 (bağlantı ayarı), hizmet bazında `services.vat_rate`. Yalnızca **TAMAMLANDI** siparişe fatura (cari siparişe fatura sonra istenebilir — `canInvoiceOrder`). Bireyselde TCKN zorunlu, "TC vermek istemiyor" → `11111111111` (müşteri kaydına yazılmaz); kurumsalda VKN + vergi dairesi + adres. Fatura tarihi bugünden en fazla 7 gün geri. Girilen fatura bilgileri müşteri kaydına yazılır.
+
+**Motor** (`src/lib/einvoice/engine.ts`): `invoices` satırı sağlayıcıya ilk istekten önce açılır, adımlar contact → invoice → formalize → poll → pdf → payment; her adımın dış kimliği hemen yazılır, hata olursa HATA ve "Tekrar Dene" kaldığı adımdan sürer (sağlayıcıda idempotency yok). Mükellefse e-Fatura (TEMEL senaryo), değilse e-Arşiv. Webhook olmadığı için ekran durum ucunu 3 sn'de bir yoklar (`processing_until` ile iki sekme aynı faturayı ilerletmez). PDF **saklanmaz** — her açılışta sağlayıcıdan alınıp akıtılır (mevcut Blob deposu herkese açık, TCKN'li belge orada tutulmaz). Sağlayıcı arayüzü `provider.ts`; sahte sağlayıcı `mockProvider.ts` (10 haneli VKN → e-Fatura, TCKN → e-Arşiv, alıcı adında "HATA" → hata senaryosu).
+
+**Sipariş kilidi:** aktif faturası olan siparişin satır/tutar/ödeme toplamı değiştirilemez ve sipariş silinemez (409, `src/lib/einvoice/orderLock.ts`); plaka/not serbest. Fatura iptal edilince (`invoice_orders.active=false`) kilit kalkar. İptal: resmileşmiş e-Arşiv 7 gün içinde; e-Fatura uygulamadan iptal edilmez; hatalı faturadan "Vazgeç".
+
+**Ekranlar:** Ayarlar → e-Fatura (bağlantı, seri, varsayılan KDV, tahsilat işleme; dev'de "Sahte Sağlayıcıya Bağlan"), sipariş detayında Fatura kartı + "Fatura Kes" penceresi, Ödeme Al & Kapat'ta "Kapatınca fatura kes" (varsayılan işaretsiz), Faturalar sayfası (`/admin/invoices`, hatalılar üstte), müşteri sayfasında Fatura Bilgileri, Hizmetler'de "Faturada KDV Oranı". İzinler: `invoices.view/issue/cancel`; bağlantı ayarları admin.
+
+**Bilerek bırakılanlar / sonraki adımlar:** fatura adımlarının Paraşüt istemcisi (`parasut.ts`, Faz 1), günlük süpürme + bağlantı tazeleme cron'u (refresh token kullanılmazsa ölür; staging ~31 saat verdi, belge 30 gün diyor — doğrulanacak), tahsilatların gerçek hesaba işlenmesi ve kasa eşleme ekranı, WhatsApp PDF linki, e-Fatura red takibi (Faz 2), aylık filo faturası (Faz 3), iyzico satın alma. `secretBox.ts` (AES-256-GCM, `INTEGRATION_ENC_KEY`) Paraşüt token'larını şifreler.
+
 ---
 
 ## Ortam Değişkenleri (.env.local)
@@ -643,6 +661,23 @@ IYZICO_WEBHOOK_SIGNATURE_ENABLED=false
 IYZICO_IFN_WEBHOOK_SECRET=
 # Vercel Cron'un reprice-subscriptions'ı çağırırken gönderdiği Bearer token
 CRON_SECRET=
+# e-Fatura (Bölüm 27): sağlayıcı token'larını şifreleyen anahtar (32 bayt base64,
+# `openssl rand -base64 32`) — Paraşüt bağlantısı için zorunlu. Değişirse
+# kayıtlı bağlantılar çözülemez, firmalar yeniden bağlanır.
+INTEGRATION_ENC_KEY=
+# Yalnızca test için üretimde sahte e-Fatura sağlayıcısını açar (normalde boş).
+EINVOICE_MOCK_ENABLED=
+# Paraşüt (devhub.parasut.com, "İş Ortağı" uygulaması "Elevire"). İkisi boşsa
+# "Paraşüt'e Bağlan" pasif kalır. Prod ve staging client'ları ayrıdır.
+PARASUT_CLIENT_ID=
+PARASUT_CLIENT_SECRET=
+# Giriş sunucusu ve API — boşsa prod: id.parasut.com/realms/parasut, api.parasut.com.
+# Staging: https://id-staging.parasut.com/realms/parasut, https://api-staging.parasut.com
+PARASUT_ID_URL=
+PARASUT_API_URL=
+# İsteğe bağlı: geri dönüş adresini sabitler (boşsa isteğin alan adından üretilir;
+# devhub'da kayıtlı olmalı — prod: lastik/elevire.yeyu.co, ustalas-service.vercel.app).
+PARASUT_REDIRECT_URI=
 ```
 
 ---
@@ -685,6 +720,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | `audit_log` | Aktivite Geçmişi (Bölüm 24) — `user_id`, `username`, `action`, `table_name`, `record_id`, `detail` |
 | `monthly_financials` | Raporlar → Yıllık Özet — admin'in "Kaydet"le sabitlediği aylık `income`/`expense` (`(tenant_id, year, month)` benzersiz, `updated_by`); `ciro`/`maliyet` NULL = siparişlerden canlı, dolu = elle girilmiş (sistem öncesi aylar, 2026-11-02) |
 | `push_subscriptions` | Tarayıcı push bildirimi abonelikleri (Bölüm 12/21) |
+| `tenant_addons`, `addon_pricing` | Ücretli ek özellik hakları ve sabit TL fiyatları (Bölüm 27) |
+| `einvoice_connections` | Firma başına e-belge sağlayıcı bağlantısı (Bölüm 27) — şifreli token'lar, seri, varsayılan KDV, durum |
+| `invoices`, `invoice_orders`, `einvoice_product_map` | Resmi faturalar (alıcı anlık görüntüsü, adım/durum, dış kimlikler), fatura↔sipariş (`active` parçalı benzersiz), kalem→sağlayıcı ürünü eşlemesi (Bölüm 27). Müşteriye `tax_office`/`address`/`city`/`district`/`email`/`ext_contact_id`/`einvoice_alias`, hizmete `vat_rate`, kasaya `ext_account_id` eklendi |
 | `vehicles` | Araç kaydı (Bölüm 25) — `plate` (normalize, `(tenant_id, plate)` benzersiz), `created_at`, `last_seen_at`, `customer_id` (filo aracıysa kurumsal müşteri, Bölüm 26); `orders`/`storage`/`appointments.vehicle_id` buna `SET NULL (vehicle_id)` ile bağlanır |
 
 > `tenants` hariç yukarıdaki tüm tablolarda bir `tenant_id` kolonu vardır (bkz. Bölüm 16) — tüm route'lar artık buna göre filtreler, paylaşılan tek deploymentta firmalar arası veri sızıntısı yoktur (Faz 3-9 tamamlandı).
@@ -753,6 +791,15 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET/POST | `/api/appointments` | Randevu listesi (filtre: status; opsiyonel `?from=&to=` — Takvim'in aylık overlay'i için, bkz. Bölüm 22) / personelin elle randevu girmesi (bkz. Bölüm 12) |
 | PATCH/DELETE | `/api/appointments/:id` | Statü değiştir (onayla/reddet/vb. — `ONAYLANDI`da WhatsApp bildirimi tetikler) / sil |
 | POST | `/api/appointments/:id/convert` | Onaylanmış randevuyu `BEKLEMEDE` bir siparişe dönüştürür |
+| GET/POST | `/api/invoices` | Fatura listesi (`?order_id=`, `?status=`, `?q=`, tarih, sayfalı) / fatura kes (`invoices.issue`) — bkz. Bölüm 27 |
+| GET | `/api/invoices/draft?order_ids=` | Fatura penceresi ön izlemesi (alıcı varsayılanları, satırlar, KDV) |
+| GET | `/api/invoices/:id`, `/api/invoices/:id/status`, `/api/invoices/:id/pdf` | Detay / yoklama (işleniyorsa ilerletir) / PDF (sağlayıcıdan akıtılır) |
+| POST | `/api/invoices/:id/retry`, `/api/invoices/:id/cancel` | Tekrar dene (`invoices.issue`) / iptal ya da vazgeç (`invoices.cancel`) |
+| GET/PATCH/DELETE | `/api/einvoice/connection` (+ `POST …/mock` yalnızca dev) | e-Fatura bağlantısı ve ayarları (admin) |
+| GET | `/api/einvoice/connect`, `/api/einvoice/callback` | Paraşüt'e bağlanma (OAuth + PKCE) — Bölüm 27 |
+| POST / GET | `/api/einvoice/connection/company`, `/api/einvoice/connection/test` | Birden çok Paraşüt firmasından seçim; salt okur bağlantı testi |
+| PATCH | `/api/customers/:id/invoice-info` | Müşteri fatura bilgileri (`customers.edit` ya da `invoices.issue`) |
+| POST | `/api/super-admin/tenants/:id/addons` | Ek özelliği hediye et / geri al (Süper Admin) |
 | GET/POST | `/api/quotes` | Teklif listesi (`?status=` acik/suresi_doldu/KABUL/RED/SIPARIS, `?q=` arama, sayfalı; sekme sayılarıyla) / yeni teklif (`quotes.create`, numara atomik sayaçtan) — bkz. Bölüm 23 |
 | GET/PUT/PATCH/DELETE | `/api/quotes/:id` | Detay (maliyet yalnızca `quotes.view_cost` ile) / tam düzenleme (satırlar baştan yazılır) / durum değiştir (`SIPARIS` hariç) / sil — siparişe dönüşmüş teklifte PUT/PATCH/DELETE 409 |
 | POST | `/api/quotes/:id/convert` | Teklifi `BEKLEMEDE` siparişe dönüştürür (`quotes.convert`; `{ plate?, custom_order_no? }`), stok düşer, teklif kilitlenir |

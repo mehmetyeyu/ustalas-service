@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { parseServiceVatRate } from "@/lib/einvoice/vat";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 
@@ -13,7 +14,10 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const { name, price, is_active, bookable, duration_minutes, tracks_size } = await request.json();
+    const body = await request.json();
+    const { name, price, is_active, bookable, duration_minutes, tracks_size } = body;
+    const vat = parseServiceVatRate(body);
+    if (vat.provided && "error" in vat) return NextResponse.json({ error: vat.error }, { status: 400 });
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: "Hizmet adı zorunludur." }, { status: 400 });
     }
@@ -26,8 +30,11 @@ export async function PUT(
       return NextResponse.json({ error: "Geçersiz süre." }, { status: 400 });
     }
     const result = await pool.query(
-      "UPDATE services SET name = $1, price = $2, is_active = $3, bookable = $4, duration_minutes = $5, tracks_size = $6 WHERE id = $7 AND tenant_id = $8",
-      [String(name).trim(), priceValue, is_active ? 1 : 0, !!bookable, durationValue, !!tracks_size, id, user.tenantId]
+      `UPDATE services SET name = $1, price = $2, is_active = $3, bookable = $4, duration_minutes = $5, tracks_size = $6,
+              vat_rate = CASE WHEN $9 THEN $10::smallint ELSE vat_rate END
+       WHERE id = $7 AND tenant_id = $8`,
+      [String(name).trim(), priceValue, is_active ? 1 : 0, !!bookable, durationValue, !!tracks_size, id, user.tenantId,
+       vat.provided, vat.provided && "value" in vat ? vat.value : null]
     );
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Hizmet bulunamadı." }, { status: 404 });

@@ -3,6 +3,7 @@ import { resolveBetaVersion, resolveUiVersion, type UiVersion } from "./uiVersio
 import { cookies, headers } from "next/headers";
 import * as Sentry from "@sentry/nextjs";
 import pool from "./db";
+import { hasAddon, type Addon } from "./addons";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "8h";
@@ -35,6 +36,10 @@ export interface JwtPayload {
   // Son başarısız otomatik yenileme denemesinin iyzico'dan gelen (zaten
   // Türkçe) sebep mesajı — bkz. src/app/api/webhooks/iyzico/route.ts.
   billingLastPaymentError?: string | null;
+  // Sahip olunan ücretli ek özellikler (tenant_addons, geri alınmamış). Tek
+  // başına "kullanılabilir" demek DEĞİL — abonelik şartıyla birlikte
+  // src/lib/addons.ts'teki hasAddon karar verir (bkz. hasUserAddon).
+  addons?: string[];
   // Onboarding turu (bkz. src/lib/onboardingTour.ts) kimin görmesi
   // gerektiğini belirlemek için — billingStatus/trialEndsAt gibi bunlar da
   // her istekte DB'den taze okunur, JWT'ye hiç gömülmez.
@@ -93,7 +98,8 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
             u.ui_version, u.ui_theme, u.ui_beta_version,
             u.tenant_id, t.name AS tenant_name, t.is_active AS tenant_is_active,
             t.billing_status, t.trial_ends_at, t.plan,
-            t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error
+            t.billing_cancel_at_period_end, t.billing_period_ends_at, t.billing_last_payment_error,
+            ARRAY(SELECT a.addon FROM tenant_addons a WHERE a.tenant_id = u.tenant_id AND a.revoked_at IS NULL) AS addons
      FROM users u
      LEFT JOIN tenants t ON t.id = u.tenant_id
      WHERE u.id = $1`,
@@ -141,6 +147,7 @@ export async function getAuthUserByToken(token: string): Promise<JwtPayload | nu
     billingCancelAtPeriodEnd: user.billing_cancel_at_period_end ?? null,
     billingPeriodEndsAt: user.billing_period_ends_at ?? null,
     billingLastPaymentError: user.billing_last_payment_error ?? null,
+    addons: user.addons ?? [],
     isPrimaryAdmin: user.is_primary_admin ?? false,
     onboardingTourCompletedAt: user.onboarding_tour_completed_at ?? null,
     uiVersion: resolveUiVersion(user.ui_version, resolveBetaVersion(user.ui_beta_version)),
@@ -174,4 +181,19 @@ export async function getAuthUser(): Promise<JwtPayload | null> {
   const token = cookieStore.get("auth_token")?.value;
   if (!token) return null;
   return getAuthUserByToken(token);
+}
+
+// Oturumdaki kullanıcının firması bu ek özelliği şu an kullanabilir mi
+// (hak + ücretli abonelik, bkz. src/lib/addons.ts).
+export function hasUserAddon(user: JwtPayload, addon: Addon): boolean {
+  return hasAddon(
+    {
+      billing_status: user.billingStatus ?? null,
+      trial_ends_at: user.trialEndsAt ?? null,
+      billing_cancel_at_period_end: user.billingCancelAtPeriodEnd ?? null,
+      billing_period_ends_at: user.billingPeriodEndsAt ?? null,
+    },
+    user.addons,
+    addon
+  );
 }

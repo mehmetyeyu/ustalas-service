@@ -7,7 +7,8 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { canGoBackInApp } from "@/lib/navHistory";
-import { useViewGuard, usePermission, useAuth } from "../../AuthContext";
+import { useViewGuard, usePermission, useAuth, useAddon } from "../../AuthContext";
+import { OrderInvoiceCard } from "@/components/einvoice/OrderInvoiceCard";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { KasaSelect } from "@/components/KasaSelect";
@@ -219,6 +220,12 @@ function OrderDetailPageInner() {
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canApprove = usePermission("orders.approve");
+  // "Kapatınca fatura kes" (e-Fatura ek özelliği): varsayılan işaretsiz
+  // (kullanıcı kararı 2026-10-30); kapatma başarılı olunca fatura penceresi açılır.
+  const einvoiceEnabled = useAddon("einvoice");
+  const canIssueInvoice = usePermission("invoices.issue");
+  const [issueAfterClose, setIssueAfterClose] = useState(false);
+  const [invoiceAutoOpen, setInvoiceAutoOpen] = useState(0);
   // Genel Ayarlar'daki "Araç Plakası Zorunlu" (bkz. database/schema.sql
   // plate_required notu) — auth.user null iken (ilk render) güvenli
   // varsayılan olarak true (tarihsel davranış).
@@ -805,6 +812,8 @@ function OrderDetailPageInner() {
       invalidateAfter(queryClient, "order");
       setPaymentNoteInput("");
       await fetchOrder();
+      if (issueAfterClose) setInvoiceAutoOpen((n) => n + 1);
+      setIssueAfterClose(false);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
     } finally {
@@ -1333,6 +1342,7 @@ function OrderDetailPageInner() {
         onPrint={printWorkOrder}
         onEdit={openEdit}
         onPay={openPayment}
+        invoiceAutoOpen={invoiceAutoOpen}
       />
 
       {/* Ödeme Modal */}
@@ -1447,6 +1457,13 @@ function OrderDetailPageInner() {
               />
             </div>
 
+            {einvoiceEnabled && canIssueInvoice && (
+              <label className="mb-4 flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={issueAfterClose} onChange={(e) => setIssueAfterClose(e.target.checked)} className="h-4 w-4 accent-blue-600" />
+                Kapatınca fatura kes (e-Arşiv / e-Fatura)
+              </label>
+            )}
+
             <div className="flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
@@ -1473,13 +1490,14 @@ function OrderDetailPageInner() {
 // işlem satırları + toplamlar ve notlar, sağda müşteri/araç, ödeme ve
 // geçmiş. Sadece mevcut /api/orders/[id] verisini kullanır (ek istek yok);
 // Ödeme Al penceresi, İş Emri ve Düzelt eski görünümle ortak.
-function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay }: {
+function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, invoiceAutoOpen }: {
   order: OrderDetail;
   canEdit: boolean;
   canApprove: boolean;
   onPrint: () => void;
   onEdit: () => void;
   onPay: () => void;
+  invoiceAutoOpen: number;
 }) {
   const router = useRouter();
   const done = order.status === "TAMAMLANDI";
@@ -1680,6 +1698,8 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay }: {
               </div>
             )}
           </section>
+
+          <OrderInvoiceCard orderId={order.id} orderDone={done} autoOpen={invoiceAutoOpen} className={`${card} px-5 py-4`} />
 
           <section aria-labelledby="gecmis" className={`${card} px-5 py-4`}>
             <h2 id="gecmis" className="mb-4 text-[15px] font-semibold text-v2-fg">Geçmiş</h2>

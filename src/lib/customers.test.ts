@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyDiscount, canonicalCustomerName, exceedsCreditLimit, parseCreditLimit, parseDiscountRate } from "./customers";
+import { applyDiscount, canonicalCustomerName, exceedsCreditLimit, parseCreditLimit, parseDiscountRate, parseInvoiceInfo } from "./customers";
 
 describe("parseCreditLimit", () => {
   it("alan yoksa dokunulmaz", () => {
@@ -65,5 +65,23 @@ describe("canonicalCustomerName", () => {
     expect(canonicalCustomerName("ali", names)).toBe("ali");
     expect(canonicalCustomerName("ALI", names)).toBe("ALI");
     expect(canonicalCustomerName("Yeni Müşteri", names)).toBe("Yeni Müşteri");
+  });
+});
+
+describe("parseInvoiceInfo", () => {
+  it("yalnızca gönderilen alanlar, boş metin temizler, boşluklar kırpılır", () => {
+    expect(parseInvoiceInfo({ city: " İstanbul ", district: "" })).toEqual({ ok: true, values: { city: "İstanbul", district: null } });
+    expect(parseInvoiceInfo({})).toEqual({ ok: true, values: {} });
+  });
+  it("vergi no VKN ya da TCKN olmalı, boşluklar yok sayılır", () => {
+    expect(parseInvoiceInfo({ tax_no: "123 456 7890" })).toEqual({ ok: true, values: { tax_no: "1234567890" } });
+    expect(parseInvoiceInfo({ tax_no: "10000000146" })).toEqual({ ok: true, values: { tax_no: "10000000146" } });
+    expect(parseInvoiceInfo({ tax_no: "1234567891" }).ok).toBe(false);
+    expect(parseInvoiceInfo({ tax_no: "" })).toEqual({ ok: true, values: { tax_no: null } });
+  });
+  it("e-posta biçimi ve uzunluk", () => {
+    expect(parseInvoiceInfo({ email: "a@b.co" }).ok).toBe(true);
+    expect(parseInvoiceInfo({ email: "abc" }).ok).toBe(false);
+    expect(parseInvoiceInfo({ city: "x".repeat(51) }).ok).toBe(false);
   });
 });

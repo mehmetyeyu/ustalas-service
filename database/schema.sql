@@ -1901,3 +1901,181 @@ DO $$ BEGIN
   ALTER TABLE customers ADD CONSTRAINT customers_discount_rate_check CHECK (discount_rate IS NULL OR (discount_rate >= 0 AND discount_rate < 100));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ============================================================================
+-- e-Fatura / e-Arşiv modülü (tasarım: docs/e-fatura-tasarim.md)
+-- ============================================================================
+
+-- Ücretli ek özellikler (tasarım §13). Tek seferlik satın alınır, aylık/yıllık
+-- plana dahil değildir; yalnızca ücretli abonelik (ya da exempt) sürdükçe
+-- kullanılır — kural src/lib/addons.ts (hasAddon). Deneme süresinde yoktur
+-- (kullanıcı kararı 2026-10-30). source='grant': Süper Admin'in elle açtığı
+-- (ör. Ustalas), ödeme yok. revoked_at: iade/fraud/elle geri alma — satır
+-- silinmez, kesilmiş faturalar görüntülenmeye devam eder.
+CREATE TABLE IF NOT EXISTS tenant_addons (
+  tenant_id         INT NOT NULL REFERENCES tenants(id),
+  addon             VARCHAR(30) NOT NULL CHECK (addon IN ('einvoice')),
+  source            VARCHAR(10) NOT NULL CHECK (source IN ('purchase', 'grant')),
+  price_paid        DECIMAL(10,2),
+  iyzico_payment_id VARCHAR(50),
+  granted_by        INT REFERENCES users(id),
+  note              TEXT,
+  revoked_at        TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, addon)
+);
+
+-- Satılık ek özelliklerin sabit TL fiyatı (platform_pricing ile aynı ilke —
+-- döviz/kur yok). is_on_sale=false iken satın alma kartı görünmez.
+CREATE TABLE IF NOT EXISTS addon_pricing (
+  addon      VARCHAR(30) PRIMARY KEY,
+  price      DECIMAL(10,2) NOT NULL CHECK (price > 0),
+  is_on_sale BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Firma başına tek e-belge sağlayıcı bağlantısı (ilk sağlayıcı Paraşüt).
+-- Token'lar src/lib/secretBox.ts ile şifreli; refresh token her yenilemede
+-- değişir (Paraşüt), yenileme satır kilidiyle sıralanır.
+CREATE TABLE IF NOT EXISTS einvoice_connections (
+  tenant_id                INT PRIMARY KEY REFERENCES tenants(id),
+  provider                 VARCHAR(20) NOT NULL DEFAULT 'parasut' CHECK (provider IN ('parasut', 'mock')),
+  external_company_id      VARCHAR(30) NOT NULL,
+  company_name             VARCHAR(200),
+  company_tax_number       VARCHAR(11),
+  company_city             VARCHAR(50),
+  company_district         VARCHAR(50),
+  access_token_enc         TEXT,
+  refresh_token_enc        TEXT,
+  token_expires_at         TIMESTAMPTZ,
+  -- Paraşüt refresh token'ı 30 gün kullanılmazsa ölür; günlük cron bunun
+  -- dolmasına yakın bağlantıları tazeler.
+  refresh_expires_at       TIMESTAMPTZ,
+  e_invoicing_activated_at TIMESTAMPTZ,
+  -- pending = Paraşüt kullanıcısının birden çok firması var, hangisinin
+  -- bağlanacağı Ayarlar'da seçilecek (pending_companies)
+  status                   VARCHAR(12) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'pending', 'reauth', 'disabled')),
+  pending_companies        JSONB,
+  invoice_series           VARCHAR(10),
+  default_vat_rate         SMALLINT NOT NULL DEFAULT 20 CHECK (default_vat_rate IN (0, 1, 10, 20)),
+  record_payments          BOOLEAN NOT NULL DEFAULT true,
+  external_tag_id          VARCHAR(30),
+  rl_window_start          TIMESTAMPTZ,
+  rl_count                 SMALLINT NOT NULL DEFAULT 0,
+  last_error               TEXT,
+  connected_by             INT REFERENCES users(id),
+  connected_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Resmi faturalar. Satır, sağlayıcıya ilk istekten ÖNCE açılır; her adımın
+-- dış kimliği (ext_*) adım biter bitmez yazılır — Paraşüt'te idempotency
+-- anahtarı olmadığı için "Tekrar Dene" kaldığı adımdan devam eder, çift
+-- fatura kesmez (tasarım §5.2). Alıcı bilgileri anlık görüntüdür: müşteri
+-- kaydı sonradan değişse de kesilmiş fatura değişmez.
+CREATE TABLE IF NOT EXISTS invoices (
+  id                   SERIAL PRIMARY KEY,
+  tenant_id            INT NOT NULL REFERENCES tenants(id),
+  customer_id          INT,
+  doc_type             VARCHAR(10) CHECK (doc_type IN ('e_arsiv', 'e_fatura')),
+  scenario             VARCHAR(10) CHECK (scenario IN ('basic', 'commercial')),
+  status               VARCHAR(12) NOT NULL DEFAULT 'HAZIRLANIYOR'
+                       CHECK (status IN ('HAZIRLANIYOR', 'ISLENIYOR', 'RESMILESTI', 'HATA', 'IPTAL', 'REDDEDILDI')),
+  step                 VARCHAR(12) NOT NULL DEFAULT 'contact'
+                       CHECK (step IN ('contact', 'invoice', 'formalize', 'poll', 'pdf', 'payment', 'done')),
+  issue_date           DATE NOT NULL,
+  buyer_name           VARCHAR(200) NOT NULL,
+  buyer_tax_number     VARCHAR(11),
+  buyer_tax_office     VARCHAR(100),
+  buyer_address        TEXT,
+  buyer_city           VARCHAR(50),
+  buyer_district       VARCHAR(50),
+  buyer_email          VARCHAR(150),
+  buyer_alias          VARCHAR(200),
+  plate_note           TEXT,
+  net_total            DECIMAL(12,2),
+  vat_total            DECIMAL(12,2),
+  gross_total          DECIMAL(12,2) NOT NULL,
+  provider_gross_total DECIMAL(12,2),
+  lines                JSONB NOT NULL,
+  ext_contact_id       VARCHAR(30),
+  ext_invoice_id       VARCHAR(30),
+  ext_job_id           VARCHAR(64),
+  ext_job_started_at   TIMESTAMPTZ,
+  ext_document_id      VARCHAR(30),
+  gib_invoice_no       VARCHAR(20),
+  ettn                 UUID,
+  cancellable_until    TIMESTAMPTZ,
+  response_type        VARCHAR(10),
+  error_message        TEXT,
+  attempts             SMALLINT NOT NULL DEFAULT 0,
+  -- Aynı faturayı iki istek aynı anda ilerletmesin (iki sekme yoklarken çift
+  -- resmileştirme): adımı işleyen istek bu süreye kadar sahiplenir.
+  processing_until     TIMESTAMPTZ,
+  created_by           INT REFERENCES users(id),
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_id_tenant_unique ON invoices(id, tenant_id);
+DO $$ BEGIN
+  ALTER TABLE invoices ADD CONSTRAINT invoices_customer_tenant_fk
+    FOREIGN KEY (customer_id, tenant_id) REFERENCES customers(id, tenant_id) ON DELETE SET NULL (customer_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS invoices_tenant_created_idx ON invoices(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS invoices_tenant_open_idx ON invoices(tenant_id) WHERE status IN ('HAZIRLANIYOR', 'ISLENIYOR');
+
+-- Fatura ↔ sipariş (tekli faturada 1, aylık filo faturasında N sipariş).
+-- active=false: fatura iptal/red/vazgeçildi — sipariş yeniden faturalanabilir.
+-- Bir sipariş aynı anda yalnızca bir geçerli faturada olabilir (parçalı
+-- unique index), sipariş kilidi de buna bakar (src/lib/einvoice/orderLock.ts).
+CREATE TABLE IF NOT EXISTS invoice_orders (
+  invoice_id INT NOT NULL,
+  order_id   INT NOT NULL,
+  tenant_id  INT NOT NULL REFERENCES tenants(id),
+  active     BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (invoice_id, order_id)
+);
+DO $$ BEGIN
+  ALTER TABLE invoice_orders ADD CONSTRAINT invoice_orders_invoice_fk
+    FOREIGN KEY (invoice_id, tenant_id) REFERENCES invoices(id, tenant_id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+-- Resmi faturası olan sipariş silinemez (orderLock 409 verir); FK RESTRICT
+-- bunun son savunma hattı.
+DO $$ BEGIN
+  ALTER TABLE invoice_orders ADD CONSTRAINT invoice_orders_order_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS invoice_orders_active_unique ON invoice_orders(tenant_id, order_id) WHERE active;
+
+-- Elevire kalemi → sağlayıcı ürünü eşlemesi (tembel oluşturulur).
+-- local_key: 'service:<id>' | 'tire:<stok kodu>'.
+CREATE TABLE IF NOT EXISTS einvoice_product_map (
+  tenant_id      INT NOT NULL REFERENCES tenants(id),
+  local_key      VARCHAR(80) NOT NULL,
+  vat_rate       SMALLINT NOT NULL,
+  ext_product_id VARCHAR(30) NOT NULL,
+  PRIMARY KEY (tenant_id, local_key, vat_rate)
+);
+
+-- Müşterinin fatura bilgileri (tax_no zaten var: VKN 10 / TCKN 11 hane).
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_office VARCHAR(100);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS city VARCHAR(50);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS district VARCHAR(50);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS ext_contact_id VARCHAR(30);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS einvoice_alias VARCHAR(200);
+
+-- Hizmet bazında KDV oranı. NULL = bağlantının varsayılanı (%20, kullanıcı
+-- kararı 2026-10-30). Sipariş tutarları her zaman KDV dahildir.
+ALTER TABLE services ADD COLUMN IF NOT EXISTS vat_rate SMALLINT;
+DO $$ BEGIN
+  ALTER TABLE services ADD CONSTRAINT services_vat_rate_check CHECK (vat_rate IS NULL OR vat_rate IN (0, 1, 10, 20));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Kasanın sağlayıcıdaki kasa/banka hesabı (tahsilatı Paraşüt'e işlemek için).
+ALTER TABLE kasalar ADD COLUMN IF NOT EXISTS ext_account_id VARCHAR(30);

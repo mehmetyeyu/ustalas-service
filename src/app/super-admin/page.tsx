@@ -10,6 +10,7 @@ import type { PaymentHistoryRow } from "@/app/api/super-admin/tenants/[id]/payme
 import type { ConsistencyCheckResult, OrphanedSubscription } from "@/app/api/super-admin/consistency-check/route";
 import { trIncludes } from "@/lib/trSearch";
 import { StickyScrollX } from "@/components/StickyScrollX";
+import { ADDONS, ADDON_LABELS, isAddon, type Addon } from "@/lib/addons";
 
 // paymentStatus'un tam değer haritası iyzico tarafından dokümante edilmemiş
 // — gerçek başarılı ödemelerde gözlemlenen tek değer "SUCCESS" (bkz.
@@ -69,6 +70,8 @@ interface Tenant {
   billing_cancel_at_period_end: boolean;
   billing_period_ends_at: string | null;
   billing_last_payment_error: string | null;
+  // Ücretli ek özellikler (tenant_addons, bkz. docs/e-fatura-tasarim.md §13)
+  addons: { addon: string; source: "purchase" | "grant"; price_paid: string | null; created_at: string; revoked_at: string | null }[];
   // Fatura Bilgileri (bkz. /admin/billing InvoiceInfoForm) — burada sadece
   // GÖSTERMEK için: fatura otomasyonu yok, süper admin ödeme geldiğinde
   // bu bilgilerle manuel olarak Nettefatura'ya girip fatura kesiyor
@@ -262,6 +265,32 @@ export default function SuperAdminPage() {
         body: JSON.stringify({ is_active: !t.is_active }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "İşlem başarısız.");
+      await fetchTenants();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  // Ücretli ek modülü (src/lib/addons.ts ADDONS) elle açar (Hediye Et) ya da
+  // geri alır. Hediye de yalnızca firma ücretli aboneyken (ya da muafken) çalışır.
+  async function handleAddon(t: Tenant, addon: Addon) {
+    const label = ADDON_LABELS[addon];
+    const active = t.addons.some((a) => a.addon === addon && !a.revoked_at);
+    const message = active
+      ? `${t.name} firmasının ${label} modülünü geri almak istediğinize emin misiniz? Modülde oluşmuş kayıtlar görüntülenmeye devam eder, modül yeniden kullanılamaz.`
+      : `${t.name} firmasına ${label} modülünü ücretsiz açmak (hediye) istediğinize emin misiniz? Modül yalnızca firma aylık/yıllık aboneyken ya da muafken çalışır.`;
+    if (!(await confirm({ message, variant: active ? "danger" : "default" }))) return;
+    setTogglingId(t.id);
+    try {
+      const res = await fetch(`/api/super-admin/tenants/${t.id}/addons`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addon, action: active ? "revoke" : "grant" }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "İşlem başarısız.");
+      toast.success(active ? `${label} modülü geri alındı.` : `${label} modülü açıldı.`);
       await fetchTenants();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -654,6 +683,13 @@ export default function SuperAdminPage() {
                           {t.billing_last_payment_error}
                         </div>
                       )}
+                      {t.addons.filter((a) => isAddon(a.addon) && !a.revoked_at).map((a) => (
+                        <div key={a.addon} className="mt-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700">
+                            {ADDON_LABELS[a.addon as Addon]} · {a.source === "grant" ? "hediye" : "satın alındı"}
+                          </span>
+                        </div>
+                      ))}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <button
@@ -662,6 +698,16 @@ export default function SuperAdminPage() {
                       >
                         Ödemeler
                       </button>
+                      {ADDONS.map((addon) => (
+                        <button
+                          key={addon}
+                          onClick={() => handleAddon(t, addon)}
+                          disabled={togglingId === t.id}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-40 mr-3"
+                        >
+                          {t.addons.some((a) => a.addon === addon && !a.revoked_at) ? `${ADDON_LABELS[addon]} Geri Al` : `${ADDON_LABELS[addon]} Hediye Et`}
+                        </button>
+                      ))}
                       <button
                         onClick={() => handleToggleActive(t)}
                         disabled={togglingId === t.id}

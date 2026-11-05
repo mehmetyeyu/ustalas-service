@@ -42,6 +42,7 @@ export interface MeResponse {
   username: string; role: string; permissions?: string[]; business_name?: string; panel_logo_url?: string | null;
   billing_status?: string | null; trial_ends_at?: string | null; plan?: string | null;
   billing_cancel_at_period_end?: boolean; billing_period_ends_at?: string | null; billing_last_payment_error?: string | null;
+  addons?: string[];
   is_primary_admin?: boolean; onboarding_tour_completed_at?: string | null;
   custom_order_no_enabled?: boolean; plate_required?: boolean;
   payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string;

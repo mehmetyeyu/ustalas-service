@@ -24,7 +24,10 @@ export async function GET() {
         `SELECT id, name, code, slug, is_active, created_at, contact_name, contact_email, contact_phone,
                 billing_status, trial_ends_at, plan, billing_cancel_at_period_end, billing_period_ends_at,
                 billing_last_payment_error, billing_entity_type, billing_tax_id, billing_tax_office,
-                billing_invoice_title, billing_city, billing_district, billing_address
+                billing_invoice_title, billing_city, billing_district, billing_address,
+                COALESCE((SELECT json_agg(json_build_object('addon', a.addon, 'source', a.source, 'price_paid', a.price_paid,
+                                                            'created_at', a.created_at, 'revoked_at', a.revoked_at))
+                          FROM tenant_addons a WHERE a.tenant_id = tenants.id), '[]'::json) AS addons
          FROM tenants WHERE is_platform = false
          ORDER BY created_at DESC`
       ),
