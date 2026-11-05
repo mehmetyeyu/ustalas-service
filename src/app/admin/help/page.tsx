@@ -1,5 +1,7 @@
 "use client";
 
+import { useAddon } from "../AuthContext";
+
 // Panel içi kullanım kılavuzu — /admin panelindeki her sayfanın ne işe
 // yaradığını ve nasıl kullanıldığını anlatır. Statik içerik, tüm oturum
 // açmış kullanıcılara (admin + staff) açıktır (bkz. layout.tsx
@@ -26,7 +28,8 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-const TOC: { group: string; items: { href: string; label: string }[] }[] = [
+// addon: yalnızca o ücretli ek modül açık firmalarda görünür (src/lib/addons.ts).
+const TOC: { group: string; items: { href: string; label: string; addon?: "einvoice" }[] }[] = [
   { group: "Başlarken", items: [{ href: "#giris", label: "Roller ve Giriş" }] },
   {
     group: "Sipariş",
@@ -63,6 +66,7 @@ const TOC: { group: string; items: { href: string; label: string }[] }[] = [
       { href: "#masraflar", label: "Masraflar" },
       { href: "#kasa", label: "Kasa" },
       { href: "#raporlar", label: "Raporlar" },
+      { href: "#efatura", label: "e-Fatura / e-Arşiv", addon: "einvoice" },
     ],
   },
   {
@@ -115,6 +119,8 @@ function SubHeading({ children }: { children: React.ReactNode }) {
 }
 
 export default function HelpPage() {
+  const einvoice = useAddon("einvoice");
+  const toc = TOC.map((g) => ({ ...g, items: g.items.filter((it) => !it.addon || einvoice) }));
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-800 mb-1">Kullanım Kılavuzu</h1>
@@ -129,7 +135,7 @@ export default function HelpPage() {
           <details className="sm:hidden bg-white rounded-lg border border-gray-200 p-3 mb-4">
             <summary className="text-sm font-medium text-gray-700 cursor-pointer select-none">İçindekiler</summary>
             <nav className="mt-3 flex flex-col gap-3">
-              {TOC.map((g) => (
+              {toc.map((g) => (
                 <div key={g.group}>
                   <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1">{g.group}</p>
                   <div className="flex flex-col">
@@ -145,7 +151,7 @@ export default function HelpPage() {
           </details>
 
           <nav className="hidden sm:flex sm:flex-col gap-4 sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto pb-6">
-            {TOC.map((g) => (
+            {toc.map((g) => (
               <div key={g.group}>
                 <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1 px-2">{g.group}</p>
                 <div className="flex flex-col">
@@ -378,8 +384,37 @@ export default function HelpPage() {
               <li>Henüz masrafa dönüştürülmemiş aktif sabit gider varsa, o ayın kârının gerçekte daha düşük olabileceğini hatırlatan bir rozet gösterilir.</li>
               <li>&quot;Kasa (Nakit) — Tüm Zamanlar&quot; kartı, ay filtresinden bağımsız, açılıştan bugüne toplam nakit durumunu özetler.</li>
               <li><b>Yıllık Özet</b> sekmesi her ay için Gelir (Ciro − Maliyet), Gider (Masraf) ve Kâr/Zarar gösterir. Kaydedilmemiş aylarda rakamlar sistemden önerilir; Yönetici &quot;Kaydet&quot;e bastığında o ayın rakamı sabitlenir, sonradan veriler değişse de kayıtlı hâli kalır.</li>
+              <li>Sistemi kullanmaya başlamadan önceki aylar için Yönetici <b>Ciro ve Maliyet</b>&apos;i de elle girebilir; Gelir bunlardan kendiliğinden hesaplanır (isterseniz değiştirebilirsiniz). Elle girilmeyen aylar siparişlerden canlı hesaplanmaya devam eder. Elle girilen rakamlar yalnızca Yıllık Özet&apos;te görünür.</li>
             </List>
           </Section>
+
+          {einvoice && (
+            <Section id="efatura" title="e-Fatura / e-Arşiv" path="Sipariş detayı → Fatura · Faturalar · Ayarlar → e-Fatura" role="staff" lede="Tamamlanan siparişten tek tuşla resmi fatura kesilir. Fatura sizin Paraşüt hesabınızdan ve kontörünüzden kesilir; GİB'e gönderimi Paraşüt yapar. Ücretli ek modüldür ve yalnızca aylık/yıllık aboneliğiniz sürdükçe çalışır.">
+              <SubHeading>Bağlantı (Yönetici, bir kez)</SubHeading>
+              <List>
+                <li>Önce <b>Paraşüt&apos;te</b>: şirket sahibi Ayarlar &gt; Kullanıcılar &gt; Düzenle&apos;den önce kendi kullanıcısına, sonra bağlantıyı kuracak kullanıcıya <b>Uygulama Entegrasyonları</b> yetkisini açar. Bu kullanıcının satış faturası yazma yetkisi de olmalıdır. Paraşüt bu yetkiyi varsayılan olarak kapalı getirir; kapalıysa bağlantı kurulsa bile fatura kesilemez.</li>
+                <li>Sonra burada <b>Ayarlar → e-Fatura → Paraşüt&apos;e Bağlan</b>: Paraşüt giriş ekranı açılır, kendi Paraşüt kullanıcınızla girip <b>İzin Ver</b>&apos;e basarsınız. Şifreniz Elevire&apos;ye hiç gelmez. Paraşüt kullanıcınız birden çok firmaya erişiyorsa faturaların kesileceği firmayı seçersiniz.</li>
+                <li><b>Bağlantıyı Test Et</b> yalnızca okur, hiçbir şey yazmaz. <b>Fatura Serisi</b> muhasebecinizin Elevire&apos;den kesilen faturaları ayırt etmesini sağlar; <b>Varsayılan KDV Oranı</b> hizmette ayrıca oran seçilmemişse kullanılır (Hizmetler → Faturada KDV Oranı).</li>
+                <li>Paraşüt&apos;te erişimi durdurursanız ya da bağlantı uzun süre kullanılmazsa Ayarlar&apos;da &quot;Yeniden Bağlan&quot; çıkar.</li>
+              </List>
+              <SubHeading>Fatura kesme</SubHeading>
+              <List>
+                <li>Yalnızca <b>tamamlanmış</b> (Ödeme Al &amp; Kapat yapılmış) siparişe fatura kesilir; Cari ile kapatılan siparişler de buna dahildir. Sipariş detayındaki <b>Fatura</b> kartından &quot;Fatura Kes&quot; denir. Ödeme Al &amp; Kapat&apos;ta <b>&quot;Kapatınca fatura kes&quot;</b> işaretlenirse sipariş kapanınca pencere kendiliğinden açılır — fatura yine siz onaylayınca kesilir.</li>
+                <li>Alıcı bilgileri müşteri kaydından gelir; eksikler pencerede tamamlanır ve müşteri kaydına da yazılır (Müşteri sayfası → Fatura Bilgileri). <b>Bireysel</b> müşteride TC kimlik no zorunludur; müşteri vermek istemezse &quot;TC vermek istemiyor&quot; seçilir. <b>Kurumsal</b> müşteride VKN, vergi dairesi ve adres gerekir.</li>
+                <li>Alıcı e-Fatura mükellefiyse fatura <b>e-Fatura</b>, değilse <b>e-Arşiv</b> olarak kesilir; bunu sistem kendisi seçer. Tutarlar KDV dahildir, siparişteki indirim satırlara dağıtılır; faturanın toplamı müşterinin ödediğiyle kuruşu kuruşuna aynıdır.</li>
+                <li>Kart sırayla &quot;Hazırlanıyor → GİB&apos;e gönderiliyor → Resmileşti&quot; gösterir. Sayfayı kapatsanız da işlem sürer, en geç ertesi sabah tamamlanır.</li>
+                <li>Faturası olan siparişin satırları, tutarı ve ödemesi değiştirilemez, sipariş silinemez (plaka ve not değişebilir).</li>
+              </List>
+              <SubHeading>Sonrası</SubHeading>
+              <List>
+                <li><b>PDF Aç / İndir</b> faturayı Paraşüt&apos;ten alır. <b>WhatsApp</b> müşteriye hazır bir mesajla faturanın linkini gönderir; link 30 gün geçerlidir, fatura iptal edilirse çalışmaz.</li>
+                <li>Hata olursa kartta sebebi yazar: bilgiyi düzeltip <b>Tekrar Dene</b>, ya da <b>Vazgeç</b> (sipariş yeniden faturalanabilir olur). <b>Faturalar</b> sayfasında tüm faturalar listelenir, hatalılar en üsttedir.</li>
+                <li><b>İptal:</b> e-Arşiv faturası kesildikten sonra 7 gün içinde karttan iptal edilebilir. e-Fatura&apos;nın iptali ve iadesi Paraşüt panelinden yapılır.</li>
+                <li><b>Filo / kurumsal müşteri:</b> Cari Ekstre ekranındaki e-Fatura bölümünden <b>Bu Ayı Faturala</b> ile o ayın faturalanmamış tüm siparişleri tek faturada kesilir; her satırda araç plakası ve iş günü yazar.</li>
+                <li>Personel için izinler Kullanıcılar sayfasından verilir: Faturalar görüntüle, fatura kes, iptal et. Bağlantı ayarları yalnızca Yönetici&apos;dedir.</li>
+              </List>
+            </Section>
+          )}
 
           <Section id="kullanicilar" title="Kullanıcılar" role="admin" lede="Personel hesapları burada açılır ve her birinin hangi sayfalarda ne yapabileceği (görüntüle/ekle/düzenle/sil) tek tek belirlenir.">
             <List>

@@ -636,7 +636,11 @@ Tam tasarım: [docs/e-fatura-tasarim.md](docs/e-fatura-tasarim.md); Paraşüt AP
 
 **WhatsApp ile gönderme:** resmileşmiş faturanın kartında "WhatsApp" → `POST /api/invoices/:id/share` hazır mesaj üretir (alıcı adı, firma adı, GİB no, tutar) + **bizim** imzalı PDF linkimiz `/api/public/invoice-pdf/<token>`; telefon faturanın siparişindeki ya da müşteri kaydındaki numara. Paraşüt'ün kendi PDF adresi 1 saat geçerli ve paylaşılmaması isteniyor — bu yüzden link her açılışta PDF'i sağlayıcıdan taze alıp akıtır, saklamaz. Token durumsuz (firma + fatura + son geçerlilik, `JWT_SECRET`'ten bu amaca türetilmiş anahtarla HMAC, `src/lib/einvoice/shareLink.ts`), **30 gün** geçerli; fatura iptal edilirse link çalışmaz. Kimliksiz uç olduğundan IP başına saatte 60 açılış sınırı var (middleware, `invoicePdfRateLimit`).
 
-**Bilerek bırakılanlar / sonraki adımlar:** resmileştirme/PDF/iptal/tahsilatın gerçek Paraşüt'te denenmesi (staging'de e-Belge açılınca), e-Fatura red takibi (şimdilik TEMEL senaryo, alıcı reddedemez), kasa eşleme ekranı + tahsilatların gerçek hesaba işlenmesi (Ustalas'ın kasa/bankayı Paraşüt'ten takip edip etmediği soruluyor), aylık filo faturası (Faz 3), iyzico satın alma (kullanıcı kararıyla şimdilik elle). `secretBox.ts` (AES-256-GCM, `INTEGRATION_ENC_KEY`) Paraşüt token'larını şifreler.
+**Filo aylık faturası (Faz 3):** Cari Ekstre ekranında "e-Fatura" bölümü (`PeriodInvoiceSection`, `GET /api/invoices/period?customer_id&month`): seçili ayın faturalanmamış TAMAMLANDI siparişlerinin sayısı/tutarı ve **"Bu Ayı Faturala"** — aynı "Fatura Kes" penceresi o siparişlerle açılır, tek fatura kesilir (en fazla 100 sipariş). Çok siparişli faturada satırlar plakaya göre sıralanır ve açıklamanın başında araç ile gün yazar ("34ABC123 · 05.11 · Balans"); sağlayıcıdaki ürün adı plakasızdır (`InvoiceSourceLine.productName`) — Paraşüt'te her plaka için ayrı ürün açılmaz. Fatura notu tüm plakaları listeler. Bölümün altında o ayın siparişlerine kesilmiş faturalar durumlarıyla (işlenirken yoklanır) ve PDF bağlantısıyla listelenir. Cari ile kapatılmış siparişler de TAMAMLANDI sayıldığı için faturalanabilir.
+
+**Kullanım Kılavuzu:** `/admin/help`'te "e-Fatura / e-Arşiv" bölümü (İşletme grubu) yalnızca modülü açık firmalarda görünür (içindekiler maddesi de; `useAddon`). Paraşüt'teki "Uygulama Entegrasyonları" yetkisini açma adımı orada anlatılır.
+
+**Bilerek bırakılanlar / sonraki adımlar:** resmileştirme/PDF/iptal/tahsilatın gerçek Paraşüt'te denenmesi (staging'de e-Belge açılınca), e-Fatura red takibi (şimdilik TEMEL senaryo, alıcı reddedemez), kasa eşleme ekranı + tahsilatların gerçek hesaba işlenmesi (Ustalas'ın kasa/bankayı Paraşüt'ten takip edip etmediği soruluyor), iyzico satın alma (kullanıcı kararıyla şimdilik elle). `secretBox.ts` (AES-256-GCM, `INTEGRATION_ENC_KEY`) Paraşüt token'larını şifreler.
 
 ---
 
@@ -802,6 +806,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET/PATCH/DELETE | `/api/einvoice/connection` (+ `POST …/mock` yalnızca dev) | e-Fatura bağlantısı ve ayarları (admin) |
 | GET | `/api/einvoice/connect`, `/api/einvoice/callback` | Paraşüt'e bağlanma (OAuth + PKCE) — Bölüm 27 |
 | GET | `/api/cron/einvoice` | Günlük e-Fatura bakımı (Vercel Cron, `CRON_SECRET`) |
+| GET | `/api/invoices/period?customer_id&month` | Ekstre e-Fatura bölümü: ayın faturalanmamış siparişleri + kesilmiş faturalar (`invoices.view`) |
 | POST | `/api/invoices/:id/share` | Resmileşmiş faturanın WhatsApp mesajı + imzalı PDF linki (`invoices.view`) |
 | GET | `/api/public/invoice-pdf/:token` | Müşterinin açtığı fatura PDF'i (kimliksiz, imzalı token, 30 gün, IP sınırı) |
 | POST / GET | `/api/einvoice/connection/company`, `/api/einvoice/connection/test` | Birden çok Paraşüt firmasından seçim; salt okur bağlantı testi |

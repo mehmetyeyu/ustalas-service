@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/format";
 import { formatISODate } from "@/lib/quotes";
 import type { CompanyDoc } from "@/lib/quoteDocument";
 import { buildWhatsAppUrl } from "@/lib/quoteDocument";
+import { PeriodInvoiceSection } from "@/components/einvoice/PeriodInvoiceSection";
 import {
   buildStatementPrintHtml, buildStatementWhatsAppText, entryDescription, parseStatementMonth, shiftMonth, type Statement,
 } from "@/lib/statement";
@@ -138,6 +139,8 @@ function StatementPageInner() {
               </div>
             ))}
           </div>
+
+          <PeriodInvoiceSection customerId={id} month={month} monthLabel={period.label} />
 
           <section aria-labelledby="ekstre-hareketler" className="mb-6 min-w-0 overflow-clip rounded-xl border border-v2-line bg-v2-surface shadow-sm">
             <h2 id="ekstre-hareketler" className="border-b border-v2-line px-5 py-4 text-[15px] font-semibold text-v2-fg">Cari Hareketler</h2>

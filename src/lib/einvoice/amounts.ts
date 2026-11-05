@@ -11,6 +11,9 @@
 export interface InvoiceSourceLine {
   localKey: string;        // 'service:<id>' | 'tire:<stok kodu>' — ürün eşlemesi
   description: string;
+  // Sağlayıcıda açılacak ürünün adı — açıklamadan farklıysa (çok siparişli
+  // faturada satır açıklamasının başında plaka/tarih olur, ürün adında olmaz).
+  productName?: string;
   quantity: number;
   grossTotal: number;      // satır toplamı, KDV dahil (order_services.unit_price)
   vatRate: number;         // 0 | 1 | 10 | 20
@@ -19,6 +22,7 @@ export interface InvoiceSourceLine {
 export interface InvoiceLine {
   localKey: string;
   description: string;
+  productName?: string;
   quantity: number;
   unitPriceNet: number;    // KDV hariç birim fiyat, 4 ondalık
   vatRate: number;
@@ -76,6 +80,7 @@ export function buildInvoiceAmounts(source: InvoiceSourceLine[], discountGross =
     return {
       localKey: l.localKey,
       description: l.description.slice(0, LINE_DESCRIPTION_MAX),
+      ...(l.productName ? { productName: l.productName.slice(0, LINE_DESCRIPTION_MAX) } : {}),
       quantity: l.quantity,
       unitPriceNet: round4(netBefore / l.quantity),
       vatRate: l.vatRate,

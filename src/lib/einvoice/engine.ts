@@ -113,6 +113,12 @@ export function canInvoiceOrder(status: string): boolean {
   return status === "TAMAMLANDI";
 }
 
+// "05.11" — Intl'in tr-TR ayracı ortama göre değişebildiği için parçalardan.
+function dayMonth(createdAt: string | Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", day: "2-digit", month: "2-digit" }).formatToParts(new Date(createdAt));
+  return `${parts.find((p) => p.type === "day")?.value}.${parts.find((p) => p.type === "month")?.value}`;
+}
+
 function lineDescription(l: LineRow): string {
   const product = [l.brand, l.model_name, l.size_desc].map((s) => s?.trim()).filter(Boolean).join(" ");
   return product ? `${l.service_name} — ${product}` : l.service_name;
@@ -148,15 +154,27 @@ export async function buildDraft(tenantId: number, orderIds: number[], defaultVa
      WHERE os.tenant_id = $1 AND os.order_id = ANY($2::int[]) ORDER BY os.order_id, os.id`,
     [tenantId, ids]
   );
-  const sourceLines: InvoiceSourceLine[] = linesResult.rows
+  // Çok siparişli faturada (filo aylık faturası) her satırın hangi araca ve
+  // güne ait olduğu açıklamanın başında yazar: "34ABC123 · 05.11 · Balans".
+  const multi = orders.length > 1;
+  const orderById = new Map(orders.map((o) => [o.id, o]));
+  // Aynı aracın işleri alt alta: plaka, sonra sipariş sırası (sort kararlı).
+  const plateOf = (l: LineRow) => orderById.get(l.order_id)?.plate?.trim() || "\uffff";
+  const rows = multi ? [...linesResult.rows].sort((a, b) => plateOf(a).localeCompare(plateOf(b), "tr")) : linesResult.rows;
+  const sourceLines: InvoiceSourceLine[] = rows
     .filter((l) => Number(l.unit_price) > 0)
-    .map((l) => ({
-      localKey: l.stock_code?.trim() ? `tire:${l.stock_code.trim()}` : `service:${l.service_id}`,
-      description: lineDescription(l),
-      quantity: l.quantity,
-      grossTotal: Number(l.unit_price),
-      vatRate: effectiveVatRate(l.service_vat_rate, defaultVatRate),
-    }));
+    .map((l) => {
+      const base = lineDescription(l);
+      const o = orderById.get(l.order_id);
+      return {
+        localKey: l.stock_code?.trim() ? `tire:${l.stock_code.trim()}` : `service:${l.service_id}`,
+        description: multi && o ? `${o.plate?.trim() || "Plakasız"} · ${dayMonth(o.created_at)} · ${base}` : base,
+        ...(multi ? { productName: base } : {}),
+        quantity: l.quantity,
+        grossTotal: Number(l.unit_price),
+        vatRate: effectiveVatRate(l.service_vat_rate, defaultVatRate),
+      };
+    });
   if (sourceLines.length === 0) throw new InvoiceError("Faturalanacak tutarlı satır yok.");
 
   // İndirim = sipariş toplamı - alınan (kurumsal indirim dahil, bkz. Bölüm 26).
@@ -327,7 +345,7 @@ async function ensureProducts(provider: EInvoiceProvider, ctx: ProviderContext, 
     );
     let productId = mapped.rows[0]?.ext_product_id;
     if (!productId) {
-      productId = await provider.ensureProduct(ctx, { name: l.description, vatRate: l.vatRate });
+      productId = await provider.ensureProduct(ctx, { name: l.productName ?? l.description, vatRate: l.vatRate });
       await pool.query(
         `INSERT INTO einvoice_product_map (tenant_id, local_key, vat_rate, ext_product_id) VALUES ($1, $2, $3, $4)
          ON CONFLICT (tenant_id, local_key, vat_rate) DO NOTHING`,
