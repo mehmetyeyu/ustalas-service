@@ -30,6 +30,8 @@ export const loginRateLimit = makeLimiter("login", 10, "60 s");
 export const registerRateLimit = makeLimiter("register", 5, "1 h");
 // Bir firmanın herkese açık randevu takvimini spam'le doldurma.
 export const bookingRateLimit = makeLimiter("booking", 20, "1 h");
+// Herkese açık fatura PDF linki — her açılış sağlayıcıya (Paraşüt) istek atar.
+export const invoicePdfRateLimit = makeLimiter("invoice-pdf", 60, "1 h");
 
 // Redis yoksa veya erişilemezse istek engellenmez (fail-open) — rate
 // limiting bir savunma katmanıdır, bir Upstash kesintisi tüm login/kayıt

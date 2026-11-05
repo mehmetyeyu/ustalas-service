@@ -3,7 +3,7 @@ import { verifyToken, getAuthUserByToken, type JwtPayload } from "@/lib/auth";
 import { canAccessPath, getDefaultAdminPath } from "@/lib/permissions";
 import { isBillingLocked } from "@/lib/billing";
 import { getClientIp } from "@/lib/clientIp";
-import { isRateLimited, loginRateLimit, registerRateLimit, bookingRateLimit } from "@/lib/rateLimit";
+import { isRateLimited, loginRateLimit, registerRateLimit, bookingRateLimit, invoicePdfRateLimit } from "@/lib/rateLimit";
 
 // elevire.yeyu.co'dan gelen, giriş yapmamış ziyaretçiler kök yolda ("/")
 // dahili sipariş aracı yerine doğrudan landing sayfasına (/elevire)
@@ -36,11 +36,12 @@ export async function middleware(request: NextRequest) {
     // kullanıma açık (brute-force/spam) uçlarda. Diğer tüm /api/* zaten
     // auth arkasında olduğundan buna ihtiyaç duymaz. Redis yoksa/erişilemezse
     // istek engellenmez (bkz. src/lib/rateLimit.ts fail-open).
-    if (request.method === "POST") {
+    if (request.method === "POST" || pathname.startsWith("/api/public/invoice-pdf/")) {
       const limiter =
         pathname === "/api/auth/login" ? loginRateLimit :
         pathname === "/api/public/register" ? registerRateLimit :
         /^\/api\/public\/randevu\/[^/]+$/.test(pathname) ? bookingRateLimit :
+        pathname.startsWith("/api/public/invoice-pdf/") ? invoicePdfRateLimit :
         null;
       if (limiter && (await isRateLimited(limiter, getClientIp(request)))) {
         return NextResponse.json(

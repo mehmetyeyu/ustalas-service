@@ -24,6 +24,12 @@ interface Connection {
   connected_at: string;
 }
 
+// "Tahsilatları Paraşüt'e İşle" — kasa eşleme ekranı yapılana kadar gizli
+// (kullanıcı kararı 2026-11-05): hiçbir kasa Paraşüt hesabına eşli olmadığı
+// için açık olsa da tahsilat işlenmiyordu, kafa karıştırıyordu. Değer
+// (einvoice_connections.record_payments) korunur.
+const SHOW_PAYMENT_SYNC = false;
+
 const inputClass = "border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500";
 
 export function EInvoiceSettingsSection() {
@@ -194,13 +200,13 @@ export function EInvoiceSettingsSection() {
               <span className="mt-1 block text-xs text-gray-400">Hizmetlerde ayrı oran seçilmemişse bu kullanılır. Tutarlar KDV dahildir.</span>
             </label>
           </div>
-          <div className="flex items-center justify-between gap-4">
+          {SHOW_PAYMENT_SYNC && <div className="flex items-center justify-between gap-4">
             <div>
               <div className="text-sm font-medium text-gray-700">Tahsilatları Paraşüt&apos;e İşle</div>
               <p className="mt-0.5 text-xs text-gray-400">Nakit/POS ödemeleri, kasası eşlenmişse faturaya tahsilat olarak işlenir. Cari kısım açık alacak kalır.</p>
             </div>
             <Switch label="Tahsilatları Paraşüt'e İşle" checked={recordPayments} onClick={() => setRecordPayments((v) => !v)} />
-          </div>
+          </div>}
           <button type="button" onClick={save} disabled={busy} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-blue-300">
             {busy ? "Kaydediliyor..." : "e-Fatura Ayarlarını Kaydet"}
           </button>

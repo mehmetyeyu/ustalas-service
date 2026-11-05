@@ -36,6 +36,8 @@ export interface ProviderInvoiceLine {
 
 export interface CreateInvoiceInput {
   contactId: string;
+  // Faturanın üstüne de yazılır (Paraşüt kişi kaydından bağımsız anlık görüntü).
+  buyer: BuyerInfo;
   issueDate: string;             // YYYY-MM-DD
   series: string;
   number: number;                // bizim invoices.id — tekrar kontrolü için

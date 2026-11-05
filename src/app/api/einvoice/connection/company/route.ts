@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { logAudit } from "@/lib/auditLog";
-import { CONNECTION_COLUMNS } from "@/lib/einvoice/connection";
+import { CONNECTION_COLUMNS, resetExternalIdsIfScopeChanged } from "@/lib/einvoice/connection";
 import { einvoiceErrorResponse, einvoiceUser } from "@/lib/einvoice/guard";
 import type { ParasutCompany } from "@/lib/einvoice/parasutAuth";
 
@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
     );
     const c = cur.rows[0]?.pending_companies?.find((p) => p.id === String(company_id));
     if (!c) return NextResponse.json({ error: "Seçilebilecek bir firma yok, yeniden bağlanın." }, { status: 400 });
+    await resetExternalIdsIfScopeChanged(g.user.tenantId, "parasut", c.id);
     const result = await pool.query(
       `UPDATE einvoice_connections SET external_company_id = $2, company_name = $3, company_tax_number = $4,
          company_city = $5, company_district = $6, e_invoicing_activated_at = $7, status = 'active',

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { logAudit } from "@/lib/auditLog";
-import { CONNECTION_COLUMNS, mockProviderAllowed } from "@/lib/einvoice/connection";
+import { CONNECTION_COLUMNS, mockProviderAllowed, resetExternalIdsIfScopeChanged } from "@/lib/einvoice/connection";
 import { einvoiceErrorResponse, einvoiceUser } from "@/lib/einvoice/guard";
 
 // Geliştirme: sahte sağlayıcıyla bağlantı kurar (Paraşüt erişimi gelene kadar
@@ -17,6 +17,7 @@ export async function POST() {
       [g.user.tenantId]
     );
     const t = tenant.rows[0];
+    await resetExternalIdsIfScopeChanged(g.user.tenantId, "mock", `mock-${g.user.tenantId}`);
     const result = await pool.query(
       `INSERT INTO einvoice_connections (tenant_id, provider, external_company_id, company_name, company_tax_number,
                                          company_city, company_district, status, e_invoicing_activated_at, connected_by)

@@ -285,6 +285,8 @@ Sorgular `src/lib/queries.ts` + AFFECTS'e eklenir (fatura kesilince sipariş lis
 
 Faz 0 bitince dev'de mock sağlayıcıyla tüm ekranlar ve akış çalışır; erişim gelince yalnızca `parasut.ts` gerçek isteklerle doldurulup Paraşüt test hesabında denenir.
 
+**Durum 2026-11-05:** Faz 1 yazıldı — `parasut.ts`, OAuth + PKCE bağlantısı (Paraşüt'ün yeni Keycloak sistemi), günlük bakım cron'u; WhatsApp PDF linki (Faz 2) yapıldı. Staging'de bağlanma, kişi/ürün/fatura oluşturma doğrulandı; resmileştirme Paraşüt staging'de kapalı (e-Belge entegrasyonu), açılması bekleniyor. Kullanıcı kararı: Elevire tek tıkla sonuna kadar götürür (taslakta bırakma yok). Kalan: kasa eşleme + tahsilat (Ustalas'a soruluyor), aylık filo faturası (Faz 3), iyzico satın alma (şimdilik elle).
+
 **Durum 2026-10-30:** Faz 0 tamam ve Faz 1'in sağlayıcıdan bağımsız kısmı da yapıldı (motor, uçlar, sipariş kartı, Fatura Kes penceresi, Faturalar sayfası, "Kapatınca fatura kes"). Kalan: `parasut.ts` + OAuth bağlantısı + günlük süpürme cron'u (Faz 1), kasa eşleme ekranı, WhatsApp PDF linki, red takibi (Faz 2), aylık filo faturası (Faz 3), iyzico satın alma (Satış). Ayrıntı: lastik-servis-projesi.md Bölüm 27.
 
 ---

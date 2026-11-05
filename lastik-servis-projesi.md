@@ -618,7 +618,7 @@ Filo planının tüm fazları tamamlandı (2026-10-29).
 
 ### 27. e-Fatura / e-Arşiv (ücretli ek özellik — Faz 0)
 
-Tam tasarım: [docs/e-fatura-tasarim.md](docs/e-fatura-tasarim.md); Paraşüt API referansı: [docs/parasut-api-referans.md](docs/parasut-api-referans.md). **Durum (2026-11-05): Faz 0 tamam, Paraşüt bağlantısı çalışıyor** — fatura akışı dev'de **sahte sağlayıcıyla** uçtan uca çalışıyor; Paraşüt'e bağlanma (OAuth) staging'de doğrulandı, fatura adımlarının Paraşüt istemcisi (`parasut.ts`) sırada. Üretimde sahte sağlayıcı kapalı → modül açık olsa da henüz fatura kesilemez.
+Tam tasarım: [docs/e-fatura-tasarim.md](docs/e-fatura-tasarim.md); Paraşüt API referansı: [docs/parasut-api-referans.md](docs/parasut-api-referans.md). **Durum (2026-11-05): Paraşüt istemcisi yazıldı** (`src/lib/einvoice/parasut.ts`). Staging'de doğrulanan: bağlanma, token yenileme, kişi/ürün kaydı, satış faturası (tutar kuruşu kuruşuna tuttu), e-Arşiv/e-Fatura seçimi. **Resmileştirme (GİB'e gönderme) staging'de Paraşüt tarafında kapalı** — Paraşüt'ün kendi arayüzü de "e-Belge entegrasyonunuz ile ilgili bir hata oluştu" alıyor; devhubdestek@parasut.com'dan açılması bekleniyor. PDF, iptal ve tahsilat bu yüzden henüz gerçek Paraşüt'te denenmedi. Kullanıcı kararı (2026-11-05): Elevire faturayı tek tıkla sonuna kadar götürür (taslak + resmileştirme + PDF), Paraşüt'te taslak bırakma seçeneği yok.
 
 **Paraşüt bağlantısı** (2026'dan itibaren Paraşüt'ün yeni giriş sistemi — Keycloak OIDC, Authorization Code + PKCE zorunlu; eski `api.parasut.com/oauth` ve e-posta/şifreyle token alma 10 Aralık 2026'da kapanır): Ayarlar → e-Fatura → "Paraşüt'e Bağlan" (`GET /api/einvoice/connect`) PKCE + state üretir, şifreli kısa ömürlü bir httpOnly çerezde (`einv_oauth`, 10 dk) taşıyıp Paraşüt girişine yönlendirir; aynı sekmede yönlendirme bilinçli (Paraşüt giriş sayfası iframe/modal içinde açılamaz). Dönüş `GET /api/einvoice/callback`: state + çerez + oturum aynı kullanıcı mı kontrol edilir, kod token'a çevrilir, `/v4/me` ile **satış faturası yazma yetkisi olan** firmalar bulunur — tek firma → bağlantı aktif, birden çok → `status='pending'`, Ayarlar'da seçilir (`POST /api/einvoice/connection/company`). Token'lar `secretBox` ile şifreli; access 2 saat, satır kilitlenerek yenilenir (refresh token her yenilemede döner), 401'de bir kez zorla yenilenir, yenileme reddedilirse `status='reauth'` → "Yeniden Bağlan". 403'te tekrar denenmez (Paraşüt çok sayıda 401/403 alan istemciyi engelleyebilir); mesaj kullanıcıya Paraşüt'teki **Ayarlar > Kullanıcılar > Düzenle > Uygulama Entegrasyonları** yetkisini açmasını söyler — bu yetki şirket sahibi dahil varsayılan kapalıdır. "Bağlantıyı Test Et" (`GET /api/einvoice/connection/test`) yalnızca okur. "Bağlantıyı Kes" token'ı Paraşüt'te de iptal eder. Kullanıcı Paraşüt'te erişimi durdurursa bağlantı `reauth`'a düşer.
 
@@ -630,9 +630,13 @@ Tam tasarım: [docs/e-fatura-tasarim.md](docs/e-fatura-tasarim.md); Paraşüt AP
 
 **Sipariş kilidi:** aktif faturası olan siparişin satır/tutar/ödeme toplamı değiştirilemez ve sipariş silinemez (409, `src/lib/einvoice/orderLock.ts`); plaka/not serbest. Fatura iptal edilince (`invoice_orders.active=false`) kilit kalkar. İptal: resmileşmiş e-Arşiv 7 gün içinde; e-Fatura uygulamadan iptal edilmez; hatalı faturadan "Vazgeç".
 
-**Ekranlar:** Ayarlar → e-Fatura (bağlantı, seri, varsayılan KDV, tahsilat işleme; dev'de "Sahte Sağlayıcıya Bağlan"), sipariş detayında Fatura kartı + "Fatura Kes" penceresi, Ödeme Al & Kapat'ta "Kapatınca fatura kes" (varsayılan işaretsiz), Faturalar sayfası (`/admin/invoices`, hatalılar üstte), müşteri sayfasında Fatura Bilgileri, Hizmetler'de "Faturada KDV Oranı". İzinler: `invoices.view/issue/cancel`; bağlantı ayarları admin.
+**Ekranlar:** Ayarlar → e-Fatura (bağlantı, seri, varsayılan KDV; "Tahsilatları Paraşüt'e İşle" anahtarı kasa eşleme ekranı gelene kadar gizli — `SHOW_PAYMENT_SYNC`; dev'de "Sahte Sağlayıcıya Bağlan"), sipariş detayında Fatura kartı + "Fatura Kes" penceresi, Ödeme Al & Kapat'ta "Kapatınca fatura kes" (varsayılan işaretsiz), Faturalar sayfası (`/admin/invoices`, hatalılar üstte), müşteri sayfasında Fatura Bilgileri, Hizmetler'de "Faturada KDV Oranı". İzinler: `invoices.view/issue/cancel`; bağlantı ayarları admin.
 
-**Bilerek bırakılanlar / sonraki adımlar:** fatura adımlarının Paraşüt istemcisi (`parasut.ts`, Faz 1), günlük süpürme + bağlantı tazeleme cron'u (refresh token kullanılmazsa ölür; staging ~31 saat verdi, belge 30 gün diyor — doğrulanacak), tahsilatların gerçek hesaba işlenmesi ve kasa eşleme ekranı, WhatsApp PDF linki, e-Fatura red takibi (Faz 2), aylık filo faturası (Faz 3), iyzico satın alma. `secretBox.ts` (AES-256-GCM, `INTEGRATION_ENC_KEY`) Paraşüt token'larını şifreler.
+**Günlük bakım** (`GET /api/cron/einvoice`, 03:00 UTC, `CRON_SECRET`; `src/lib/einvoice/sweep.ts`): aktif Paraşüt bağlantılarını tazeler (refresh token kullanılmazsa ölür — staging ~29 saat, belge 30 gün; her yenileme süreyi uzatır), ekran kapandığı için yarıda kalmış HAZIRLANIYOR/ISLENIYOR faturaları (10 dk'dan eski, < 5 deneme, en fazla 50) ilerletir; HATA'dakilere dokunmaz. Paraşüt'te kişi/ürün kimlikleri bağlı firmaya ait olduğundan sağlayıcı ya da firma değişince `customers.ext_contact_id` ve `einvoice_product_map` sıfırlanır. İstek sınırında (429) Paraşüt'ün söylediği bekleme ≤ 5 sn ise beklenip en fazla iki kez tekrar denenir.
+
+**WhatsApp ile gönderme:** resmileşmiş faturanın kartında "WhatsApp" → `POST /api/invoices/:id/share` hazır mesaj üretir (alıcı adı, firma adı, GİB no, tutar) + **bizim** imzalı PDF linkimiz `/api/public/invoice-pdf/<token>`; telefon faturanın siparişindeki ya da müşteri kaydındaki numara. Paraşüt'ün kendi PDF adresi 1 saat geçerli ve paylaşılmaması isteniyor — bu yüzden link her açılışta PDF'i sağlayıcıdan taze alıp akıtır, saklamaz. Token durumsuz (firma + fatura + son geçerlilik, `JWT_SECRET`'ten bu amaca türetilmiş anahtarla HMAC, `src/lib/einvoice/shareLink.ts`), **30 gün** geçerli; fatura iptal edilirse link çalışmaz. Kimliksiz uç olduğundan IP başına saatte 60 açılış sınırı var (middleware, `invoicePdfRateLimit`).
+
+**Bilerek bırakılanlar / sonraki adımlar:** resmileştirme/PDF/iptal/tahsilatın gerçek Paraşüt'te denenmesi (staging'de e-Belge açılınca), e-Fatura red takibi (şimdilik TEMEL senaryo, alıcı reddedemez), kasa eşleme ekranı + tahsilatların gerçek hesaba işlenmesi (Ustalas'ın kasa/bankayı Paraşüt'ten takip edip etmediği soruluyor), aylık filo faturası (Faz 3), iyzico satın alma (kullanıcı kararıyla şimdilik elle). `secretBox.ts` (AES-256-GCM, `INTEGRATION_ENC_KEY`) Paraşüt token'larını şifreler.
 
 ---
 
@@ -659,7 +663,7 @@ IYZICO_MERCHANT_ID=
 IYZICO_WEBHOOK_SIGNATURE_ENABLED=false
 # IFN (Instant Fraud Notification) — gizli webhook URL segmenti
 IYZICO_IFN_WEBHOOK_SECRET=
-# Vercel Cron'un reprice-subscriptions'ı çağırırken gönderdiği Bearer token
+# Vercel Cron'un reprice-subscriptions ve einvoice uçlarını çağırırken gönderdiği Bearer token
 CRON_SECRET=
 # e-Fatura (Bölüm 27): sağlayıcı token'larını şifreleyen anahtar (32 bayt base64,
 # `openssl rand -base64 32`) — Paraşüt bağlantısı için zorunlu. Değişirse
@@ -797,6 +801,9 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST | `/api/invoices/:id/retry`, `/api/invoices/:id/cancel` | Tekrar dene (`invoices.issue`) / iptal ya da vazgeç (`invoices.cancel`) |
 | GET/PATCH/DELETE | `/api/einvoice/connection` (+ `POST …/mock` yalnızca dev) | e-Fatura bağlantısı ve ayarları (admin) |
 | GET | `/api/einvoice/connect`, `/api/einvoice/callback` | Paraşüt'e bağlanma (OAuth + PKCE) — Bölüm 27 |
+| GET | `/api/cron/einvoice` | Günlük e-Fatura bakımı (Vercel Cron, `CRON_SECRET`) |
+| POST | `/api/invoices/:id/share` | Resmileşmiş faturanın WhatsApp mesajı + imzalı PDF linki (`invoices.view`) |
+| GET | `/api/public/invoice-pdf/:token` | Müşterinin açtığı fatura PDF'i (kimliksiz, imzalı token, 30 gün, IP sınırı) |
 | POST / GET | `/api/einvoice/connection/company`, `/api/einvoice/connection/test` | Birden çok Paraşüt firmasından seçim; salt okur bağlantı testi |
 | PATCH | `/api/customers/:id/invoice-info` | Müşteri fatura bilgileri (`customers.edit` ya da `invoices.issue`) |
 | POST | `/api/super-admin/tenants/:id/addons` | Ek özelliği hediye et / geri al (Süper Admin) |

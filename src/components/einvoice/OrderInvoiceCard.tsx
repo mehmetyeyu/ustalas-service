@@ -104,6 +104,30 @@ export function OrderInvoiceCard({ orderId, orderDone, autoOpen, className }: {
     }
   }
 
+  // WhatsApp: imzalı 30 günlük PDF linkiyle hazır mesaj (/api/invoices/:id/share).
+  // Sekme tıklama anında açılır — istek bittikten sonra açılsa tarayıcı
+  // açılır pencere sayıp engelleyebilir.
+  async function shareWhatsApp() {
+    const w = window.open("about:blank", "_blank");
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/invoices/${current!.id}/share`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.whatsappUrl) throw new Error(d.error || "Paylaşım linki oluşturulamadı.");
+      if (w) {
+        w.opener = null;
+        w.location.href = d.whatsappUrl;
+      } else {
+        window.location.href = d.whatsappUrl;
+      }
+    } catch (err) {
+      w?.close();
+      toast.error(err instanceof Error ? err.message : "Paylaşım linki oluşturulamadı.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!enabled || !canView) return null;
 
   const cancellable = current?.status === "RESMILESTI" && current.doc_type === "e_arsiv" && !!current.cancellable_until && new Date(current.cancellable_until).getTime() > Date.now();
@@ -145,6 +169,7 @@ export function OrderInvoiceCard({ orderId, orderDone, autoOpen, className }: {
               <>
                 <a href={`/api/invoices/${current.id}/pdf`} target="_blank" rel="noopener" className={btn}>PDF Aç</a>
                 <a href={`/api/invoices/${current.id}/pdf?download=1`} className={btn}>İndir</a>
+                <button type="button" disabled={busy} onClick={shareWhatsApp} className={btn}>WhatsApp</button>
               </>
             )}
             {current.status === "HATA" && canIssue && <button type="button" disabled={busy} onClick={() => action("retry")} className={btn}>Tekrar Dene</button>}

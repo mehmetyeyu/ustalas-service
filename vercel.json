@@ -3,7 +3,10 @@
     {
       "path": "/api/cron/reprice-subscriptions",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/einvoice",
+      "schedule": "0 3 * * *"
     }
   ]
 }
-

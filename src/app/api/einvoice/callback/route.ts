@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import pool from "@/lib/db";
 import { logAudit } from "@/lib/auditLog";
 import { encryptSecret } from "@/lib/secretBox";
+import { resetExternalIdsIfScopeChanged } from "@/lib/einvoice/connection";
 import { einvoiceUser } from "@/lib/einvoice/guard";
 import { ProviderAuthError, ProviderError } from "@/lib/einvoice/provider";
 import { apiRequest, exchangeCode, parasutConfig, parseMeCompanies, type ParasutCompany } from "@/lib/einvoice/parasutAuth";
@@ -35,6 +36,8 @@ export async function GET(request: NextRequest) {
       return settingsRedirect(request, { error: "Bu Paraşüt kullanıcısının satış faturası yazma yetkisi olan bir firması yok." });
     }
     const only: ParasutCompany | null = companies.length === 1 ? companies[0] : null;
+    // Birden çok firmada seçim yapılınca (connection/company) kontrol edilir.
+    if (only) await resetExternalIdsIfScopeChanged(g.user.tenantId, "parasut", only.id);
     await pool.query(
       `INSERT INTO einvoice_connections (tenant_id, provider, external_company_id, company_name, company_tax_number,
          company_city, company_district, e_invoicing_activated_at, status, pending_companies,

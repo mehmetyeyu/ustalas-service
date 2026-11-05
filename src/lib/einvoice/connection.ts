@@ -4,6 +4,7 @@ import pool from "../db";
 import type { EInvoiceProvider, ProviderContext } from "./provider";
 import { ProviderError } from "./provider";
 import { mockProvider } from "./mockProvider";
+import { parasutProvider } from "./parasut";
 
 export interface EInvoiceConnection {
   tenant_id: number;
@@ -36,13 +37,28 @@ export async function getConnection(tenantId: number): Promise<EInvoiceConnectio
   return r.rows[0] ?? null;
 }
 
+// Sağlayıcıdaki kişi/ürün kimlikleri (customers.ext_contact_id,
+// einvoice_product_map) bağlı firmaya aittir. Sağlayıcı ya da firma
+// değişirse (ör. dev'de sahte sağlayıcıdan Paraşüt'e, ya da başka bir Paraşüt
+// firmasına) eski kimlikler geçersizdir — sıfırlanır, ilk faturada yeniden
+// bulunur/oluşturulur. Bağlantı satırı güncellenmeden ÖNCE çağrılır.
+export async function resetExternalIdsIfScopeChanged(tenantId: number, provider: EInvoiceConnection["provider"], companyId: string): Promise<void> {
+  const prev = await pool.query<{ provider: string; external_company_id: string }>(
+    "SELECT provider, external_company_id FROM einvoice_connections WHERE tenant_id = $1",
+    [tenantId]
+  );
+  const p = prev.rows[0];
+  if (p && p.provider === provider && p.external_company_id === companyId) return;
+  await pool.query("DELETE FROM einvoice_product_map WHERE tenant_id = $1", [tenantId]);
+  await pool.query("UPDATE customers SET ext_contact_id = NULL WHERE tenant_id = $1 AND ext_contact_id IS NOT NULL", [tenantId]);
+}
+
 export function getProvider(conn: Pick<EInvoiceConnection, "provider">): EInvoiceProvider {
   if (conn.provider === "mock") {
     if (!mockProviderAllowed()) throw new ProviderError("Sahte e-Fatura sağlayıcısı üretimde kullanılamaz.", false);
     return mockProvider;
   }
-  // Paraşüt istemcisi erişim (client_id) alınınca eklenecek — tasarım §10 Faz 1.
-  throw new ProviderError("Paraşüt entegrasyonu henüz etkin değil.", false);
+  return parasutProvider;
 }
 
 export function providerContext(conn: Pick<EInvoiceConnection, "tenant_id" | "external_company_id">): ProviderContext {

@@ -384,6 +384,7 @@ async function runStep(provider: EInvoiceProvider, ctx: ProviderContext, conn: E
         const first = orders.rows[0];
         created = await provider.createInvoice(ctx, {
           contactId: inv.ext_contact_id!,
+          buyer: buyerOf(inv),
           issueDate: inv.issue_date,
           series,
           number: inv.id,
@@ -433,7 +434,12 @@ async function runStep(provider: EInvoiceProvider, ctx: ProviderContext, conn: E
         const expired = inv.ext_job_started_at && Date.now() - new Date(inv.ext_job_started_at).getTime() > JOB_TTL_MS;
         if (!expired) {
           const job = await provider.getJob(ctx, inv.ext_job_id);
-          if (job.status === "error") throw new ProviderError(job.errors.join(" ") || "Resmileştirme başarısız.", false);
+          if (job.status === "error") {
+            // Başarısız iş tekrar sorulmaz — "Tekrar Dene" yeniden resmileştirir
+            // (formalize adımı önce aktif belge var mı diye bakar).
+            await save(inv.id, { step: "formalize", ext_job_id: null });
+            throw new ProviderError(job.errors.join(" ") || "Resmileştirme başarısız.", false);
+          }
           if (job.status !== "done") return false;
         }
       }

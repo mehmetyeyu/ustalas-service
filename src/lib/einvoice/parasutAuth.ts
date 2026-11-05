@@ -173,16 +173,28 @@ export async function getAccessToken(tenantId: number, opts: { force?: boolean }
 
 // Ham API çağrısı (bağlantı kurulurken, henüz satır yokken de kullanılır).
 // 403'te tekrar denenmez — Paraşüt çok sayıda 401/403 alan istemciyi engelleyebilir.
+// İstek sınırında (429) Paraşüt'ün söylediği süre kısaysa (≤ 5 sn) bekleyip
+// en fazla iki kez tekrar denenir — tek bir fatura bile 5–10 istek tutar
+// (kişi, her satır için ürün, fatura, resmileştirme). Daha uzunsa hata döner,
+// "Tekrar Dene" kaldığı adımdan sürdürür.
+const RATE_LIMIT_MAX_WAIT_S = 5;
+const RATE_LIMIT_RETRIES = 2;
+
 export async function apiRequest(cfg: ParasutConfig, accessToken: string, path: string, init: RequestInit = {}): Promise<Response> {
   let res: Response;
-  try {
-    res = await fetch(`${cfg.apiUrl}/v4${path}`, {
-      ...init,
-      headers: { Accept: "application/json", "Content-Type": "application/json", ...init.headers, Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-  } catch {
-    throw new ProviderError("Paraşüt'e ulaşılamadı.");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(`${cfg.apiUrl}/v4${path}`, {
+        ...init,
+        headers: { Accept: "application/json", "Content-Type": "application/json", ...init.headers, Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      });
+    } catch {
+      throw new ProviderError("Paraşüt'e ulaşılamadı.");
+    }
+    const wait = Number(res.headers.get("retry-after"));
+    if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES || !(wait > 0 && wait <= RATE_LIMIT_MAX_WAIT_S)) break;
+    await new Promise((r) => setTimeout(r, wait * 1000 + 250));
   }
   // Paraşüt 2026: "Uygulama Entegrasyonları" yetkisi varsayılan kapalı (şirket
   // sahibi dahil); yetkisiz kullanıcı adına her istek 403 alır.
