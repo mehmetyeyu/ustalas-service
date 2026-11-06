@@ -477,10 +477,15 @@ export async function PUT(
       // ödeme "Ödeme Al & Kapat" akışında set edilir, düzenlemeyle erken atanmaz.
       // Parçalı ödeme girişleri de bu ekrandan düzeltildiyse (editedPayments),
       // yeni toplamları paid_amount'u belirler — eski indirim mantığı devre dışı kalır.
+      // Parçalı ödeme sıfırlanıp satır bazlı ödeme tiplerine geçildiyse
+      // (clearPayments) her satır kendi tipiyle TAM tahsil edilmiş sayılır
+      // (cari borcu da satırın tam tutarından yazılır, bkz. customerLedger.ts)
+      // — eski parçalı girişten kalan "indirim" taşınmaz; aksi hâlde Yıllık
+      // Özet'teki ciro, satır tipleri ve cari ile çelişirdi (Ustalas #1771).
       const editedPaymentsTotal = editedPayments?.reduce((sum, p) => sum + p.amount, 0) ?? null;
       const newPaidAmount = editedPaymentsTotal != null
         ? editedPaymentsTotal
-        : (oldPaid == null ? null : (oldPaid === oldTotal ? totalAmount : oldPaid));
+        : (oldPaid == null ? null : (clearPayments || oldPaid === oldTotal ? totalAmount : oldPaid));
 
       // Resmi faturası olan siparişte tutar/satır değişmez (plaka, not vb. serbest).
       const invoice = await getActiveInvoiceForOrder(client, user.tenantId!, id);
