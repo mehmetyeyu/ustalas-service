@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
     const orderId = Number(sp.get("order_id"));
     if (orderId > 0) {
       params.push(orderId);
-      where.push(`EXISTS (SELECT 1 FROM invoice_orders io WHERE io.invoice_id = i.id AND io.order_id = $${params.length})`);
+      // io.tenant_id, invoice_orders_tenant_order_idx'in kullanılması için (bkz. schema.sql).
+      where.push(`EXISTS (SELECT 1 FROM invoice_orders io WHERE io.invoice_id = i.id AND io.tenant_id = i.tenant_id AND io.order_id = $${params.length})`);
     }
     const status = sp.get("status");
     if (status && LIST_STATUSES.includes(status)) {

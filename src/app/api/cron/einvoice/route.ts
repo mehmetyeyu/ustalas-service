@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { runEInvoiceSweep } from "@/lib/einvoice/sweep";
 
 // Günlük e-Fatura bakımı (bağlantı tazeleme + takılı fatura süpürme, bkz.
@@ -9,7 +10,9 @@ export const maxDuration = 60;
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  // Sabit zamanlı karşılaştırma (özetler eşit uzunlukta).
+  const digest = (v: string) => createHash("sha256").update(v).digest();
+  return timingSafeEqual(digest(request.headers.get("authorization") ?? ""), digest(`Bearer ${secret}`));
 }
 
 export async function GET(request: NextRequest) {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAddon, usePermission } from "@/app/admin/AuthContext";
+import { POLL_MAX_MS, pollDelay } from "@/lib/einvoice/poll";
 import { formatCurrency } from "@/lib/format";
 import { IssueInvoiceDialog } from "./IssueInvoiceDialog";
 import { DOC_TYPE_LABELS, INVOICE_STATUS_LABELS } from "./OrderInvoiceCard";
@@ -11,7 +12,7 @@ import { DOC_TYPE_LABELS, INVOICE_STATUS_LABELS } from "./OrderInvoiceCard";
 // 7): seçili ayın faturalanmamış tamamlanmış siparişleri tek faturada
 // ("Bu Ayı Faturala"; satırlarda plaka ve tarih, bkz. buildDraft) ve o ayın
 // siparişlerine kesilmiş faturalar. İşlenen fatura varken yoklar (sipariş
-// kartındaki gibi 3 sn, en çok 3 dk).
+// kartındaki gibi, src/lib/einvoice/poll.ts).
 interface PeriodInvoice {
   id: number;
   status: keyof typeof INVOICE_STATUS_LABELS;
@@ -27,8 +28,6 @@ interface PeriodData {
   invoices: PeriodInvoice[];
 }
 
-const POLL_MS = 3000;
-const POLL_MAX_MS = 3 * 60 * 1000;
 // buildDraft sınırı.
 const MAX_ORDERS = 100;
 
@@ -58,7 +57,7 @@ export function PeriodInvoiceSection({ customerId, month, monthLabel }: { custom
     const t = setTimeout(async () => {
       await Promise.all(open.map((i) => fetch(`/api/invoices/${i.id}/status`, { cache: "no-store" }).catch(() => null)));
       await load();
-    }, POLL_MS);
+    }, pollDelay(pollStart.current));
     return () => clearTimeout(t);
   }, [processing, data, load]);
 

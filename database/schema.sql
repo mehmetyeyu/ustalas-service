@@ -2024,6 +2024,10 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 CREATE INDEX IF NOT EXISTS invoices_tenant_created_idx ON invoices(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS invoices_tenant_open_idx ON invoices(tenant_id) WHERE status IN ('HAZIRLANIYOR', 'ISLENIYOR');
+-- Faturalar sayfasının sıralaması (hatalılar üstte, sonra en yeni) — ifade
+-- sorgudakiyle birebir aynı olmalı ki indeks kullanılsın (20.000 faturada
+-- 5,1 ms → 0,33 ms, performans testi 2026-11-06).
+CREATE INDEX IF NOT EXISTS invoices_tenant_list_idx ON invoices(tenant_id, (status = 'HATA') DESC, created_at DESC);
 
 -- Fatura ↔ sipariş (tekli faturada 1, aylık filo faturasında N sipariş).
 -- active=false: fatura iptal/red/vazgeçildi — sipariş yeniden faturalanabilir.
@@ -2049,6 +2053,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS invoice_orders_active_unique ON invoice_orders(tenant_id, order_id) WHERE active;
+-- Siparişin faturaları (sipariş detayı kartı, iptal/reddedilmiş dahil) —
+-- yoksa sorgu tüm firmaların invoice_orders satırlarını tarıyordu
+-- (20.000 satırda 0,96 ms → 0,04 ms, performans testi 2026-11-06).
+CREATE INDEX IF NOT EXISTS invoice_orders_tenant_order_idx ON invoice_orders(tenant_id, order_id);
 
 -- Elevire kalemi → sağlayıcı ürünü eşlemesi (tembel oluşturulur).
 -- local_key: 'service:<id>' | 'tire:<stok kodu>'.

@@ -4,11 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAddon, usePermission } from "@/app/admin/AuthContext";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { POLL_MAX_MS, pollDelay } from "@/lib/einvoice/poll";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { IssueInvoiceDialog } from "./IssueInvoiceDialog";
 
 // Sipariş detayındaki fatura kartı (docs/e-fatura-tasarim.md §8.2). Fatura
-// işlenirken durum ucunu 3 sn'de bir yoklar (sağlayıcıda webhook yok);
+// işlenirken durum ucunu yoklar (sağlayıcıda webhook yok; aralık src/lib/einvoice/poll.ts);
 // 3 dakikada bitmezse yoklamayı bırakır — iş arka planda sürer, sayfa
 // yeniden açılınca ya da günlük kontrolde tamamlanır.
 interface InvoiceSummary {
@@ -23,8 +24,6 @@ interface InvoiceSummary {
   cancellable_until: string | null;
 }
 
-const POLL_MS = 3000;
-const POLL_MAX_MS = 3 * 60 * 1000;
 const OPEN = new Set(["HAZIRLANIYOR", "ISLENIYOR"]);
 
 export const DOC_TYPE_LABELS = { e_arsiv: "e-Arşiv", e_fatura: "e-Fatura" } as const;
@@ -79,7 +78,7 @@ export function OrderInvoiceCard({ orderId, orderDone, autoOpen, className }: {
       } else {
         setInvoices((list) => [...(list ?? [])]); // bir sonraki denemeyi tetikle
       }
-    }, POLL_MS);
+    }, pollDelay(pollStart.current));
     return () => clearTimeout(t);
   }, [current, toast]);
 

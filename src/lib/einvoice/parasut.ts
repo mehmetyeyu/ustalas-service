@@ -248,7 +248,15 @@ export const parasutProvider: EInvoiceProvider = {
   },
 
   async fetchPdf(_ctx, url) {
-    // İmzalı, kısa ömürlü adres — token gönderilmez.
+    // İmzalı, kısa ömürlü adres — token gönderilmez. Adres Paraşüt'ün
+    // yanıtından gelir; yine de yalnızca https'e gidilir.
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new ProviderError("Paraşüt geçersiz bir PDF adresi döndürdü.", false);
+    }
+    if (parsed.protocol !== "https:") throw new ProviderError("Paraşüt geçersiz bir PDF adresi döndürdü.", false);
     try {
       return await fetch(url, { cache: "no-store" });
     } catch {

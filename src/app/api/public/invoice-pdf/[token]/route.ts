@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchInvoicePdf, getInvoice, InvoiceError } from "@/lib/einvoice/engine";
+import { fetchInvoicePdf, getInvoice, invoicePdfFileName, InvoiceError } from "@/lib/einvoice/engine";
 import { ProviderError } from "@/lib/einvoice/provider";
 import { verifyShareToken } from "@/lib/einvoice/shareLink";
 
@@ -23,7 +23,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return new NextResponse(upstream.body, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${inv.gib_invoice_no ?? `fatura-${inv.id}`}.pdf"`,
+        "Content-Disposition": `inline; filename="${invoicePdfFileName(inv)}"`,
         "Cache-Control": "private, no-store",
         "X-Robots-Tag": "noindex",
       },

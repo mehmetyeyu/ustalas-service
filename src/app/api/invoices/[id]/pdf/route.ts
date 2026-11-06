@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchInvoicePdf, getInvoice } from "@/lib/einvoice/engine";
+import { fetchInvoicePdf, getInvoice, invoicePdfFileName } from "@/lib/einvoice/engine";
 import { einvoiceErrorResponse, einvoiceUser } from "@/lib/einvoice/guard";
 
 // Faturanın PDF'i — sağlayıcıdan taze alınıp akıtılır, saklanmaz
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!invoice) return NextResponse.json({ error: "Fatura bulunamadı." }, { status: 404 });
     const upstream = await fetchInvoicePdf(g.user.tenantId, invoice);
     if (!upstream.ok || !upstream.body) return NextResponse.json({ error: "PDF alınamadı. Biraz sonra tekrar deneyin." }, { status: 502 });
-    const name = `${invoice.gib_invoice_no ?? `fatura-${invoice.id}`}.pdf`;
+    const name = invoicePdfFileName(invoice);
     return new NextResponse(upstream.body, {
       headers: {
         "Content-Type": "application/pdf",

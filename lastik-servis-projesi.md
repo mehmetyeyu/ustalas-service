@@ -640,6 +640,8 @@ Tam tasarım: [docs/e-fatura-tasarim.md](docs/e-fatura-tasarim.md); Paraşüt AP
 
 **Kullanım Kılavuzu:** `/admin/help`'te "e-Fatura / e-Arşiv" bölümü (İşletme grubu) yalnızca modülü açık firmalarda görünür (içindekiler maddesi de; `useAddon`). Paraşüt'teki "Uygulama Entegrasyonları" yetkisini açma adımı orada anlatılır.
 
+**Güvenlik ve performans incelemesi (2026-11-06):** Firma ayrımı, yetki ve oturumsuz erişim gerçek isteklerle denendi (36 kontrol): başka firmanın faturası/siparişi/müşterisi hiçbir uçtan görülemiyor ya da değiştirilemiyor; izinsiz ve yalnızca görüntüleme izinli personel kesme/iptal/bağlantı uçlarına erişemiyor; bağlantı yanıtında token yok. Sertleştirmeler: PDF dosya adı güvenli karakterlerle sınırlı (`invoicePdfFileName`, başlık enjeksiyonu), sağlayıcı PDF adresi yalnızca https, cron anahtarı sabit zamanlı karşılaştırma. Performans: 20.000 sipariş + 20.000 faturalık geri alınan bir veriyle ölçüldü; iki indeks eklendi (`invoice_orders_tenant_order_idx` — sipariş kartı 0,96 → 0,04 ms; `invoices_tenant_list_idx` — Faturalar sayfası 5,1 → 0,33 ms), diğer sorgular < 2 ms. Ekran yoklaması ilk 30 sn 3 sn'de, sonra 10 sn'de bir (`src/lib/einvoice/poll.ts`; fatura başına ~60 → ~25 istek).
+
 **Bilerek bırakılanlar / sonraki adımlar:** resmileştirme/PDF/iptal/tahsilatın gerçek Paraşüt'te denenmesi (staging'de e-Belge açılınca), e-Fatura red takibi (şimdilik TEMEL senaryo, alıcı reddedemez), kasa eşleme ekranı + tahsilatların gerçek hesaba işlenmesi (Ustalas'ın kasa/bankayı Paraşüt'ten takip edip etmediği soruluyor), iyzico satın alma (kullanıcı kararıyla şimdilik elle). `secretBox.ts` (AES-256-GCM, `INTEGRATION_ENC_KEY`) Paraşüt token'larını şifreler.
 
 ---

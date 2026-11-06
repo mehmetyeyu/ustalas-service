@@ -591,6 +591,14 @@ export async function cancelInvoice(tenantId: number, invoiceId: number): Promis
   return getInvoice(tenantId, invoiceId);
 }
 
+// PDF dosya adı: GİB fatura no sağlayıcıdan gelir ve Content-Disposition
+// başlığına yazılır — yalnızca güvenli karakterler (tırnak/satır sonu
+// başlığı bozamasın).
+export function invoicePdfFileName(inv: Pick<InvoiceRow, "id" | "gib_invoice_no">): string {
+  const base = (inv.gib_invoice_no ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+  return `${base || `fatura-${inv.id}`}.pdf`;
+}
+
 // PDF'i sağlayıcıdan taze alıp akıtır (saklanmaz, §2).
 export async function fetchInvoicePdf(tenantId: number, inv: InvoiceRow): Promise<Response> {
   if (!inv.ext_document_id || !inv.doc_type) throw new InvoiceError("Faturanın PDF'i henüz hazır değil.", 409);
