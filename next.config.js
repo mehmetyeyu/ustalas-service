@@ -83,6 +83,15 @@ const nextConfig = {
       { source: "/((?!randevu).*)", headers: lockedHeaders },
     ];
   },
+  // Landing'in tek adresi elevire.yeyu.co/ (bkz. src/lib/site.ts) —
+  // lastik.yeyu.co/elevire ve elevire.yeyu.co/elevire kopyaları 301 ile
+  // oraya bağlanır (SEO: tek URL). Middleware'in "/" → "/elevire"
+  // rewrite'ı etkilenmez: next.config redirect'leri middleware'den ÖNCE ve
+  // yalnızca gelen istek yoluna uygulanır. Yerelde/preview'da kapalı.
+  async redirects() {
+    if (process.env.VERCEL_ENV !== "production") return [];
+    return [{ source: "/elevire", destination: "https://elevire.yeyu.co/", permanent: true }];
+  },
 };
 module.exports = withSentryConfig(nextConfig, {
   org: "yeyu",

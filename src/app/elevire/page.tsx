@@ -12,7 +12,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { formatTry } from "@/lib/exchangeRate";
-import { ELEVIRE_ORIGIN } from "@/lib/site";
+import { ELEVIRE_ORIGIN, SOCIAL_LINKS } from "@/lib/site";
 import { getPlatformPricing } from "@/lib/platformPricing";
 import { COMPANY } from "./legal/company";
 import WaveHand from "./WaveHand";
@@ -26,9 +26,11 @@ import { inter } from "./fonts";
 // ve yıllık 12.000 TL (aylık karşılığı 1.000 TL) rakamlarıyla tutarlı,
 // süper admin panelden değiştirilebilir.
 
-const TITLE = "Elevire — Lastik Servisi Yönetim Yazılımı";
+// Başlık/açıklama arama niyetine göre: "lastik servis programı",
+// "lastik oteli takip", "lastikçi stok programı" — marka başta.
+const TITLE = "Elevire — Lastik Servis Programı | Stok, Müşteri ve Lastik Oteli";
 const DESCRIPTION =
-  "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu. Kurulum yok, kredi kartı gerekmez.";
+  "Lastikçiler ve oto servisler için yönetim yazılımı: iş emri, lastik stoğu, lastik oteli (depo), müşteri ve araç geçmişi, cari ve raporlar tek ekranda. 7 gün ücretsiz deneyin, kredi kartı gerekmez.";
 
 export const metadata: Metadata = {
   // Asıl adres her host'ta elevire.yeyu.co/ (bkz. src/lib/site.ts) — sayfa
@@ -71,6 +73,118 @@ const YILLIK_FEATURES = [
   { Icon: ShieldCheck, text: "Taahhüt yok" },
 ];
 
+const FEATURES = [
+  {
+    title: "İş emri ve sipariş takibi",
+    text: "Plakayı yazın, yapılan işi ve tutarı girin. Ödemeyi nakit, kart, havale ya da cari olarak, gerekirse parçalı alın; her iş müşterinin geçmişine kendiliğinden eklenir.",
+  },
+  {
+    title: "Lastik stok takibi",
+    text: "Marka, ebat ve adede göre lastik stoğunuzu tutun. Satışta stok otomatik düşer, alış fiyatından her işin kârını görürsünüz.",
+  },
+  {
+    title: "Lastik oteli (depo)",
+    text: "Müşterilerinizin mevsimlik lastiklerini depoda takip edin: kimin lastiği, ne zamandan beri ve hangi araca ait, hepsi tek listede.",
+  },
+  {
+    title: "Müşteri, araç ve filo",
+    text: "Plakadan aracın tüm geçmişine ulaşın. Kurumsal müşteriler ve filolar için cari hesap, indirim ve aylık ekstre tutun.",
+  },
+  {
+    title: "Online randevu ve WhatsApp",
+    text: "Randevu sayfanızı kendi sitenize ekleyin, müşteriniz boş saati seçsin. Teklif ve bilgilendirmeleri WhatsApp ile tek dokunuşla gönderin.",
+  },
+  {
+    title: "Kasa, masraf ve raporlar",
+    text: "Günlük kasa, masraflar, aylık ciro ve kâr raporları. Yıl sonunda ay ay gelir-gider özetini tek ekranda görün.",
+  },
+];
+
+function faqItems(monthlyPrice: number, yearlyPrice: number) {
+  return [
+    {
+      q: "Elevire nedir?",
+      a: "Elevire, lastikçiler ve oto servisler için geliştirilmiş bir servis yönetim programıdır. İş emri, lastik stoğu, lastik oteli, müşteri ve araç geçmişi, cari hesap ve raporları tek ekranda toplar.",
+    },
+    {
+      q: "Kurulum gerekiyor mu, hangi cihazlarda çalışır?",
+      a: "Kurulum yoktur. Elevire internet tarayıcısında çalışır; bilgisayardan, tabletten ve telefondan aynı hesapla kullanabilirsiniz.",
+    },
+    {
+      q: "Fiyatı ne kadar?",
+      a: `Aylık plan ${formatTry(monthlyPrice)} TL, yıllık plan ${formatTry(yearlyPrice)} TL'dir. Tek paket vardır, tüm temel modüller dahildir. Taahhüt yoktur, istediğiniz zaman iptal edebilirsiniz.`,
+    },
+    {
+      q: "Ücretsiz deneyebilir miyim?",
+      a: "Evet. 7 gün boyunca ücretsiz kullanabilirsiniz, deneme için kredi kartı gerekmez.",
+    },
+    {
+      q: "Birden fazla personel kullanabilir mi?",
+      a: "Evet. Personellerinize ayrı kullanıcı açıp her birinin hangi ekranları görebileceğini ve neleri değiştirebileceğini ayrı ayrı belirleyebilirsiniz.",
+    },
+    {
+      q: "Lastik oteli takibi nasıl yapılır?",
+      a: "Müşterinin lastiklerini depoya aldığınızda plaka ve lastik bilgisiyle kaydedersiniz. Hangi lastiğin ne zamandan beri depoda olduğunu ve teslim edilenleri listeden takip edersiniz.",
+    },
+  ];
+}
+
+// Organization (yasal kimlik) + WebSite (marka adı → site eşlemesi; Google
+// "elevire" aramasında site adını buradan alır) + SoftwareApplication
+// (ürün, fiyatlarıyla). sameAs'a sosyal hesaplar eklenince marka ile
+// Instagram vb. Google'da bağlanır.
+function jsonLd(monthlyPrice: number, yearlyPrice: number): string {
+  const org = { "@id": `${ELEVIRE_ORIGIN}/#organization` };
+  const data = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        ...org,
+        name: "Elevire",
+        legalName: COMPANY.unvan,
+        url: `${ELEVIRE_ORIGIN}/`,
+        logo: `${ELEVIRE_ORIGIN}/logo-elevire.svg`,
+        email: COMPANY.email,
+        telephone: COMPANY.telefon,
+        taxID: COMPANY.vergiNo,
+        address: {
+          "@type": "PostalAddress",
+          streetAddress: COMPANY.adres,
+          postalCode: COMPANY.postaKodu,
+          addressLocality: "İstanbul",
+          addressCountry: "TR",
+        },
+        sameAs: SOCIAL_LINKS.map((s) => s.href),
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${ELEVIRE_ORIGIN}/#website`,
+        name: "Elevire",
+        url: `${ELEVIRE_ORIGIN}/`,
+        inLanguage: "tr-TR",
+        publisher: org,
+      },
+      {
+        "@type": "SoftwareApplication",
+        name: "Elevire",
+        description: DESCRIPTION,
+        url: `${ELEVIRE_ORIGIN}/`,
+        applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
+        inLanguage: "tr-TR",
+        publisher: org,
+        offers: [
+          { "@type": "Offer", name: "Aylık", price: monthlyPrice, priceCurrency: "TRY", url: `${ELEVIRE_ORIGIN}/kayit` },
+          { "@type": "Offer", name: "Yıllık", price: yearlyPrice, priceCurrency: "TRY", url: `${ELEVIRE_ORIGIN}/kayit` },
+        ],
+      },
+    ],
+  };
+  // "</script>" kaçışı — metinler sabit olsa da JSON'u script içine güvenle göm.
+  return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
 function WhatsappIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -95,8 +209,15 @@ export default async function ElevirePage() {
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
       {/* ---------- Hero ---------- */}
+      {/* Yapılandırılmış veri: Google'a marka (Organization), site (WebSite)
+          ve ürün (SoftwareApplication, fiyatlarıyla) — bkz. jsonLd(). */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(monthlyPrice, yearlyPrice) }} />
+
       <div id="top" className="hero">
-        <Image src="/elevire/hero.jpg" alt="" fill priority className="hero-img" sizes="100vw" />
+        {/* Hero'daki başlık görselin İÇİNDE (okunmaz) — aynı metin gerçek H1
+            olarak, görsel olarak gizli verilir (sayfanın tek H1'i). */}
+        <h1 className="sr-only">Elevire: lastik servisleri için akıllı iş yönetimi. Daha düzenli, daha hızlı, daha fazla müşteri.</h1>
+        <Image src="/elevire/hero.jpg" alt="Elevire kullanan bir lastik servisinde lift üzerindeki araçta lastik değişimi" fill priority className="hero-img" sizes="100vw" />
         <div className="hero-scrim" />
         <nav className="nav wrap">
           <a className="logo" href="#top" aria-label="Elevire">
@@ -117,7 +238,7 @@ export default async function ElevirePage() {
           <div className="bento-row bento-row-1">
             <a className="bento-card" href="/kayit">
               <div className="bento-media">
-                <Image src="/elevire/bento-1.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
+                <Image src="/elevire/bento-1.jpg" alt="Elevire paneli: stok, aktif iş ve bekleyen iş özeti ile son işler listesi" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
               </div>
               <h2>Stok, müşteri ve iş takibi.{" "}Tek ekranda.</h2>
               <p>
@@ -127,7 +248,7 @@ export default async function ElevirePage() {
             </a>
             <a className="bento-card" href="/kayit">
               <div className="bento-media">
-                <Image src="/elevire/bento-main.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
+                <Image src="/elevire/bento-main.jpg" alt="Elevire paneli: markaya göre stok durumu, hızlı işlemler ve aylık stok seviyesi grafiği" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
               </div>
               <h2>Elevire&apos;ın içinden.</h2>
               <p>Tek bir panelde stok, müşteri ve iş takibinin tamamı.</p>
@@ -136,21 +257,21 @@ export default async function ElevirePage() {
           <div className="bento-row bento-row-2">
             <a className="bento-card" href="/kayit">
               <div className="bento-media bento-media-sm">
-                <Image src="/elevire/bento-stok.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
+                <Image src="/elevire/bento-stok.jpg" alt="Raflarda düzenli dizilmiş lastik stoğu" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
               </div>
               <h3>Stok Ekle</h3>
               <p>Lastik markası, ebadı ve adedini birkaç saniyede sisteme kaydedin.</p>
             </a>
             <a className="bento-card" href="/kayit">
               <div className="bento-media bento-media-sm">
-                <Image src="/elevire/bento-musteri.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
+                <Image src="/elevire/bento-musteri.jpg" alt="Servis çalışanı tabletten müşteri ve araç bilgisini kaydediyor" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
               </div>
               <h3>Müşteriyi Kaydet</h3>
               <p>Müşteri bilgilerini ve araç plakasını tek seferde kaydedin, bir daha aramayın.</p>
             </a>
             <a className="bento-card" href="/kayit">
               <div className="bento-media bento-media-sm">
-                <Image src="/elevire/bento-gecmis.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
+                <Image src="/elevire/bento-gecmis.jpg" alt="Usta araçta lastik değişimi yapıyor" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
               </div>
               <h3>İş Geçmişini Takip Et</h3>
               <p>Yapılan her işlem otomatik olarak müşterinin geçmişine eklenir.</p>
@@ -225,6 +346,36 @@ export default async function ElevirePage() {
         </div>
       </div>
 
+      {/* ---------- Özellikler + SSS ----------
+          Sayfanın asıl metin içeriği (SEO: önceden ~230 kelimeydi, aranan
+          terimler — lastik servis programı, lastik oteli, stok, cari — hiç
+          geçmiyordu). Yalnızca üründe GERÇEKTEN olan özellikler yazılır. */}
+      <section className="features" aria-labelledby="ozellikler">
+        <div className="wrap">
+          <h2 id="ozellikler" className="section-heading">Lastik servisiniz için tek program</h2>
+          <div className="features-grid">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="feature">
+                <h3>{f.title}</h3>
+                <p>{f.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="faq" aria-labelledby="sss">
+        <div className="wrap faq-inner">
+          <h2 id="sss" className="section-heading">Sık sorulan sorular</h2>
+          {faqItems(monthlyPrice, yearlyPrice).map((q) => (
+            <details key={q.q} className="faq-item">
+              <summary>{q.q}</summary>
+              <p>{q.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
       {/* ---------- Closing + Footer ---------- */}
       <div id="demo" className="closing">
         <div className="wrap closing-inner">
@@ -244,6 +395,9 @@ export default async function ElevirePage() {
             <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
             <a href={`tel:${COMPANY.telefon.replace(/\s/g, "")}`}>{COMPANY.telefon}</a>
             <span>{COMPANY.adres}, {COMPANY.postaKodu}</span>
+            {SOCIAL_LINKS.map((s) => (
+              <a key={s.href} href={s.href} rel="me noopener" target="_blank">{s.label}</a>
+            ))}
           </div>
           <div className="footer-bottom">
             <span className="footer-copyright">© 2026 Elevire. Tüm hakları saklıdır.</span>
@@ -538,6 +692,47 @@ const CSS = `
   .elevire .price-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -12px rgba(0,0,0,0.5); }
   .elevire .price-cta-orange { background: var(--orange); }
   .elevire .price-cta-dark { background: var(--ink); }
+
+  .elevire .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+
+  /* ---------- features + faq ---------- */
+  .elevire .section-heading {
+    font-size: clamp(1.8rem, 3.4vw, 2.4rem);
+    font-weight: 400;
+    color: #000000;
+    margin-bottom: 40px;
+  }
+  .elevire .features { padding: 88px 0 72px; }
+  .elevire .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 32px 40px;
+  }
+  .elevire .feature { border-top: 1px solid var(--line); padding-top: 20px; }
+  .elevire .feature h3 { font-size: 1.15rem; font-weight: 500; color: var(--heading); margin-bottom: 8px; }
+  .elevire .feature p { color: var(--body); line-height: 1.55; }
+
+  .elevire .faq { background: var(--paper); padding: 72px 0 88px; }
+  .elevire .faq-inner { max-width: 820px; }
+  .elevire .faq-item { border-bottom: 1px solid var(--line); }
+  .elevire .faq-item summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 0;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--heading);
+  }
+  .elevire .faq-item summary::-webkit-details-marker { display: none; }
+  .elevire .faq-item summary::after { content: "+"; font-weight: 400; font-size: 1.4rem; line-height: 1; color: var(--orange); }
+  .elevire .faq-item[open] summary::after { content: "−"; }
+  .elevire .faq-item p { color: var(--body); line-height: 1.6; padding: 0 0 20px; max-width: 70ch; }
 
   /* ---------- closing + footer ---------- */
   .elevire .closing { background: var(--darker); padding-top: 96px; }
