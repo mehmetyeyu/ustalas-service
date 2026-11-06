@@ -198,6 +198,17 @@ function jsonLd(monthlyPrice: number, yearlyPrice: number): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 
+// lucide-react marka ikonlarını kaldırdı — aynı ince çizgi stilinde elle.
+function InstagramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="0.75" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function WhatsappIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -433,12 +444,16 @@ export default async function ElevirePage() {
             <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
             <a href={`tel:${COMPANY.telefon.replace(/\s/g, "")}`}>{COMPANY.telefon}</a>
             <span>{COMPANY.adres}, {COMPANY.postaKodu}</span>
-            {SOCIAL_LINKS.map((s) => (
-              <a key={s.href} href={s.href} rel="me noopener" target="_blank">{s.label}</a>
-            ))}
           </div>
           <div className="footer-bottom">
-            <span className="footer-copyright">© 2026 Elevire. Tüm hakları saklıdır.</span>
+            <div className="footer-brand">
+              <span className="footer-copyright">© 2026 Elevire. Tüm hakları saklıdır.</span>
+              {SOCIAL_LINKS.map((s) => (
+                <a key={s.href} className="social-link" href={s.href} rel="me noopener" target="_blank" aria-label={s.label}>
+                  <InstagramIcon />
+                </a>
+              ))}
+            </div>
             <div className="payment-badges">
               <img src="/payment-logos/logo-band-white.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" height={20} />
             </div>
@@ -949,6 +964,20 @@ const CSS = `
     gap: 12px;
   }
   .elevire .footer-copyright { font-size: 0.85rem; color: #ffffff; }
+  .elevire .footer-brand { display: flex; align-items: center; gap: 16px; }
+  .elevire .social-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.22);
+    color: #ffffff;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  }
+  .elevire .social-link svg { width: 18px; height: 18px; }
+  .elevire .social-link:hover { border-color: var(--yellow); background: var(--yellow); color: #000000; }
   .elevire .payment-badges { display: flex; align-items: center; }
 
   @media (max-width: 640px) {
