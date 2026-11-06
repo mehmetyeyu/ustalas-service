@@ -10,4 +10,7 @@ export const ELEVIRE_ORIGIN = `https://${ELEVIRE_HOSTNAME}`;
 // Elevire'in resmi sosyal hesapları — landing'in alt bilgisinde bağlantı ve
 // yapılandırılmış verideki sameAs olarak çıkar (Google markayı bu hesaplarla
 // eşler). Hesap eklemek için buraya tam profil adresini yazmak yeterli.
-export const SOCIAL_LINKS: { label: string; href: string }[] = [];
+// Şimdilik şirketin (Yeyu) hesabı — Elevire paylaşımları buradan yapılıyor.
+export const SOCIAL_LINKS: { label: string; href: string }[] = [
+  { label: "Instagram", href: "https://www.instagram.com/yeyu.co/" },
+];
