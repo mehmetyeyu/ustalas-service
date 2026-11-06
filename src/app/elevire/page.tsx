@@ -293,39 +293,6 @@ export default async function ElevirePage() {
         </div>
       </div>
 
-      {/* ---------- Özellikler ----------
-          Sayfanın asıl metin içeriği (SEO: önceden ~230 kelimeydi; aranan
-          terimler — lastik servis programı, lastik oteli, stok, cari — hiç
-          geçmiyordu). Yalnızca üründe GERÇEKTEN olan özellikler yazılır.
-          Görsel dil bento/fiyat kartlarıyla aynı: krem kart, 24px köşe,
-          logodaki siyah daire + sarı ikon. */}
-      <section className="features" aria-labelledby="ozellikler">
-        <div className="wrap">
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">TEK PROGRAM</span>
-              <h2 id="ozellikler" className="section-title">Lastik servisinizin her işi, tek yerde.</h2>
-            </div>
-            <p className="section-lead">
-              İş emrinden lastik oteline, cariden aylık kâra kadar; defter ve Excel&apos;e gerek kalmadan.
-            </p>
-          </div>
-          <div className="features-grid">
-            {FEATURES.map(({ Icon, title, text }) => (
-              <div key={title} className="feature-card">
-                <span className="feature-icon">
-                  <Icon strokeWidth={1.5} aria-hidden="true" />
-                </span>
-                <div className="feature-body">
-                  <h3>{title}</h3>
-                  <p>{text}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ---------- Pricing ---------- */}
       <div className="pricing">
         <div className="pricing-photo">
@@ -391,6 +358,39 @@ export default async function ElevirePage() {
           </div>
         </div>
       </div>
+
+      {/* ---------- Özellikler ----------
+          Sayfanın asıl metin içeriği (SEO: önceden ~230 kelimeydi; aranan
+          terimler — lastik servis programı, lastik oteli, stok, cari — hiç
+          geçmiyordu). Yalnızca üründe GERÇEKTEN olan özellikler yazılır.
+          Görsel dil bento/fiyat kartlarıyla aynı: krem kart, 24px köşe,
+          logodaki siyah daire + sarı ikon. */}
+      <section className="features" aria-labelledby="ozellikler">
+        <div className="wrap">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">TEK PROGRAM</span>
+              <h2 id="ozellikler" className="section-title">Lastik servisinizin her işi, tek yerde.</h2>
+            </div>
+            <p className="section-lead">
+              İş emrinden lastik oteline, cariden aylık kâra kadar; defter ve Excel&apos;e gerek kalmadan.
+            </p>
+          </div>
+          <div className="features-grid">
+            {FEATURES.map(({ Icon, title, text }) => (
+              <div key={title} className="feature-card">
+                <span className="feature-icon">
+                  <Icon strokeWidth={1.5} aria-hidden="true" />
+                </span>
+                <div className="feature-body">
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ---------- Closing + Footer ---------- */}
       <div id="demo" className="closing">
@@ -765,7 +765,7 @@ const CSS = `
   .elevire .section-lead { color: var(--body); font-size: 1.05rem; line-height: 1.55; max-width: 380px; }
 
   /* ---------- features ---------- */
-  .elevire .features { padding: 24px 0 112px; }
+  .elevire .features { padding: 112px 0; }
   .elevire .features-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -805,7 +805,7 @@ const CSS = `
   }
   @media (max-width: 640px) {
     .elevire .section-head { flex-direction: column; align-items: flex-start; margin-bottom: 32px; }
-    .elevire .features { padding-bottom: 88px; }
+    .elevire .features { padding: 80px 0; }
     .elevire .features-grid { grid-template-columns: 1fr; }
     .elevire .feature-card { flex-direction: row; align-items: flex-start; gap: 18px; padding: 22px; border-radius: 20px; }
     .elevire .feature-icon { width: 44px; height: 44px; }
