@@ -12,6 +12,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { formatTry } from "@/lib/exchangeRate";
+import { ELEVIRE_ORIGIN } from "@/lib/site";
 import { getPlatformPricing } from "@/lib/platformPricing";
 import { COMPANY } from "./legal/company";
 import WaveHand from "./WaveHand";
@@ -30,13 +31,15 @@ const DESCRIPTION =
   "Sipariş, stok, depo ve raporlama — hepsi tek ekranda. Elevire ile lastik servisinizi yönetmenin en kolay yolu. Kurulum yok, kredi kartı gerekmez.";
 
 export const metadata: Metadata = {
-  metadataBase: process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? new URL(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
-    : undefined,
+  // Asıl adres her host'ta elevire.yeyu.co/ (bkz. src/lib/site.ts) — sayfa
+  // orada "/" yoluna rewrite ile sunulur; lastik.yeyu.co/elevire kopyası da
+  // buraya bağlanır.
+  metadataBase: new URL(ELEVIRE_ORIGIN),
   title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: "/elevire" },
+  alternates: { canonical: "/" },
   openGraph: {
+    url: "/",
     title: TITLE,
     description: DESCRIPTION,
     siteName: "Elevire",

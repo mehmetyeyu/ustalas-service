@@ -4,6 +4,7 @@ import { canAccessPath, getDefaultAdminPath } from "@/lib/permissions";
 import { isBillingLocked } from "@/lib/billing";
 import { getClientIp } from "@/lib/clientIp";
 import { isRateLimited, loginRateLimit, registerRateLimit, bookingRateLimit, invoicePdfRateLimit } from "@/lib/rateLimit";
+import { ELEVIRE_HOSTNAME } from "@/lib/site";
 
 // elevire.yeyu.co'dan gelen, giriş yapmamış ziyaretçiler kök yolda ("/")
 // dahili sipariş aracı yerine doğrudan landing sayfasına (/elevire)
@@ -13,8 +14,7 @@ import { isRateLimited, loginRateLimit, registerRateLimit, bookingRateLimit, inv
 // değişkeniyle yapılıyordu — 2026-10-01'de üç domain de AYNI Vercel
 // projesine/env değişkenlerine taşındığından (bkz. multi_tenant_migration
 // hafızası) artık host'a göre karar vermek gerekiyor, tek bir global env
-// değişkeni üç domain'i de aynı anda etkilerdi.
-const ELEVIRE_HOSTNAME = "elevire.yeyu.co";
+// değişkeni üç domain'i de aynı anda etkilerdi. Host sabiti: src/lib/site.ts.
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
