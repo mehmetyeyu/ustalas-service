@@ -10,6 +10,13 @@ import {
   ReceiptText,
   Coins,
   TrendingDown,
+  ClipboardList,
+  Boxes,
+  Warehouse,
+  CarFront,
+  CalendarCheck,
+  ChartColumn,
+  Plus,
 } from "lucide-react";
 import { formatTry } from "@/lib/exchangeRate";
 import { ELEVIRE_ORIGIN, SOCIAL_LINKS } from "@/lib/site";
@@ -75,26 +82,32 @@ const YILLIK_FEATURES = [
 
 const FEATURES = [
   {
+    Icon: ClipboardList,
     title: "İş emri ve sipariş takibi",
     text: "Plakayı yazın, yapılan işi ve tutarı girin. Ödemeyi nakit, kart, havale ya da cari olarak, gerekirse parçalı alın; her iş müşterinin geçmişine kendiliğinden eklenir.",
   },
   {
+    Icon: Boxes,
     title: "Lastik stok takibi",
     text: "Marka, ebat ve adede göre lastik stoğunuzu tutun. Satışta stok otomatik düşer, alış fiyatından her işin kârını görürsünüz.",
   },
   {
+    Icon: Warehouse,
     title: "Lastik oteli (depo)",
     text: "Müşterilerinizin mevsimlik lastiklerini depoda takip edin: kimin lastiği, ne zamandan beri ve hangi araca ait, hepsi tek listede.",
   },
   {
+    Icon: CarFront,
     title: "Müşteri, araç ve filo",
     text: "Plakadan aracın tüm geçmişine ulaşın. Kurumsal müşteriler ve filolar için cari hesap, indirim ve aylık ekstre tutun.",
   },
   {
+    Icon: CalendarCheck,
     title: "Online randevu ve WhatsApp",
     text: "Randevu sayfanızı kendi sitenize ekleyin, müşteriniz boş saati seçsin. Teklif ve bilgilendirmeleri WhatsApp ile tek dokunuşla gönderin.",
   },
   {
+    Icon: ChartColumn,
     title: "Kasa, masraf ve raporlar",
     text: "Günlük kasa, masraflar, aylık ciro ve kâr raporları. Yıl sonunda ay ay gelir-gider özetini tek ekranda görün.",
   },
@@ -280,6 +293,39 @@ export default async function ElevirePage() {
         </div>
       </div>
 
+      {/* ---------- Özellikler ----------
+          Sayfanın asıl metin içeriği (SEO: önceden ~230 kelimeydi; aranan
+          terimler — lastik servis programı, lastik oteli, stok, cari — hiç
+          geçmiyordu). Yalnızca üründe GERÇEKTEN olan özellikler yazılır.
+          Görsel dil bento/fiyat kartlarıyla aynı: krem kart, 24px köşe,
+          logodaki siyah daire + sarı ikon. */}
+      <section className="features" aria-labelledby="ozellikler">
+        <div className="wrap">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">TEK PROGRAM</span>
+              <h2 id="ozellikler" className="section-title">Lastik servisinizin her işi, tek yerde.</h2>
+            </div>
+            <p className="section-lead">
+              İş emrinden lastik oteline, cariden aylık kâra kadar; defter ve Excel&apos;e gerek kalmadan.
+            </p>
+          </div>
+          <div className="features-grid">
+            {FEATURES.map(({ Icon, title, text }) => (
+              <div key={title} className="feature-card">
+                <span className="feature-icon">
+                  <Icon strokeWidth={1.5} aria-hidden="true" />
+                </span>
+                <div className="feature-body">
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ---------- Pricing ---------- */}
       <div className="pricing">
         <div className="pricing-photo">
@@ -346,38 +392,30 @@ export default async function ElevirePage() {
         </div>
       </div>
 
-      {/* ---------- Özellikler + SSS ----------
-          Sayfanın asıl metin içeriği (SEO: önceden ~230 kelimeydi, aranan
-          terimler — lastik servis programı, lastik oteli, stok, cari — hiç
-          geçmiyordu). Yalnızca üründe GERÇEKTEN olan özellikler yazılır. */}
-      <section className="features" aria-labelledby="ozellikler">
-        <div className="wrap">
-          <h2 id="ozellikler" className="section-heading">Lastik servisiniz için tek program</h2>
-          <div className="features-grid">
-            {FEATURES.map((f) => (
-              <div key={f.title} className="feature">
-                <h3>{f.title}</h3>
-                <p>{f.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="faq" aria-labelledby="sss">
-        <div className="wrap faq-inner">
-          <h2 id="sss" className="section-heading">Sık sorulan sorular</h2>
-          {faqItems(monthlyPrice, yearlyPrice).map((q) => (
-            <details key={q.q} className="faq-item">
-              <summary>{q.q}</summary>
-              <p>{q.a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
       {/* ---------- Closing + Footer ---------- */}
       <div id="demo" className="closing">
+        {/* SSS — kapanışın koyu zemininde, iki sütun: solda başlık ve
+            iletişim, sağda akordeon (<details> içeriği de dizinlenir). */}
+        <section className="wrap faq" aria-labelledby="sss">
+          <div className="faq-side">
+            <span className="eyebrow eyebrow-light">SSS</span>
+            <h2 id="sss" className="section-title section-title-light">Sık sorulan sorular</h2>
+            <p className="faq-contact">
+              Aradığınız cevap yok mu? <a href={`mailto:${COMPANY.email}`}>Bize yazın</a>, yardımcı olalım.
+            </p>
+          </div>
+          <div className="faq-list">
+            {faqItems(monthlyPrice, yearlyPrice).map((q) => (
+              <details key={q.q} className="faq-item">
+                <summary>
+                  {q.q}
+                  <span className="faq-toggle" aria-hidden="true"><Plus strokeWidth={1.75} /></span>
+                </summary>
+                <p>{q.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
         <div className="wrap closing-inner">
           <WaveHand />
           <h2>İşini tek ekrandan yönetmeye hazır mısın?</h2>
@@ -698,41 +736,133 @@ const CSS = `
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
 
-  /* ---------- features + faq ---------- */
-  .elevire .section-heading {
-    font-size: clamp(1.8rem, 3.4vw, 2.4rem);
-    font-weight: 400;
-    color: #000000;
-    margin-bottom: 40px;
+  /* ---------- section heads (features + faq) ---------- */
+  .elevire .eyebrow {
+    display: inline-block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--orange);
+    margin-bottom: 14px;
   }
-  .elevire .features { padding: 88px 0 72px; }
+  .elevire .eyebrow-light { color: var(--yellow); }
+  .elevire .section-title {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 400;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: #000000;
+  }
+  .elevire .section-title-light { color: #ffffff; }
+  .elevire .section-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px 64px;
+    margin-bottom: 48px;
+  }
+  .elevire .section-head > div { max-width: 620px; }
+  .elevire .section-lead { color: var(--body); font-size: 1.05rem; line-height: 1.55; max-width: 380px; }
+
+  /* ---------- features ---------- */
+  .elevire .features { padding: 24px 0 112px; }
   .elevire .features-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 32px 40px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
   }
-  .elevire .feature { border-top: 1px solid var(--line); padding-top: 20px; }
-  .elevire .feature h3 { font-size: 1.15rem; font-weight: 500; color: var(--heading); margin-bottom: 8px; }
-  .elevire .feature p { color: var(--body); line-height: 1.55; }
+  .elevire .feature-card {
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+    padding: 28px;
+    border-radius: 24px;
+    background: var(--paper);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .elevire .feature-card:hover {
+    transform: translateY(-3px);
+    background: #ffffff;
+    box-shadow: 0 24px 48px -30px rgba(10,13,18,0.45), 0 0 0 1px var(--line);
+  }
+  .elevire .feature-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #000000;
+    color: var(--yellow);
+    flex: none;
+  }
+  .elevire .feature-icon svg { width: 24px; height: 24px; }
+  .elevire .feature-body { display: flex; flex-direction: column; gap: 10px; }
+  .elevire .feature-body h3 { font-size: 1.4rem; font-weight: 400; line-height: 1.25; color: var(--heading); }
+  .elevire .feature-body p { color: var(--body); line-height: 1.55; }
+  @media (max-width: 960px) {
+    .elevire .features-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .elevire .section-head { flex-direction: column; align-items: flex-start; margin-bottom: 32px; }
+    .elevire .features { padding-bottom: 88px; }
+    .elevire .features-grid { grid-template-columns: 1fr; }
+    .elevire .feature-card { flex-direction: row; align-items: flex-start; gap: 18px; padding: 22px; border-radius: 20px; }
+    .elevire .feature-icon { width: 44px; height: 44px; }
+    .elevire .feature-icon svg { width: 20px; height: 20px; }
+    .elevire .feature-body h3 { font-size: 1.15rem; }
+    .elevire .feature-body p { font-size: 0.95rem; }
+  }
 
-  .elevire .faq { background: var(--paper); padding: 72px 0 88px; }
-  .elevire .faq-inner { max-width: 820px; }
-  .elevire .faq-item { border-bottom: 1px solid var(--line); }
+  /* ---------- faq (kapanışın koyu zemininde) ---------- */
+  .elevire .faq {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 40px 72px;
+    padding-bottom: 112px;
+  }
+  .elevire .faq-side { align-self: start; position: sticky; top: 32px; }
+  .elevire .faq-contact { margin-top: 20px; color: var(--footer-muted); line-height: 1.6; max-width: 34ch; }
+  .elevire .faq-contact a { color: #ffffff; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255,255,255,0.35); }
+  .elevire .faq-contact a:hover { text-decoration-color: var(--yellow); }
+  .elevire .faq-list { border-top: 1px solid rgba(255,255,255,0.12); }
+  .elevire .faq-item { border-bottom: 1px solid rgba(255,255,255,0.12); }
   .elevire .faq-item summary {
     cursor: pointer;
     list-style: none;
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 20px 0;
-    font-size: 1.05rem;
-    font-weight: 500;
-    color: var(--heading);
+    gap: 24px;
+    padding: 26px 0;
+    font-size: 1.15rem;
+    font-weight: 400;
+    color: #ffffff;
   }
   .elevire .faq-item summary::-webkit-details-marker { display: none; }
-  .elevire .faq-item summary::after { content: "+"; font-weight: 400; font-size: 1.4rem; line-height: 1; color: var(--orange); }
-  .elevire .faq-item[open] summary::after { content: "−"; }
-  .elevire .faq-item p { color: var(--body); line-height: 1.6; padding: 0 0 20px; max-width: 70ch; }
+  .elevire .faq-item summary:focus-visible { outline: 2px solid var(--yellow); outline-offset: 4px; border-radius: 4px; }
+  .elevire .faq-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.22);
+    color: #ffffff;
+    transition: transform 0.25s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  .elevire .faq-toggle svg { width: 18px; height: 18px; }
+  .elevire .faq-item summary:hover .faq-toggle { border-color: var(--yellow); }
+  .elevire .faq-item[open] .faq-toggle { transform: rotate(45deg); background: var(--yellow); border-color: var(--yellow); color: #000000; }
+  .elevire .faq-item p { color: var(--footer-muted); font-size: 1rem; line-height: 1.65; padding: 0 60px 28px 0; }
+  @media (max-width: 860px) {
+    .elevire .faq { grid-template-columns: 1fr; padding-bottom: 88px; }
+    .elevire .faq-side { position: static; }
+    .elevire .faq-item summary { font-size: 1.05rem; padding: 22px 0; }
+    .elevire .faq-item p { padding-right: 0; }
+  }
 
   /* ---------- closing + footer ---------- */
   .elevire .closing { background: var(--darker); padding-top: 96px; }
@@ -786,7 +916,8 @@ const CSS = `
 
   .elevire .footer {
     border-top: 1px solid rgba(255,255,255,0.1);
-    padding: 24px 0 32px;
+    padding-top: 24px;
+    padding-bottom: 32px;
     display: flex;
     flex-direction: column;
     gap: 16px;
