@@ -722,6 +722,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [barcodeChecking, setBarcodeChecking] = useState(false);
+  const [codeChecking, setCodeChecking] = useState(false);
   // Kesit/Profil/Jant Çapı bloğu varsayılan kapalı — çoğu kullanıcı doğrudan
   // Ebat'a yazacağından sürekli açık durması gereksiz görsel yoğunluk
   // yaratıyordu. Bu sadece manuel "aç" tıklamasını tutar; alanlardan biri
@@ -1009,12 +1010,14 @@ export default function ProductsPage() {
   // henüz o alanları elle doldurmadıysa (zaten yazılmış bir değerin üzerine
   // sessizce yazılmaz). Fiyat/stok/konum KASITLI olarak doldurulmaz, bunlar
   // her partide yeniden girilir (bkz. /api/products/barcode notu).
-  async function handleBarcodeLookup(setter: typeof setForm, current: typeof EMPTY_FORM, setChecking: (v: boolean) => void) {
-    const barcode = current.barcode.trim();
-    if (!barcode) return;
+  // by="code": "+ Yeni Ürün"de var olan bir Ürün Kodu elle yazılınca aynı
+  // doldurma o kodun en son partisinden yapılır.
+  async function handleBarcodeLookup(setter: typeof setForm, current: typeof EMPTY_FORM, setChecking: (v: boolean) => void, by: "barcode" | "code" = "barcode") {
+    const value = current[by].trim();
+    if (!value) return;
     setChecking(true);
     try {
-      const res = await fetch(`/api/products/barcode?barcode=${encodeURIComponent(barcode)}`);
+      const res = await fetch(`/api/products/barcode?${by}=${encodeURIComponent(value)}`);
       const data = await res.json();
       if (!data.found) return;
       setter((prev) => ({
@@ -1039,7 +1042,7 @@ export default function ProductsPage() {
         offset_et: prev.offset_et.trim() ? prev.offset_et : data.offset_et ?? prev.offset_et,
         min_stock_threshold: prev.min_stock_threshold.trim() ? prev.min_stock_threshold : data.min_stock_threshold != null ? String(data.min_stock_threshold) : prev.min_stock_threshold,
       }));
-      toast.success("Barkod eşleşti, bilinen bilgiler dolduruldu.");
+      toast.success(by === "code" ? "Ürün kodu bulundu, bilinen bilgiler dolduruldu." : "Barkod eşleşti, bilinen bilgiler dolduruldu.");
     } catch {
       // sessizce yoksay — barkod alanı yine de elle girilmiş değeriyle kalır
     } finally {
@@ -2147,12 +2150,23 @@ export default function ProductsPage() {
                 </div>
                 <div className="w-1/3">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Ürün Kodu <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={form.code}
-                    onChange={(e) => setForm({ ...form, code: e.target.value })}
-                    className="w-full border border-gray-400 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.code}
+                      onChange={(e) => setForm({ ...form, code: e.target.value })}
+                      onBlur={() => handleBarcodeLookup(setForm, form, setCodeChecking, "code")}
+                      className="w-full border border-gray-400 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {codeChecking && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={3} />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="sm:col-span-2 flex gap-2">
