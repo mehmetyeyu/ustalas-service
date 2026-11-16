@@ -2087,3 +2087,12 @@ END $$;
 
 -- Kasanın sağlayıcıdaki kasa/banka hesabı (tahsilatı Paraşüt'e işlemek için).
 ALTER TABLE kasalar ADD COLUMN IF NOT EXISTS ext_account_id VARCHAR(30);
+
+-- Depolama: konuma göre farklı lastikler, RFT ve Jantlı (müşteri isteği
+-- 2026-11-16). lastikler NULL = hepsi aynı (ana kolonlar); doluysa
+-- [{konum, adet, ebat, marka, model_name, dis_derinligi, production_week,
+-- production_year, load_speed_index}] ve ana kolonlar bunun özetidir — bkz.
+-- src/lib/storageTires.ts.
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS lastikler JSONB;
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS rft BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS jantli BOOLEAN NOT NULL DEFAULT false;

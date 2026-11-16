@@ -6,6 +6,7 @@ import { hasPermission } from "@/lib/permissions";
 import { getAppSettings } from "@/lib/settings";
 import { parseStorageFilters, buildStorageQuery } from "@/lib/storageFilters";
 import { normalizeYear } from "@/lib/productsExcel";
+import { resolveStorageTireColumns, StorageTiresValidationError } from "@/lib/storageTires";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index } = body;
+    const { depo_no, plate, customer_name, phone, adet, mevsim, aciklama, islem_tarihi } = body;
 
     if (!plate) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
@@ -57,6 +58,8 @@ export async function POST(request: NextRequest) {
     if (adet != null && adet !== "" && (!Number.isFinite(Number(adet)) || Number(adet) < 0)) {
       return NextResponse.json({ error: "Geçersiz adet." }, { status: 400 });
     }
+
+    const t = resolveStorageTireColumns(body, normalizeYear);
 
     if (plate && mevsim) {
       const exists = await pool.query(
@@ -84,15 +87,16 @@ export async function POST(request: NextRequest) {
 
     const vehicleId = await linkVehicle(pool, user.tenantId!, plate);
     const result = await pool.query(
-      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
-      [user.tenantId, nextDepoNo, plate || null, customer_name || null, phone || null, ebat || null, marka || null,
-       dis_derinligi || null, adet || 4, mevsim || null, aciklama || null, islem_tarihi || null,
-       model_name || null, production_week || null, production_year ? normalizeYear(Number(production_year)) : null, load_speed_index || null, vehicleId]
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id, lastikler, rft, jantli)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      [user.tenantId, nextDepoNo, plate || null, customer_name || null, phone || null, t.ebat, t.marka,
+       t.dis_derinligi, t.adet, mevsim || null, aciklama || null, islem_tarihi || null,
+       t.model_name, t.production_week, t.production_year, t.load_speed_index, vehicleId, t.lastikler, t.rft, t.jantli]
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error: unknown) {
+    if (error instanceof StorageTiresValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
     // Eşzamanlı iki POST aynı boş depo nosunu hesaplayabilir — bu durumda
     // storage_active_depo_no_unique kısıtı ikincisini engeller, kullanıcı
     // sessizce üzerine yazma yerine tekrar denemeye yönlendirilir.

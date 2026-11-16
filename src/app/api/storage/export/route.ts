@@ -6,6 +6,8 @@ import * as XLSX from "xlsx";
 import { sanitizeExcelRow } from "@/lib/excelSafety";
 import { getAppSettings } from "@/lib/settings";
 import { parseStorageFilters, buildStorageQuery } from "@/lib/storageFilters";
+import { describeStorageTire, rftLabel, type StorageTire } from "@/lib/storageTires";
+import { STORAGE_EXCEL_COLUMNS, formatIslemTarihi } from "@/lib/storageExcel";
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
@@ -20,33 +22,30 @@ export async function GET(request: NextRequest) {
     const { where, values, orderBy } = buildStorageQuery(filters, user.tenantId!, overdueMonths);
     const result = await pool.query(`SELECT * FROM storage${where}${orderBy}`, values);
 
-    const rows = result.rows.map((r) => sanitizeExcelRow({
-      "Depo No":        r.depo_no ?? "",
-      "Plaka":          r.plate ?? "",
-      "Müşteri":        r.customer_name ?? "",
-      "Telefon":        r.phone ?? "",
-      "Ebat":           r.ebat ?? "",
-      "Marka":          r.marka ?? "",
-      "Diş Derinliği":  r.dis_derinligi ?? "",
-      "Adet":           r.adet ?? "",
-      "Mevsim":         r.mevsim ?? "",
-      "Açıklama":       r.aciklama ?? "",
-      "İşlem Tarihi":   r.islem_tarihi ? new Date(r.islem_tarihi).toLocaleDateString("tr-TR") : "",
-      "Model":          r.model_name ?? "",
-      "Üretim Haftası/Yılı": r.production_week != null && r.production_year != null
-        ? `${String(r.production_week).padStart(2, "0")}/${String(r.production_year).slice(-2)}`
-        : "",
-      "Yük/Hız":        r.load_speed_index ?? "",
-    }));
+    // Sütunlar Şablon ile aynı (bkz. src/lib/storageExcel.ts) — dışa aktarılan
+    // dosya düzenlenip aynen geri yüklenebilir. Lastik Detayı içe aktarmada
+    // yok sayılır (konum ayrıntısı Excel'den değiştirilemez).
+    const rows = result.rows.map((r) => {
+      const values: Record<string, unknown> = {
+        ...r,
+        production_week_year: r.production_week != null && r.production_year != null
+          ? `${String(r.production_week).padStart(2, "0")}/${String(r.production_year).slice(-2)}`
+          : "",
+        islem_tarihi: formatIslemTarihi(r.islem_tarihi),
+        rft: rftLabel(r) === "RFT (kısmi)" ? "Kısmi" : r.rft ? "Evet" : "Hayır",
+        jantli: r.jantli ? "Evet" : "Hayır",
+      };
+      return sanitizeExcelRow({
+        ...Object.fromEntries(STORAGE_EXCEL_COLUMNS.map((c) => [c.header, values[c.key] ?? ""])),
+        "Lastik Detayı": Array.isArray(r.lastikler)
+          ? (r.lastikler as StorageTire[]).map((t) => `${t.konum}: ${describeStorageTire(t)}`).join(" | ")
+          : "",
+      });
+    });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
-
-    ws["!cols"] = [
-      { wch: 8 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 12 },
-      { wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 12 }, { wch: 30 }, { wch: 14 },
-      { wch: 20 }, { wch: 16 }, { wch: 10 },
-    ];
+    ws["!cols"] = [...STORAGE_EXCEL_COLUMNS.map((c) => ({ wch: c.width })), { wch: 60 }];
 
     XLSX.utils.book_append_sheet(wb, ws, "Depolama Listesi");
 

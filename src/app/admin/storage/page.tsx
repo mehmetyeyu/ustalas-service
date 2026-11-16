@@ -15,6 +15,10 @@ import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
 import { useDialog } from "@/lib/useDialog";
 import { StickyScrollX } from "@/components/StickyScrollX";
+import {
+  STORAGE_TIRE_LAYOUTS, STORAGE_TIRE_POSITIONS, layoutOf, describeStorageTire, rftLabel,
+  type StorageTire, type StorageTireLayout,
+} from "@/lib/storageTires";
 
 interface StorageItem {
   id: number;
@@ -35,6 +39,9 @@ interface StorageItem {
   production_week: number | null;
   production_year: number | null;
   load_speed_index: string | null;
+  lastikler: StorageTire[] | null;
+  rft: boolean;
+  jantli: boolean;
 }
 
 const MEVSIM_OPTIONS = ["Kışlık", "Yazlık", "Dört Mevsim"];
@@ -176,6 +183,112 @@ function MevsimCheckboxes({
   );
 }
 
+const INPUT_CLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+// Bir lastiğin (ya da tüm setin) alanları. adet yalnızca "hepsi aynı"da
+// girilir; diğer düzenlerde konum başına adet sabittir. RFT lastiğin kendi
+// özelliği olduğundan konum başınadır (Jantlı ise setin saklanma şekli,
+// TireFields'ta ortak).
+function TireInputs({
+  value, onChange, adet, onAdetChange, disPlaceholder,
+}: {
+  value: TireForm;
+  onChange: (patch: Partial<TireForm>) => void;
+  adet?: string;
+  onAdetChange?: (v: string) => void;
+  disPlaceholder: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
+          <SearchableCombobox value={value.ebat} onChange={(val) => onChange({ ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
+          <SearchableCombobox value={value.marka} onChange={(val) => onChange({ marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
+          <input type="text" value={value.model_name} onChange={(e) => onChange({ model_name: e.target.value })} placeholder="ör. PremiumContact 6" className={INPUT_CLS} />
+        </div>
+      </div>
+      <div className={`grid grid-cols-2 gap-3 ${onAdetChange ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
+          <input type="text" value={value.dis_derinligi} onChange={(e) => onChange({ dis_derinligi: e.target.value })} placeholder={disPlaceholder} className={`${INPUT_CLS} font-mono`} />
+        </div>
+        {onAdetChange && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
+            <input type="number" min="1" value={adet} onChange={(e) => onAdetChange(e.target.value)} className={INPUT_CLS} />
+          </div>
+        )}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Hafta / Yıl</label>
+          <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
+            value={formatWeekYearInput(value.production_week, value.production_year)}
+            onChange={(e) => {
+              const { week, year } = parseWeekYearInput(e.target.value);
+              onChange({ production_week: week, production_year: year });
+            }}
+            className={INPUT_CLS} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
+          <input type="text" value={value.load_speed_index} onChange={(e) => onChange({ load_speed_index: e.target.value })} placeholder="91H" className={INPUT_CLS} />
+        </div>
+      </div>
+      <label className="flex w-fit items-center gap-2 text-sm text-gray-700 cursor-pointer">
+        <input type="checkbox" checked={value.rft} onChange={(e) => onChange({ rft: e.target.checked })} className="w-4 h-4 accent-blue-600" />
+        RFT (Run-Flat)
+      </label>
+    </div>
+  );
+}
+
+// Yeni/Düzenle/Değişim formlarının ortak "Lastikler" bölümü — müşteri isteği:
+// ön/arka (uç durumda her lastik) ebatı-markası farklı olabilir; RFT ve
+// jantlı saklama işaretlenir (bkz. src/lib/storageTires.ts).
+function TireFields({ value, onChange }: { value: TireFieldsState; onChange: (patch: Partial<TireFieldsState>) => void }) {
+  const positions = value.duzen === "ayni" ? null : STORAGE_TIRE_POSITIONS[value.duzen];
+  const updateTire = (i: number, patch: Partial<TireForm>) =>
+    onChange({ lastikler: value.lastikler.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-start gap-2">
+        <span className="text-xs font-medium text-gray-600">Lastikler</span>
+        <div role="radiogroup" aria-label="Lastik düzeni" className="inline-flex rounded-lg border border-gray-300 p-0.5 text-xs">
+          {STORAGE_TIRE_LAYOUTS.map((l) => (
+            <button key={l.value} type="button" role="radio" aria-checked={value.duzen === l.value}
+              onClick={() => onChange(switchLayout(value, l.value))}
+              className={`rounded-md px-2.5 py-1 font-medium ${value.duzen === l.value ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {positions ? (
+        positions.map((p, i) => (
+          <fieldset key={p.konum} className="rounded-lg border border-gray-200 p-3">
+            <legend className="px-1 text-xs font-semibold text-gray-700">{p.konum} <span className="font-normal text-gray-400">· {p.adet} adet</span></legend>
+            <TireInputs value={value.lastikler[i] ?? EMPTY_TIRE} onChange={(patch) => updateTire(i, patch)} disPlaceholder={p.adet === 2 ? "5-5" : "5"} />
+          </fieldset>
+        ))
+      ) : (
+        <TireInputs value={value} onChange={onChange} adet={value.adet} onAdetChange={(adet) => onChange({ adet })} disPlaceholder="5-5-5-5" />
+      )}
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={value.jantli} onChange={(e) => onChange({ jantli: e.target.checked })} className="w-4 h-4 accent-blue-600" />
+          Jantlı
+        </label>
+      </div>
+    </div>
+  );
+}
+
 const COLUMNS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "depo_no", label: "No", defaultVisible: true },
   { key: "plate", label: "Plaka", defaultVisible: true },
@@ -207,23 +320,109 @@ const SKELETON_COL_WIDTH: Record<string, string> = {
 const SKELETON_ROWS = 8;
 
 
+// Bir lastiğin (ya da "hepsi aynı"da tüm setin) form alanları.
+const EMPTY_TIRE = {
+  ebat: "",
+  marka: "",
+  model_name: "",
+  dis_derinligi: "",
+  production_week: "",
+  production_year: "",
+  load_speed_index: "",
+  rft: false,
+};
+type TireForm = typeof EMPTY_TIRE;
+
+// Yeni/Düzenle/Değişim formlarının ortak lastik bölümü (bkz. TireFields).
+// duzen "ayni" iken üstteki alanlar + adet kullanılır; diğer düzenlerde her
+// konumun alanları lastikler'dedir (STORAGE_TIRE_POSITIONS sırasıyla).
+const EMPTY_TIRE_FIELDS = {
+  ...EMPTY_TIRE,
+  adet: "4",
+  duzen: "ayni" as StorageTireLayout,
+  lastikler: [] as TireForm[],
+  jantli: false,
+};
+type TireFieldsState = typeof EMPTY_TIRE_FIELDS;
+
 const EMPTY_FORM = {
   depo_no: "",
   plate: "",
   customer_name: "",
   phone: "",
-  ebat: "",
-  marka: "",
-  dis_derinligi: "",
-  adet: "4",
+  ...EMPTY_TIRE_FIELDS,
   mevsim: "Yazlık",
   aciklama: "",
   islem_tarihi: new Date().toISOString().split("T")[0],
-  model_name: "",
-  production_week: "",
-  production_year: "",
-  load_speed_index: "",
 };
+
+function pickTire(f: TireForm): TireForm {
+  return {
+    ebat: f.ebat, marka: f.marka, model_name: f.model_name, dis_derinligi: f.dis_derinligi,
+    production_week: f.production_week, production_year: f.production_year, load_speed_index: f.load_speed_index,
+    rft: f.rft,
+  };
+}
+
+function tireToForm(t: { ebat: string | null; marka: string | null; model_name: string | null; dis_derinligi: string | null; production_week: number | null; production_year: number | null; load_speed_index: string | null; rft: boolean }): TireForm {
+  return {
+    ebat: t.ebat ?? "",
+    marka: t.marka ?? "",
+    model_name: t.model_name ?? "",
+    dis_derinligi: t.dis_derinligi ?? "",
+    production_week: t.production_week != null ? String(t.production_week).padStart(2, "0") : "",
+    production_year: t.production_year != null ? String(t.production_year).slice(-2) : "",
+    load_speed_index: t.load_speed_index ?? "",
+    rft: !!t.rft,
+  };
+}
+
+// Kayıttaki lastik bilgisini forma çevirir (Düzenle).
+function tireFieldsFromItem(item: StorageItem): TireFieldsState {
+  return {
+    ...tireToForm(item),
+    adet: item.adet != null ? String(item.adet) : "4",
+    duzen: layoutOf(item.lastikler),
+    lastikler: (item.lastikler ?? []).map(tireToForm),
+    jantli: !!item.jantli,
+  };
+}
+
+// Düzen değişince girilmiş bilgiler kaybolmasın: "hepsi aynı"dan geçerken
+// her konum mevcut bilgiyle dolar (kullanıcı sadece farklı olanı değiştirir);
+// ön/arka ⇄ tek tek geçişte aynı aksın lastikleri birbirine taşınır.
+function switchLayout(f: TireFieldsState, duzen: StorageTireLayout): Partial<TireFieldsState> {
+  if (duzen === f.duzen) return {};
+  if (duzen === "ayni") return { duzen, ...(f.lastikler[0] ?? EMPTY_TIRE), adet: "4", lastikler: [] };
+  const source = f.duzen === "ayni" ? null : f.lastikler;
+  const lastikler = STORAGE_TIRE_POSITIONS[duzen].map((_, i) => {
+    if (!source) return pickTire(f);
+    // aks → tek: 0,1 ön (kaynak 0), 2,3 arka (kaynak 1); tek → aks: 0 → 0, 1 → 2.
+    const from = duzen === "tek" ? Math.floor(i / 2) : i * 2;
+    return { ...(source[from] ?? EMPTY_TIRE) };
+  });
+  return { duzen, lastikler };
+}
+
+// API gövdesindeki lastik alanları (bkz. src/lib/storageTires.ts).
+function tirePayload(f: TireFieldsState) {
+  const num = (v: string) => (v ? Number(v) : null);
+  if (f.duzen === "ayni") {
+    return {
+      ...pickTire(f), adet: Number(f.adet),
+      production_week: num(f.production_week), production_year: num(f.production_year),
+      lastikler: null, jantli: f.jantli,
+    };
+  }
+  // rft burada konum başına; kayıttaki rft sunucuda "en az biri" olarak üretilir.
+  return {
+    lastikler: f.lastikler.map((t, i) => ({
+      ...t, konum: STORAGE_TIRE_POSITIONS[f.duzen as Exclude<StorageTireLayout, "ayni">][i].konum,
+      production_week: num(t.production_week), production_year: num(t.production_year),
+    })),
+    jantli: f.jantli,
+  };
+}
 
 function isOverdue(islem_tarihi: string | null, thresholdMonths: number): boolean {
   if (!islem_tarihi) return false;
@@ -272,16 +471,27 @@ async function printLabel(item: StorageItem, target?: Window | null): Promise<bo
     ["Sıra No", String(item.depo_no ?? "—")],
     ["Müşteri", escapeHtml(item.customer_name)],
     ["Telefon", escapeHtml(item.phone)],
-    ["Ebat", escapeHtml(item.ebat)],
-    ["Marka", escapeHtml(item.marka)],
-    ["Model", escapeHtml(item.model_name)],
-    ["Diş Derinliği", escapeHtml(item.dis_derinligi)],
-    // weekYearLabel haftayla yıl ikisi de boşken bile "—" döndürür (düz boş
-    // string değil) — bu yüzden diğerleri gibi val'e bakmak yetmez, kaynak
-    // alanlar açıkça kontrol edilir.
-    ...(item.production_week != null || item.production_year != null
-      ? ([["Üretim Haftası/Yılı", weekYearLabel(item.production_week, item.production_year)]] as const)
-      : []),
+    // Konuma göre farklı lastiklerde Ebat/Marka/Model/Diş/Üretim satırları
+    // yerine her konum tek satır (2 ya da 4 satır — 11 satır bütçesini aşmaz).
+    ...(item.lastikler
+      ? item.lastikler.map((t) => [
+        t.konum,
+        escapeHtml([describeStorageTire(t), t.production_year != null ? `DOT ${weekYearLabel(t.production_week, t.production_year)}` : null].filter(Boolean).join(" · ")),
+      ] as [string, string])
+      : ([
+        ["Ebat", escapeHtml(item.ebat)],
+        ["Marka", escapeHtml(item.marka)],
+        ["Model", escapeHtml(item.model_name)],
+        ["Diş Derinliği", escapeHtml(item.dis_derinligi)],
+        // weekYearLabel haftayla yıl ikisi de boşken bile "—" döndürür (düz boş
+        // string değil) — bu yüzden diğerleri gibi val'e bakmak yetmez, kaynak
+        // alanlar açıkça kontrol edilir.
+        ...(item.production_week != null || item.production_year != null
+          ? ([["Üretim Haftası/Yılı", weekYearLabel(item.production_week, item.production_year)]] as const)
+          : []),
+      ] as Array<[string, string]>)),
+    // Farklı lastiklerde RFT konum satırında yazar (describeStorageTire).
+    ["Özellik", [!item.lastikler && item.rft ? "RFT" : null, item.jantli ? "Jantlı" : null].filter(Boolean).join(" · ")],
     ["Adet", String(item.adet ?? "—")],
     ["Mevsim", escapeHtml(item.mevsim)],
     ["İşlem Tarihi", date],
@@ -296,12 +506,13 @@ async function printLabel(item: StorageItem, target?: Window | null): Promise<bo
   const tdPaddingMm = (2.8 * rowScale).toFixed(2);
   const tdFontPt = (14 * rowScale).toFixed(1);
 
+  const tireLabels = new Set((item.lastikler ?? []).map((t) => t.konum));
   const labelHtml = `
     <div class="label">
       ${logoUrl ? `<img class="logo" src="${escapeHtml(logoUrl)}" alt="" />` : ""}
       <div class="plate">${escapeHtml(item.plate) || "—"}</div>
       <table>
-        ${rows.map(([label, val]) => `<tr><td class="lbl">${label}</td><td class="val${label === "Sıra No" ? " sira" : ""}">${val || "—"}</td></tr>`).join("\n        ")}
+        ${rows.map(([label, val]) => `<tr><td class="lbl">${label}</td><td class="val${label === "Sıra No" ? " sira" : tireLabels.has(label) ? " tire" : ""}">${val || "—"}</td></tr>`).join("\n        ")}
       </table>
     </div>`;
 
@@ -346,6 +557,9 @@ async function printLabel(item: StorageItem, target?: Window | null): Promise<bo
   td.lbl { color: #555; width: 45%; }
   td.val { font-weight: bold; text-align: right; }
   td.sira { font-size: 50pt; }
+  /* Konum satırı (marka+model+ebat+diş+DOT) uzun — iki satıra kırılsa da
+     sayfa bütçesini aşmasın diye küçük yazı. */
+  td.tire { font-size: ${(10 * rowScale).toFixed(1)}pt; line-height: 1.25; }
 </style>
 </head><body>
   ${labelHtml}
@@ -402,7 +616,7 @@ export default function StoragePage() {
   const [teslimId, setTeslimId] = useState<number | null>(null);
   const [degisimItem, setDegisimItem] = useState<StorageItem | null>(null);
   const degisimItemDialog = useDialog(() => setDegisimItem(null));
-  const [degisimForm, setDegisimForm] = useState({ ebat: "", marka: "", dis_derinligi: "", adet: "4", mevsim: "", aciklama: "", islem_tarihi: new Date().toISOString().split("T")[0], model_name: "", production_week: "", production_year: "", load_speed_index: "" });
+  const [degisimForm, setDegisimForm] = useState({ ...EMPTY_TIRE_FIELDS, mevsim: "", aciklama: "", islem_tarihi: new Date().toISOString().split("T")[0] });
   const [degisimSaving, setDegisimSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -480,9 +694,7 @@ export default function StoragePage() {
         body: JSON.stringify({
           ...form,
           depo_no: form.depo_no ? Number(form.depo_no) : null,
-          adet: Number(form.adet),
-          production_week: form.production_week ? Number(form.production_week) : null,
-          production_year: form.production_year ? Number(form.production_year) : null,
+          ...tirePayload(form),
         }),
       });
       const data = await res.json();
@@ -509,17 +721,10 @@ export default function StoragePage() {
       plate: item.plate ?? "",
       customer_name: item.customer_name ?? "",
       phone: item.phone ?? "",
-      ebat: item.ebat ?? "",
-      marka: item.marka ?? "",
-      dis_derinligi: item.dis_derinligi ?? "",
-      adet: item.adet != null ? String(item.adet) : "4",
+      ...tireFieldsFromItem(item),
       mevsim: item.mevsim ?? "Yazlık",
       aciklama: item.aciklama ?? "",
       islem_tarihi: item.islem_tarihi ? item.islem_tarihi.split("T")[0] : new Date().toISOString().split("T")[0],
-      model_name: item.model_name ?? "",
-      production_week: item.production_week != null ? String(item.production_week).padStart(2, "0") : "",
-      production_year: item.production_year != null ? String(item.production_year).slice(-2) : "",
-      load_speed_index: item.load_speed_index ?? "",
     });
   }
 
@@ -535,9 +740,7 @@ export default function StoragePage() {
         body: JSON.stringify({
           ...editForm,
           depo_no: editForm.depo_no ? Number(editForm.depo_no) : null,
-          adet: Number(editForm.adet),
-          production_week: editForm.production_week ? Number(editForm.production_week) : null,
-          production_year: editForm.production_year ? Number(editForm.production_year) : null,
+          ...tirePayload(editForm),
         }),
       });
       const updated = await res.json();
@@ -574,11 +777,10 @@ export default function StoragePage() {
       await fetch(`/api/storage/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        // PATCH tüm kolonları yazar — kaydın tamamı gönderilir (önceden
+        // Model/Üretim/Yük-Hız gönderilmediği için teslimde siliniyordu).
         body: JSON.stringify({
-          depo_no: item.depo_no, plate: item.plate, customer_name: item.customer_name,
-          phone: item.phone, ebat: item.ebat, marka: item.marka,
-          dis_derinligi: item.dis_derinligi, adet: item.adet, mevsim: item.mevsim,
-          aciklama: item.aciklama, islem_tarihi: item.islem_tarihi,
+          ...item,
           teslim_edildi: true,
           teslim_tarihi: new Date().toISOString().split("T")[0],
         }),
@@ -596,12 +798,17 @@ export default function StoragePage() {
   // olabilir — Mevsim ise akıllı varsayımla ters seçili gelir.
   function openDegisim(item: StorageItem) {
     setDegisimItem(item);
+    // Lastik düzeni (ör. ön/arka farklı ebatlı araç) ve RFT araca bağlı
+    // olduğundan korunur, konumların diğer bilgileri yine boş gelir.
+    const duzen = layoutOf(item.lastikler);
     setDegisimForm({
-      ebat: "", marka: "", dis_derinligi: "", adet: "4",
+      ...EMPTY_TIRE_FIELDS,
+      duzen,
+      lastikler: duzen === "ayni" ? [] : STORAGE_TIRE_POSITIONS[duzen].map((_, i) => ({ ...EMPTY_TIRE, rft: !!item.lastikler?.[i]?.rft })),
+      rft: !!item.rft,
       mevsim: oppositeMevsim(item.mevsim),
       aciklama: "",
       islem_tarihi: new Date().toISOString().split("T")[0],
-      model_name: "", production_week: "", production_year: "", load_speed_index: "",
     });
   }
 
@@ -616,9 +823,7 @@ export default function StoragePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...degisimForm,
-          adet: Number(degisimForm.adet),
-          production_week: degisimForm.production_week ? Number(degisimForm.production_week) : null,
-          production_year: degisimForm.production_year ? Number(degisimForm.production_year) : null,
+          ...tirePayload(degisimForm),
         }),
       });
       const data = await res.json();
@@ -710,7 +915,7 @@ export default function StoragePage() {
               className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 flex items-center gap-1 whitespace-nowrap"
             >
               Şablon İndir
-              <Tooltip text="Sadece Plaka zorunludur. Depo No'yu doldurursanız aktif bir depoyla çakışmadığından emin olun, aksi halde içe aktarma tamamen başarısız olur.">
+              <Tooltip text="Sadece Plaka zorunludur. Şablon ya da Dışa Aktar dosyası kullanılabilir. Aynı plaka + mevsimle aktif kayıt varsa güncellenir (boş hücre mevcut değeri korur). Depo No boşsa otomatik verilir. Hatalı satır varsa hiçbir kayıt aktarılmaz.">
                 <span className="text-gray-400 hover:text-gray-600 cursor-help">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
@@ -938,7 +1143,18 @@ export default function StoragePage() {
                     )}
                     {visibleCols.customer_name && <td className="px-4 py-3 text-gray-700">{item.customer_name ?? "—"}</td>}
                     {visibleCols.phone && <td className="px-4 py-3 text-gray-500">{item.phone ?? "—"}</td>}
-                    {visibleCols.ebat && <td className="px-4 py-3 text-gray-700 font-mono text-xs">{item.ebat ?? "—"}</td>}
+                    {visibleCols.ebat && (
+                      <td className="px-4 py-3 text-gray-700 font-mono text-xs">
+                        <span title={item.lastikler ? item.lastikler.map((t) => `${t.konum}: ${describeStorageTire(t)}`).join("\n") : undefined}>{item.ebat ?? "—"}</span>
+                        {(rftLabel(item) || item.jantli || item.lastikler) && (
+                          <span className="mt-1 flex flex-wrap gap-1 font-sans">
+                            {item.lastikler && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">{item.lastikler.length === 2 ? "Ön/Arka farklı" : "Lastikler farklı"}</span>}
+                            {rftLabel(item) && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">{rftLabel(item)}</span>}
+                            {item.jantli && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Jantlı</span>}
+                          </span>
+                        )}
+                      </td>
+                    )}
                     {visibleCols.marka && <td className="px-4 py-3 text-gray-700">{item.marka ?? "—"}</td>}
                     {visibleCols.model_name && <td className="px-4 py-3 text-gray-700">{item.model_name ?? "—"}</td>}
                     {visibleCols.dis_derinligi && <td className="px-4 py-3 text-gray-500 font-mono text-xs">{item.dis_derinligi ?? "—"}</td>}
@@ -1278,137 +1494,76 @@ export default function StoragePage() {
         <div ref={showAddModalDialog} role="dialog" aria-modal="true" aria-label="Yeni Depolama Kaydı" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-5">Yeni Depolama Kaydı</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-5">Yeni Depolama Kaydı</h2>
 
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
-                  <input
-                    type="number"
-                    value={form.depo_no}
-                    onChange={(e) => setForm({ ...form, depo_no: e.target.value })}
-                    placeholder="Otomatik"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
+                    <input
+                      type="number"
+                      value={form.depo_no}
+                      onChange={(e) => setForm({ ...form, depo_no: e.target.value })}
+                      placeholder="Otomatik"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Plaka <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={form.plate}
+                      onChange={(e) => setForm({ ...form, plate: e.target.value.toUpperCase() })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
+                    <input
+                      type="text"
+                      value={form.customer_name}
+                      onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
+                    <input
+                      type="text"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      className={INPUT_CLS}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
+                    <input
+                      type="date"
+                      value={form.islem_tarihi}
+                      onChange={(e) => setForm({ ...form, islem_tarihi: e.target.value })}
+                      className={INPUT_CLS}
+                    />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Plaka <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={form.plate}
-                    onChange={(e) => setForm({ ...form, plate: e.target.value.toUpperCase() })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
+                  <MevsimCheckboxes value={form.mevsim} onChange={(val) => setForm({ ...form, mevsim: val })} />
+                </div>
+                <div className="border-t border-gray-100 pt-4">
+                  <TireFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
                   <input
                     type="text"
-                    value={form.customer_name}
-                    onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+                    value={form.aciklama}
+                    onChange={(e) => setForm({ ...form, aciklama: e.target.value })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
-                  <input
-                    type="text"
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                  <SearchableCombobox value={form.ebat} onChange={(val) => setForm({ ...form, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                  <SearchableCombobox value={form.marka} onChange={(val) => setForm({ ...form, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
-                  <input
-                    type="text"
-                    value={form.dis_derinligi}
-                    onChange={(e) => setForm({ ...form, dis_derinligi: e.target.value })}
-                    placeholder="5-5-5-5"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.adet}
-                    onChange={(e) => setForm({ ...form, adet: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
-                  <input
-                    type="date"
-                    value={form.islem_tarihi}
-                    onChange={(e) => setForm({ ...form, islem_tarihi: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
-                <MevsimCheckboxes value={form.mevsim} onChange={(val) => setForm({ ...form, mevsim: val })} />
-              </div>
-
-              {/* Daha az sık kullanılan alanlar — bkz. kullanıcı isteği */}
-              <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
-                  <input
-                    type="text"
-                    value={form.model_name}
-                    onChange={(e) => setForm({ ...form, model_name: e.target.value })}
-                    placeholder="ör. PremiumContact 6"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
-                  <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
-                    value={formatWeekYearInput(form.production_week, form.production_year)}
-                    onChange={(e) => {
-                      const { week, year } = parseWeekYearInput(e.target.value);
-                      setForm({ ...form, production_week: week, production_year: year });
-                    }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
-                  <input
-                    type="text"
-                    value={form.load_speed_index}
-                    onChange={(e) => setForm({ ...form, load_speed_index: e.target.value })}
-                    placeholder="91H"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
-                <input
-                  type="text"
-                  value={form.aciklama}
-                  onChange={(e) => setForm({ ...form, aciklama: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
             </div>
 
             <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
@@ -1434,91 +1589,51 @@ export default function StoragePage() {
         <div ref={editItemDialog} role="dialog" aria-modal="true" aria-label="Depolama Kaydını Düzenle" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="p-6 pb-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-5">Kaydı Düzenle — #{editItem.depo_no}</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-5">Kaydı Düzenle — #{editItem.depo_no}</h2>
 
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
-                  <input type="number" value={editForm.depo_no} onChange={(e) => setEditForm({ ...editForm, depo_no: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Depo No</label>
+                    <input type="number" value={editForm.depo_no} onChange={(e) => setEditForm({ ...editForm, depo_no: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Plaka</label>
+                    <input type="text" value={editForm.plate} onChange={(e) => setEditForm({ ...editForm, plate: e.target.value.toUpperCase() })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
+                    <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
+                    <input type="text" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      className={INPUT_CLS} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
+                    <input type="date" value={editForm.islem_tarihi} onChange={(e) => setEditForm({ ...editForm, islem_tarihi: e.target.value })}
+                      className={INPUT_CLS} />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Plaka</label>
-                  <input type="text" value={editForm.plate} onChange={(e) => setEditForm({ ...editForm, plate: e.target.value.toUpperCase() })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
+                  <MevsimCheckboxes value={editForm.mevsim} onChange={(val) => setEditForm({ ...editForm, mevsim: val })} />
+                </div>
+                <div className="border-t border-gray-100 pt-4">
+                  <TireFields value={editForm} onChange={(patch) => setEditForm((f) => ({ ...f, ...patch }))} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Müşteri Adı</label>
-                  <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
-                  <input type="text" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                  <SearchableCombobox value={editForm.ebat} onChange={(val) => setEditForm({ ...editForm, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                  <SearchableCombobox value={editForm.marka} onChange={(val) => setEditForm({ ...editForm, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
-                  <input type="text" value={editForm.dis_derinligi} onChange={(e) => setEditForm({ ...editForm, dis_derinligi: e.target.value })} placeholder="5-5-5-5"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
-                  <input type="number" min="1" value={editForm.adet} onChange={(e) => setEditForm({ ...editForm, adet: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
-                  <input type="date" value={editForm.islem_tarihi} onChange={(e) => setEditForm({ ...editForm, islem_tarihi: e.target.value })}
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
+                  <input type="text" value={editForm.aciklama} onChange={(e) => setEditForm({ ...editForm, aciklama: e.target.value })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
-                <MevsimCheckboxes value={editForm.mevsim} onChange={(val) => setEditForm({ ...editForm, mevsim: val })} />
-              </div>
-
-              <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
-                  <input type="text" value={editForm.model_name} onChange={(e) => setEditForm({ ...editForm, model_name: e.target.value })} placeholder="ör. PremiumContact 6"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
-                  <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
-                    value={formatWeekYearInput(editForm.production_week, editForm.production_year)}
-                    onChange={(e) => {
-                      const { week, year } = parseWeekYearInput(e.target.value);
-                      setEditForm({ ...editForm, production_week: week, production_year: year });
-                    }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
-                  <input type="text" value={editForm.load_speed_index} onChange={(e) => setEditForm({ ...editForm, load_speed_index: e.target.value })} placeholder="91H"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
-                <input type="text" value={editForm.aciklama} onChange={(e) => setEditForm({ ...editForm, aciklama: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
             </div>
 
             <div className="sticky bottom-0 sm:static bg-white border-t border-gray-100 sm:border-t-0 px-6 py-4 sm:pt-0 sm:pb-6 flex gap-3">
@@ -1553,59 +1668,19 @@ export default function StoragePage() {
               </p>
 
               <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Ebat</label>
-                    <SearchableCombobox value={degisimForm.ebat} onChange={(val) => setDegisimForm({ ...degisimForm, ebat: val })} options={TIRE_SIZES} placeholder="195/65R15" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                    <SearchableCombobox value={degisimForm.marka} onChange={(val) => setDegisimForm({ ...degisimForm, marka: val })} options={TIRE_BRANDS} placeholder="Marka seç veya yaz..." />
-                  </div>
-                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Diş Derinliği</label>
-                    <input type="text" value={degisimForm.dis_derinligi} onChange={(e) => setDegisimForm({ ...degisimForm, dis_derinligi: e.target.value })} placeholder="5-5-5-5"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Adet</label>
-                    <input type="number" min="1" value={degisimForm.adet} onChange={(e) => setDegisimForm({ ...degisimForm, adet: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">İşlem Tarihi</label>
                     <input type="date" value={degisimForm.islem_tarihi} onChange={(e) => setDegisimForm({ ...degisimForm, islem_tarihi: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      className={INPUT_CLS} />
                   </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-2">Mevsim</label>
                   <MevsimCheckboxes value={degisimForm.mevsim} onChange={(val) => setDegisimForm({ ...degisimForm, mevsim: val })} />
                 </div>
-
-                <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Model / Ürün Hattı</label>
-                    <input type="text" value={degisimForm.model_name} onChange={(e) => setDegisimForm({ ...degisimForm, model_name: e.target.value })} placeholder="ör. PremiumContact 6"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Üretim Haftası / Yılı</label>
-                    <input type="text" inputMode="numeric" maxLength={5} placeholder="10/26"
-                      value={formatWeekYearInput(degisimForm.production_week, degisimForm.production_year)}
-                      onChange={(e) => {
-                        const { week, year } = parseWeekYearInput(e.target.value);
-                        setDegisimForm({ ...degisimForm, production_week: week, production_year: year });
-                      }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Yük / Hız</label>
-                    <input type="text" value={degisimForm.load_speed_index} onChange={(e) => setDegisimForm({ ...degisimForm, load_speed_index: e.target.value })} placeholder="91H"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
+                <div className="border-t border-gray-100 pt-4">
+                  <TireFields value={degisimForm} onChange={(patch) => setDegisimForm((f) => ({ ...f, ...patch }))} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>

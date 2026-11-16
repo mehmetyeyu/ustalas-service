@@ -4,6 +4,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { normalizeYear } from "@/lib/productsExcel";
+import { resolveStorageTireColumns, StorageTiresValidationError } from "@/lib/storageTires";
 
 // Mevsim değişimi — bkz. sunum "Depoda Mevsim Değişimi Akışı": müşteri geldi,
 // depodaki eski lastiği teslim aldı, yenisini bıraktı. Önceden bu TEK kayıt
@@ -25,11 +26,13 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index } = body;
+    const { adet, mevsim, aciklama, islem_tarihi } = body;
 
     if (adet != null && adet !== "" && (!Number.isFinite(Number(adet)) || Number(adet) < 0)) {
       return NextResponse.json({ error: "Geçersiz adet." }, { status: 400 });
     }
+
+    const t = resolveStorageTireColumns(body, normalizeYear);
 
     await client.query("BEGIN");
 
@@ -54,15 +57,16 @@ export async function POST(
     );
 
     const inserted = await client.query(
-      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id, lastikler, rft, jantli)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
       [
         user.tenantId, old.depo_no, old.plate, old.customer_name, old.phone,
-        ebat || null, marka || null, dis_derinligi || null, adet || 4,
+        t.ebat, t.marka, t.dis_derinligi, t.adet,
         mevsim || null, aciklama || null, islem_tarihi || today,
-        model_name || null, production_week || null, production_year ? normalizeYear(Number(production_year)) : null, load_speed_index || null,
+        t.model_name, t.production_week, t.production_year, t.load_speed_index,
         await linkVehicle(client, user.tenantId!, old.plate),
+        t.lastikler, t.rft, t.jantli,
       ]
     );
 
@@ -70,6 +74,7 @@ export async function POST(
     return NextResponse.json(inserted.rows[0], { status: 201 });
   } catch (error: unknown) {
     await client.query("ROLLBACK");
+    if (error instanceof StorageTiresValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
       return NextResponse.json({ error: "Bu depo no az önce kullanıldı, tekrar deneyin." }, { status: 409 });
     }

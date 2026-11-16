@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { formatPlate } from "@/lib/plate";
 import { formatISODate } from "@/lib/quotes";
 import { weekYearLabel } from "@/lib/weekYear";
+import { describeStorageTire, type StorageTire } from "@/lib/storageTires";
 
 // Araç kartı — bir plakanın vehicle_id ile bağlı siparişleri, depodaki
 // lastikleri ve randevuları tek ekranda (bkz. GET /api/vehicles/[plate]).
@@ -23,6 +24,7 @@ interface VehicleStorage {
   id: number; depo_no: number | null; customer_name: string | null; ebat: string | null; marka: string | null; model_name: string | null;
   adet: number | null; mevsim: string | null; dis_derinligi: string | null; production_week: number | null; production_year: number | null;
   islem_tarihi: string | null; teslim_edildi: boolean; teslim_tarihi: string | null;
+  lastikler: StorageTire[] | null; rft: boolean; jantli: boolean;
 }
 interface VehicleAppointment { id: number; requested_at: string; status: string; customer_name: string | null; service_name: string | null; order_id: number | null }
 interface VehicleCard {
@@ -218,7 +220,11 @@ export default function VehicleCardPage() {
                 <dl key={s.id} className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                   <div><dt className="text-xs text-v2-fg-subtle">Depo No</dt><dd className="font-semibold">{s.depo_no ?? "—"}</dd></div>
                   <div><dt className="text-xs text-v2-fg-subtle">Giriş</dt><dd className="font-semibold">{s.islem_tarihi ? formatISODate(s.islem_tarihi) : "—"}</dd></div>
-                  <div className="col-span-2"><dt className="text-xs text-v2-fg-subtle">Lastik</dt><dd className="font-semibold">{[s.adet ? `${s.adet} ×` : null, s.marka, s.model_name, s.ebat, s.mevsim].filter(Boolean).join(" ") || "—"}</dd></div>
+                  <div className="col-span-2"><dt className="text-xs text-v2-fg-subtle">Lastik</dt><dd className="font-semibold">
+                    {s.lastikler
+                      ? <>{s.lastikler.map((t) => <span key={t.konum} className="block">{t.konum}: {describeStorageTire(t)}</span>)}<span className="block font-normal text-v2-fg-muted">{[s.mevsim, s.jantli ? "Jantlı" : null].filter(Boolean).join(" · ")}</span></>
+                      : [s.adet ? `${s.adet} ×` : null, s.marka, s.model_name, s.ebat, s.mevsim, s.rft ? "· RFT" : null, s.jantli ? "· Jantlı" : null].filter(Boolean).join(" ") || "—"}
+                  </dd></div>
                   <div><dt className="text-xs text-v2-fg-subtle">DOT</dt><dd className="font-semibold">{weekYearLabel(s.production_week, s.production_year)}</dd></div>
                   <div><dt className="text-xs text-v2-fg-subtle">Diş derinliği</dt><dd className="font-semibold">{s.dis_derinligi || "—"}</dd></div>
                 </dl>
