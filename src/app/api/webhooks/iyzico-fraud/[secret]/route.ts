@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { cancelSubscription } from "@/lib/iyzico";
@@ -23,7 +24,11 @@ const REJECTED_STATUSES = new Set([-1, -2, -3]);
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ secret: string }> }) {
   const { secret } = await params;
-  if (!process.env.IYZICO_IFN_WEBHOOK_SECRET || secret !== process.env.IYZICO_IFN_WEBHOOK_SECRET) {
+  // Sabit süreli karşılaştırma (bkz. /api/cron/einvoice) — düz !== ilk farklı
+  // karakterde döndüğü için süre farkından sır tahmin edilebilirdi.
+  const expected = process.env.IYZICO_IFN_WEBHOOK_SECRET;
+  const digest = (v: string) => createHash("sha256").update(v).digest();
+  if (!expected || !timingSafeEqual(digest(secret), digest(expected))) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   }
 

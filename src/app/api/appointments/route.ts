@@ -118,6 +118,10 @@ export async function POST(request: NextRequest) {
     if (!customer_name || !String(customer_name).trim()) {
       return NextResponse.json({ error: "Ad Soyad zorunludur." }, { status: 400 });
     }
+    // appointments.customer_phone NOT NULL — kontrol edilmezse 500 dönüyordu.
+    if (!customer_phone || !String(customer_phone).trim()) {
+      return NextResponse.json({ error: "Telefon zorunludur." }, { status: 400 });
+    }
     if (!requested_at || Number.isNaN(new Date(requested_at).getTime())) {
       return NextResponse.json({ error: "Geçerli bir randevu zamanı gerekli." }, { status: 400 });
     }
