@@ -6,6 +6,7 @@ import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
 import { invalidateBookingConfigCache } from "@/lib/publicBookingConfigCache";
 import { normalizeTurkishPhone } from "@/lib/phone";
 import { QUOTE_NO_FORMATS } from "@/lib/quotes";
+import { sanitizeOrderLineDisplay } from "@/lib/orderLineDisplay";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -90,6 +91,9 @@ export async function PUT(request: NextRequest) {
     // Gönderilmezse (ör. ayarı henüz bilmeyen eski bir sekme) mevcut değer
     // korunur — aşağıdaki UPDATE'teki COALESCE.
     const quote_no_format = body.quote_no_format == null ? null : String(body.quote_no_format);
+    // Aynı desen: gönderilmezse (Randevu Ayarları gibi bu alanı bilmeyen
+    // sayfalar) mevcut değer korunur. Boş liste geçerli (alt satır gizli).
+    const order_line_display = body.order_line_display == null ? null : sanitizeOrderLineDisplay(body.order_line_display);
     const contact_name = body.contact_name ? String(body.contact_name).trim().slice(0, 150) || null : null;
     const contact_email = body.contact_email ? String(body.contact_email).trim().slice(0, 150) || null : null;
     // İyzico faturalandırma akışı (bkz. src/lib/iyzico.ts:normalizeGsmNumber)
@@ -154,6 +158,9 @@ export async function PUT(request: NextRequest) {
     if (!["", "bugun", "bu_hafta", "bu_ay"].includes(orders_default_date_filter)) {
       return NextResponse.json({ error: "Geçersiz varsayılan tarih filtresi." }, { status: 400 });
     }
+    if (body.order_line_display != null && order_line_display === null) {
+      return NextResponse.json({ error: "Geçersiz sipariş satırı gösterimi." }, { status: 400 });
+    }
     if (quote_no_format !== null && !(QUOTE_NO_FORMATS as readonly string[]).includes(quote_no_format)) {
       return NextResponse.json({ error: "Geçersiz teklif numarası biçimi." }, { status: 400 });
     }
@@ -175,6 +182,7 @@ export async function PUT(request: NextRequest) {
            whatsapp_phone_number_id=$22, whatsapp_business_account_id=$23, whatsapp_template_name=$24,
            shared_stock_enabled=$25, custom_order_no_enabled=$26, plate_required=$28,
            quote_no_format=COALESCE($29, quote_no_format),
+           order_line_display=COALESCE($30::text[], order_line_display),
            updated_at=CURRENT_TIMESTAMP
        WHERE tenant_id=$27`,
       [
@@ -188,7 +196,7 @@ export async function PUT(request: NextRequest) {
         whatsapp_enabled, whatsapp_access_token_input,
         whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
         shared_stock_enabled, custom_order_no_enabled,
-        user.tenantId, plate_required, quote_no_format,
+        user.tenantId, plate_required, quote_no_format, order_line_display,
       ]
     );
 
@@ -212,7 +220,7 @@ export async function PUT(request: NextRequest) {
       booking_widget_columns_tablet, booking_widget_columns_desktop,
       booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
       booking_widget_radius, booking_widget_density, booking_widget_heading_size,
-      auto_register_customers, orders_default_date_filter,
+      auto_register_customers, orders_default_date_filter, order_line_display,
       whatsapp_enabled, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
       shared_stock_enabled, custom_order_no_enabled, plate_required,
       contact_name, contact_email, contact_phone, landline_phone, website,

@@ -18,6 +18,7 @@ import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { useDialog } from "@/lib/useDialog";
 import { StickyScrollX } from "@/components/StickyScrollX";
+import { DEFAULT_ORDER_LINE_DISPLAY, formatOrderLine, type OrderLineField } from "@/lib/orderLineDisplay";
 
 const IMPORT_BATCH_SIZE = 20;
 
@@ -176,7 +177,12 @@ interface OrderColumnDef {
   skeletonWidth: string;
   tdClassName: string | ((r: OrderRow) => string);
   title?: (r: OrderRow) => string | undefined;
-  cell: (r: OrderRow) => ReactNode;
+  cell: (r: OrderRow, ctx: OrderCellContext) => ReactNode;
+}
+
+// Hücrelerin satır dışında ihtiyaç duyduğu firma ayarları.
+interface OrderCellContext {
+  lineDisplay: readonly OrderLineField[];
 }
 
 const COLUMNS: OrderColumnDef[] = [
@@ -226,18 +232,18 @@ const COLUMNS: OrderColumnDef[] = [
   {
     key: "service_name", label: "Yapılan İşlem", defaultVisible: true, skeletonWidth: "w-24",
     tdClassName: "px-4 py-3 text-gray-700 whitespace-nowrap",
-    // v2: işlemin altında ebat/ürün ve adet (taslaktaki iki satırlı hücre) —
-    // eski görünümde bu alt satır gizli.
-    cell: (r) => (
-      <>
-        {r.service_name || "-"}
-        {(r.size_desc || r.quantity != null) && (
-          <span className="hidden v2:block text-xs text-v2-fg-subtle">
-            {[r.size_desc, r.quantity != null ? `${r.quantity} adet` : null].filter(Boolean).join(" · ")}
-          </span>
-        )}
-      </>
-    ),
+    // v2: işlemin altında ürün bilgisi (taslaktaki iki satırlı hücre) — hangi
+    // alanların hangi sırayla görüneceği firma ayarı (Genel Ayarlar > Sipariş
+    // Listesi, bkz. src/lib/orderLineDisplay.ts). Eski görünümde gizli.
+    cell: (r, ctx) => {
+      const line = formatOrderLine(r, ctx.lineDisplay);
+      return (
+        <>
+          {r.service_name || "-"}
+          {line && <span className="hidden v2:block text-xs text-v2-fg-subtle">{line}</span>}
+        </>
+      );
+    },
   },
   {
     key: "supplier", label: "Tedarikçi", defaultVisible: true, skeletonWidth: "w-20",
@@ -603,6 +609,7 @@ export default function OrdersPage() {
   const { user: authUser, loading: authLoading } = useAuth();
   const { isV2: v2 } = useAuth();
   const orderActionsWidth = (v2 ? ORDER_ACTIONS_WIDTH_V2 : ORDER_ACTIONS_WIDTH)[orderActionCount];
+  const cellCtx: OrderCellContext = { lineDisplay: authUser?.orderLineDisplay ?? DEFAULT_ORDER_LINE_DISPLAY };
   const settingsPaymentTypes = authUser?.paymentTypes.length ? authUser.paymentTypes : DEFAULT_PAYMENT_TYPES;
   // Genel Ayarlar'daki varsayılan tarih filtresi store'a gelene kadar ilk
   // fetchOrders çağrısını erteler — yoksa sayfa açılışında önce "Tümü" ile
@@ -1522,7 +1529,7 @@ export default function OrdersPage() {
                       )}
                       {visibleOrderedColumns.map((c) => (
                         <td key={c.key} className={typeof c.tdClassName === "function" ? c.tdClassName(r) : c.tdClassName} title={c.title?.(r)}>
-                          {c.cell(r)}
+                          {c.cell(r, cellCtx)}
                         </td>
                       ))}
                       <td className={`px-1.5 py-3 text-center sm:sticky ${orderActionsWidth.statusOffset} sm:z-10 sm:bg-white sm:group-hover:bg-gray-50 ${v2 ? "sm:shadow-[-1px_0_0_0_rgb(var(--v2-line))]" : "sm:shadow-[-1px_0_0_0_#f3f4f6]"}`}>

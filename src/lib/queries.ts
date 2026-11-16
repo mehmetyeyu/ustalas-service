@@ -45,7 +45,7 @@ export interface MeResponse {
   addons?: string[];
   is_primary_admin?: boolean; onboarding_tour_completed_at?: string | null;
   custom_order_no_enabled?: boolean; plate_required?: boolean;
-  payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string;
+  payment_types?: string[]; storage_overdue_months?: number; orders_default_date_filter?: string; order_line_display?: string[];
   ui_version?: UiVersion; ui_theme?: "system" | "light" | "dark"; ui_beta_version?: UiVersion | null;
 }
 

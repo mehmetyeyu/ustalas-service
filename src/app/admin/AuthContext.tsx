@@ -8,6 +8,7 @@ import type { Addon } from "@/lib/addons";
 import { queryKeys, useMe, type MeResponse } from "@/lib/queries";
 import { useBootUiV2 } from "@/lib/uiTheme";
 import { resolveUiVersion, type UiVersion } from "@/lib/uiVersion";
+import { DEFAULT_ORDER_LINE_DISPLAY, sanitizeOrderLineDisplay, type OrderLineField } from "@/lib/orderLineDisplay";
 
 interface AuthUser {
   username: string;
@@ -45,6 +46,8 @@ interface AuthUser {
   paymentTypes: string[];
   storageOverdueMonths: number;
   ordersDefaultDateFilter: string;
+  // Sipariş Listesi "Yapılan İşlem" alt satırı (bkz. src/lib/orderLineDisplay.ts).
+  orderLineDisplay: OrderLineField[];
   // Panel görünümü (bkz. src/lib/uiVersion.ts): uiVersion kullanıcının
   // gördüğü sürüm (emekli sürüm güncele çözülmüş), uiBetaVersion
   // önizleyebileceği sonraki sürüm (yoksa null).
@@ -96,6 +99,7 @@ function toAuthUser(data: MeResponse): AuthUser {
     paymentTypes: Array.isArray(data.payment_types) ? data.payment_types : [],
     storageOverdueMonths: typeof data.storage_overdue_months === "number" ? data.storage_overdue_months : 6,
     ordersDefaultDateFilter: typeof data.orders_default_date_filter === "string" ? data.orders_default_date_filter : "",
+    orderLineDisplay: sanitizeOrderLineDisplay(data.order_line_display) ?? DEFAULT_ORDER_LINE_DISPLAY,
     uiVersion: resolveUiVersion(data.ui_version, data.ui_beta_version ?? null),
     uiTheme: data.ui_theme === "light" || data.ui_theme === "dark" ? data.ui_theme : "system",
     uiBetaVersion: data.ui_beta_version ?? null,

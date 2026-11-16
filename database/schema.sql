@@ -2096,3 +2096,8 @@ ALTER TABLE kasalar ADD COLUMN IF NOT EXISTS ext_account_id VARCHAR(30);
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS lastikler JSONB;
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS rft BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS jantli BOOLEAN NOT NULL DEFAULT false;
+
+-- Sipariş Listesi "Yapılan İşlem" alt satırında hangi bilgilerin hangi
+-- sırayla görüneceği (firma tercihi, 2026-11-17) — bkz.
+-- src/lib/orderLineDisplay.ts. Varsayılan eski görünüm: Ebat + Adet.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS order_line_display TEXT[] NOT NULL DEFAULT ARRAY['size','qty'];

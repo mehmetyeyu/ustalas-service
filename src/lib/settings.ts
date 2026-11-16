@@ -1,5 +1,6 @@
 import pool from "@/lib/db";
 import { PROTECTED_PAYMENT_TYPES } from "@/lib/paymentTypes";
+import { DEFAULT_ORDER_LINE_DISPLAY, sanitizeOrderLineDisplay, type OrderLineField } from "@/lib/orderLineDisplay";
 
 export type BookingWidgetPreset = "card" | "seamless" | "outlined";
 // Mobil her zaman tek kolon (ayarlanamaz) — tablet 1-2, masaüstü 1-3 kolon
@@ -32,6 +33,7 @@ export interface AppSettings {
   booking_widget_heading_size: BookingWidgetHeadingSize;
   auto_register_customers: boolean;
   orders_default_date_filter: OrdersDefaultDateFilter;
+  order_line_display: OrderLineField[];
   whatsapp_enabled: boolean;
   whatsapp_access_token: string | null;
   whatsapp_phone_number_id: string | null;
@@ -67,6 +69,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   booking_widget_heading_size: "md",
   auto_register_customers: true,
   orders_default_date_filter: "",
+  order_line_display: DEFAULT_ORDER_LINE_DISPLAY,
   whatsapp_enabled: false,
   whatsapp_access_token: null,
   whatsapp_phone_number_id: null,
@@ -86,7 +89,7 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
             booking_widget_columns_tablet, booking_widget_columns_desktop,
             booking_widget_title, booking_widget_description, booking_widget_show_heading_embed,
             booking_widget_radius, booking_widget_density, booking_widget_heading_size,
-            auto_register_customers, orders_default_date_filter, whatsapp_enabled, whatsapp_access_token,
+            auto_register_customers, orders_default_date_filter, order_line_display, whatsapp_enabled, whatsapp_access_token,
             whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_template_name,
             shared_stock_enabled, custom_order_no_enabled, plate_required, quote_no_format
      FROM app_settings WHERE tenant_id = $1`,
@@ -97,6 +100,7 @@ export async function getAppSettings(tenantId: number): Promise<AppSettings> {
   // bulunmalı — DB'deki değer bir şekilde eksik kalsa bile burada garanti edilir.
   return {
     ...settings,
+    order_line_display: sanitizeOrderLineDisplay(settings.order_line_display) ?? DEFAULT_ORDER_LINE_DISPLAY,
     payment_types: Array.from(new Set([...PROTECTED_PAYMENT_TYPES, ...settings.payment_types])),
   };
 }
@@ -157,6 +161,7 @@ export interface SessionSettings {
   payment_types: string[];
   storage_overdue_months: number;
   orders_default_date_filter: OrdersDefaultDateFilter;
+  order_line_display: OrderLineField[];
 }
 
 // /api/auth/me için — panel açılışında BİR KEZ çekilip istemcide store'da
@@ -171,7 +176,7 @@ export async function getSessionSettings(tenantId: number): Promise<SessionSetti
   const result = await pool.query<Omit<SessionSettings, "panel_logo_url"> & { panel_logo_url: string | null; has_settings: boolean }>(
     `SELECT t.panel_logo_url, a.tenant_id IS NOT NULL AS has_settings,
             a.business_name, a.custom_order_no_enabled, a.plate_required,
-            a.payment_types, a.storage_overdue_months, a.orders_default_date_filter
+            a.payment_types, a.storage_overdue_months, a.orders_default_date_filter, a.order_line_display
      FROM tenants t LEFT JOIN app_settings a ON a.tenant_id = t.id
      WHERE t.id = $1`,
     [tenantId]
@@ -186,5 +191,6 @@ export async function getSessionSettings(tenantId: number): Promise<SessionSetti
     payment_types: Array.from(new Set([...PROTECTED_PAYMENT_TYPES, ...(s.payment_types ?? DEFAULT_SETTINGS.payment_types)])),
     storage_overdue_months: s.storage_overdue_months ?? DEFAULT_SETTINGS.storage_overdue_months,
     orders_default_date_filter: s.orders_default_date_filter ?? DEFAULT_SETTINGS.orders_default_date_filter,
+    order_line_display: sanitizeOrderLineDisplay(s.order_line_display) ?? DEFAULT_ORDER_LINE_DISPLAY,
   };
 }

@@ -12,6 +12,8 @@ import ImageUploadField from "@/components/ImageUploadField";
 import { SettingsPage, SettingsSection } from "@/components/v2/SettingsLayout";
 import { useAddon, useAuth, notifySettingsChanged } from "../AuthContext";
 import { EInvoiceSettingsSection } from "@/components/einvoice/EInvoiceSettingsSection";
+import { OrderLineDisplayEditor } from "@/components/OrderLineDisplayEditor";
+import { DEFAULT_ORDER_LINE_DISPLAY, sanitizeOrderLineDisplay, type OrderLineField } from "@/lib/orderLineDisplay";
 
 export default function GeneralSettingsPage() {
   const einvoice = useAddon("einvoice");
@@ -38,6 +40,7 @@ export default function GeneralSettingsPage() {
   const [widgetShowHeadingEmbed, setWidgetShowHeadingEmbed] = useState(false);
   const [autoRegisterCustomers, setAutoRegisterCustomers] = useState(true);
   const [ordersDefaultDateFilter, setOrdersDefaultDateFilter] = useState("");
+  const [orderLineDisplay, setOrderLineDisplay] = useState<OrderLineField[]>(DEFAULT_ORDER_LINE_DISPLAY);
   const [customOrderNoEnabled, setCustomOrderNoEnabled] = useState(false);
   const [plateRequired, setPlateRequired] = useState(true);
   const [quoteNoFormat, setQuoteNoFormat] = useState("simple");
@@ -88,6 +91,7 @@ export default function GeneralSettingsPage() {
         setWidgetShowHeadingEmbed(!!data.booking_widget_show_heading_embed);
         setAutoRegisterCustomers(data.auto_register_customers ?? true);
         setOrdersDefaultDateFilter(data.orders_default_date_filter ?? "");
+        setOrderLineDisplay(sanitizeOrderLineDisplay(data.order_line_display) ?? DEFAULT_ORDER_LINE_DISPLAY);
         setCustomOrderNoEnabled(!!data.custom_order_no_enabled);
         setPlateRequired(data.plate_required !== false);
         setQuoteNoFormat(data.quote_no_format === "yearly" ? "yearly" : "simple");
@@ -166,6 +170,7 @@ export default function GeneralSettingsPage() {
           booking_widget_show_heading_embed: widgetShowHeadingEmbed,
           auto_register_customers: autoRegisterCustomers,
           orders_default_date_filter: ordersDefaultDateFilter,
+          order_line_display: orderLineDisplay,
           custom_order_no_enabled: customOrderNoEnabled,
           plate_required: plateRequired,
           quote_no_format: quoteNoFormat,
@@ -424,6 +429,10 @@ export default function GeneralSettingsPage() {
         <p className="text-xs text-gray-400 mt-1">
           Sipariş Listesi sayfası açıldığında bu tarih aralığı varsayılan olarak uygulanır.
         </p>
+
+        <div className="mt-5 pt-5 border-t border-gray-100">
+          <OrderLineDisplayEditor value={orderLineDisplay} onChange={setOrderLineDisplay} />
+        </div>
 
         <div className="flex items-center justify-between mt-5 pt-5 border-t border-gray-100">
           <div>
