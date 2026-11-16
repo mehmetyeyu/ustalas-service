@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     // yalnızca ?withCounts=1 istendiğinde hesaplanıyor.
     const withCounts = request.nextUrl.searchParams.get("withCounts") === "1";
     // Cari bakiye de aynı şekilde sadece Müşteriler sayfasında gerekiyor —
-    // ayrı bir LATERAL alt sorgu, customer_ledger_entries'in canlı SUM()'ı.
+    // customer_ledger_entries'in canlı SUM()'ı (müşteri başına gruplanmış).
     // order_count'un aksine bu finansal veridir (borç/alacak tutarı) — sadece
     // sipariş oluşturmak için customers.view'ı olmayan bir personelin bunu
     // görmesini engellemek için ayrıca izin kontrolü gerekir.
@@ -29,7 +29,10 @@ export async function GET(request: NextRequest) {
     }
     const result = await pool.query(
       withCounts
-        ? `SELECT c.id, c.name, c.phone, c.is_corporate, c.tax_no, c.contact_name, c.credit_limit::float AS credit_limit, c.discount_rate::float AS discount_rate, COUNT(DISTINCT o.id)::int AS order_count${
+        // Sayımlar müşteri müşteri birleştirip GROUP BY yerine önce tek
+        // geçişte gruplanır, sonra müşteriye bağlanır — 15 bin müşteri / 50 bin
+        // siparişlik sentetik yükte 100 ms → 39 ms (2026-11).
+        ? `SELECT c.id, c.name, c.phone, c.is_corporate, c.tax_no, c.contact_name, c.credit_limit::float AS credit_limit, c.discount_rate::float AS discount_rate, COALESCE(oc.order_count, 0)::int AS order_count${
             // has_cari_activity: Cari/Perakende tab ayrımı için (bkz.
             // Müşteriler sayfası) — bakiyenin kendisi (0 olabilir, tam
             // ödenmiş bir Cari müşteride de 0'dır) bu ayrımı yapamaz, bu
@@ -37,18 +40,18 @@ export async function GET(request: NextRequest) {
             withBalance ? ", COALESCE(bal.balance, 0)::float AS balance, COALESCE(bal.entry_count, 0) > 0 AS has_cari_activity" : ""
           }
            FROM customers c
-           LEFT JOIN orders o ON o.customer_name = c.name AND o.tenant_id = c.tenant_id${
+           LEFT JOIN (
+             SELECT customer_name, COUNT(*) AS order_count FROM orders WHERE tenant_id = $1 GROUP BY customer_name
+           ) oc ON oc.customer_name = c.name${
              withBalance
                ? `
-           LEFT JOIN LATERAL (
-             SELECT SUM(cle.amount * cle.direction) AS balance, COUNT(*)::int AS entry_count
-             FROM customer_ledger_entries cle
-             WHERE cle.customer_id = c.id AND cle.tenant_id = c.tenant_id
-           ) bal ON true`
+           LEFT JOIN (
+             SELECT customer_id, SUM(amount * direction) AS balance, COUNT(*)::int AS entry_count
+             FROM customer_ledger_entries WHERE tenant_id = $1 GROUP BY customer_id
+           ) bal ON bal.customer_id = c.id`
                : ""
            }
            WHERE c.tenant_id = $1
-           GROUP BY c.id, c.name, c.phone, c.is_corporate, c.tax_no, c.contact_name, c.credit_limit, c.discount_rate${withBalance ? ", bal.balance, bal.entry_count" : ""}
            ORDER BY c.name`
         // is_corporate: sipariş formu kurumsal müşteride "Aracı Getiren"
         // alanlarını gösterir; discount_rate: Ödeme Al'da indirimli tutar;

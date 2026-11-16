@@ -42,6 +42,9 @@ export interface OrderQuery {
   where: string;
   values: (string | number | string[] | Date)[];
   orderBy: string;
+  // Sayfalı listede sıralama anahtarları iç sorgudan sort_1/sort_2 olarak
+  // taşınır, dış sorgu sırayı bunlarla korur (bkz. GET /api/orders).
+  pageSort: { select: string; outer: string };
 }
 
 export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams): OrderQuery {
@@ -120,9 +123,13 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
   }
 
   const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
-  const orderBy = sortBy && SORTABLE_COLUMNS[sortBy]
-    ? `${SORTABLE_COLUMNS[sortBy]} ${sortDir} NULLS LAST, o.id ASC`
+  const sortColumn = sortBy ? SORTABLE_COLUMNS[sortBy] : undefined;
+  const orderBy = sortColumn
+    ? `${sortColumn} ${sortDir} NULLS LAST, o.id ASC`
     : "o.created_at DESC, os.id ASC";
+  const pageSort = sortColumn
+    ? { select: `${sortColumn} AS sort_1, o.id AS sort_2`, outer: `x.sort_1 ${sortDir} NULLS LAST, x.sort_2 ASC` }
+    : { select: "o.created_at AS sort_1, os.id AS sort_2", outer: "x.sort_1 DESC, x.sort_2 ASC" };
 
-  return { where, values, orderBy };
+  return { where, values, orderBy, pageSort };
 }

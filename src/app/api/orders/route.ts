@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  const { where, values, orderBy } = buildOrderQuery(user.tenantId!, searchParams);
+  const { where, values, orderBy, pageSort } = buildOrderQuery(user.tenantId!, searchParams);
 
   const fromClause = `
     FROM orders o
@@ -48,19 +48,25 @@ export async function GET(request: NextRequest) {
   `;
 
   try {
+    // Önce sayfanın satırları (sıralama + LIMIT), ödeme bayrakları SONRA ve
+    // yalnızca o satırlar için. Bayraklar sıralanan sorgunun içindeyken
+    // Postgres sıralamadan önce her satır için hesaplamak üzere bütün
+    // order_payments'ı hash'liyordu: 50 bin siparişlik sentetik yükte
+    // 10,6 ms → 0,24 ms (2026-11, bkz. lastik-servis-projesi.md §27).
+    // Dış SELECT sütunları tek tek yazar — sort_1/sort_2 yanıta girmez; sıra
+    // onlarla korunur (bkz. buildOrderQuery pageSort). $1 her zaman tenant_id.
     const result = await pool.query(
       `SELECT
-         o.id, o.custom_order_no, o.payment_note, o.plate, o.customer_name, o.notes, o.status, o.created_at,
-         os.id AS line_id, s.name AS service_name,
-         os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.quantity, os.unit_price, os.cost_price,
-         COALESCE(os.payment_type, o.payment_type) AS payment_type,
+         x.id, x.custom_order_no, x.payment_note, x.plate, x.customer_name, x.notes, x.status, x.created_at,
+         x.line_id, x.service_name, x.supplier, x.stock_code, x.size_desc, x.brand, x.model_name, x.quantity,
+         x.unit_price, x.cost_price, x.payment_type,
          -- "Ödeme Al & Kapat" ile kapatılan HER sipariş order_payments'a en az
          -- bir satır yazar (bkz. PATCH /api/orders/[id]) — tek tipli kapatma
          -- bunu "parçalı ödeme" yapmaz. Bu bayrak yalnızca gerçekten BİRDEN
          -- FAZLA FARKLI ödeme tipine bölünmüş siparişleri işaretler; tanım
          -- bulk-payment-type route'undaki mixed_orders ile birebir aynı olmalı.
          EXISTS (
-           SELECT 1 FROM order_payments op WHERE op.order_id = o.id AND op.tenant_id = o.tenant_id
+           SELECT 1 FROM order_payments op WHERE op.order_id = x.id AND op.tenant_id = $1
            GROUP BY op.order_id HAVING COUNT(DISTINCT op.payment_type) > 1
          ) AS has_split_payment,
          -- "Ödeme Al & Kapat" ile hiç kapatılmamış (order_payments'ta hiç satırı
@@ -70,11 +76,20 @@ export async function GET(request: NextRequest) {
          -- araçtaki seçilebilirlik filtresiyle birebir aynı olmalı (bkz.
          -- bulk-payment-type route).
          EXISTS (
-           SELECT 1 FROM order_payments op2 WHERE op2.order_id = o.id AND op2.tenant_id = o.tenant_id
+           SELECT 1 FROM order_payments op2 WHERE op2.order_id = x.id AND op2.tenant_id = $1
          ) AS has_payment_record
-       ${fromClause}
-       ORDER BY ${orderBy}
-       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+       FROM (
+         SELECT
+           o.id, o.custom_order_no, o.payment_note, o.plate, o.customer_name, o.notes, o.status, o.created_at,
+           os.id AS line_id, s.name AS service_name,
+           os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.quantity, os.unit_price, os.cost_price,
+           COALESCE(os.payment_type, o.payment_type) AS payment_type,
+           ${pageSort.select}
+         ${fromClause}
+         ORDER BY ${orderBy}
+         LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+       ) x
+       ORDER BY ${pageSort.outer}`,
       [...values, limit, offset]
     );
     // Aynı WHERE ile tek sorguda hem toplam satır sayısı hem toplam tutar/kâr —
