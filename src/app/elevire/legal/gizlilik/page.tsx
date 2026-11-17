@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { COMPANY } from "../company";
+import { ConsentResetButton } from "../../MetaPixel";
 
 export const metadata: Metadata = { title: "Gizlilik Sözleşmesi — Elevire" };
 
@@ -7,7 +8,7 @@ export default function GizlilikPage() {
   return (
     <>
       <h1>Gizlilik Sözleşmesi ve KVKK Aydınlatma Metni</h1>
-      <p className="updated">Son güncelleme: 2026</p>
+      <p className="updated">Son güncelleme: Kasım 2026</p>
       <h2>1. Veri Sorumlusu</h2>
       <p>
         6698 sayılı Kişisel Verilerin Korunması Kanunu (&ldquo;KVKK&rdquo;) uyarınca veri
@@ -41,7 +42,9 @@ export default function GizlilikPage() {
         taleplerinizin karşılanması ve yasal yükümlülüklerin yerine
         getirilmesi amacıyla, KVKK m.5&apos;te belirtilen &ldquo;sözleşmenin kurulması
         ve ifası&rdquo; ve &ldquo;hukuki yükümlülüğün yerine getirilmesi&rdquo; hukuki
-        sebeplerine dayanılarak işlenir.
+        sebeplerine dayanılarak işlenir. Reklam ölçümü amaçlı Meta Pixel
+        çerezleri (bkz. Madde 6) ise yalnızca KVKK m.5/1 uyarınca açık
+        rızanıza dayanılarak kullanılır.
       </p>
 
       <h2>4. Verilerin Aktarılması</h2>
@@ -53,6 +56,7 @@ export default function GizlilikPage() {
         <li><strong>iyzico</strong> — abonelik/ödeme işlemlerinin yürütülmesi için.</li>
         <li><strong>Meta (WhatsApp Business API)</strong> — yalnızca firmanız WhatsApp randevu bildirimini etkinleştirdiyse, müşterinize randevu onay mesajı iletilebilmesi için (ad, telefon, plaka, randevu tarihi/saati).</li>
         <li>Hata izleme/performans aracı (Sentry) — teknik hataların tespit edilip giderilmesi için; kullanıcı adı ve firma bilgisi düzeyinde sınırlı veri işlenir, ekran kaydı veya form içeriği asla gönderilmez.</li>
+        <li><strong>Meta Platforms (Meta Pixel)</strong> — yalnızca çerez bandında onay verdiyseniz, tanıtım sayfamızdaki ziyaretinizin ve kayıt butonuna tıklama/kayıt tamamlama olaylarının, Instagram/Facebook reklamlarımızın etkisini ölçmek amacıyla Meta&apos;ya iletilmesi için (tarayıcı/cihaz bilgisi, IP adresi, ziyaret edilen sayfa, çerez kimliği). Formda girdiğiniz ad, e-posta, telefon gibi bilgiler Meta&apos;ya gönderilmez.</li>
         <li>Push bildirim servisleri (Google FCM / Mozilla) — yalnızca tarayıcı bildirimine abone olduysanız, bildirimlerin cihazınıza iletilmesi için.</li>
         <li>Sunucu/altyapı sağlayıcıları — hizmetin barındırılması için (veriler şifreli bağlantılar üzerinden işlenir).</li>
       </ul>
@@ -77,9 +81,17 @@ export default function GizlilikPage() {
         zorunlu çerez kullanır. Ayrıca tarayıcınızın yerel depolama alanında
         (localStorage/sessionStorage), sunucuya hiç gönderilmeyen, tamamen
         işlevsel bazı tercihler tutulur (ör. listelerde hangi sütunların
-        görüneceği, tanıtım turunun gösterilip gösterilmediği). Pazarlama/
-        reklam amaçlı üçüncü taraf çerezi veya izleme teknolojisi
-        kullanılmamaktadır.
+        görüneceği, tanıtım turunun gösterilip gösterilmediği).
+      </p>
+      <p>
+        Tanıtım sayfamızda (elevire.yeyu.co) ve kayıt sayfasında, yalnızca
+        çerez bandında &ldquo;Kabul Et&rdquo; seçeneğini işaretlemeniz halinde,
+        Instagram/Facebook reklamlarımızın etkisini ölçmek için Meta Pixel
+        (Meta Platforms Ireland Ltd.) reklam çerezi kullanılır. &ldquo;Reddet&rdquo;
+        derseniz veya seçim yapmazsanız Meta&apos;ya hiçbir veri gönderilmez.
+        Uygulama paneli (giriş sonrası) içinde reklam çerezi kullanılmaz.
+        Verdiğiniz rızayı dilediğiniz zaman <ConsentResetButton /> bağlantısıyla
+        geri alabilir, tarayıcınızdan çerezleri silebilirsiniz.
       </p>
 
       <h2>7. KVKK Kapsamındaki Haklarınız</h2>

@@ -45,21 +45,24 @@ const nextConfig = {
         // olduğundan tek bir wildcard yeterli. Gerçek bir production
         // denemesinde 3D Secure adımının farklı bir domain (banka sayfası)
         // gerektirdiği görülürse burası genişletilmeli.
-        "script-src 'self' 'unsafe-inline' https://*.iyzipay.com",
+        // connect.facebook.net / www.facebook.com: Elevire landing ve /kayit'taki
+        // Meta Pixel (bkz. src/app/elevire/MetaPixel.tsx) — yalnızca çerez
+        // bandında rıza verilirse yüklenir.
+        "script-src 'self' 'unsafe-inline' https://*.iyzipay.com https://connect.facebook.net",
         "style-src 'self' 'unsafe-inline'",
         // *.public.blob.vercel-storage.com: Firma Logosu/Panel Logosu/Kaşe
         // (bkz. src/app/api/company-info/assets/route.ts) — her Vercel Blob
         // store'u kendi rastgele alt alan adını kullanıyor (ör.
         // rxi4mvrnlkr1y2pv.public.blob.vercel-storage.com), o yüzden joker
         // karakter gerekiyor, tek bir sabit domain yeterli değil.
-        "img-src 'self' data: https://*.iyzipay.com https://*.public.blob.vercel-storage.com",
+        "img-src 'self' data: https://*.iyzipay.com https://*.public.blob.vercel-storage.com https://www.facebook.com",
         "font-src 'self'",
         // *.ingest.us.sentry.io: hata izleme (Sentry) client SDK'sının
         // tarayıcıdan doğrudan gönderdiği event istekleri — bkz.
         // src/instrumentation-client.ts. Bu olmadan Sentry sessizce CSP'ye
         // takılıp hiç event göndermez (Vercel Blob img-src'de yaşanan
         // sorunla aynı sınıf hata, önceden düzeltildi).
-        "connect-src 'self' https://*.iyzipay.com https://*.ingest.us.sentry.io",
+        "connect-src 'self' https://*.iyzipay.com https://*.ingest.us.sentry.io https://www.facebook.com https://connect.facebook.net",
         "frame-src 'self' https://*.iyzipay.com",
         "base-uri 'self'",
         "form-action 'self'",

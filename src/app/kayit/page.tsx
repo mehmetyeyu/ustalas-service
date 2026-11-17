@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/ToastProvider";
 import { formatTurkishPhoneInput } from "@/lib/phone";
+import MetaPixel, { trackMetaEvent } from "@/app/elevire/MetaPixel";
 
 // Elevire landing'deki "Ücretsiz Hesap Oluştur" — kendi kendine kayıt,
 // bkz. src/app/api/public/register/route.ts. src/app/admin/login/page.tsx
@@ -38,6 +39,7 @@ export default function RegisterPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kayıt başarısız.");
+      await trackMetaEvent("CompleteRegistration");
       window.location.href = "/admin/orders";
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -48,6 +50,7 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+      <MetaPixel />
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">

@@ -24,6 +24,7 @@ import { getPlatformPricing } from "@/lib/platformPricing";
 import { COMPANY } from "./legal/company";
 import WaveHand from "./WaveHand";
 import Logomark from "./Logomark";
+import MetaPixel from "./MetaPixel";
 import { inter } from "./fonts";
 
 // Bu sayfa Figma'daki gerçek "elevire" tasarımının (dosya 863Xtv4xA3PrwD5cSKaE7i,
@@ -231,6 +232,7 @@ export default async function ElevirePage() {
   return (
     <div className={`elevire ${inter.variable}`}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <MetaPixel />
 
       {/* ---------- Hero ---------- */}
       {/* Yapılandırılmış veri: Google'a marka (Organization), site (WebSite)
@@ -251,7 +253,7 @@ export default async function ElevirePage() {
               yalnızca /kayit'a gidiyordu, panele dönmenin yolu yoktu. */}
           <div className="nav-actions">
             <a className="nav-login" href="/admin/login">Giriş Yap</a>
-            <a className="nav-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
+            <a className="nav-cta" href="/kayit" data-cta="nav">7 Gün Ücretsiz Dene</a>
           </div>
         </nav>
       </div>
@@ -260,7 +262,7 @@ export default async function ElevirePage() {
       <div className="bento">
         <div className="wrap">
           <div className="bento-row bento-row-1">
-            <a className="bento-card" href="/kayit">
+            <a className="bento-card" href="/kayit" data-cta="bento-stok-musteri-is">
               <div className="bento-media">
                 <Image src="/elevire/bento-1.jpg" alt="Elevire paneli: stok, aktif iş ve bekleyen iş özeti ile son işler listesi" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
               </div>
@@ -270,7 +272,7 @@ export default async function ElevirePage() {
                 ve oto servisler için stok, müşteri ve iş geçmişini tek yerde toplar.
               </p>
             </a>
-            <a className="bento-card" href="/kayit">
+            <a className="bento-card" href="/kayit" data-cta="bento-panel">
               <div className="bento-media">
                 <Image src="/elevire/bento-main.jpg" alt="Elevire paneli: markaya göre stok durumu, hızlı işlemler ve aylık stok seviyesi grafiği" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
               </div>
@@ -279,21 +281,21 @@ export default async function ElevirePage() {
             </a>
           </div>
           <div className="bento-row bento-row-2">
-            <a className="bento-card" href="/kayit">
+            <a className="bento-card" href="/kayit" data-cta="bento-stok-ekle">
               <div className="bento-media bento-media-sm">
                 <Image src="/elevire/bento-stok.jpg" alt="Raflarda düzenli dizilmiş lastik stoğu" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
               </div>
               <h3>Stok Ekle</h3>
               <p>Lastik markası, ebadı ve adedini birkaç saniyede sisteme kaydedin.</p>
             </a>
-            <a className="bento-card" href="/kayit">
+            <a className="bento-card" href="/kayit" data-cta="bento-musteri">
               <div className="bento-media bento-media-sm">
                 <Image src="/elevire/bento-musteri.jpg" alt="Servis çalışanı tabletten müşteri ve araç bilgisini kaydediyor" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
               </div>
               <h3>Müşteriyi Kaydet</h3>
               <p>Müşteri bilgilerini ve araç plakasını tek seferde kaydedin, bir daha aramayın.</p>
             </a>
-            <a className="bento-card" href="/kayit">
+            <a className="bento-card" href="/kayit" data-cta="bento-is-gecmisi">
               <div className="bento-media bento-media-sm">
                 <Image src="/elevire/bento-gecmis.jpg" alt="Usta araçta lastik değişimi yapıyor" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
               </div>
@@ -339,7 +341,7 @@ export default async function ElevirePage() {
                     </li>
                   ))}
                 </ul>
-                <a className="price-cta price-cta-orange" href="/kayit">7 Gün Ücretsiz Dene</a>
+                <a className="price-cta price-cta-orange" href="/kayit" data-cta="fiyat-aylik">7 Gün Ücretsiz Dene</a>
               </div>
 
               <div className="price-card">
@@ -363,7 +365,7 @@ export default async function ElevirePage() {
                     </li>
                   ))}
                 </ul>
-                <a className="price-cta price-cta-dark" href="/kayit">7 Gün Ücretsiz Dene</a>
+                <a className="price-cta price-cta-dark" href="/kayit" data-cta="fiyat-yillik">7 Gün Ücretsiz Dene</a>
               </div>
             </div>
           </div>
@@ -430,7 +432,7 @@ export default async function ElevirePage() {
         <div className="wrap closing-inner">
           <WaveHand />
           <h2>İşini tek ekrandan yönetmeye hazır mısın?</h2>
-          <a className="closing-cta" href="/kayit">7 Gün Ücretsiz Dene</a>
+          <a className="closing-cta" href="/kayit" data-cta="kapanis">7 Gün Ücretsiz Dene</a>
         </div>
 
         <footer className="wrap footer">
