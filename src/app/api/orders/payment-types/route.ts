@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { effectivePaymentType, isCariSettled, loadOrderLedgerStatuses } from "@/lib/customerLedger";
 
 // Sipariş sayfasındaki Filtrele modalında Ödeme Şekli çoklu seçimi için:
 // sabit bir katalog yerine gerçekten kullanılmış değerler döner — "Mail
@@ -25,7 +26,30 @@ export async function GET() {
        ORDER BY payment_type`,
       [user.tenantId]
     );
-    return NextResponse.json(result.rows.map((r) => r.payment_type));
+    // Borcu kapanmış cari siparişler listede/filtrede kapatan yöntemle
+    // görünür (bkz. effectivePaymentType) — "Karışık" gibi hiç kayıtlı
+    // olmayan değerler de seçilebilsin diye eklenir. Yalnızca listede
+    // gerçekten "Cari" satırı olan siparişlerin yöntemi alınır: cari kısmı
+    // kapanmış parçalı ("Karışık") ya da eski SIPARIS kaydı kalmış Cari
+    // olmayan bir sipariş, hiçbir satır getirmeyen bir seçenek eklerdi.
+    const types = new Set<string>(result.rows.map((r) => r.payment_type));
+    if (types.has("Cari")) {
+      const cariStatuses = await loadOrderLedgerStatuses(pool, user.tenantId!, null);
+      const settled = Array.from(cariStatuses).filter(([, st]) => isCariSettled(st));
+      if (settled.length > 0) {
+        const visible = await pool.query<{ paid_via: string }>(
+          `SELECT DISTINCT cp.paid_via
+           FROM unnest($2::int[], $3::text[]) AS cp(order_id, paid_via)
+           WHERE EXISTS (
+             SELECT 1 FROM orders o LEFT JOIN order_services os ON os.order_id = o.id
+             WHERE o.id = cp.order_id AND o.tenant_id = $1 AND COALESCE(os.payment_type, o.payment_type) = 'Cari'
+           )`,
+          [user.tenantId, settled.map(([id]) => id), settled.map(([, st]) => effectivePaymentType("Cari", st))]
+        );
+        for (const r of visible.rows) types.add(r.paid_via);
+      }
+    }
+    return NextResponse.json(Array.from(types));
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Sunucu hatası." }, { status: 500 });

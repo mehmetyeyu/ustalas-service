@@ -62,6 +62,11 @@ interface OrderDetail {
     amount: number;
     kasa_id: number | null;
   }[];
+  // Cari kısmının durumu ("Nazım Hesap ile kapandı", "₺250 kaldı"); hiç
+  // dokunulmamış açık cari ya da cari yoksa null (bkz. cariStatusNote).
+  cari_note?: string | null;
+  // Borcuna tahsilat düşmüş (kısmen/tamamen) — Düzelt ekranı uyarır.
+  cari_paid_in?: boolean;
 }
 
 // Sorgu verisi henüz yokken kullanılan sabit boş diziler (render'lar arası aynı referans).
@@ -917,6 +922,16 @@ function OrderDetailPageInner() {
           <h1 className="text-2xl font-semibold tracking-tight text-v2-fg [overflow-wrap:anywhere]">Sipariş {order.custom_order_no || `#${order.id}`} — Düzelt</h1>
         </header>
         <div className="flex flex-col gap-6">
+          {/* Borca tahsilat düşmüşse Cari tutarı değişince borç satırı yeniden
+              yazılır ama tahsilat yerinde kalır; FIFO onu müşterinin sonraki
+              cari siparişine düşer (bkz. isCariPaidIn). Engellenmez — gerçek
+              bir düzeltme gerekebilir — ama kullanıcı sonucu bilerek seçer. */}
+          {order.cari_paid_in && (
+            <div role="status" className="rounded-xl border border-v2-warning-fg/30 bg-v2-warning-bg px-4 py-3 text-sm text-v2-warning-fg">
+              <p className="font-semibold">Bu siparişin cari borcuna tahsilat düşmüş{order.cari_note ? ` (${order.cari_note})` : ""}.</p>
+              <p className="mt-1">Ödeme şeklini ya da tutarı değiştirirseniz tahsilat müşterinin sonraki cari siparişine kayar. Gerekirse tahsilatı da Müşteriler → Cari Hareketleri&apos;nden düzeltin.</p>
+            </div>
+          )}
             <section aria-labelledby="duzelt-bilgiler" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm p-5">
               <h2 id="duzelt-bilgiler" className="mb-4 text-[15px] font-semibold text-v2-fg">Sipariş Bilgileri</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1511,7 +1526,9 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, inv
   const paymentUnknown = order.paid_amount == null && order.payments.length === 0;
   const discount = done && order.paid_amount != null ? Number(order.total_amount) - Number(order.paid_amount) : 0;
   const collectedPct = order.total_amount > 0 ? Math.min(100, Math.round((collected / Number(order.total_amount)) * 100)) : 0;
-  const paymentLabel = order.payment_type ? (PAYMENT_LABELS[order.payment_type] ?? order.payment_type) : null;
+  // Satış anındaki "Cari" korunur, yanına cari durumu eklenir.
+  const withCariNote = (type: string) => (type === "Cari" && order.cari_note ? `Cari · ${order.cari_note}` : type);
+  const paymentLabel = order.payment_type ? withCariNote(PAYMENT_LABELS[order.payment_type] ?? order.payment_type) : null;
   const initials = (order.customer_name || "")
     .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toLocaleUpperCase("tr-TR")).join("");
   const card = "rounded-xl border border-v2-line bg-v2-surface shadow-sm";
@@ -1588,7 +1605,7 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, inv
                           <div className="font-medium text-v2-fg">{svc.name}</div>
                           {detail && <div className="mt-0.5 text-xs text-v2-fg-muted">{detail}</div>}
                           {svc.payment_type && (
-                            <span className="mt-1 inline-block rounded-md bg-v2-muted px-1.5 py-0.5 text-[11px] font-medium text-v2-fg-muted">{svc.payment_type}</span>
+                            <span className="mt-1 inline-block rounded-md bg-v2-muted px-1.5 py-0.5 text-[11px] font-medium text-v2-fg-muted">{withCariNote(svc.payment_type)}</span>
                           )}
                         </td>
                         <td className="px-3 py-3.5">
@@ -1676,7 +1693,7 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, inv
                 {order.payments.length > 1 && (
                   <ul className="mt-1 flex flex-col gap-1 border-t border-v2-line pt-2">
                     {order.payments.map((p) => (
-                      <li key={p.id} className="flex justify-between text-v2-fg-muted"><span>{p.payment_type}</span><span className="tabular-nums text-v2-fg">{formatCurrency(p.amount)}</span></li>
+                      <li key={p.id} className="flex justify-between text-v2-fg-muted"><span>{withCariNote(p.payment_type)}</span><span className="tabular-nums text-v2-fg">{formatCurrency(p.amount)}</span></li>
                     ))}
                   </ul>
                 )}

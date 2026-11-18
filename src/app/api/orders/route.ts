@@ -4,10 +4,10 @@ import { getAuthUser } from "@/lib/auth";
 import { resolveServiceIds } from "@/lib/serviceCatalog";
 import { upsertDirectoryNames } from "@/lib/directories";
 import { deductStock, InsufficientStockError } from "@/lib/productStock";
-import { buildOrderQuery } from "@/lib/orderQuery";
+import { buildOrderQuery, needsCariStatuses } from "@/lib/orderQuery";
 import { hasPermission } from "@/lib/permissions";
 import { getOrderCreationSettings } from "@/lib/settings";
-import { computeOrderLedgerStatus, type LedgerFifoEntry, type OrderLedgerStatus } from "@/lib/customerLedger";
+import { isCariPartial, isCariSettled, loadOrderLedgerStatuses } from "@/lib/customerLedger";
 import { countWorkingDays, hasAnyWorkingDay, type WorkingHours } from "@/lib/appointmentSlots";
 import { logAudit } from "@/lib/auditLog";
 import { linkVehicle } from "@/lib/vehicles";
@@ -38,28 +38,36 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  const { where, values, orderBy, pageSort } = buildOrderQuery(user.tenantId!, searchParams);
-
-  const fromClause = `
-    FROM orders o
-    LEFT JOIN order_services os ON o.id = os.order_id
-    LEFT JOIN services s ON os.service_id = s.id
-    ${where}
-  `;
-
   try {
+    // Ödeme Şekli filtresi/sıralaması kapanmış cari siparişleri kapatan
+    // yöntemle değerlendirir — firmanın tüm cari durumu önceden gerekir
+    // (bkz. buildOrderQuery). Yalnızca bu durumda; sayfa satırları da aynı
+    // haritayı kullanır, aşağıdaki ikinci cari sorgusu atlanır.
+    const tenantCariStatuses = needsCariStatuses(searchParams)
+      ? await loadOrderLedgerStatuses(pool, user.tenantId!, null)
+      : undefined;
+    const { joins, where, values, orderBy, pageSort } = buildOrderQuery(user.tenantId!, searchParams, tenantCariStatuses);
+
+    const fromClause = `
+      FROM orders o
+      LEFT JOIN order_services os ON o.id = os.order_id
+      LEFT JOIN services s ON os.service_id = s.id
+      ${joins}
+      ${where}
+    `;
+
     // Önce sayfanın satırları (sıralama + LIMIT), ödeme bayrakları SONRA ve
     // yalnızca o satırlar için. Bayraklar sıralanan sorgunun içindeyken
     // Postgres sıralamadan önce her satır için hesaplamak üzere bütün
     // order_payments'ı hash'liyordu: 50 bin siparişlik sentetik yükte
     // 10,6 ms → 0,24 ms (2026-11, bkz. lastik-servis-projesi.md §27).
-    // Dış SELECT sütunları tek tek yazar — sort_1/sort_2 yanıta girmez; sıra
+    // Dış SELECT sütunları tek tek yazar — sort_* yanıta girmez; sıra
     // onlarla korunur (bkz. buildOrderQuery pageSort). $1 her zaman tenant_id.
     const result = await pool.query(
       `SELECT
          x.id, x.custom_order_no, x.payment_note, x.plate, x.customer_name, x.notes, x.status, x.created_at,
          x.line_id, x.service_name, x.supplier, x.stock_code, x.size_desc, x.brand, x.model_name, x.quantity,
-         x.unit_price, x.cost_price, x.payment_type,
+         x.unit_price, x.cost_price, x.payment_type, x.order_payment_type,
          -- "Ödeme Al & Kapat" ile kapatılan HER sipariş order_payments'a en az
          -- bir satır yazar (bkz. PATCH /api/orders/[id]) — tek tipli kapatma
          -- bunu "parçalı ödeme" yapmaz. Bu bayrak yalnızca gerçekten BİRDEN
@@ -83,7 +91,7 @@ export async function GET(request: NextRequest) {
            o.id, o.custom_order_no, o.payment_note, o.plate, o.customer_name, o.notes, o.status, o.created_at,
            os.id AS line_id, s.name AS service_name,
            os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.quantity, os.unit_price, os.cost_price,
-           COALESCE(os.payment_type, o.payment_type) AS payment_type,
+           COALESCE(os.payment_type, o.payment_type) AS payment_type, o.payment_type AS order_payment_type,
            ${pageSort.select}
          ${fromClause}
          ORDER BY ${orderBy}
@@ -146,55 +154,29 @@ export async function GET(request: NextRequest) {
     // Bu sayfadaki siparişlerin bağlı olduğu müşterilerin TAM geçmişi
     // gerekiyor (sadece sayfadaki siparişler değil — bir eski sipariş, bu
     // sayfada görünmeyen daha da eski bir borcu bekliyor olabilir).
-    // Sadece ödeme şekli "Cari" olan satırların siparişleri — cari_* alanları
-    // UI'da yalnızca bu satırlarda okunuyor (bkz. admin/orders/page.tsx
-    // payment_type hücresi), Cari olmayan bir siparişin zaten SIPARIS cari
-    // kaydı yok. Sayfada hiç Cari satır yoksa (çoğu sayfa) cari sorgusu
-    // tamamen atlanır.
+    // Sipariş özeti (orders.payment_type) "Cari" ya da "Karışık" olanlar
+    // yeter: cari tutarı olan her sipariş bunlardan biridir (satırları Cari
+    // + Nakit ise özet "Karışık"). Satır tipine bakılsaydı, Cari satırı başka
+    // sayfada kalan bir siparişin Nakit satırı cari durumunu bilmez, toplu
+    // seçim sunucudaki korumadan sapardı (bkz. cariPaidIn). Sayfada böyle
+    // sipariş yoksa (çoğu sayfa) sorgu atlanır; Ödeme Şekli filtresi/
+    // sıralaması varken firma çapında yüklenmiş harita kullanılır.
     const orderIds = Array.from(new Set(
-      result.rows.filter((r) => r.payment_type === "Cari").map((r) => r.id as number)
+      result.rows
+        .filter((r) => r.order_payment_type === "Cari" || r.order_payment_type === "Karışık" || r.payment_type === "Cari")
+        .map((r) => r.id as number)
     ));
-    const statusByOrderId = new Map<number, OrderLedgerStatus>();
-    if (orderIds.length > 0) {
-      const ledgerResult = await pool.query<{ customer_id: number; order_id: number | null; direction: 1 | -1; amount: number; payment_type: string | null }>(
-        `SELECT cle.customer_id, cle.order_id, cle.direction, cle.amount::float AS amount, cle.payment_type
-         FROM customer_ledger_entries cle
-         WHERE cle.tenant_id = $1
-           AND cle.customer_id IN (
-             SELECT DISTINCT customer_id FROM customer_ledger_entries
-             WHERE tenant_id = $1 AND order_id = ANY($2)
-           )
-         ORDER BY cle.customer_id, cle.entry_date, cle.id`,
-        [user.tenantId, orderIds]
-      );
-      let currentCustomerId: number | null = null;
-      let currentGroup: LedgerFifoEntry[] = [];
-      const flushGroup = () => {
-        if (currentGroup.length > 0) {
-          for (const [orderId, status] of Array.from(computeOrderLedgerStatus(currentGroup))) {
-            statusByOrderId.set(orderId, status);
-          }
-        }
-      };
-      for (const row of ledgerResult.rows) {
-        if (row.customer_id !== currentCustomerId) {
-          flushGroup();
-          currentCustomerId = row.customer_id;
-          currentGroup = [];
-        }
-        currentGroup.push({ orderId: row.order_id, direction: row.direction, amount: row.amount, paymentType: row.payment_type });
-      }
-      flushGroup();
-    }
-    const items = result.rows.map((r) => {
+    const statusByOrderId = tenantCariStatuses ?? await loadOrderLedgerStatuses(pool, user.tenantId!, orderIds);
+    const items = result.rows.map(({ order_payment_type: _orderPaymentType, ...r }) => {
       const status = statusByOrderId.get(r.id as number);
       return {
         ...r,
-        cari_settled: status ? status.remainingAmount <= 0.009 : false,
-        cari_remaining_amount: status && status.remainingAmount > 0.009 && status.remainingAmount < status.originalAmount - 0.009
-          ? status.remainingAmount
-          : null,
-        cari_paid_via: status && status.remainingAmount <= 0.009 ? status.paidVia : null,
+        cari_settled: isCariSettled(status),
+        cari_remaining_amount: isCariPartial(status) ? status!.remainingAmount : null,
+        cari_paid_via: isCariSettled(status) ? status!.paidVia : null,
+        // Parçalı ("Karışık") siparişin hâlâ açık cari tutarı — hücrede
+        // "Karışık (₺X cari kaldı)" için; diğer satırlarda null.
+        cari_open_amount: r.payment_type === "Karışık" && status && !isCariSettled(status) ? status.remainingAmount : null,
       };
     });
 

@@ -1,5 +1,6 @@
 import { getAppSettings } from "@/lib/settings";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
+import type { OrderLedgerStatus } from "@/lib/cariStatus";
 
 interface QueryClient {
   query<T = unknown>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -180,6 +181,10 @@ export async function syncOrderLedgerBatch(
   );
 }
 
+// Durum tipi ve onu okuyan saf kurallar (istemci de kullanır) cariStatus.ts'te.
+export type { OrderLedgerStatus } from "@/lib/cariStatus";
+export { CARI_SETTLED_LABEL, cariStatusNote, effectivePaymentType, isCariPaidIn, isCariPartial, isCariSettled } from "@/lib/cariStatus";
+
 // --- FIFO Cari uzlaşma hesaplaması (Sipariş listesindeki "Cari" rozeti için) ---
 // Business kararı: kısmi/toplu ödemeler her zaman EN ESKİ açık siparişten
 // başlayarak sırayla düşülür (geleneksel esnaf Cari defteri mantığı — bkz.
@@ -204,18 +209,6 @@ export interface LedgerFifoEntry {
   // (Nakit/POS/Nazım Hesap/vb.) tahsil edildiği. Sipariş listesindeki
   // "Cari (Ödendi - <yöntem>)" rozeti için (bkz. OrderLedgerStatus.paidVia).
   paymentType: string | null;
-}
-
-// remainingAmount: bu siparişin borcundan hâlâ karşılanmamış kısım (0 =
-// tamamen ödendi, originalAmount ile aynıysa hiç dokunulmamış, arası bir
-// değerse KISMEN ödenmiş — bkz. Sipariş listesindeki "Cari (₺X kaldı)"
-// rozeti, business kararıyla eklendi). paidVia: bu siparişin borcuna
-// katkıda bulunan ödeme(ler)in yöntemi — tek bir yöntemse o yöntem, birden
-// fazla FARKLI yöntem karıştıysa "Karışık" (business kararı).
-export interface OrderLedgerStatus {
-  originalAmount: number;
-  remainingAmount: number;
-  paidVia: string | null;
 }
 
 export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]): Map<number, OrderLedgerStatus> {
@@ -279,5 +272,47 @@ export function computeOrderLedgerStatus(entriesChronological: LedgerFifoEntry[]
     else status.paidVia = "Karışık";
   }
 
+  return statusByOrderId;
+}
+
+// Sipariş listesi, filtresi ve Excel'i için FIFO durumlarını yükler.
+// orderIds verilirse yalnızca o siparişlerin müşterileri, null ise firmanın
+// cari siparişi olan TÜM müşterileri (Ödeme Şekli filtresi bunu ister — bir
+// siparişin kapanıp kapanmadığı sayfaya girmeden önce bilinmeli). Her iki
+// durumda da müşterinin TAM geçmişi okunur: bir sipariş, daha eski bir
+// borcun kapanmasını bekliyor olabilir.
+export async function loadOrderLedgerStatuses(
+  client: QueryClient,
+  tenantId: number,
+  orderIds: number[] | null
+): Promise<Map<number, OrderLedgerStatus>> {
+  const statusByOrderId = new Map<number, OrderLedgerStatus>();
+  if (orderIds && orderIds.length === 0) return statusByOrderId;
+  const customerFilter = orderIds
+    ? "SELECT DISTINCT customer_id FROM customer_ledger_entries WHERE tenant_id = $1 AND order_id = ANY($2)"
+    : "SELECT DISTINCT customer_id FROM customer_ledger_entries WHERE tenant_id = $1 AND entry_type = 'SIPARIS'";
+  const ledgerResult = await client.query<{ customer_id: number; order_id: number | null; direction: 1 | -1; amount: number; payment_type: string | null }>(
+    `SELECT cle.customer_id, cle.order_id, cle.direction, cle.amount::float AS amount, cle.payment_type
+     FROM customer_ledger_entries cle
+     WHERE cle.tenant_id = $1 AND cle.customer_id IN (${customerFilter})
+     ORDER BY cle.customer_id, cle.entry_date, cle.id`,
+    orderIds ? [tenantId, orderIds] : [tenantId]
+  );
+  let currentCustomerId: number | null = null;
+  let currentGroup: LedgerFifoEntry[] = [];
+  const flushGroup = () => {
+    for (const [orderId, status] of Array.from(computeOrderLedgerStatus(currentGroup))) {
+      statusByOrderId.set(orderId, status);
+    }
+  };
+  for (const row of ledgerResult.rows) {
+    if (row.customer_id !== currentCustomerId) {
+      flushGroup();
+      currentCustomerId = row.customer_id;
+      currentGroup = [];
+    }
+    currentGroup.push({ orderId: row.order_id, direction: row.direction, amount: row.amount, paymentType: row.payment_type });
+  }
+  flushGroup();
   return statusByOrderId;
 }

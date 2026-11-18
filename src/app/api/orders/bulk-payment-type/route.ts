@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { getAppSettings } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
-import { syncOrderLedgerBatch, LedgerCustomerRequiredError } from "@/lib/customerLedger";
+import { syncOrderLedgerBatch, LedgerCustomerRequiredError, isCariPaidIn, loadOrderLedgerStatuses } from "@/lib/customerLedger";
 import { resolveKasaId } from "@/lib/kasalar";
 
 const MAX_LINES = 500;
@@ -60,6 +60,22 @@ export async function PATCH(request: NextRequest) {
     try {
       await client.query("BEGIN");
 
+      // Cari borcuna tahsilat düşmüş (kısmen ya da tamamen kapanmış)
+      // siparişler de dışarıda bırakılır: tip değişince borç satırı silinir
+      // ama tahsilat kalır, artan alacak FIFO ile müşterinin SONRAKİ cari
+      // siparişini haksız yere "ödendi" gösterirdi. Kapanmış cariler Ödeme
+      // Şekli filtresinde kapatan yöntemle (ör. "Nazım Hesap") toplu
+      // listelendiği için bu ayrıca önemli (bkz. effectivePaymentType).
+      // Liste ekranındaki devre dışı checkbox ile birebir aynı olmalı.
+      const selectedOrders = await client.query<{ order_id: number }>(
+        "SELECT DISTINCT order_id FROM order_services WHERE id = ANY($1) AND tenant_id = $2",
+        [lineIds, user.tenantId]
+      );
+      const cariStatuses = await loadOrderLedgerStatuses(client, user.tenantId!, selectedOrders.rows.map((r) => r.order_id));
+      const cariPaidInOrderIds = Array.from(cariStatuses)
+        .filter(([, st]) => isCariPaidIn(st))
+        .map(([orderId]) => orderId);
+
       // tenant_id koşulu, client'tan gelen id'lerle başka bir firmanın
       // satırlarına dokunulmasını engeller. mixed_orders: seçilen satırların
       // ait olduğu siparişlerden, order_payments'ta gerçekten BİRDEN FAZLA
@@ -84,6 +100,7 @@ export async function PATCH(request: NextRequest) {
          UPDATE order_services os SET payment_type = $1, kasa_id = $4
          WHERE os.id = ANY($2) AND os.tenant_id = $3
            AND os.order_id NOT IN (SELECT order_id FROM mixed_orders)
+           AND NOT (os.order_id = ANY($5::int[]))
            -- Bu araç zaten "Ödeme Al & Kapat" ile kapatılmış siparişlerin ödeme
            -- ETİKETİNİ düzeltmek içindir, ona ödeme atamak için değil — hiç
            -- kapatılmamış (order_payments'ta hiç satırı olmayan) bir siparişin
@@ -95,7 +112,7 @@ export async function PATCH(request: NextRequest) {
              SELECT 1 FROM order_payments op3 WHERE op3.order_id = os.order_id AND op3.tenant_id = os.tenant_id
            )
          RETURNING os.order_id`,
-        [paymentType, lineIds, user.tenantId, resolvedKasaId]
+        [paymentType, lineIds, user.tenantId, resolvedKasaId, cariPaidInOrderIds]
       );
 
       const affectedOrderIds = Array.from(new Set(updated.rows.map((r) => r.order_id)));

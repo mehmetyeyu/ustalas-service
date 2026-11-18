@@ -136,7 +136,9 @@ const AFFECTS = {
   service: [queryKeys.services],
   supplier: [queryKeys.suppliers],
   kasa: [queryKeys.kasalar],
-  customer: [queryKeys.customers],
+  // Tahsilat cari siparişin filtrede görünen ödeme şeklini değiştirir
+  // (bkz. GET /api/orders/payment-types, "Karışık" vb.).
+  customer: [queryKeys.customers, queryKeys.orderPaymentTypes],
   companyInfo: [queryKeys.companyInfo],
   // Teklif kaydı listede olmayan işlem adlarını Hizmetler'e ekler (resolveServiceIds).
   quote: [queryKeys.services],

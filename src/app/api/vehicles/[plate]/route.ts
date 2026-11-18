@@ -3,6 +3,8 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { isValidTrPlate, normalizePlate } from "@/lib/plate";
+import { cariStatusNote, isCariSettled, loadOrderLedgerStatuses } from "@/lib/customerLedger";
+import { formatCurrency } from "@/lib/format";
 
 // Araç kartı — bir aracın vehicle_id ile BAĞLI siparişleri, depolama
 // kayıtları ve randevuları (bkz. database/schema.sql vehicles notu: plaka
@@ -71,9 +73,25 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         : empty,
     ]);
 
+    // Cari siparişte satış anındaki "Cari" korunur, yanına durumu ayrı bir
+    // alanda verilir (detaydaki cari_note ile aynı): "Nazım Hesap ile
+    // kapandı" / "₺250 kaldı"; parçalı ("Karışık") siparişte açık cari
+    // kalan tutar. Görüntü metnini istemci birleştirir.
+    const cariStatuses = await loadOrderLedgerStatuses(
+      pool, user.tenantId!,
+      ordersResult.rows.filter((o) => o.payment_type === "Cari" || o.payment_type === "Karışık").map((o) => o.id as number)
+    );
+    const orders = ordersResult.rows.map((o) => {
+      const status = cariStatuses.get(o.id);
+      const cariNote = o.payment_type === "Cari" ? cariStatusNote(status)
+        : o.payment_type === "Karışık" && status && !isCariSettled(status) ? `${formatCurrency(status.remainingAmount)} cari kaldı`
+        : null;
+      return { ...o, cari_note: cariNote };
+    });
+
     return NextResponse.json({
       vehicle,
-      orders: ordersResult.rows,
+      orders,
       storage: storageResult.rows,
       appointments: appointmentsResult.rows,
       can_view_storage: canStorage,

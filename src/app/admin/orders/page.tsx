@@ -11,6 +11,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { flatPaymentOptions } from "@/lib/paymentTypes";
+import { CARI_SETTLED_LABEL } from "@/lib/cariStatus";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServices, useSuppliers, useOrderPaymentTypes, invalidateAfter } from "@/lib/queries";
@@ -301,12 +302,14 @@ const COLUMNS: OrderColumnDef[] = [
     cell: (r) => {
       const text =
         r.payment_type === "Cari" && r.cari_settled
-          ? r.cari_paid_via || "Cari (Ödendi)"
+          ? r.cari_paid_via || CARI_SETTLED_LABEL
           : r.payment_type === "Cari" && r.cari_remaining_amount != null
           ? `Cari (${formatCurrency(r.cari_remaining_amount)} kaldı)`
+          : r.cari_open_amount != null
+          ? `${r.payment_type} (${formatCurrency(r.cari_open_amount)} cari kaldı)`
           : r.payment_type || "-";
       if (!r.payment_type) return text;
-      const openCari = r.payment_type === "Cari" && !r.cari_settled;
+      const openCari = (r.payment_type === "Cari" && !r.cari_settled) || r.cari_open_amount != null;
       return (
         <span className={`v2:inline-block v2:rounded-md v2:px-2 v2:py-0.5 v2:text-xs ${openCari ? "v2:bg-v2-info-bg v2:text-v2-info-fg v2:font-semibold" : "v2:bg-v2-muted v2:text-v2-fg v2:font-medium"}`}>
           {text}
@@ -462,6 +465,14 @@ interface OrderRow {
   // bulunan ödeme(ler)in yöntemi (tek yöntemse o, birden fazla farklı
   // yöntem karıştıysa "Karışık").
   cari_paid_via: string | null;
+  // Parçalı ödenmiş ("Karışık") siparişin hâlâ açık cari tutarı, yoksa null.
+  cari_open_amount: number | null;
+}
+
+// Cari borcuna tahsilat düşmüş (kısmen/tamamen) sipariş — toplu ödeme şekli
+// aracına alınmaz (bkz. bulk-payment-type route'u, birebir aynı kural).
+function cariPaidIn(r: OrderRow): boolean {
+  return r.cari_settled || r.cari_remaining_amount != null;
 }
 
 function toLocalDate(d: Date): string {
@@ -770,7 +781,7 @@ export default function OrdersPage() {
       if (!res.ok) throw new Error(data.error || "Güncellenemedi.");
       if (data.skipped > 0) {
         toast.success(
-          `${data.updated} satırın ödeme şekli güncellendi. ${data.skipped} satır, siparişin ödemesi birden fazla farklı tipe bölünmüş olduğu için atlandı — bu siparişleri Düzelt ekranından değiştirebilirsiniz.`
+          `${data.updated} satırın ödeme şekli güncellendi. ${data.skipped} satır atlandı (ödemesi birden fazla tipe bölünmüş ya da cari borcuna tahsilat düşmüş sipariş) — bu siparişleri Düzelt ekranından değiştirebilirsiniz.`
         );
       } else {
         toast.success(`${data.updated} satırın ödeme şekli güncellendi.`);
@@ -930,7 +941,7 @@ export default function OrdersPage() {
   // koşul da bulk-payment-type route'undaki EXISTS/NOT IN filtreleriyle birebir
   // aynı olmalı — seçilemeyeceklerini kullanıcı işaretlemeyi denemeden önce görsün.
   const visibleSelectableIds = rows
-    .filter((r) => r.line_id != null && !r.has_split_payment && r.has_payment_record)
+    .filter((r) => r.line_id != null && !r.has_split_payment && r.has_payment_record && !cariPaidIn(r))
     .map((r) => r.line_id as number);
   const allVisibleSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selectedLineIds.has(id));
 
@@ -1504,6 +1515,15 @@ export default function OrdersPage() {
                                   disabled
                                   className="w-4 h-4 accent-gray-300 cursor-not-allowed"
                                   aria-label={`#${r.id} parçalı ödemeli, seçilemez`}
+                                />
+                              </Tooltip>
+                            ) : cariPaidIn(r) ? (
+                              <Tooltip align="left" text="Cari borcuna tahsilat düşmüş sipariş toplu ödeme şekli değişikliğine dahil edilemez — değişirse tahsilat başka bir siparişe kayar. Düzelt ekranından değiştirin.">
+                                <input
+                                  type="checkbox"
+                                  disabled
+                                  className="w-4 h-4 accent-gray-300 cursor-not-allowed"
+                                  aria-label={`#${r.id} cari tahsilatı var, seçilemez`}
                                 />
                               </Tooltip>
                             ) : !r.has_payment_record ? (

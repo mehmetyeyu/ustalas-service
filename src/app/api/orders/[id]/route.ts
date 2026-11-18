@@ -8,7 +8,7 @@ import { deductStock, restoreStock, InsufficientStockError } from "@/lib/product
 import { getAppSettings, getCustomOrderNoEnabled } from "@/lib/settings";
 import { hasPermission } from "@/lib/permissions";
 import { isValidPaymentType, flatPaymentOptions } from "@/lib/paymentTypes";
-import { syncOrderLedger, LedgerCustomerRequiredError } from "@/lib/customerLedger";
+import { syncOrderLedger, LedgerCustomerRequiredError, cariStatusNote, isCariPaidIn, loadOrderLedgerStatuses } from "@/lib/customerLedger";
 import { createKasaResolver, InvalidKasaError } from "@/lib/kasalar";
 import { logAudit } from "@/lib/auditLog";
 import { linkVehicle } from "@/lib/vehicles";
@@ -69,9 +69,25 @@ export async function GET(
     // ayrı bir /api/settings çağrısına gerek kalmadan aynı yanıtta gider.
     const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
 
+    // Cari kısmının durumu (bkz. cariStatusNote) — ekranda satış anındaki
+    // "Cari" korunur, yanına "Nazım Hesap ile kapandı" / "₺X kaldı" eklenir.
+    // Sorgu yalnızca siparişte cari tutar olabiliyorsa çalışır (özet "Cari"
+    // ya da "Karışık", bir satır ya da ödeme kırılımı "Cari").
+    const order = orderResult.rows[0];
+    const hasCari = order.payment_type === "Cari" || order.payment_type === "Karışık"
+      || servicesResult.rows.some((r) => r.payment_type === "Cari")
+      || paymentsResult.rows.some((r) => r.payment_type === "Cari");
+    const cariStatus = hasCari
+      ? (await loadOrderLedgerStatuses(pool, user.tenantId!, [order.id])).get(order.id)
+      : undefined;
+
     return NextResponse.json({
-      ...orderResult.rows[0], services: servicesResult.rows, payments: paymentsResult.rows,
+      ...order, services: servicesResult.rows, payments: paymentsResult.rows,
       custom_order_no_enabled: customOrderNoEnabled,
+      cari_note: cariStatusNote(cariStatus),
+      // Düzelt ekranı uyarısı için: borca tahsilat düşmüşse ödeme şekli ya
+      // da tutar değişikliği tahsilatı sonraki cari siparişe kaydırır.
+      cari_paid_in: isCariPaidIn(cariStatus),
     });
   } catch (error) {
     console.error(error);

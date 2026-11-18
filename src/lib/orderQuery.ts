@@ -3,6 +3,7 @@
 // tek bir yerde toplanır, iki route de aynı fonksiyonu çağırır.
 
 import { escapeLike } from "@/lib/sqlSafety";
+import { effectivePaymentType, isCariSettled, type OrderLedgerStatus } from "@/lib/cariStatus";
 
 // Türkiye sabit UTC+3 kullanır (2016'dan beri yaz saati yok), bu yüzden
 // "YYYY-MM-DD" filtre değerinin Europe/Istanbul gece yarısı sınırı burada
@@ -32,22 +33,36 @@ const SORTABLE_COLUMNS: Record<string, string> = {
   unit_price: "os.unit_price",
   cost_price: "os.cost_price",
   kar: "(COALESCE(os.unit_price, 0) - COALESCE(os.cost_price, 0))",
-  payment_type: "COALESCE(os.payment_type, o.payment_type)",
+  payment_type: "COALESCE(os.payment_type, o.payment_type)", // cari durumu yüklüyse aşağıda değişir
   notes: "o.notes",
   payment_note: "o.payment_note",
   status: "o.status",
 };
 
 export interface OrderQuery {
+  // FROM'daki join'lerden sonra eklenir (ör. kapanmış cari siparişler).
+  joins: string;
   where: string;
-  values: (string | number | string[] | Date)[];
+  values: (string | number | string[] | number[] | Date)[];
   orderBy: string;
-  // Sayfalı listede sıralama anahtarları iç sorgudan sort_1/sort_2 olarak
+  // Sayfalı listede sıralama anahtarları iç sorgudan sort_1/sort_2(/sort_3) olarak
   // taşınır, dış sorgu sırayı bunlarla korur (bkz. GET /api/orders).
   pageSort: { select: string; outer: string };
 }
 
-export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams): OrderQuery {
+// Ödeme Şekli filtresi ya da sıralaması, kapanmış cari siparişleri borcu
+// kapatan yöntemle değerlendirir (effectivePaymentType). Bunun için çağıran
+// önce loadOrderLedgerStatuses(…, null) ile firmanın cari durumunu yükleyip
+// cariStatuses olarak verir; ne zaman gerektiğini needsCariStatuses söyler.
+export function needsCariStatuses(searchParams: URLSearchParams): boolean {
+  return searchParams.getAll("payment_type").length > 0 || searchParams.get("sortBy") === "payment_type";
+}
+
+export function buildOrderQuery(
+  tenantId: number,
+  searchParams: URLSearchParams,
+  cariStatuses?: Map<number, OrderLedgerStatus>
+): OrderQuery {
   const status = searchParams.get("status");
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
@@ -65,7 +80,19 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
   const sortDir = searchParams.get("sortDir") === "desc" ? "DESC" : "ASC";
 
   const conditions: string[] = ["o.tenant_id = $1"];
-  const values: (string | number | string[] | Date)[] = [tenantId];
+  const values: (string | number | string[] | number[] | Date)[] = [tenantId];
+
+  // Kapanmış cari siparişler (order_id → borcu kapatan yöntem) hash join ile
+  // bağlanır; listede görünen Ödeme Şekli ile filtre/sıralama aynı olur.
+  let joins = "";
+  let paymentTypeExpr = "COALESCE(os.payment_type, o.payment_type)";
+  if (cariStatuses) {
+    const settled = Array.from(cariStatuses).filter(([, st]) => isCariSettled(st));
+    values.push(settled.map(([id]) => id), settled.map(([, st]) => effectivePaymentType("Cari", st)!));
+    joins = `LEFT JOIN unnest($${values.length - 1}::int[], $${values.length}::text[]) AS cari_paid(order_id, paid_via) ON cari_paid.order_id = o.id`;
+    paymentTypeExpr = `CASE WHEN COALESCE(os.payment_type, o.payment_type) = 'Cari' AND cari_paid.paid_via IS NOT NULL
+      THEN cari_paid.paid_via ELSE COALESCE(os.payment_type, o.payment_type) END`;
+  }
 
   if (status) {
     values.push(status);
@@ -113,7 +140,17 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
   }
   if (paymentTypes.length > 0) {
     values.push(paymentTypes);
-    conditions.push(`COALESCE(os.payment_type, o.payment_type) = ANY($${values.length})`);
+    let condition = `${paymentTypeExpr} = ANY($${values.length})`;
+    // Parçalı ödenmiş ("Karışık") siparişin cari kısmı hâlâ açıksa "Cari"
+    // filtresinde de çıkar (kullanıcı kararı 2026-11-18) — hücrede
+    // "Karışık (₺X cari kaldı)" yazar. Satır bazlı "Karışık" yalnızca
+    // order_payments kırılımından gelir (satır tipleri boş).
+    if (cariStatuses && paymentTypes.includes("Cari")) {
+      const openIds = Array.from(cariStatuses).filter(([, st]) => !isCariSettled(st)).map(([id]) => id);
+      values.push(openIds);
+      condition = `(${condition} OR (COALESCE(os.payment_type, o.payment_type) = 'Karışık' AND o.id = ANY($${values.length}::int[])))`;
+    }
+    conditions.push(condition);
   }
   if (search) {
     values.push(`%${escapeLike(search)}%`, `%${escapeLike(search.replace(/\//g, ""))}%`);
@@ -123,13 +160,17 @@ export function buildOrderQuery(tenantId: number, searchParams: URLSearchParams)
   }
 
   const where = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
-  const sortColumn = sortBy ? SORTABLE_COLUMNS[sortBy] : undefined;
+  const sortColumn = sortBy === "payment_type" ? paymentTypeExpr : sortBy ? SORTABLE_COLUMNS[sortBy] : undefined;
+  // Eşitlik satır düzeyinde de bozulur (o.id, os.id): liste satır (line)
+  // bazlı — yalnızca o.id ile çok satırlı bir siparişin satırlarının sırası
+  // belirsiz kalır, sayfalar arasında bir satır tekrarlanıp bir başkası
+  // atlanabiliyordu. Varsayılan sıra zaten os.id ile biter.
   const orderBy = sortColumn
-    ? `${sortColumn} ${sortDir} NULLS LAST, o.id ASC`
+    ? `${sortColumn} ${sortDir} NULLS LAST, o.id ASC, os.id ASC`
     : "o.created_at DESC, os.id ASC";
   const pageSort = sortColumn
-    ? { select: `${sortColumn} AS sort_1, o.id AS sort_2`, outer: `x.sort_1 ${sortDir} NULLS LAST, x.sort_2 ASC` }
+    ? { select: `${sortColumn} AS sort_1, o.id AS sort_2, os.id AS sort_3`, outer: `x.sort_1 ${sortDir} NULLS LAST, x.sort_2 ASC, x.sort_3 ASC` }
     : { select: "o.created_at AS sort_1, os.id AS sort_2", outer: "x.sort_1 DESC, x.sort_2 ASC" };
 
-  return { where, values, orderBy, pageSort };
+  return { joins, where, values, orderBy, pageSort };
 }

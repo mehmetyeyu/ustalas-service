@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeOrderLedgerStatus, type LedgerFifoEntry } from "./customerLedger";
+import { CARI_SETTLED_LABEL, cariStatusNote, computeOrderLedgerStatus, effectivePaymentType, type LedgerFifoEntry } from "./customerLedger";
 
 // FIFO Cari uzlaşma — bkz. computeOrderLedgerStatus'un kendi yorumu.
 // Senaryolar gerçek prod verisiyle (Ahmet Gür, tenant 528875) ve gerçek
@@ -124,5 +124,35 @@ describe("computeOrderLedgerStatus", () => {
     const manualDebt: LedgerFifoEntry = { orderId: null, direction: 1, amount: 500, paymentType: null };
     const result = computeOrderLedgerStatus([credit(500, "Nakit"), manualDebt, debt(1, 500)]);
     expect(result.get(1)!.remainingAmount).toBe(500);
+  });
+});
+
+describe("effectivePaymentType", () => {
+  const open = { originalAmount: 1000, remainingAmount: 1000, paidVia: null };
+  const partial = { originalAmount: 1000, remainingAmount: 250, paidVia: null };
+  it("kapanmış cari, borcu kapatan yöntemi alır", () => {
+    expect(effectivePaymentType("Cari", { originalAmount: 1000, remainingAmount: 0, paidVia: "Nazım Hesap" })).toBe("Nazım Hesap");
+    expect(effectivePaymentType("Cari", { originalAmount: 1000, remainingAmount: 0, paidVia: "Karışık" })).toBe("Karışık");
+  });
+  it("açık ya da kısmen ödenmiş cari 'Cari' kalır", () => {
+    expect(effectivePaymentType("Cari", open)).toBe("Cari");
+    expect(effectivePaymentType("Cari", partial)).toBe("Cari");
+    expect(effectivePaymentType("Cari", undefined)).toBe("Cari");
+  });
+  it("yöntemsiz kapanmış cari etiketle, cari olmayan tip olduğu gibi döner", () => {
+    expect(effectivePaymentType("Cari", { originalAmount: 1000, remainingAmount: 0, paidVia: null })).toBe(CARI_SETTLED_LABEL);
+    expect(effectivePaymentType("Nakit", { originalAmount: 1000, remainingAmount: 0, paidVia: "POS" })).toBe("Nakit");
+    expect(effectivePaymentType(null, undefined)).toBeNull();
+  });
+});
+
+describe("cariStatusNote", () => {
+  it("kapanan yöntemi, kalan tutarı ya da hiçbir şeyi söyler", () => {
+    expect(cariStatusNote({ originalAmount: 1000, remainingAmount: 0, paidVia: "Nazım Hesap" })).toBe("Nazım Hesap ile kapandı");
+    expect(cariStatusNote({ originalAmount: 1000, remainingAmount: 0, paidVia: "Karışık" })).toBe("birden çok yöntemle kapandı");
+    expect(cariStatusNote({ originalAmount: 1000, remainingAmount: 0, paidVia: null })).toBe("ödendi");
+    expect(cariStatusNote({ originalAmount: 1000, remainingAmount: 250, paidVia: null })).toMatch(/^₺250,00 kaldı$/);
+    expect(cariStatusNote({ originalAmount: 1000, remainingAmount: 1000, paidVia: null })).toBeNull();
+    expect(cariStatusNote(undefined)).toBeNull();
   });
 });

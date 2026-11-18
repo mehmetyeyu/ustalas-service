@@ -18,6 +18,8 @@ import { describeStorageTire, type StorageTire } from "@/lib/storageTires";
 interface VehicleOrder {
   id: number; custom_order_no: string | null; created_at: string; status: string; total_amount: number;
   customer_name: string | null; customer_phone: string | null; payment_type: string | null; summary: string | null; products: string | null;
+  // Cari durumu ("Nazım Hesap ile kapandı", "₺250 kaldı"), yoksa null.
+  cari_note?: string | null;
   driver_name: string | null;
 }
 interface VehicleStorage {
@@ -59,7 +61,7 @@ function buildTimeline(card: VehicleCard): TimelineItem[] {
     items.push({
       key: `o${o.id}`, at: o.created_at, kind: "SİPARİŞ",
       title: `Sipariş ${o.custom_order_no || `#${o.id}`}${o.summary ? ` · ${o.summary}` : ""}`,
-      detail: [o.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede", o.payment_type, o.customer_name, o.driver_name ? `Getiren: ${o.driver_name}` : null, o.products].filter(Boolean).join(" · "),
+      detail: [o.status === "TAMAMLANDI" ? "Tamamlandı" : "Beklemede", o.payment_type && o.cari_note ? `${o.payment_type} · ${o.cari_note}` : o.payment_type, o.customer_name, o.driver_name ? `Getiren: ${o.driver_name}` : null, o.products].filter(Boolean).join(" · "),
       amount: o.total_amount, href: `/admin/orders/${o.id}`,
     });
   }
