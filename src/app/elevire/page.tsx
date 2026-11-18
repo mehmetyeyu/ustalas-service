@@ -983,6 +983,7 @@ const CSS = `
   .elevire .payment-badges { display: flex; align-items: center; }
 
   @media (max-width: 640px) {
+    .elevire .hero { height: 430px; min-height: 0; }
     .elevire .nav { top: 18px; }
     .elevire .pricing-panel { border-radius: 32px 32px 0 0; margin-top: -32px; }
   }
