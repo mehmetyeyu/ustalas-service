@@ -25,6 +25,7 @@ import { COMPANY } from "./legal/company";
 import WaveHand from "./WaveHand";
 import Logomark from "./Logomark";
 import MetaPixel from "./MetaPixel";
+import { buildWhatsAppUrl } from "@/lib/quoteDocument";
 import { inter } from "./fonts";
 
 // Bu sayfa Figma'daki gerçek "elevire" tasarımının (dosya 863Xtv4xA3PrwD5cSKaE7i,
@@ -206,6 +207,28 @@ function InstagramIcon() {
       <rect x="3" y="3" width="18" height="18" rx="5" />
       <circle cx="12" cy="12" r="4" />
       <circle cx="17.5" cy="6.5" r="0.75" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// Sabit WhatsApp butonu için: konuşma balonu + içinde dolu ahize — tek
+// başına balon (WhatsappIcon) küçük boyutta WhatsApp olarak tanınmıyordu.
+function WhatsappFloatIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path
+        d="M19.2 11.28C19.1985 12.4971 18.8885 13.694 18.299 14.7588C17.7094 15.8236 16.8595 16.7215 15.8288 17.3687C14.798 18.016 13.62 18.3913 12.4048 18.4597C11.1896 18.5282 9.97695 18.2874 8.88005 17.76L4.80005 19.2L6.12005 15.36C5.4649 14.4327 5.03834 13.3637 4.87517 12.2401C4.71201 11.1165 4.81687 9.97027 5.1812 8.89495C5.54553 7.81963 6.159 6.84571 6.97152 6.0527C7.78404 5.25969 8.77259 4.67008 9.85645 4.33199C10.9403 3.99391 12.0888 3.91694 13.208 4.10737C14.3273 4.29779 15.3857 4.75022 16.2968 5.42771C17.2079 6.10519 17.9458 6.98854 18.4504 8.00563C18.9549 9.02271 19.2118 10.1447 19.2 11.28Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <g transform="translate(7.3 6.6) scale(0.4)">
+        <path
+          d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"
+          fill="currentColor"
+        />
+      </g>
     </svg>
   );
 }
@@ -462,6 +485,21 @@ export default async function ElevirePage() {
           </div>
         </footer>
       </div>
+
+      {/* Hızlı iletişim: her ekranda sağ altta sabit WhatsApp butonu —
+          firma hattıyla (COMPANY.telefon) hazır mesajlı sohbet açar. Meta
+          Pixel izinliyse tıklama "Contact" olarak ölçülür (bkz. MetaPixel). */}
+      <a
+        className="wa-float"
+        href={buildWhatsAppUrl(COMPANY.telefon, "Merhaba, Elevire hakkında bilgi almak istiyorum.")}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="WhatsApp ile bize yazın"
+        title="WhatsApp ile bize yazın"
+        data-contact="whatsapp"
+      >
+        <WhatsappFloatIcon className="wa-float-icon" />
+      </a>
     </div>
   );
 }
@@ -982,7 +1020,34 @@ const CSS = `
   .elevire .social-link:hover { border-color: var(--yellow); background: var(--yellow); color: #000000; }
   .elevire .payment-badges { display: flex; align-items: center; }
 
+  /* ---------- sabit WhatsApp butonu ---------- */
+  .elevire .wa-float {
+    position: fixed;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(20px, env(safe-area-inset-bottom));
+    z-index: 900; /* çerez bandının (1000) altında */
+    width: 58px;
+    height: 58px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #25d366;
+    color: #ffffff;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .elevire .wa-float:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 14px 32px rgba(0,0,0,0.26), 0 3px 8px rgba(0,0,0,0.14); }
+  .elevire .wa-float:focus-visible { outline: 3px solid #ffffff; outline-offset: 3px; }
+  .elevire .wa-float-icon { width: 32px; height: 32px; }
+  @media (prefers-reduced-motion: reduce) {
+    .elevire .wa-float { transition: none; }
+    .elevire .wa-float:hover { transform: none; }
+  }
+
   @media (max-width: 640px) {
+    .elevire .wa-float { width: 54px; height: 54px; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+    .elevire .wa-float-icon { width: 30px; height: 30px; }
     .elevire .hero { height: 430px; min-height: 0; }
     .elevire .nav { top: 18px; }
     .elevire .pricing-panel { border-radius: 32px 32px 0 0; margin-top: -32px; }

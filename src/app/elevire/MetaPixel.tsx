@@ -14,6 +14,9 @@ import { useEffect, useState } from "react";
 //   KayitButonuTiklandi   — landing'de data-cta taşıyan bir /kayit linkine
 //                           tıklama, { konum: "nav" | "fiyat-aylik" | ... }
 //   CompleteRegistration  — /kayit formu başarıyla tamamlandı
+//   Contact               — landing'deki sabit WhatsApp butonu (data-contact),
+//                           { kanal: "whatsapp" }; yeni sekmede açıldığı için
+//                           beklemeden gönderilir
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 const CONSENT_KEY = "elevire_ad_consent"; // "granted" | "denied"
@@ -95,6 +98,11 @@ export default function MetaPixel() {
     if (!PIXEL_ID) return;
     function onClick(e: MouseEvent) {
       if (!window.fbq) return;
+      const contact = (e.target as Element | null)?.closest?.("a[data-contact]") as HTMLAnchorElement | null;
+      if (contact) {
+        void trackMetaEvent("Contact", { kanal: contact.dataset.contact ?? "" });
+        return;
+      }
       const link = (e.target as Element | null)?.closest?.("a[data-cta]") as HTMLAnchorElement | null;
       if (!link) return;
       const konum = link.dataset.cta ?? "";
