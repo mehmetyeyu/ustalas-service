@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSuppliers, useProductBrands, invalidateAfter } from "@/lib/queries";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { BulkPriceDialog } from "@/components/product/BulkPriceDialog";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { TRNumberInput } from "@/components/TRNumberInput";
 import { parseWeekYearInput, formatWeekYearInput, weekYearLabel } from "@/lib/weekYear";
@@ -867,6 +868,7 @@ export default function ProductsPage() {
     dragColKey, setDragColKey, handleColDragOver, commitColDrag, cancelColDrag, reorderable,
   } = useColumnPrefs(BATCH_COLUMNS, { visibleColsKey: "products_visible_cols_v2", colOrderKey: "products_col_order_v1" });
   const [showMobileActions, setShowMobileActions] = useState(false);
+  const [showBulkPrice, setShowBulkPrice] = useState(false);
 
   // Sıralama sunucuda yapılır (bkz. /api/products) çünkü liste sayfalanmıştır —
   // yalnızca gruplama sorgusunda doğrudan hesaplanan sütunlar sıralanabilir
@@ -1534,6 +1536,7 @@ export default function ProductsPage() {
             >
               Dışa Aktar
             </button>
+
             {canCreate && (
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -1541,6 +1544,14 @@ export default function ProductsPage() {
                 className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
               >
                 {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+              </button>
+            )}
+            {canEdit && (
+              <button
+                onClick={() => setShowBulkPrice(true)}
+                className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+              >
+                Toplu Fiyat Güncelle
               </button>
             )}
             {canCreate && (
@@ -1581,6 +1592,14 @@ export default function ProductsPage() {
                 >
                   Dışa Aktar
                 </button>
+                {canEdit && (
+                  <button
+                    onClick={() => { setShowMobileActions(false); setShowBulkPrice(true); }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Toplu Fiyat Güncelle
+                  </button>
+                )}
                 {canCreate && (
                   <button
                     onClick={() => { setShowMobileActions(false); fileInputRef.current?.click(); }}
@@ -2613,6 +2632,15 @@ export default function ProductsPage() {
       )}
 
       {/* Fiyat Geçmişi Modal */}
+      {/* Toplu Fiyat Güncelle — kapsam listenin o anki filtreleri. */}
+      {showBulkPrice && (
+        <BulkPriceDialog
+          scope={{ search: debouncedSearch, season: seasonFilter, stock: stockFilter }}
+          onClose={() => setShowBulkPrice(false)}
+          onDone={() => { setShowBulkPrice(false); fetchItems(page); }}
+        />
+      )}
+
       {historyModalProduct && (
         <div ref={historyModalProductDialog} role="dialog" aria-modal="true" aria-label="Fiyat Geçmişi" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">

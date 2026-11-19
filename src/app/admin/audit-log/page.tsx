@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<string, string> = {
   "customer.vehicle_add": "Firmaya Araç Eklendi",
   "customer.vehicle_remove": "Firmadan Araç Çıkarıldı",
   "customer.season_change": "Toplu Mevsim Değişimi",
+  "product.bulk_price": "Toplu Fiyat Güncelleme",
   "user.update": "Kullanıcı Güncellendi",
   "user.delete": "Kullanıcı Silindi",
   "quote.create": "Teklif Oluşturuldu",

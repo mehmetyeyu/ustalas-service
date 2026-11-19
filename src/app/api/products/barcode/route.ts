@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 // Barkod okutulduğunda "Yeni Ürün/Parti" formunu otomatik doldurmak için —
 // bkz. Ürün Kataloğu Taslağı ("Barkod okut → bilineni doldur, bilinmeyeni
@@ -15,6 +16,11 @@ import { getAuthUser } from "@/lib/auth";
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
+  // Yalnızca ürün ekleme/düzenleme formları kullanır — ürün izni olmayan
+  // personel katalog bilgisini buradan okuyamasın.
+  if (!hasPermission(user, "products.create") && !hasPermission(user, "products.edit")) {
+    return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
+  }
 
   const params = new URL(request.url).searchParams;
   const barcode = params.get("barcode")?.trim();

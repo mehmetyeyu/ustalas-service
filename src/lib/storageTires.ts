@@ -47,7 +47,9 @@ export function layoutOf(tires: StorageTire[] | null | undefined): StorageTireLa
 export class StorageTiresValidationError extends Error {}
 
 function text(v: unknown, max: number): string | null {
-  const s = String(v ?? "").trim().slice(0, max);
+  // Yalnızca metin/sayı — nesne gelirse "[object Object]" yazılmasın.
+  if (typeof v !== "string" && typeof v !== "number") return null;
+  const s = String(v).trim().slice(0, max);
   return s || null;
 }
 

@@ -31,6 +31,12 @@ describe("parseStorageTires", () => {
     expect(() => parseStorageTires("x", year)).toThrow(StorageTiresValidationError);
   });
 
+  it("metin yerine nesne gelirse boş sayılır", () => {
+    const t = parseStorageTires([tire("Ön", { ebat: { $gt: 1 }, marka: ["x"] }), tire("Arka")], year)!;
+    expect(t[0].ebat).toBeNull();
+    expect(t[0].marka).toBeNull();
+  });
+
   it("geçersiz hafta düşer, metinler kırpılır", () => {
     const t = parseStorageTires([tire("Ön", { production_week: 60, marka: "  Pirelli " }), tire("Arka")], year)!;
     expect(t[0].production_week).toBeNull();
