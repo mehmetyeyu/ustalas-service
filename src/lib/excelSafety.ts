@@ -18,3 +18,8 @@ export function sanitizeExcelRow<T extends Record<string, unknown>>(row: T): T {
   }
   return out;
 }
+
+// Tek hücre için (satır dizisiyle — aoa_to_sheet — yazan çağıranlar).
+export function sanitizeExcelCell<T>(value: T): T {
+  return (typeof value === "string" ? escapeExcelFormula(value) : value) as T;
+}

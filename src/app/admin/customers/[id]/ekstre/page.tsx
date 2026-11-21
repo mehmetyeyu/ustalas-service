@@ -12,7 +12,7 @@ import type { CompanyDoc } from "@/lib/quoteDocument";
 import { buildWhatsAppUrl } from "@/lib/quoteDocument";
 import { PeriodInvoiceSection } from "@/components/einvoice/PeriodInvoiceSection";
 import {
-  buildStatementPrintHtml, buildStatementWhatsAppText, entryDescription, parseStatementMonth, shiftMonth, type Statement,
+  buildStatementPrintHtml, buildStatementWhatsAppText, entryDescription, openItemDescription, parseStatementMonth, shiftMonth, type Statement,
 } from "@/lib/statement";
 
 // Aylık cari ekstre ekranı — GET /api/customers/[id]/statement. Yazdır
@@ -141,6 +141,49 @@ function StatementPageInner() {
           </div>
 
           <PeriodInvoiceSection customerId={id} month={month} monthLabel={period.label} />
+
+          {data.opening_items.length > 0 && (
+            <section aria-labelledby="ekstre-devreden" className="mb-6 min-w-0 overflow-clip rounded-xl border border-v2-line bg-v2-surface shadow-sm">
+              <div className="border-b border-v2-line px-5 py-4">
+                <h2 id="ekstre-devreden" className="text-[15px] font-semibold text-v2-fg">Devreden Bakiye Detayı</h2>
+                <p className="mt-0.5 text-xs text-v2-fg-subtle">{formatISODate(period.start)} itibarıyla ödenmemiş kalemler. Tahsilatlar en eski borçtan başlayarak düşülür.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-v2-line bg-v2-surface-2 text-left text-v2-fg-muted">
+                    <tr>
+                      <th className="px-4 py-2.5 font-medium">Tarih</th>
+                      <th className="px-4 py-2.5 font-medium">Açıklama</th>
+                      <th className="px-4 py-2.5 font-medium">Plaka</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Tutar</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Ödenen</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Kalan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-v2-line">
+                    {data.opening_items.map((i) => (
+                      <tr key={i.id}>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-v2-fg-muted">{formatISODate(i.entry_date)}</td>
+                        <td className="px-4 py-2.5">
+                          {i.order_id ? (
+                            <Link prefetch={false} href={`/admin/orders/${i.order_id}`} className="text-v2-link hover:underline">{openItemDescription(i)}</Link>
+                          ) : openItemDescription(i)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 font-v2-mono">{i.plate || "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{formatCurrency(i.amount)}</td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-green-600">{i.amount - i.remaining > 0.009 ? formatCurrency(i.amount - i.remaining) : ""}</td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-red-600">{formatCurrency(i.remaining)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-v2-muted/40 font-semibold">
+                      <td className="px-4 py-2.5" colSpan={5}>Toplam (devreden bakiye)</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{formatCurrency(data.opening_items.reduce((t, i) => t + i.remaining, 0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <section aria-labelledby="ekstre-hareketler" className="mb-6 min-w-0 overflow-clip rounded-xl border border-v2-line bg-v2-surface shadow-sm">
             <h2 id="ekstre-hareketler" className="border-b border-v2-line px-5 py-4 text-[15px] font-semibold text-v2-fg">Cari Hareketler</h2>

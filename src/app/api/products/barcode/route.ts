@@ -13,6 +13,10 @@ import { hasPermission } from "@/lib/permissions";
 // bunlar partiye özgüdür, her yeni partide yeniden girilmesi gerekir.
 // ?code= ile aynı arama ürün koduna göre de yapılır ("+ Yeni Ürün"de var
 // olan bir kod elle yazılınca) — en son güncellenen partiden doldurulur.
+// Kodla aramada raf ve son fiyatlar da döner: "Stok Girişi" stoğu bitmiş
+// (listede partisi olmayan) bir kodda bunları son partiden doldurur; aynı
+// kodun yeni partisi olduğundan Stok Girişi'nin stoktaki kodlardaki
+// davranışıyla aynı. "+ Yeni Ürün" formu bu alanları kullanmaz.
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
@@ -34,10 +38,11 @@ export async function GET(request: NextRequest) {
       model_name: string | null; load_speed_index: string | null; eu_fuel_class: string | null; eu_wet_grip_class: string | null;
       eu_noise_db: number | null; eu_noise_class: number | null; rim_size: string | null; pcd: string | null;
       offset_et: string | null; min_stock_threshold: number | null;
+      location?: string | null; purchase_price?: string | null; sale_price?: string | null;
     }>(
       `SELECT code, brand, size_desc, season, supplier, product_type, width_mm, profile_pct, rim_diameter,
               model_name, load_speed_index, eu_fuel_class, eu_wet_grip_class, eu_noise_db, eu_noise_class,
-              rim_size, pcd, offset_et, min_stock_threshold
+              rim_size, pcd, offset_et, min_stock_threshold${code && !barcode ? ", location, purchase_price, sale_price" : ""}
        FROM products WHERE tenant_id = $1 AND ${barcode ? "barcode" : "code"} = $2
        ORDER BY updated_at DESC LIMIT 1`,
       [user.tenantId, barcode ?? code]

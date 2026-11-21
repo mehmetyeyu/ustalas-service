@@ -1144,35 +1144,72 @@ export default function ProductsPage() {
   }
 
   // "Stok Girişi" — var olan bir kod için yeni parti eklerken (openClone'un
-  // aksine) kod SABİT kalır, ama müşteri isteğiyle (bkz. bu değişikliğin
-  // commit mesajı) diğer tüm alanlar da boş gelmek yerine o kodun EN SON
-  // partisinden (group.batches sırası production_year/week'e göre artan,
-  // bkz. /api/products route'u — son eleman en güncel parti) dolduruluyor:
-  // bir ürün kodu zaten tek bir "tip" ürünü temsil eder, her stok girişinde
-  // Marka/Model/Mevsim/Tedarikçi vb.'yi yeniden yazmaya gerek yok.
-  // Yeni (hiç partisi olmayan) bir kod için çağrılınca (lastBatch yok)
-  // davranış eskisi gibi tamamen boş kalır.
-  function openAdd(prefillCode?: string, lastBatch?: ProductBatch | null, groupThreshold: number | null = null) {
+  // aksine) kod SABİT kalır, diğer alanlar o kodun EN SON partisinden gelir
+  // (group.batches production_year/week'e göre artan, son eleman en güncel):
+  // bir ürün kodu tek bir "tip" ürünü temsil eder, her girişte Marka/Model/
+  // Mevsim/Tedarikçi/fiyat yeniden yazılmasın. Kod aynı olduğu için ebat da
+  // aynıdır — Yük/Hız, AB etiketi ve jant ölçüleri de taşınır (openClone'da
+  // ebat değiştiği için taşınmaz). Barkod (firma içinde benzersiz), üretim
+  // haftası/yılı, adet ve diş derinliği partiye özgüdür, boş gelir.
+  //
+  // Liste yalnızca STOKTA olan partileri gönderir; "Stok bitenler"de
+  // group.batches boştur. O durumda kod düzeyindeki bilgiler hemen,
+  // tedarikçi/raf/son fiyatlar /api/products/barcode?code= ile (en son
+  // güncellenen parti) doldurulur — yalnızca hâlâ boş alanlara.
+  function openAdd(group?: ProductGroup) {
+    const lastBatch = group?.batches[group.batches.length - 1] ?? null;
+    const src = lastBatch ?? group ?? null;
+    const str = (v: string | number | null | undefined) => (v == null ? "" : String(v));
+    const threshold = group?.min_stock_threshold ?? null;
     setForm({
       ...EMPTY_FORM,
-      code: prefillCode ?? "",
-      brand: lastBatch?.brand ?? "",
-      size_desc: lastBatch?.size_desc ?? "",
-      season: lastBatch?.season ?? "",
-      supplier: lastBatch?.supplier ?? "",
-      location: lastBatch?.location ?? "",
+      code: group?.code ?? "",
+      brand: str(src?.brand),
+      size_desc: str(src?.size_desc),
+      season: str(src?.season),
+      supplier: str(lastBatch?.supplier),
+      location: str(lastBatch?.location),
       purchase_price: lastBatch?.purchase_price != null ? String(num(lastBatch.purchase_price)) : "",
       sale_price: lastBatch?.sale_price != null ? String(num(lastBatch.sale_price)) : "",
-      product_type: lastBatch?.product_type ?? "",
-      width_mm: lastBatch?.width_mm != null ? String(lastBatch.width_mm) : "",
-      profile_pct: lastBatch?.profile_pct != null ? String(lastBatch.profile_pct) : "",
-      rim_diameter: lastBatch?.rim_diameter ?? "",
-      model_name: lastBatch?.model_name ?? "",
-      min_stock_threshold: groupThreshold != null ? String(groupThreshold) : "",
+      product_type: str(src?.product_type),
+      width_mm: str(src?.width_mm),
+      profile_pct: str(src?.profile_pct),
+      rim_diameter: str(src?.rim_diameter),
+      model_name: str(src?.model_name),
+      load_speed_index: str(src?.load_speed_index),
+      eu_fuel_class: str(src?.eu_fuel_class),
+      eu_wet_grip_class: str(src?.eu_wet_grip_class),
+      eu_noise_db: str(src?.eu_noise_db),
+      eu_noise_class: str(src?.eu_noise_class),
+      rim_size: str(src?.rim_size),
+      pcd: str(src?.pcd),
+      offset_et: str(src?.offset_et),
+      min_stock_threshold: threshold != null ? String(threshold) : "",
     });
     setSizeBuilderOpen(false);
-    setSizeComposedOnce(!!(lastBatch?.width_mm && lastBatch?.profile_pct && lastBatch?.rim_diameter));
+    setSizeComposedOnce(!!(src?.width_mm && src?.profile_pct && src?.rim_diameter));
     setShowAddModal(true);
+    if (group && !lastBatch) void fillFromLastBatch(group.code);
+  }
+
+  async function fillFromLastBatch(code: string) {
+    try {
+      const res = await fetch(`/api/products/barcode?code=${encodeURIComponent(code)}`);
+      if (!res.ok) return;
+      const d = await res.json();
+      if (!d.found) return;
+      const pick = (cur: string, v: string | number | null | undefined) => (cur.trim() || v == null ? cur : String(v));
+      // Modal bu arada kapanıp başka bir kodla açıldıysa dokunma.
+      setForm((prev) => prev.code !== code ? prev : {
+        ...prev,
+        supplier: pick(prev.supplier, d.supplier),
+        location: pick(prev.location, d.location),
+        purchase_price: pick(prev.purchase_price, d.purchase_price != null ? num(d.purchase_price) : null),
+        sale_price: pick(prev.sale_price, d.sale_price != null ? num(d.sale_price) : null),
+      });
+    } catch {
+      // sessizce yoksay — alanlar elle doldurulabilir
+    }
   }
 
   // "Benzer Üründen Kopyala" — aynı model, farklı ebat gibi çok benzer bir
@@ -1904,7 +1941,7 @@ export default function ProductsPage() {
                                 )}
                                 {canCreate && (
                                   <button
-                                    onClick={() => openAdd(group.code, group.batches[group.batches.length - 1] ?? null, group.min_stock_threshold)}
+                                    onClick={() => openAdd(group)}
                                     title="Stok Girişi"
                                     aria-label="Stok Girişi"
                                     className="flex items-center gap-1 p-1 sm:p-0 rounded text-blue-600 hover:bg-blue-50 sm:hover:bg-transparent hover:text-blue-800 text-xs font-medium whitespace-nowrap"

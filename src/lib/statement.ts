@@ -2,6 +2,7 @@ import { escapeHtml } from "./htmlEscape";
 import { formatCurrency } from "./format";
 import { formatISODate } from "./quotes";
 import type { CompanyDoc } from "./quoteDocument";
+import { formatOrderLine, type OrderLineField, type OrderLineValues } from "./orderLineDisplay";
 
 // Aylık cari ekstre (Filo Faz 2) — GET /api/customers/[id]/statement.
 // İki bölüm: (1) ayın cari hareketleri (devreden bakiye → borç/tahsilat →
@@ -23,6 +24,68 @@ export interface StatementEntry {
   driver_name: string | null;
   summary: string | null;
   running_balance: number;
+  // Excel için: siparişteki müşteri adı, sipariş notu ve satırları.
+  customer_name: string | null;
+  order_notes: string | null;
+  lines: StatementLine[] | null;
+}
+
+// Sipariş satırı (Excel'in "Ürün & Hizmet" sütunu).
+export interface StatementLine extends OrderLineValues {
+  service: string;
+}
+
+// Devreden bakiyenin detayı: ay başı itibarıyla hâlâ ödenmemiş borç
+// kalemleri (sipariş ya da elle borç). Tahsilatlar en eski borçtan başlayarak
+// düşülür — Sipariş Listesi'ndeki cari rozetleriyle aynı FIFO kuralı (bkz.
+// computeOrderLedgerStatus, src/lib/customerLedger.ts).
+export interface StatementOpenItem {
+  id: number;
+  entry_date: string; // YYYY-MM-DD
+  entry_type: "SIPARIS" | "MANUEL";
+  order_id: number | null;
+  order_no: string | null;
+  plate: string | null;
+  summary: string | null;
+  note: string | null;
+  amount: number; // borcun ilk tutarı
+  remaining: number; // ay başında kalan
+}
+
+export type StatementOpeningRow = Omit<StatementOpenItem, "remaining"> & { direction: 1 | -1 };
+
+const EPS = 0.009;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// rows: ay başından ÖNCEKİ tüm cari hareketler, kronolojik (entry_date, id).
+// Kalanların toplamı, devreden bakiye pozitifse ona eşittir; avans/fazla
+// ödeme varsa önce sonraki borçlara düşer (negatif devredende liste boş).
+export function statementOpenItems(rows: StatementOpeningRow[]): StatementOpenItem[] {
+  const queue: StatementOpenItem[] = [];
+  let pool = 0;
+  for (const { direction, ...row } of rows) {
+    if (direction === 1) {
+      const applied = Math.min(pool, row.amount);
+      pool -= applied;
+      const remaining = row.amount - applied;
+      if (remaining > EPS) queue.push({ ...row, remaining });
+      continue;
+    }
+    let credit = row.amount;
+    while (credit > EPS && queue.length > 0) {
+      const applied = Math.min(queue[0].remaining, credit);
+      queue[0].remaining -= applied;
+      credit -= applied;
+      if (queue[0].remaining <= EPS) queue.shift();
+    }
+    if (credit > EPS) pool += credit;
+  }
+  return queue.map((q) => ({ ...q, remaining: round2(q.remaining) }));
+}
+
+export function openItemDescription(i: StatementOpenItem): string {
+  if (i.entry_type === "SIPARIS") return [`Sipariş ${i.order_no || `#${i.order_id}`}`, i.summary].filter(Boolean).join(" · ");
+  return i.note || "Borç";
 }
 
 export interface StatementVehicle {
@@ -32,16 +95,20 @@ export interface StatementVehicle {
 }
 
 export interface Statement {
-  customer: { id: number; name: string; phone: string | null; tax_no: string | null; contact_name: string | null };
+  customer: { id: number; name: string; phone: string | null; tax_no: string | null; contact_name: string | null; credit_limit: number | null };
   month: string; // YYYY-MM
   opening_balance: number;
   closing_balance: number;
   total_debt: number;
   total_credit: number;
   entries: StatementEntry[];
+  // Devreden bakiyeyi oluşturan, ay başında ödenmemiş kalemler (eskiden yeniye).
+  opening_items: StatementOpenItem[];
   vehicles: StatementVehicle[];
   orders_total: number;
   order_count: number;
+  // Firmanın Sipariş Listesi ürün satırı tercihi (bkz. src/lib/orderLineDisplay.ts).
+  line_display: OrderLineField[];
 }
 
 const MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
@@ -94,6 +161,16 @@ export function buildStatementPrintHtml(s: Statement, company: CompanyDoc | null
         <td class="r">${e.direction === -1 ? formatCurrency(e.amount) : ""}</td>
         <td class="r">${formatCurrency(e.running_balance)}</td>
       </tr>`).join("");
+  const openRows = s.opening_items.map((i) => `
+      <tr>
+        <td>${formatISODate(i.entry_date)}</td>
+        <td>${escapeHtml(openItemDescription(i))}</td>
+        <td>${escapeHtml(i.plate) || "—"}</td>
+        <td class="r">${formatCurrency(i.amount)}</td>
+        <td class="r">${i.amount - i.remaining > EPS ? formatCurrency(round2(i.amount - i.remaining)) : ""}</td>
+        <td class="r">${formatCurrency(i.remaining)}</td>
+      </tr>`).join("");
+  const openTotal = round2(s.opening_items.reduce((t, i) => t + i.remaining, 0));
   const vehicleRows = s.vehicles.map((v) => `
       <tr><td>${escapeHtml(v.plate)}</td><td class="c">${v.order_count}</td><td class="r">${formatCurrency(v.total)}</td></tr>`).join("");
   const taxLine = [
@@ -158,6 +235,15 @@ export function buildStatementPrintHtml(s: Statement, company: CompanyDoc | null
     <div><span class="lbl">Ay sonu bakiye</span><b>${balanceLabel(s.closing_balance)}</b></div>
   </div>
 
+  ${s.opening_items.length > 0 ? `
+  <h3>Devreden Bakiye Detayı (${period ? formatISODate(period.start) : ""} itibarıyla ödenmemiş kalemler)</h3>
+  <table>
+    <thead><tr><th>Tarih</th><th>Açıklama</th><th>Plaka</th><th class="r">Tutar</th><th class="r">Ödenen</th><th class="r">Kalan</th></tr></thead>
+    <tbody>${openRows}
+      <tr class="edge"><td></td><td>Toplam</td><td></td><td></td><td></td><td class="r">${formatCurrency(openTotal)}</td></tr>
+    </tbody>
+  </table>` : ""}
+
   <h3>Cari Hareketler</h3>
   <table>
     <thead><tr><th>Tarih</th><th>Açıklama</th><th>Plaka</th><th class="r">Borç</th><th class="r">Alacak</th><th class="r">Bakiye</th></tr></thead>
@@ -188,7 +274,7 @@ export function buildStatementWhatsAppText(s: Statement, companyName: string | n
     `Merhaba${s.customer.contact_name ? ` ${s.customer.contact_name}` : ""},`,
     `${companyName ? `${companyName} — ` : ""}${s.customer.name} ${period?.label ?? s.month} cari ekstresi:`,
     "",
-    `Devreden bakiye: ${balanceLabel(s.opening_balance)}`,
+    `Devreden bakiye: ${balanceLabel(s.opening_balance)}${s.opening_items.length > 0 ? ` (${s.opening_items.length} ödenmemiş kalem, en eskisi ${formatISODate(s.opening_items[0].entry_date)})` : ""}`,
     `Bu ay borç: ${formatCurrency(s.total_debt)} (${s.entries.filter((e) => e.direction === 1).length} kalem)`,
     `Bu ay tahsilat: ${formatCurrency(s.total_credit)}`,
     `*Ay sonu bakiye: ${balanceLabel(s.closing_balance)}*`,
@@ -198,21 +284,82 @@ export function buildStatementWhatsAppText(s: Statement, companyName: string | n
   ].join("\n");
 }
 
-// Excel sayfası satırları — route tarafında sanitizeExcelRow ile yazılır.
-export function statementExcelRows(s: Statement): Record<string, string | number>[] {
+// Excel'in "Ürün & Hizmet" hücresi: her satır "Hizmet + ürün bilgisi"
+// (firmanın Sipariş Listesi'ndeki gösterimiyle aynı, ör. "Lastik Satışı
+// 235/40R18 Pirelli P Zero 2 adet"); birden çok satır "; " ile.
+export function statementLineText(lines: StatementLine[] | null, display: readonly OrderLineField[]): string {
+  return (lines ?? []).map((l) => [l.service, formatOrderLine(l, display)].filter(Boolean).join(" ")).join("; ");
+}
+
+// Excel'deki "Açıklama": siparişte sipariş notu (yoksa cari notu); elle
+// harekette not, yoksa "Tahsilat (ödeme şekli)" / "Borç".
+export function statementEntryNote(e: StatementEntry): string {
+  if (e.entry_type === "SIPARIS") return e.order_notes || e.note || "";
+  return e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç");
+}
+
+export const STATEMENT_EXCEL_COLUMNS = ["Sipariş No", "Tarih", "Müşteri Adı Soyadı", "Plaka", "Ürün & Hizmet", "Açıklama", "Borç", "Alacak", "Bakiye"];
+export const STATEMENT_EXCEL_WIDTHS = [12, 12, 28, 12, 60, 36, 14, 14, 14];
+
+type Cell = string | number | Date | null;
+const isoDate = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+
+// Excel sayfası (satır dizisi): üstte bilgi bloğu (müşteri, dönem, risk
+// limiti, bakiyeler), sonra tablo — devreden bakiye, hareketler, ay sonu.
+// Tarihler gerçek tarih, tutarlar sayı (route biçim verir). tableHeaderRow:
+// tablo başlığının satır indeksi (0 tabanlı) — süzgeç ve biçim için.
+export function statementExcelSheet(s: Statement): { rows: Cell[][]; tableHeaderRow: number } {
   const period = parseStatementMonth(s.month);
+  const limit = s.customer.credit_limit;
+  const info: Cell[][] = [
+    ["Cari Ekstre", s.customer.name],
+    ["Dönem", period?.label ?? s.month],
+    ...(s.customer.tax_no ? [["Vergi No", s.customer.tax_no] as Cell[]] : []),
+    // Risk (Cari) Limiti müşteri kaydındaki güncel değerdir (geçmiş ay için de).
+    ["Risk Limiti", limit ?? "Tanımlı değil"],
+    ["Devreden Bakiye", s.opening_balance],
+    ["Ay Sonu Bakiye", s.closing_balance],
+    ...(limit != null ? [["Kalan Limit (ay sonu)", Math.round((limit - s.closing_balance) * 100) / 100] as Cell[]] : []),
+    [],
+  ];
+  const tableHeaderRow = info.length;
+  const blank = (n: number) => Array<Cell>(n).fill("");
+  const rows: Cell[][] = [
+    ...info,
+    STATEMENT_EXCEL_COLUMNS,
+    ["", period ? isoDate(period.start) : "", "", "", "", "Devreden bakiye", "", "", s.opening_balance],
+    ...s.entries.map((e): Cell[] => [
+      e.entry_type === "SIPARIS" ? (e.order_no || (e.order_id != null ? `#${e.order_id}` : "")) : "",
+      isoDate(e.entry_date),
+      e.customer_name || s.customer.name,
+      e.plate ?? "",
+      statementLineText(e.lines, s.line_display),
+      statementEntryNote(e),
+      e.direction === 1 ? e.amount : "",
+      e.direction === -1 ? e.amount : "",
+      e.running_balance,
+    ]),
+    [...blank(5), "Ay sonu bakiye", s.total_debt, s.total_credit, s.closing_balance],
+  ];
+  return { rows, tableHeaderRow };
+}
+
+// Excel "Devreden Detay" sayfası: ay başında ödenmemiş kalemler + toplam.
+export const STATEMENT_OPEN_COLUMNS = ["Sipariş No", "Tarih", "Plaka", "Açıklama", "Tutar", "Ödenen", "Kalan"];
+export const STATEMENT_OPEN_WIDTHS = [12, 12, 12, 60, 14, 14, 14];
+export function statementOpenItemsSheet(s: Statement): Cell[][] {
   return [
-    { Tarih: period?.start ?? "", Açıklama: "Devreden bakiye", Plaka: "", "Aracı Getiren": "", Borç: "", Alacak: "", Bakiye: s.opening_balance },
-    ...s.entries.map((e) => ({
-      Tarih: e.entry_date,
-      Açıklama: entryDescription(e),
-      Plaka: e.plate ?? "",
-      "Aracı Getiren": e.driver_name ?? "",
-      Borç: e.direction === 1 ? e.amount : "",
-      Alacak: e.direction === -1 ? e.amount : "",
-      Bakiye: e.running_balance,
-    })),
-    { Tarih: "", Açıklama: "Ay sonu bakiye", Plaka: "", "Aracı Getiren": "", Borç: s.total_debt, Alacak: s.total_credit, Bakiye: s.closing_balance },
+    STATEMENT_OPEN_COLUMNS,
+    ...s.opening_items.map((i): Cell[] => [
+      i.entry_type === "SIPARIS" ? (i.order_no || (i.order_id != null ? `#${i.order_id}` : "")) : "",
+      isoDate(i.entry_date),
+      i.plate ?? "",
+      i.entry_type === "SIPARIS" ? (i.summary ?? "") : openItemDescription(i),
+      i.amount,
+      round2(i.amount - i.remaining),
+      i.remaining,
+    ]),
+    ["", "", "", "Toplam", "", "", round2(s.opening_items.reduce((t, i) => t + i.remaining, 0))],
   ];
 }
 
