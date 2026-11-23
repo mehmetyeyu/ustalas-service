@@ -525,6 +525,44 @@ const EMPTY_FIELD_FILTERS: FieldFilters = {
   customer_name: "", plate: "", service_name: [], supplier: [], stock_code: "", size_desc: "", brand: "", model_name: "", payment_type: [],
 };
 
+// Liste durumu (sayfa, filtreler, arama, sıralama, sayfa boyutu) sekme
+// oturumunda saklanır: 3. sayfadan bir siparişi Düzelt/Detay ile açıp geri
+// dönünce liste baştan değil kaldığı yerden açılır (müşteri şikâyeti).
+// sessionStorage: sekme kapanınca biter; yeni sekme/gün varsayılan tarih
+// filtresiyle başlar. Erişim hatası (gizli mod vb.) sessizce yoksayılır.
+const LIST_STATE_KEY = "orders_list_state_v1";
+interface OrdersListState {
+  owner: string; // aynı sekmede başka kullanıcı girerse kayıt yok sayılır
+  page: number; limit: number; statusFilter: string; dateFilter: string; customFrom: string; customTo: string;
+  search: string; fieldFilters: FieldFilters; sortKey: SortKey | null; sortDir: SortDir;
+}
+function readListState(owner: string): OrdersListState | null {
+  try {
+    const raw = sessionStorage.getItem(LIST_STATE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<OrdersListState>;
+    if (v.owner !== owner) return null;
+    const str = (x: unknown) => (typeof x === "string" ? x : "");
+    const ff = (v.fieldFilters && typeof v.fieldFilters === "object" ? v.fieldFilters : {}) as Partial<FieldFilters>;
+    const arr = (x: unknown) => (Array.isArray(x) ? x.filter((i): i is string => typeof i === "string") : []);
+    return {
+      owner,
+      page: Number.isInteger(v.page) && v.page! > 0 ? v.page! : 1,
+      limit: Number.isInteger(v.limit) && v.limit! > 0 ? v.limit! : 20,
+      statusFilter: str(v.statusFilter), dateFilter: str(v.dateFilter), customFrom: str(v.customFrom), customTo: str(v.customTo),
+      search: str(v.search),
+      fieldFilters: {
+        customer_name: str(ff.customer_name), plate: str(ff.plate), service_name: arr(ff.service_name), supplier: arr(ff.supplier),
+        stock_code: str(ff.stock_code), size_desc: str(ff.size_desc), brand: str(ff.brand), model_name: str(ff.model_name), payment_type: arr(ff.payment_type),
+      },
+      sortKey: typeof v.sortKey === "string" ? v.sortKey : null,
+      sortDir: v.sortDir === "desc" ? "desc" : "asc",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function OrdersPage() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -645,11 +683,37 @@ export default function OrdersPage() {
   // Kullanıcı Filtrele modalından kendi tarih filtresini (Tümü dahil) zaten
   // seçmişse dateFilterTouchedRef true olur — varsayılan onu ezmez. /me
   // başarısız olsa da loading false olur, liste yine açılır.
+  // Kayıtlı liste durumu varsa (bkz. LIST_STATE_KEY) varsayılan yerine o
+  // uygulanır; sayfa numarası filtre efektinde (restoredPageRef) kullanılır.
+  const restoredPageRef = useRef<number | null>(null);
+  const listOwner = authUser ? `${authUser.businessName}|${authUser.username}` : "";
   useEffect(() => {
     if (authLoading || filtersReady) return;
-    if (authUser && !dateFilterTouchedRef.current) setDateFilter(authUser.ordersDefaultDateFilter);
+    const saved = readListState(listOwner);
+    if (saved) {
+      dateFilterTouchedRef.current = true;
+      setStatusFilter(saved.statusFilter);
+      setDateFilter(saved.dateFilter);
+      setCustomFrom(saved.customFrom);
+      setCustomTo(saved.customTo);
+      setSearch(saved.search);
+      setFieldFilters(saved.fieldFilters);
+      setSortKey(saved.sortKey);
+      setSortDir(saved.sortDir);
+      setLimit(saved.limit);
+      restoredPageRef.current = saved.page;
+    } else if (authUser && !dateFilterTouchedRef.current) {
+      setDateFilter(authUser.ordersDefaultDateFilter);
+    }
     setFiltersReady(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, authUser, filtersReady]);
+
+  useEffect(() => {
+    if (!filtersReady) return;
+    const state: OrdersListState = { owner: listOwner, page, limit, statusFilter, dateFilter, customFrom, customTo, search: debouncedSearch, fieldFilters, sortKey, sortDir };
+    try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)); } catch { /* depolama kapalı */ }
+  }, [filtersReady, listOwner, page, limit, statusFilter, dateFilter, customFrom, customTo, debouncedSearch, fieldFilters, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -729,6 +793,12 @@ export default function OrdersPage() {
 
     const res = await fetch(`/api/orders?${params}`);
     const data = await res.json();
+    // Kayıtlı sayfa artık yoksa (arada siparişler silinmiş) son sayfaya geç.
+    const lastPage = Math.max(1, Math.ceil((data.total ?? 0) / limit));
+    if (targetPage > lastPage && (data.total ?? 0) > 0) {
+      setPage(lastPage);
+      return;
+    }
     setRows(Array.isArray(data.items) ? data.items : []);
     setTotal(data.total ?? 0);
     setTotalAmount(data.totalAmount ?? 0);
@@ -799,11 +869,17 @@ export default function OrdersPage() {
   const prevPageRef = useRef(page);
   useEffect(() => {
     if (!filtersReady) return;
+    // Geri dönüşte arama kutusu geri yüklendiyse gecikmeli (debounce) değer
+    // ona yetişene kadar beklenir — yoksa önce aramasız 1. sayfa çekilirdi.
+    if (restoredPageRef.current != null && debouncedSearch !== search) return;
+    // Filtre değişince 1. sayfaya dönülür; geri dönüşte kayıtlı sayfaya.
+    const target = restoredPageRef.current ?? 1;
+    restoredPageRef.current = null;
     // page 3'teyken filtre değişirse aşağıdaki sayfa efekti de 3→1 değişimini
     // görüp aynı 1. sayfayı ikinci kez çekerdi — burada çekildiği işaretlenir.
-    prevPageRef.current = 1;
-    setPage(1);
-    fetchOrders(1);
+    prevPageRef.current = target;
+    setPage(target);
+    fetchOrders(target);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersReady, statusFilter, dateFilter, customFrom, customTo, debouncedSearch, fieldFilters, sortKey, sortDir, limit]);
 
