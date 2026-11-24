@@ -1,24 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as XLSX from "xlsx";
 import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-import { sanitizeExcelRow, sanitizeExcelCell } from "@/lib/excelSafety";
+import { buildThemedExcel } from "@/lib/excelTheme";
 import { formatPlate, isValidTrPlate } from "@/lib/plate";
 import { plateNormalizeSql } from "@/lib/vehicles";
-import { parseStatementMonth, statementExcelSheet, statementFileName, statementOpenItems, statementOpenItemsSheet, STATEMENT_EXCEL_WIDTHS, STATEMENT_OPEN_WIDTHS, type Statement, type StatementEntry, type StatementOpeningRow } from "@/lib/statement";
+import { parseStatementMonth, statementExcelSheet, statementFileName, statementOpenItems, STATEMENT_EXCEL_FORMAT, type Statement, type StatementEntry, type StatementOpeningRow, type StatementOrderDetail } from "@/lib/statement";
 import { DEFAULT_ORDER_LINE_DISPLAY, sanitizeOrderLineDisplay } from "@/lib/orderLineDisplay";
 
-// Tarihler gg.aa.yyyy, tutarlar 1.234,56 (Excel'in yerel ayarıyla) — metin
-// değil gerçek tarih/sayı: sıralama ve toplama çalışır.
-function formatCells(ws: XLSX.WorkSheet) {
-  for (const ref of Object.keys(ws)) {
-    if (ref.startsWith("!")) continue;
-    const cell = ws[ref] as XLSX.CellObject;
-    if (cell.t === "d") cell.z = "dd.mm.yyyy";
-    else if (cell.t === "n") cell.z = "#,##0.00";
-  }
-}
+// Excel "Ürün & Hizmet": siparişin (o) satırları — gösterim firma tercihi.
+const ORDER_LINES_SQL = `(SELECT json_agg(json_build_object(
+    'service', s.name, 'size_desc', os.size_desc, 'brand', os.brand, 'model_name', os.model_name,
+    'quantity', os.quantity, 'stock_code', os.stock_code, 'supplier', os.supplier,
+    'amount', os.unit_price) ORDER BY os.id)
+  FROM order_services os JOIN services s ON s.id = os.service_id
+  WHERE os.order_id = o.id AND os.tenant_id = o.tenant_id)`;
+// Parçalı ödemede cari dışı ödeme şekilleri (Excel açıklaması); ödeme kaydı
+// olmayan eski/içe aktarılmış siparişte satır tipleri.
+const ORDER_OTHER_PAYMENTS_SQL = `COALESCE(
+  (SELECT string_agg(DISTINCT op.payment_type, ', ') FROM order_payments op
+    WHERE op.order_id = o.id AND op.tenant_id = o.tenant_id AND op.payment_type <> 'Cari'),
+  (SELECT string_agg(DISTINCT os.payment_type, ', ') FROM order_services os
+    WHERE os.order_id = o.id AND os.tenant_id = o.tenant_id AND os.payment_type <> 'Cari'))`;
 
 // Aylık cari ekstre (bkz. src/lib/statement.ts). ?month=YYYY-MM, ?format=xlsx
 // Excel indirir. Cari hareketleri ve sipariş tutarları içerdiği için
@@ -35,10 +38,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const period = parseStatementMonth(request.nextUrl.searchParams.get("month"));
   if (!period) return NextResponse.json({ error: "Geçersiz dönem (YYYY-AA)." }, { status: 400 });
 
+  const isXlsx = request.nextUrl.searchParams.get("format") === "xlsx";
+
   try {
-    // Risk (Cari) Limiti ve firmanın ürün satırı gösterimi aynı sorguda.
+    // Firmanın ürün satırı gösterimi aynı sorguda.
     const customerResult = await pool.query<Statement["customer"] & { order_line_display: string[] | null }>(
-      `SELECT c.id, c.name, c.phone, c.tax_no, c.contact_name, c.credit_limit::float AS credit_limit, a.order_line_display
+      `SELECT c.id, c.name, c.phone, c.tax_no, c.contact_name, a.order_line_display
        FROM customers c LEFT JOIN app_settings a ON a.tenant_id = c.tenant_id
        WHERE c.id = $1 AND c.tenant_id = $2`,
       [id, user.tenantId]
@@ -77,12 +82,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                                    || COALESCE(' ' || os.size_desc, ''), ', ' ORDER BY os.id)
                    FROM order_services os JOIN services s ON s.id = os.service_id
                   WHERE os.order_id = cle.order_id AND os.tenant_id = cle.tenant_id) AS summary,
-                -- Excel "Ürün & Hizmet": satırların tüm alanları (gösterim firma tercihi).
-                (SELECT json_agg(json_build_object(
-                          'service', s.name, 'size_desc', os.size_desc, 'brand', os.brand, 'model_name', os.model_name,
-                          'quantity', os.quantity, 'stock_code', os.stock_code, 'supplier', os.supplier) ORDER BY os.id)
-                   FROM order_services os JOIN services s ON s.id = os.service_id
-                  WHERE os.order_id = cle.order_id AND os.tenant_id = cle.tenant_id) AS lines
+                ${ORDER_LINES_SQL} AS lines,
+                ${ORDER_OTHER_PAYMENTS_SQL} AS other_payments
          FROM customer_ledger_entries cle
          LEFT JOIN orders o ON o.id = cle.order_id AND o.tenant_id = cle.tenant_id
          WHERE cle.tenant_id = $1 AND cle.customer_id = $2
@@ -90,9 +91,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
          ORDER BY cle.entry_date, cle.id`,
         [user.tenantId, customer.id, period.start, period.next]
       ),
+      // Araç dökümü yalnızca ekran/PDF'te; Excel tek sayfadır.
       // Tamamlanmış siparişler (bekleyenler henüz ekstre konusu değil);
       // created_at UTC (zamansız) — ay sınırı İstanbul'a göre.
-      pool.query<{ p: string; raw: string | null; order_count: number; total: number }>(
+      isXlsx ? { rows: [] } : pool.query<{ p: string; raw: string | null; order_count: number; total: number }>(
         `SELECT ${plateNormalizeSql("o.plate")} AS p, MIN(o.plate) AS raw, COUNT(*)::int AS order_count,
                 COALESCE(SUM(COALESCE(o.paid_amount, o.total_amount)), 0)::float AS total
          FROM orders o
@@ -135,29 +137,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       line_display: sanitizeOrderLineDisplay(order_line_display) ?? DEFAULT_ORDER_LINE_DISPLAY,
     };
 
-    if (request.nextUrl.searchParams.get("format") === "xlsx") {
-      const wb = XLSX.utils.book_new();
-      const { rows, tableHeaderRow } = statementExcelSheet(statement);
-      const ws = XLSX.utils.aoa_to_sheet(rows.map((r) => r.map(sanitizeExcelCell)), { cellDates: true });
-      formatCells(ws);
-      ws["!cols"] = STATEMENT_EXCEL_WIDTHS.map((wch) => ({ wch }));
-      // Tablo başlığından son satıra süzgeç (bilgi bloğu hariç).
-      ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: tableHeaderRow, c: 0 }, e: { r: rows.length - 1, c: STATEMENT_EXCEL_WIDTHS.length - 1 } }) };
-      XLSX.utils.book_append_sheet(wb, ws, "Cari Hareketler");
-      if (statement.opening_items.length > 0) {
-        const os = XLSX.utils.aoa_to_sheet(statementOpenItemsSheet(statement).map((r) => r.map(sanitizeExcelCell)), { cellDates: true });
-        formatCells(os);
-        os["!cols"] = STATEMENT_OPEN_WIDTHS.map((wch) => ({ wch }));
-        XLSX.utils.book_append_sheet(wb, os, "Devreden Detay");
+    if (isXlsx) {
+      // Devreden kalemlerin sipariş satırları: yalnızca Excel'de ve yalnızca
+      // ödenmemiş siparişler için (ekran/PDF özetle yetinir).
+      const openOrderIds = statement.opening_items.flatMap((i) => (i.order_id != null ? [i.order_id] : []));
+      if (openOrderIds.length > 0) {
+        const { rows: details } = await pool.query<StatementOrderDetail & { id: number }>(
+          `SELECT o.id, o.customer_name, o.notes AS order_notes,
+                  ${ORDER_LINES_SQL} AS lines, ${ORDER_OTHER_PAYMENTS_SQL} AS other_payments
+           FROM orders o WHERE o.tenant_id = $1 AND o.id = ANY($2)`,
+          [user.tenantId, openOrderIds]
+        );
+        const byId = new Map(details.map(({ id: orderId, ...d }) => [String(orderId), d]));
+        statement.opening_items = statement.opening_items.map((i) => ({ ...i, order: byId.get(String(i.order_id)) }));
       }
-      if (vehicles.length > 0) {
-        const vs = XLSX.utils.json_to_sheet(vehicles.map((v) => sanitizeExcelRow({ Plaka: v.plate, Sipariş: v.order_count, Tutar: v.total })));
-        vs["!cols"] = [{ wch: 14 }, { wch: 10 }, { wch: 14 }];
-        XLSX.utils.book_append_sheet(wb, vs, "Araçlar");
-      }
-      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+      const buffer = await buildThemedExcel("Cari Hareketler", STATEMENT_EXCEL_FORMAT, statementExcelSheet(statement));
       const { ascii, utf8 } = statementFileName(customer.name, period.month);
-      return new NextResponse(buffer, {
+      return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           // filename: eski istemciler için ASCII; filename*: Türkçe adla (RFC 5987).

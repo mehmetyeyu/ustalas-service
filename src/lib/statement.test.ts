@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildStatementPrintHtml, buildStatementWhatsAppText, entryDescription, parseStatementMonth, shiftMonth, statementExcelSheet, statementLineText, statementEntryNote, statementFileName, statementOpenItems, statementOpenItemsSheet, openItemDescription, type Statement, type StatementOpeningRow } from "./statement";
+import { buildStatementPrintHtml, buildStatementWhatsAppText, entryDescription, parseStatementMonth, shiftMonth, statementExcelSheet, statementEntryNote, statementSingleLineText, statementFileName, statementOpenItems, openItemDescription, type Statement, type StatementOpeningRow } from "./statement";
 
 const base: Statement = {
-  customer: { id: 1, name: "Filo <A.Ş.>", phone: "0212 000 00 00", tax_no: "123", contact_name: "Ayşe", credit_limit: 5000 },
+  customer: { id: 1, name: "Filo <A.Ş.>", phone: "0212 000 00 00", tax_no: "123", contact_name: "Ayşe" },
   month: "2026-10",
   opening_balance: 500,
   closing_balance: 1100,
@@ -12,11 +12,11 @@ const base: Statement = {
     { id: 1, entry_date: "2026-10-03", entry_type: "SIPARIS", direction: 1, amount: 900, payment_type: null, note: null, order_id: 7, order_no: null, plate: "34ABC123", driver_name: "Mehmet", summary: "Balans", running_balance: 1400,
       customer_name: "Ali Veli", order_notes: "Ön takım sesi",
       lines: [
-        { service: "Lastik Satışı", size_desc: "235/40R18", brand: "Pirelli", model_name: "P Zero", quantity: 2, stock_code: "PZ1", supplier: "T" },
-        { service: "Balans", size_desc: null, brand: null, model_name: null, quantity: 4, stock_code: null, supplier: null },
-      ] },
+        { service: "Lastik Satışı", size_desc: "235/40R18", brand: "Pirelli", model_name: "P Zero", quantity: 2, stock_code: "PZ1", supplier: "T", amount: 700 },
+        { service: "Balans", size_desc: null, brand: null, model_name: null, quantity: 4, stock_code: null, supplier: null, amount: 200 },
+      ], other_payments: null },
     { id: 2, entry_date: "2026-10-20", entry_type: "MANUEL", direction: -1, amount: 300, payment_type: "Havale/EFT", note: null, order_id: null, order_no: null, plate: null, driver_name: null, summary: null, running_balance: 1100,
-      customer_name: null, order_notes: null, lines: null },
+      customer_name: null, order_notes: null, lines: null, other_payments: null },
   ],
   opening_items: [
     { id: 90, entry_date: "2026-09-05", entry_type: "SIPARIS", order_id: 3, order_no: "S-3", plate: "34XYZ9", summary: "Rot", note: null, amount: 800, remaining: 500 },
@@ -26,6 +26,8 @@ const base: Statement = {
   order_count: 2,
   line_display: ["size", "brand", "model", "qty"],
 };
+
+const excelCells = (s: Statement) => statementExcelSheet(s).map((r) => r.cells);
 
 describe("parseStatementMonth", () => {
   it("ay sınırları ve etiket", () => {
@@ -66,32 +68,47 @@ describe("ekstre belgeleri", () => {
     expect(t).toContain("Ekim 2026");
     expect(t).toContain("(Borç)");
   });
-  it("Excel: bilgi bloğu (risk limiti), istenen sütunlar, devreden + hareketler + kapanış", () => {
-    const { rows, tableHeaderRow } = statementExcelSheet(base);
-    const info = Object.fromEntries(rows.slice(0, tableHeaderRow).filter((r) => r.length).map((r) => [r[0], r[1]]));
-    expect(info["Cari Ekstre"]).toBe("Filo <A.Ş.>");
-    expect(info["Dönem"]).toBe("Ekim 2026");
-    expect(info["Risk Limiti"]).toBe(5000);
-    expect(info["Kalan Limit (ay sonu)"]).toBe(3900);
-    expect(rows[tableHeaderRow]).toEqual(["Sipariş No", "Tarih", "Müşteri Adı Soyadı", "Plaka", "Ürün & Hizmet", "Açıklama", "Borç", "Alacak", "Bakiye"]);
-    const [opening, order, payment, closing] = rows.slice(tableHeaderRow + 1);
-    expect(opening.at(-1)).toBe(500);
-    expect(order).toEqual(["#7", new Date(Date.UTC(2026, 9, 3)), "Ali Veli", "34ABC123",
-      "Lastik Satışı 235/40R18 Pirelli P Zero 2 adet; Balans 4 adet", "Ön takım sesi", 900, "", 1400]);
-    expect(payment).toEqual(["", new Date(Date.UTC(2026, 9, 20)), "Filo <A.Ş.>", "", "", "Tahsilat (Havale/EFT)", "", 300, 1100]);
-    expect(closing.slice(5)).toEqual(["Ay sonu bakiye", 900, 300, 1100]);
+  it("Excel: tablo 1. satırdan başlar; devreden + hareketler + kapanış", () => {
+    const rows = excelCells(base);
+    expect(rows[0]).toEqual(["Sipariş No", "Tarih", "Müşteri Adı Soyadı", "Plaka", "Ürün & Hizmet", "Açıklama", "Tutar", "Borç", "Alacak", "Bakiye"]);
+    const [openItem, opening, line1, line2, payment, closing] = rows.slice(1);
+    // Devreden kalemler aynı sayfada; Borç boş, Bakiye devredene varır.
+    expect(openItem).toEqual(["S-3", new Date(Date.UTC(2026, 8, 5)), "Filo <A.Ş.>", "34XYZ9", "Rot",
+      "Devreden: ₺800,00 borcun ₺300,00 kısmı ödendi, kalan ₺500,00", 800, "", "", 500]);
+    expect(opening.slice(5)).toEqual(["Devreden bakiye", "", "", "", 500]);
+    // Her hizmet kendi satırında kendi tutarıyla; Borç/Bakiye yalnızca ilk satırda.
+    expect(line1).toEqual(["#7", new Date(Date.UTC(2026, 9, 3)), "Ali Veli", "34ABC123",
+      "Lastik Satışı 235/40R18 Pirelli P Zero 2 adet", "Ön takım sesi", 700, 900, "", 1400]);
+    expect(line2).toEqual(["#7", new Date(Date.UTC(2026, 9, 3)), "Ali Veli", "34ABC123", "Balans 4 adet", "", 200, "", "", ""]);
+    expect(payment).toEqual(["", new Date(Date.UTC(2026, 9, 20)), "Filo <A.Ş.>", "", "", "Tahsilat (Havale/EFT)", "", "", 300, 1100]);
+    expect(closing.slice(5)).toEqual(["Ay sonu bakiye", "", 900, 300, 1100]);
+    // Borç sütununun toplamı satırlara bölününce değişmez.
+    const debtSum = rows.slice(1, -1).reduce((t, r) => t + (typeof r[7] === "number" ? r[7] : 0), 0);
+    expect(debtSum).toBe(base.total_debt);
+    expect(statementExcelSheet(base).map((r) => r.kind)).toEqual(["head", "row", "total", "row", "cont", "row", "total"]);
   });
-  it("Excel: risk limiti yoksa", () => {
-    const { rows, tableHeaderRow } = statementExcelSheet({ ...base, customer: { ...base.customer, credit_limit: null, tax_no: null } });
-    const labels = rows.slice(0, tableHeaderRow).map((r) => r[0]);
-    expect(rows.find((r) => r[0] === "Risk Limiti")?.[1]).toBe("Tanımlı değil");
-    expect(labels).not.toContain("Kalan Limit (ay sonu)");
-    expect(labels).not.toContain("Vergi No");
+  it("Excel: parçalı ödemede sipariş toplamı ile cari borç farkı açıklanır", () => {
+    const e = { ...base.entries[0], amount: 600, other_payments: "Nakit", order_notes: null };
+    const rows = excelCells({ ...base, entries: [e] });
+    expect(rows[3][5]).toBe("Sipariş toplamı ₺900,00; ₺300,00 Nakit ile ödendi, ₺600,00 cariye yazıldı.");
+    expect(rows[3][7]).toBe(600);
+  });
+  it("Excel: devreden siparişin her hizmeti kendi satırında, bakiye birikir", () => {
+    const items: Statement["opening_items"] = [
+      { ...base.opening_items[0], remaining: 800, order: { customer_name: "Can", order_notes: "Acil", lines: base.entries[0].lines, other_payments: "Nakit" } },
+      { id: 91, entry_date: "2026-09-10", entry_type: "MANUEL", order_id: null, order_no: null, plate: null, summary: null, note: "Eski bakiye", amount: 200, remaining: 200 },
+    ];
+    const rows = excelCells({ ...base, opening_balance: 1000, opening_items: items, entries: [] });
+    expect(rows[1].slice(0, 5)).toEqual(["S-3", new Date(Date.UTC(2026, 8, 5)), "Can", "34XYZ9", "Lastik Satışı 235/40R18 Pirelli P Zero 2 adet"]);
+    expect(rows[1].slice(5)).toEqual(["Devreden: ₺800,00 ödenmedi · Acil · Sipariş toplamı ₺900,00; ₺100,00 Nakit ile ödendi, ₺800,00 cariye yazıldı.", 700, "", "", 800]);
+    expect(rows[2].slice(4)).toEqual(["Balans 4 adet", "", 200, "", "", ""]);
+    expect(rows[3]).toEqual(["", new Date(Date.UTC(2026, 8, 10)), "Filo <A.Ş.>", "", "Eski bakiye", "Devreden: ₺200,00 ödenmedi", 200, "", "", 1000]);
+    expect(rows[4].at(-1)).toBe(1000);
   });
   it("ürün satırı firmanın gösterimine göre, açıklama kuralları", () => {
-    expect(statementLineText(base.entries[0].lines, ["brand", "size"])).toBe("Lastik Satışı Pirelli 235/40R18; Balans");
-    expect(statementLineText(null, ["size"])).toBe("");
+    expect(statementSingleLineText(base.entries[0].lines![0], ["brand", "size"])).toBe("Lastik Satışı Pirelli 235/40R18");
     expect(statementEntryNote({ ...base.entries[0], order_notes: null, note: "cari notu" })).toBe("cari notu");
+    expect(statementEntryNote({ ...base.entries[0], order_notes: null, note: "Sipariş #7" })).toBe("");
     expect(statementEntryNote({ ...base.entries[1], direction: 1, payment_type: null })).toBe("Borç");
   });
 });
@@ -134,15 +151,12 @@ describe("statementOpenItems (devreden detay, FIFO)", () => {
     expect(items[0].remaining).toBe(0.2);
     expect(openItemDescription({ ...items[0], entry_type: "MANUEL", note: null })).toBe("Borç");
   });
-  it("PDF, WhatsApp ve Excel devreden detayı gösterir", () => {
+  it("PDF ve WhatsApp devreden detayı gösterir", () => {
     const html = buildStatementPrintHtml(base, null);
     expect(html).toContain("Devreden Bakiye Detayı");
     expect(html).toContain("05.09.2026");
     expect(html).toContain("Sipariş S-3 · Rot");
     expect(buildStatementWhatsAppText(base, null)).toContain("1 ödenmemiş kalem, en eskisi 05.09.2026");
-    const sheet = statementOpenItemsSheet(base);
-    expect(sheet[1]).toEqual(["S-3", new Date(Date.UTC(2026, 8, 5)), "34XYZ9", "Rot", 800, 300, 500]);
-    expect(sheet.at(-1)?.at(-1)).toBe(500);
     expect(buildStatementPrintHtml({ ...base, opening_items: [] }, null)).not.toContain("Devreden Bakiye Detayı");
   });
 });

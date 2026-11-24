@@ -2,6 +2,7 @@ import { escapeHtml } from "./htmlEscape";
 import { formatCurrency } from "./format";
 import { formatISODate } from "./quotes";
 import type { CompanyDoc } from "./quoteDocument";
+import type { ExcelCell, ExcelThemeColumn, ExcelThemeRow } from "./excelTheme";
 import { formatOrderLine, type OrderLineField, type OrderLineValues } from "./orderLineDisplay";
 
 // Aylık cari ekstre (Filo Faz 2) — GET /api/customers/[id]/statement.
@@ -28,11 +29,15 @@ export interface StatementEntry {
   customer_name: string | null;
   order_notes: string | null;
   lines: StatementLine[] | null;
+  // Siparişin cari DIŞI ödeme şekilleri (ör. "Nakit") — parçalı ödemede
+  // sipariş toplamı ile cari borç farkını Excel açıklamasında anlatmak için.
+  other_payments: string | null;
 }
 
 // Sipariş satırı (Excel'in "Ürün & Hizmet" sütunu).
 export interface StatementLine extends OrderLineValues {
   service: string;
+  amount: number; // satır tutarı (order_services.unit_price satır toplamıdır)
 }
 
 // Devreden bakiyenin detayı: ay başı itibarıyla hâlâ ödenmemiş borç
@@ -50,9 +55,13 @@ export interface StatementOpenItem {
   note: string | null;
   amount: number; // borcun ilk tutarı
   remaining: number; // ay başında kalan
+  // Yalnızca Excel'de: sipariş kaleminin satırları vb. (route ayrıca okur).
+  order?: StatementOrderDetail;
 }
 
-export type StatementOpeningRow = Omit<StatementOpenItem, "remaining"> & { direction: 1 | -1 };
+export type StatementOrderDetail = Pick<StatementEntry, "customer_name" | "order_notes" | "lines" | "other_payments">;
+
+export type StatementOpeningRow = Omit<StatementOpenItem, "remaining" | "order"> & { direction: 1 | -1 };
 
 const EPS = 0.009;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -95,7 +104,7 @@ export interface StatementVehicle {
 }
 
 export interface Statement {
-  customer: { id: number; name: string; phone: string | null; tax_no: string | null; contact_name: string | null; credit_limit: number | null };
+  customer: { id: number; name: string; phone: string | null; tax_no: string | null; contact_name: string | null };
   month: string; // YYYY-MM
   opening_balance: number;
   closing_balance: number;
@@ -284,82 +293,112 @@ export function buildStatementWhatsAppText(s: Statement, companyName: string | n
   ].join("\n");
 }
 
-// Excel'in "Ürün & Hizmet" hücresi: her satır "Hizmet + ürün bilgisi"
-// (firmanın Sipariş Listesi'ndeki gösterimiyle aynı, ör. "Lastik Satışı
-// 235/40R18 Pirelli P Zero 2 adet"); birden çok satır "; " ile.
-export function statementLineText(lines: StatementLine[] | null, display: readonly OrderLineField[]): string {
-  return (lines ?? []).map((l) => [l.service, formatOrderLine(l, display)].filter(Boolean).join(" ")).join("; ");
-}
+// Sipariş notu; yoksa cari notu. Otomatik "Sipariş #9" notu Sipariş No
+// sütununu tekrarlar — yazılmaz.
+const orderNote = (orderNotes: string | null | undefined, note: string | null) =>
+  orderNotes || (note && !/^Sipariş #\S+$/.test(note) ? note : "");
 
 // Excel'deki "Açıklama": siparişte sipariş notu (yoksa cari notu); elle
 // harekette not, yoksa "Tahsilat (ödeme şekli)" / "Borç".
 export function statementEntryNote(e: StatementEntry): string {
-  if (e.entry_type === "SIPARIS") return e.order_notes || e.note || "";
+  if (e.entry_type === "SIPARIS") return orderNote(e.order_notes, e.note);
   return e.note || (e.direction === -1 ? `Tahsilat${e.payment_type ? ` (${e.payment_type})` : ""}` : "Borç");
 }
 
-export const STATEMENT_EXCEL_COLUMNS = ["Sipariş No", "Tarih", "Müşteri Adı Soyadı", "Plaka", "Ürün & Hizmet", "Açıklama", "Borç", "Alacak", "Bakiye"];
-export const STATEMENT_EXCEL_WIDTHS = [12, 12, 28, 12, 60, 36, 14, 14, 14];
+export const STATEMENT_EXCEL_COLUMNS = ["Sipariş No", "Tarih", "Müşteri Adı Soyadı", "Plaka", "Ürün & Hizmet", "Açıklama", "Tutar", "Borç", "Alacak", "Bakiye"];
+export const STATEMENT_EXCEL_FORMAT: ExcelThemeColumn[] = [
+  { width: 12, tone: "link", repeats: true },
+  { width: 12, tone: "muted", repeats: true },
+  { width: 28, repeats: true },
+  { width: 13, repeats: true },
+  { width: 44, wrap: true },
+  { width: 50, wrap: true, tone: "muted" },
+  { width: 15, money: true },
+  { width: 15, money: true, tone: "red" },
+  { width: 15, money: true, tone: "green" },
+  { width: 16, money: true },
+];
 
-type Cell = string | number | Date | null;
-const isoDate = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
-
-// Excel sayfası (satır dizisi): üstte bilgi bloğu (müşteri, dönem, risk
-// limiti, bakiyeler), sonra tablo — devreden bakiye, hareketler, ay sonu.
-// Tarihler gerçek tarih, tutarlar sayı (route biçim verir). tableHeaderRow:
-// tablo başlığının satır indeksi (0 tabanlı) — süzgeç ve biçim için.
-export function statementExcelSheet(s: Statement): { rows: Cell[][]; tableHeaderRow: number } {
-  const period = parseStatementMonth(s.month);
-  const limit = s.customer.credit_limit;
-  const info: Cell[][] = [
-    ["Cari Ekstre", s.customer.name],
-    ["Dönem", period?.label ?? s.month],
-    ...(s.customer.tax_no ? [["Vergi No", s.customer.tax_no] as Cell[]] : []),
-    // Risk (Cari) Limiti müşteri kaydındaki güncel değerdir (geçmiş ay için de).
-    ["Risk Limiti", limit ?? "Tanımlı değil"],
-    ["Devreden Bakiye", s.opening_balance],
-    ["Ay Sonu Bakiye", s.closing_balance],
-    ...(limit != null ? [["Kalan Limit (ay sonu)", Math.round((limit - s.closing_balance) * 100) / 100] as Cell[]] : []),
-    [],
-  ];
-  const tableHeaderRow = info.length;
-  const blank = (n: number) => Array<Cell>(n).fill("");
-  const rows: Cell[][] = [
-    ...info,
-    STATEMENT_EXCEL_COLUMNS,
-    ["", period ? isoDate(period.start) : "", "", "", "", "Devreden bakiye", "", "", s.opening_balance],
-    ...s.entries.map((e): Cell[] => [
-      e.entry_type === "SIPARIS" ? (e.order_no || (e.order_id != null ? `#${e.order_id}` : "")) : "",
-      isoDate(e.entry_date),
-      e.customer_name || s.customer.name,
-      e.plate ?? "",
-      statementLineText(e.lines, s.line_display),
-      statementEntryNote(e),
-      e.direction === 1 ? e.amount : "",
-      e.direction === -1 ? e.amount : "",
-      e.running_balance,
-    ]),
-    [...blank(5), "Ay sonu bakiye", s.total_debt, s.total_credit, s.closing_balance],
-  ];
-  return { rows, tableHeaderRow };
+// Tek satırın "Ürün & Hizmet" metni (ör. "Lastik Satışı 235/40R18 Pirelli 2 adet").
+export function statementSingleLineText(l: StatementLine, display: readonly OrderLineField[]): string {
+  return [l.service, formatOrderLine(l, display)].filter(Boolean).join(" ");
 }
 
-// Excel "Devreden Detay" sayfası: ay başında ödenmemiş kalemler + toplam.
-export const STATEMENT_OPEN_COLUMNS = ["Sipariş No", "Tarih", "Plaka", "Açıklama", "Tutar", "Ödenen", "Kalan"];
-export const STATEMENT_OPEN_WIDTHS = [12, 12, 12, 60, 14, 14, 14];
-export function statementOpenItemsSheet(s: Statement): Cell[][] {
+// Parçalı ödemede (bir kısmı nakit/kart, kalanı cari) sipariş toplamı cari
+// borçtan büyüktür — fark açıklamada anlatılır; yoksa boş.
+export function statementPaymentNote(e: Pick<StatementEntry, "entry_type" | "amount" | "lines" | "other_payments">): string {
+  if (e.entry_type !== "SIPARIS" || !e.lines?.length) return "";
+  const total = round2(e.lines.reduce((t, l) => t + (Number(l.amount) || 0), 0));
+  const other = round2(total - e.amount);
+  if (other <= EPS) return "";
+  return `Sipariş toplamı ${formatCurrency(total)}; ${formatCurrency(other)} ${e.other_payments || "diğer ödeme"} ile ödendi, ${formatCurrency(e.amount)} cariye yazıldı.`;
+}
+
+// UTC gece yarısı: Excel yazıcısı (excelTheme.ts) Date'i UTC'ye göre çevirir.
+const isoDate = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+
+const orderNoText = (e: { entry_type: string; order_no: string | null; order_id: number | null }) =>
+  e.entry_type === "SIPARIS" ? (e.order_no || (e.order_id != null ? `#${e.order_id}` : "")) : "";
+
+// Devreden kalemin açıklaması: ay başında ne kadarının ödenmediği.
+export function statementOpenItemNote(i: StatementOpenItem): string {
+  const paid = round2(i.amount - i.remaining);
+  return paid > EPS
+    ? `Devreden: ${formatCurrency(i.amount)} borcun ${formatCurrency(paid)} kısmı ödendi, kalan ${formatCurrency(i.remaining)}`
+    : `Devreden: ${formatCurrency(i.remaining)} ödenmedi`;
+}
+
+// "Cari Hareketler" sayfası: başlık 1. satırda (süzgeç/pivot/aktarım için üstte
+// bilgi bloğu yok), sonra devreden bakiyeyi oluşturan ödenmemiş kalemler,
+// devreden bakiye, ayın hareketleri, ay sonu. Siparişin her hizmeti/ürünü kendi
+// satırında, kendi Tutar'ıyla: Sipariş No/Tarih/Müşteri/Plaka her satırda
+// tekrar eder (süzgeç ve sıralama çalışsın); Açıklama/Borç/Alacak/Bakiye
+// yalnızca ilk satırda — sütun toplamları bozulmaz. Devreden kalemlerde Borç
+// boştur (Borç toplamı = ayın borcu); Bakiye kalanları biriktirip devredene
+// varır. Tarihler gerçek tarih, tutarlar sayı; görünüm: excelTheme.ts.
+export function statementExcelSheet(s: Statement): ExcelThemeRow[] {
+  const period = parseStatementMonth(s.month);
+  const blank = (n: number) => Array<ExcelCell>(n).fill("");
+  // lines yoksa tek satır: fallback = [Ürün & Hizmet, Tutar].
+  const withLines = (head: ExcelCell[], lines: StatementLine[] | null | undefined, note: string, money: ExcelCell[], fallback: ExcelCell[]): ExcelThemeRow[] =>
+    lines?.length
+      ? lines.map((l, i) => ({
+          kind: i === 0 ? "row" : "cont",
+          cells: [...head, statementSingleLineText(l, s.line_display), i === 0 ? note : "", Number(l.amount) || 0, ...(i === 0 ? money : blank(3))],
+        }))
+      : [{ kind: "row", cells: [...head, fallback[0], note, fallback[1], ...money] }];
+  let carried = 0;
   return [
-    STATEMENT_OPEN_COLUMNS,
-    ...s.opening_items.map((i): Cell[] => [
-      i.entry_type === "SIPARIS" ? (i.order_no || (i.order_id != null ? `#${i.order_id}` : "")) : "",
-      isoDate(i.entry_date),
-      i.plate ?? "",
-      i.entry_type === "SIPARIS" ? (i.summary ?? "") : openItemDescription(i),
-      i.amount,
-      round2(i.amount - i.remaining),
-      i.remaining,
-    ]),
-    ["", "", "", "Toplam", "", "", round2(s.opening_items.reduce((t, i) => t + i.remaining, 0))],
+    { kind: "head", cells: STATEMENT_EXCEL_COLUMNS },
+    ...s.opening_items.flatMap((i) => {
+      carried = round2(carried + i.remaining);
+      const isOrder = i.entry_type === "SIPARIS";
+      const note = [
+        statementOpenItemNote(i),
+        isOrder ? orderNote(i.order?.order_notes, i.note) : null,
+        i.order ? statementPaymentNote({ ...i.order, entry_type: i.entry_type, amount: i.amount }) : null,
+      ].filter(Boolean).join(" · ");
+      return withLines(
+        [orderNoText(i), isoDate(i.entry_date), i.order?.customer_name || s.customer.name, i.plate ?? ""],
+        isOrder ? i.order?.lines : null,
+        note,
+        ["", "", carried],
+        [isOrder ? i.summary ?? "" : openItemDescription(i), i.amount]
+      );
+    }),
+    { kind: "total", cells: ["", period ? isoDate(period.start) : "", "", "", "", "Devreden bakiye", "", "", "", s.opening_balance] },
+    ...s.entries.flatMap((e) => withLines(
+      [orderNoText(e), isoDate(e.entry_date), e.customer_name || s.customer.name, e.plate ?? ""],
+      e.entry_type === "SIPARIS" ? e.lines : null,
+      [statementEntryNote(e), statementPaymentNote(e)].filter(Boolean).join(" · "),
+      [
+        e.direction === 1 ? e.amount : "",
+        e.direction === -1 ? e.amount : "",
+        e.running_balance,
+      ],
+      ["", ""]
+    )),
+    { kind: "total", cells: [...blank(5), "Ay sonu bakiye", "", s.total_debt, s.total_credit, s.closing_balance] },
   ];
 }
 
