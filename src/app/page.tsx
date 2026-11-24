@@ -15,6 +15,7 @@ import SearchableCombobox from "@/components/order/SearchableCombobox";
 import { CreditLimitWarning } from "@/components/CreditLimitWarning";
 import { applyDiscount, canonicalCustomerName } from "@/lib/customers";
 import TireBatchPicker, { type StockBatch } from "@/components/order/TireBatchPicker";
+import { dropOrdersListState } from "@/lib/ordersListState";
 import { resolveUiVersion } from "@/lib/uiVersion";
 import { formatPlate, isValidTrPlate, normalizePlate } from "@/lib/plate";
 
@@ -219,6 +220,13 @@ function OrderPageInner() {
   useEffect(() => {
     if (servicesQuery.isError) toast.error("Hizmetler yüklenemedi.");
   }, [servicesQuery.isError, toast]);
+
+  // Yeni sipariş akışından listeye dönüşte liste baştan açılır; "Kopyala"dan
+  // vazgeçip geri dönen kullanıcı ise kaldığı sayfada kalır.
+  useEffect(() => {
+    if (!searchParams.get("copyFrom")) dropOrdersListState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // "Kopyala" (bkz. Sipariş Detayı) — aynı müşteri altında birden fazla
   // araç için hemen hemen aynı işlem satırlarıyla tekrar tekrar sipariş
@@ -549,6 +557,7 @@ function OrderPageInner() {
       }
 
       toast.success("Sipariş başarıyla kaydedildi!");
+      dropOrdersListState();
       invalidateAfter(queryClient, "order");
       setPlate("");
       setNoPlate(false);

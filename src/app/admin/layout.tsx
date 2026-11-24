@@ -16,6 +16,7 @@ import { readShellCache, writeShellCache } from "@/lib/shellCache";
 // değil) — tercih çerezden bilindiği için /api/auth/me beklenmeden çizilir.
 import { V2Header, V2Sidebar } from "@/components/v2/AdminShellV2";
 import { noteInAppNavigation } from "@/lib/navHistory";
+import { dropOrdersListStateOutside } from "@/lib/ordersListState";
 import { useDialog } from "@/lib/useDialog";
 import { CURRENT_UI_VERSION } from "@/lib/uiVersion";
 
@@ -192,7 +193,10 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   // "‹ Geri" bağlantıları için panel içi gezinme sayacı (bkz. src/lib/navHistory.ts).
-  useEffect(() => { noteInAppNavigation(pathname); }, [pathname]);
+  useEffect(() => {
+    noteInAppNavigation(pathname);
+    dropOrdersListStateOutside(pathname);
+  }, [pathname]);
   const { user, loading, setUiPreferences, isV2 } = useAuth();
   const [showTrialModal, setShowTrialModal] = useState(false);
   const trialDialog = useDialog(() => setShowTrialModal(false));

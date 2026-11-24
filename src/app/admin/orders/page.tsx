@@ -20,6 +20,7 @@ import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { useDialog } from "@/lib/useDialog";
 import { StickyScrollX } from "@/components/StickyScrollX";
 import { DEFAULT_ORDER_LINE_DISPLAY, formatOrderLine, type OrderLineField } from "@/lib/orderLineDisplay";
+import { ORDERS_LIST_STATE_KEY } from "@/lib/ordersListState";
 
 const IMPORT_BATCH_SIZE = 20;
 
@@ -525,12 +526,9 @@ const EMPTY_FIELD_FILTERS: FieldFilters = {
   customer_name: "", plate: "", service_name: [], supplier: [], stock_code: "", size_desc: "", brand: "", model_name: "", payment_type: [],
 };
 
-// Liste durumu (sayfa, filtreler, arama, sıralama, sayfa boyutu) sekme
-// oturumunda saklanır: 3. sayfadan bir siparişi Düzelt/Detay ile açıp geri
-// dönünce liste baştan değil kaldığı yerden açılır (müşteri şikâyeti).
-// sessionStorage: sekme kapanınca biter; yeni sekme/gün varsayılan tarih
-// filtresiyle başlar. Erişim hatası (gizli mod vb.) sessizce yoksayılır.
-const LIST_STATE_KEY = "orders_list_state_v1";
+// Liste durumu: 3. sayfadan bir siparişi Düzelt/Detay ile açıp geri dönünce
+// liste kaldığı yerden açılır; başka bölümden gelince baştan (bkz.
+// src/lib/ordersListState.ts).
 interface OrdersListState {
   owner: string; // aynı sekmede başka kullanıcı girerse kayıt yok sayılır
   page: number; limit: number; statusFilter: string; dateFilter: string; customFrom: string; customTo: string;
@@ -538,7 +536,7 @@ interface OrdersListState {
 }
 function readListState(owner: string): OrdersListState | null {
   try {
-    const raw = sessionStorage.getItem(LIST_STATE_KEY);
+    const raw = sessionStorage.getItem(ORDERS_LIST_STATE_KEY);
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<OrdersListState>;
     if (v.owner !== owner) return null;
@@ -683,7 +681,7 @@ export default function OrdersPage() {
   // Kullanıcı Filtrele modalından kendi tarih filtresini (Tümü dahil) zaten
   // seçmişse dateFilterTouchedRef true olur — varsayılan onu ezmez. /me
   // başarısız olsa da loading false olur, liste yine açılır.
-  // Kayıtlı liste durumu varsa (bkz. LIST_STATE_KEY) varsayılan yerine o
+  // Kayıtlı liste durumu varsa (bkz. ORDERS_LIST_STATE_KEY) varsayılan yerine o
   // uygulanır; sayfa numarası filtre efektinde (restoredPageRef) kullanılır.
   const restoredPageRef = useRef<number | null>(null);
   const listOwner = authUser ? `${authUser.businessName}|${authUser.username}` : "";
@@ -712,7 +710,7 @@ export default function OrdersPage() {
   useEffect(() => {
     if (!filtersReady) return;
     const state: OrdersListState = { owner: listOwner, page, limit, statusFilter, dateFilter, customFrom, customTo, search: debouncedSearch, fieldFilters, sortKey, sortDir };
-    try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)); } catch { /* depolama kapalı */ }
+    try { sessionStorage.setItem(ORDERS_LIST_STATE_KEY, JSON.stringify(state)); } catch { /* depolama kapalı */ }
   }, [filtersReady, listOwner, page, limit, statusFilter, dateFilter, customFrom, customTo, debouncedSearch, fieldFilters, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
