@@ -1,6 +1,6 @@
 # e-Fatura / e-Arşiv Modülü — Tasarım (Paraşüt entegrasyonu)
 
-Durum: **tasarım, kararlar alındı** (2026-10-30, §12). Paraşüt API erişimi henüz istenmedi; tasarım erişim alınmış varsayılarak yazıldı. Ücretli ek özellik (§13); ilk açılacak firma Ustalas.
+Durum (2026-11-24): **yazıldı, gerçek Paraşüt'te tamamı doğrulanmadı.** Bağlantı, fatura adımları, günlük bakım, WhatsApp PDF linki ve filo aylık faturası kodda; staging'de bağlanma ve kişi/ürün/fatura oluşturma doğrulandı. Resmileştirme staging'de hata veriyor, Paraşüt'ün yanıtı bekleniyor; PDF, iptal ve tahsilat bu yüzden gerçek Paraşüt'te denenmedi. Aşağısı 2026-10-30 tasarımıdır; güncel davranış: lastik-servis-projesi.md Bölüm 27. Ücretli ek özellik (§13); ilk açılacak firma Ustalas.
 Teknik kaynak: [parasut-api-referans.md](parasut-api-referans.md) (resmi swagger'dan çıkarıldı; her bilgi kaynağıyla işaretli).
 
 ---
@@ -285,7 +285,7 @@ Sorgular `src/lib/queries.ts` + AFFECTS'e eklenir (fatura kesilince sipariş lis
 
 Faz 0 bitince dev'de mock sağlayıcıyla tüm ekranlar ve akış çalışır; erişim gelince yalnızca `parasut.ts` gerçek isteklerle doldurulup Paraşüt test hesabında denenir.
 
-**Durum 2026-11-05:** Faz 1 yazıldı — `parasut.ts`, OAuth + PKCE bağlantısı (Paraşüt'ün yeni Keycloak sistemi), günlük bakım cron'u; WhatsApp PDF linki (Faz 2) yapıldı. Staging'de bağlanma, kişi/ürün/fatura oluşturma doğrulandı; resmileştirme Paraşüt staging'de kapalı (e-Belge entegrasyonu), açılması bekleniyor. Kullanıcı kararı: Elevire tek tıkla sonuna kadar götürür (taslakta bırakma yok). Kalan: kasa eşleme + tahsilat (Ustalas'a soruluyor), aylık filo faturası (Faz 3), iyzico satın alma (şimdilik elle).
+**Durum 2026-11-05:** Faz 1 yazıldı — `parasut.ts`, OAuth + PKCE bağlantısı (Paraşüt'ün yeni Keycloak sistemi), günlük bakım cron'u; WhatsApp PDF linki (Faz 2) yapıldı. Staging'de bağlanma, kişi/ürün/fatura oluşturma doğrulandı; resmileştirme Paraşüt staging'de kapalı (e-Belge entegrasyonu), açılması bekleniyor. Kullanıcı kararı: Elevire tek tıkla sonuna kadar götürür (taslakta bırakma yok). Aylık filo faturası (Faz 3) aynı gün yapıldı. Kalan: kasa eşleme + tahsilat (Ustalas'a soruluyor), iyzico satın alma (şimdilik elle).
 
 **Durum 2026-10-30:** Faz 0 tamam ve Faz 1'in sağlayıcıdan bağımsız kısmı da yapıldı (motor, uçlar, sipariş kartı, Fatura Kes penceresi, Faturalar sayfası, "Kapatınca fatura kes"). Kalan: `parasut.ts` + OAuth bağlantısı + günlük süpürme cron'u (Faz 1), kasa eşleme ekranı, WhatsApp PDF linki, red takibi (Faz 2), aylık filo faturası (Faz 3), iyzico satın alma (Satış). Ayrıntı: lastik-servis-projesi.md Bölüm 27.
 

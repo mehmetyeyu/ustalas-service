@@ -198,6 +198,7 @@ export default function HelpPage() {
             <List>
               <li><b>Hızlı Ara</b> kutusu plaka/müşteri/tedarikçi/ebat içinde birden arar; &quot;Filtrele&quot; ile tarih, statü, müşteri, yapılan işlem, tedarikçi ve ödeme şekline göre daha isabetli filtre kurulur.</li>
               <li>Her sütun başlığına tıklayarak sıralanır; sütun görünürlüğü ve sayfa başına kayıt sayısı özelleştirilebilir.</li>
+              <li>Bir siparişin detayından ya da düzenlemesinden listeye dönünce kaldığınız sayfa ve filtreler korunur; başka bir bölüme geçip gelirseniz liste baştan açılır.</li>
               <li><b>Cari</b> sütunu canlıdır — o müşterinin tüm geçmişine göre &quot;tamamen ödendi mi, ne kadar kaldı&quot; anlık hesaplanır.</li>
               <li>Checkbox&apos;larla birden fazla sipariş seçip <b>toplu ödeme şekli değiştirme</b> yapılabilir.</li>
               <li>&quot;Şablon İndir&quot; ile Excel şablonu alınır, doldurulup &quot;İçeri Aktar&quot; ile toplu sipariş yüklenir; aynı dosya tekrar yüklenirse mükerrer kayıt oluşmaz.</li>
@@ -271,8 +272,15 @@ export default function HelpPage() {
               <li>&quot;Stok Girişi&quot; ile mevcut bir partiye miktar eklenir; kod+hafta/yıl+tedarikçi eşleşmezse yeni parti açılır.</li>
               <li>Bir partiyi başka bir partiyle aynı kimliğe getirirseniz iki satır otomatik <b>birleştirilir</b>.</li>
             </List>
+            <SubHeading>Toplu Fiyat Güncelle</SubHeading>
+            <List>
+              <li>Üstteki <b>&quot;Toplu Fiyat Güncelle&quot;</b> ile (mobilde İşlemler menüsünde) satış fiyatlarına tek seferde zam ya da indirim yapılır: yüzde veya sabit TL, istenirse yukarı yuvarlama.</li>
+              <li>Kapsam, listede o an seçili arama ve filtrelerdir. Kaydetmeden önce kaç ürünün etkileneceği ve örnek eski → yeni fiyatlar gösterilir.</li>
+              <li>Alış fiyatları, geçmiş siparişler ve teklifler değişmez.</li>
+            </List>
             <SubHeading>Ürün ekleme kolaylıkları</SubHeading>
             <List>
+              <li><b>Ürün Kodu</b> — &quot;+ Yeni Ürün&quot;de var olan bir kodu yazıp alandan çıkınca bilinen bilgiler dolar. Satırdaki &quot;Stok Girişi&quot; ise formu o kodun son partisinden (fiyatlar dahil) doldurur; stoğu bitmiş kodlarda da çalışır.</li>
               <li><b>Barkod</b> — daha önce aynı barkodla kaydettiğiniz bir ürünse, barkodu girip alandan çıkınca Marka/Ebat/Mevsim/Tedarikçi otomatik dolar.</li>
               <li><b>Kopyala</b> — listedeki bir partiye tıklayarak benzer bir ürünü, sadece kod/barkodu değiştirerek hızlıca ekleyebilirsiniz.</li>
               <li><b>Ürün Tipi</b> (Lastik/Jant/İkinci El Lastik/İkinci El Jant/Aksesuar) seçimine göre form kendini uyarlar — İkinci El Lastik&apos;te Diş Derinliği girilir, ondan <b>Kondisyon</b> (Çok İyi / İyi) otomatik hesaplanır.</li>
