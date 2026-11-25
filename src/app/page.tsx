@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getDefaultAdminPath, hasPermission } from "@/lib/permissions";
@@ -18,6 +19,9 @@ import TireBatchPicker, { type StockBatch } from "@/components/order/TireBatchPi
 import { dropOrdersListState } from "@/lib/ordersListState";
 import { resolveUiVersion } from "@/lib/uiVersion";
 import { formatPlate, isValidTrPlate, normalizePlate } from "@/lib/plate";
+
+// Yalnızca "Depoya Al"a basınca yüklenir.
+const OrderStorageDialog = dynamic(() => import("@/components/storage/OrderStorageDialog"), { ssr: false });
 
 interface Service {
   id: number;
@@ -77,6 +81,10 @@ const EMPTY_LINE: OrderLine = {
   quantity: "1", unit_price: "", cost_price: "0", product_id: null, max_stock: null,
   unit_sale_price: null, unit_purchase_price: null,
 };
+
+// UTC günü — POST /api/orders tarihi UTC'ye göre yorumlar (o gün + şu anki UTC
+// saati). Türkiye günü verilseydi 00:00–03:00 arası "gelecek tarih" sayılırdı.
+const todayUtc = () => new Date().toISOString().slice(0, 10);
 
 function num(v: string): number {
   const n = Number(v);
@@ -157,7 +165,25 @@ function OrderPageInner() {
   // Raporlar created_at'e göre gruplandığından (payment_date'e göre değil,
   // bkz. src/app/api/reports/route.ts) bu tek başına doğru güne düşmesi
   // için yeterli.
-  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [orderDate, setOrderDate] = useState(() => todayUtc());
+  // Form gece açık kalırsa (sekme ertesi gün kullanılırsa) varsayılan tarih
+  // bugüne taşınır; elle seçilmiş geçmiş tarihe dokunulmaz.
+  const defaultDateRef = useRef(orderDate);
+  useEffect(() => {
+    function refreshDefaultDate() {
+      const today = todayUtc();
+      const previous = defaultDateRef.current;
+      if (document.visibilityState !== "visible" || today === previous) return;
+      defaultDateRef.current = today;
+      setOrderDate((d) => (d === previous ? today : d));
+    }
+    document.addEventListener("visibilitychange", refreshDefaultDate);
+    window.addEventListener("focus", refreshDefaultDate);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshDefaultDate);
+      window.removeEventListener("focus", refreshDefaultDate);
+    };
+  }, []);
   // Genel Ayarlar'dan açılan firmalarda (bkz. /api/auth/me, admin/settings)
   // zorunlu elle Sipariş No — orders.id'ye hiç dokunmaz, ayrı görüntüleme
   // alanıdır (bkz. database/schema.sql).
@@ -179,6 +205,15 @@ function OrderPageInner() {
   const [driverPhone, setDriverPhone] = useState("");
   const [driverOptions, setDriverOptions] = useState<{ name: string; phone: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
+  // Az önce kaydedilen plakalı sipariş — form temizlense de çıkan lastik
+  // buradan depoya alınabilsin (bkz. OrderStorageDialog).
+  const [savedOrder, setSavedOrder] = useState<{ id: number; label: string; plate: string; depoNo: number | null } | null>(null);
+  const [showStorage, setShowStorage] = useState(false);
+  const savedOrderRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Kaydet çubuğu sayfanın altında; kayıt satırı görünür olsun.
+    if (savedOrder?.id) savedOrderRef.current?.scrollIntoView({ block: "center" });
+  }, [savedOrder?.id]);
   // staff'ın da izinlerine göre panele dönebileceği yol — hiç sayfa izni
   // yoksa null (o zaman sadece çıkış butonu gösterilir, panel linki değil).
   const [panelPath, setPanelPath] = useState<string | null>(null);
@@ -551,11 +586,13 @@ function OrderPageInner() {
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Hata oluştu.");
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Hata oluştu.");
 
+      const savedPlate = noPlate ? "" : normalizePlate(plate);
+      setSavedOrder(savedPlate && canStore && data.id
+        ? { id: data.id, label: (customOrderNoEnabled && customOrderNo.trim()) || `#${data.id}`, plate: savedPlate, depoNo: null }
+        : null);
       toast.success("Sipariş başarıyla kaydedildi!");
       dropOrdersListState();
       invalidateAfter(queryClient, "order");
@@ -568,7 +605,8 @@ function OrderPageInner() {
       setDriverName("");
       setDriverPhone("");
       setNotes("");
-      setOrderDate(new Date().toISOString().slice(0, 10));
+      defaultDateRef.current = todayUtc();
+      setOrderDate(defaultDateRef.current);
       setLines([{ ...EMPTY_LINE }]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Hata oluştu.");
@@ -576,6 +614,9 @@ function OrderPageInner() {
       setLoading(false);
     }
   }
+
+  const can = (key: string) => !!me && hasPermission({ role: me.role, permissions: me.permissions ?? [] }, key);
+  const canStore = can("storage.view") && can("storage.create");
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -637,6 +678,36 @@ function OrderPageInner() {
               Satırları ve Notlar ayrı kartlar; her satır kendi bloğu (masaüstü
               tablo + mobil kart kopyası yerine tek, her genişliğe uyan blok);
               altta yapışık toplam + kâr + Sipariş Oluştur çubuğu. */}
+          {savedOrder && (
+            <div ref={savedOrderRef} role="status" className="relative mb-6 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-v2-line bg-v2-success-bg py-4 pl-5 pr-12 text-sm text-v2-success-fg">
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                <strong className="font-semibold">Sipariş {savedOrder.label}</strong> kaydedildi · {formatPlate(savedOrder.plate)}
+                {savedOrder.depoNo != null && <> · çıkan lastikler <strong className="font-semibold">Depo No {savedOrder.depoNo}</strong> ile depoda</>}
+              </span>
+              <span className="flex flex-wrap items-center gap-3 sm:ml-auto">
+                {savedOrder.depoNo == null && (
+                  <button type="button" onClick={() => setShowStorage(true)} className="inline-flex h-9 items-center rounded-lg border border-v2-line bg-v2-surface px-3.5 font-medium text-v2-fg hover:bg-v2-muted">
+                    Çıkan lastikleri depoya al
+                  </button>
+                )}
+                {can("orders.view") && (
+                  <Link prefetch={false} href={`/admin/orders/${savedOrder.id}`} className="font-semibold underline-offset-2 hover:underline">Sipariş detayı</Link>
+                )}
+                <button type="button" aria-label="Kapat" onClick={() => setSavedOrder(null)} className="absolute right-2 top-2 rounded-lg p-2 hover:opacity-70 sm:top-1/2 sm:-translate-y-1/2">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </span>
+            </div>
+          )}
+          {showStorage && savedOrder && (
+            <OrderStorageDialog
+              orderId={savedOrder.id}
+              canEdit={can("storage.edit")}
+              onClose={() => setShowStorage(false)}
+              onSaved={(depoNo) => { setShowStorage(false); setSavedOrder((s) => (s ? { ...s, depoNo } : s)); }}
+            />
+          )}
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <section aria-labelledby="siparis-bilgileri" className="rounded-xl border border-v2-line bg-v2-surface shadow-sm p-5">
               <h2 id="siparis-bilgileri" className="mb-4 text-[15px] font-semibold text-v2-fg">Sipariş Bilgileri</h2>
@@ -696,7 +767,7 @@ function OrderPageInner() {
                 <input
                   type="date"
                   value={orderDate}
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={todayUtc()}
                   onChange={(e) => setOrderDate(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />

@@ -3,6 +3,7 @@
 import PlateLink from "@/components/PlateLink";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDate, formatCurrency } from "@/lib/format";
@@ -22,6 +23,9 @@ import { useDialog } from "@/lib/useDialog";
 import { StickyScrollX } from "@/components/StickyScrollX";
 import { CreditLimitWarning } from "@/components/CreditLimitWarning";
 import { applyDiscount, canonicalCustomerName } from "@/lib/customers";
+
+// Yalnızca "Depoya Al"a basınca yüklenir.
+const OrderStorageDialog = dynamic(() => import("@/components/storage/OrderStorageDialog"), { ssr: false });
 
 interface OrderDetail {
   id: number;
@@ -67,6 +71,8 @@ interface OrderDetail {
   cari_note?: string | null;
   // Borcuna tahsilat düşmüş (kısmen/tamamen) — Düzelt ekranı uyarır.
   cari_paid_in?: boolean;
+  // "Depoya Al" ile açılmış depo kaydı (depolama görme izni yoksa null).
+  storage_record?: { depo_no: number | null; adet: number | null; mevsim: string | null; teslim_edildi: boolean } | null;
 }
 
 // Sorgu verisi henüz yokken kullanılan sabit boş diziler (render'lar arası aynı referans).
@@ -225,6 +231,11 @@ function OrderDetailPageInner() {
   const allowed = useViewGuard("orders");
   const canEdit = usePermission("orders.edit");
   const canApprove = usePermission("orders.approve");
+  const canViewStorage = usePermission("storage.view");
+  const canCreateStorage = usePermission("storage.create");
+  const canEditStorage = usePermission("storage.edit");
+  const canStore = canViewStorage && canCreateStorage;
+  const [showStorage, setShowStorage] = useState(false);
   // "Kapatınca fatura kes" (e-Fatura ek özelliği): varsayılan işaretsiz
   // (kullanıcı kararı 2026-10-30); kapatma başarılı olunca fatura penceresi açılır.
   const einvoiceEnabled = useAddon("einvoice");
@@ -1357,8 +1368,18 @@ function OrderDetailPageInner() {
         onPrint={printWorkOrder}
         onEdit={openEdit}
         onPay={openPayment}
+        onStore={canStore && order.plate && !order.storage_record ? () => setShowStorage(true) : null}
         invoiceAutoOpen={invoiceAutoOpen}
       />
+
+      {showStorage && (
+        <OrderStorageDialog
+          orderId={order.id}
+          canEdit={canEditStorage}
+          onClose={() => setShowStorage(false)}
+          onSaved={() => { setShowStorage(false); fetchOrder(); }}
+        />
+      )}
 
       {/* Ödeme Modal */}
       {showModal && (
@@ -1505,13 +1526,15 @@ function OrderDetailPageInner() {
 // işlem satırları + toplamlar ve notlar, sağda müşteri/araç, ödeme ve
 // geçmiş. Sadece mevcut /api/orders/[id] verisini kullanır (ek istek yok);
 // Ödeme Al penceresi, İş Emri ve Düzelt eski görünümle ortak.
-function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, invoiceAutoOpen }: {
+function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, onStore, invoiceAutoOpen }: {
   order: OrderDetail;
   canEdit: boolean;
   canApprove: boolean;
   onPrint: () => void;
   onEdit: () => void;
   onPay: () => void;
+  // null → düğme yok (yetki yok, plakasız ya da zaten depoya alınmış).
+  onStore: (() => void) | null;
   invoiceAutoOpen: number;
 }) {
   const router = useRouter();
@@ -1568,6 +1591,7 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, inv
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={onPrint} className={btn}>İş Emri Yazdır</button>
           <Link prefetch={false} href={`/?copyFrom=${order.id}`} className={btn} title="Aynı müşteri/işlem satırlarıyla, sadece plakayı değiştirerek yeni bir sipariş oluştur">Kopyala</Link>
+          {onStore && <button type="button" onClick={onStore} className={btn} title="Araçtan çıkan lastikleri depoya al">Depoya Al</button>}
           {canEdit && <button type="button" onClick={onEdit} className={btn}>Düzelt</button>}
         </div>
       </header>
@@ -1659,6 +1683,19 @@ function OrderDetailV2({ order, canEdit, canApprove, onPrint, onEdit, onPay, inv
                   <PlateLink plate={order.plate} className="inline-block rounded-md border border-v2-line-strong bg-v2-surface-2 px-2 py-0.5 font-v2-mono text-[13px] font-medium text-v2-fg" />
                 ) : <span className="text-v2-fg-muted">Plakasız satış</span>}
               </dd>
+              {order.storage_record && (
+                <>
+                  <dt className="text-v2-fg-muted">{order.storage_record.teslim_edildi ? "Depo" : "Depoda"}</dt>
+                  <dd className="text-right text-v2-fg">
+                    Depo No {order.storage_record.depo_no ?? "—"}
+                    <span className="block text-xs text-v2-fg-muted">
+                      {order.storage_record.teslim_edildi
+                        ? "Teslim edildi"
+                        : [order.storage_record.adet ? `${order.storage_record.adet} lastik` : null, order.storage_record.mevsim?.replace(/,/g, "/")].filter(Boolean).join(" · ")}
+                    </span>
+                  </dd>
+                </>
+              )}
               {order.driver_name && (
                 <>
                   <dt className="text-v2-fg-muted">Aracı Getiren</dt>

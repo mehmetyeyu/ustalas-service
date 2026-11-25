@@ -2105,3 +2105,14 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS order_line_display TEXT[] NOT 
 -- Depolama "Teslim Et" açıklaması (müşteri isteği 2026-11-25), ör. "Ahmet
 -- Yılmaz'a teslim edildi". Kaydın kendi açıklamasından (aciklama) ayrıdır.
 ALTER TABLE storage ADD COLUMN IF NOT EXISTS teslim_aciklama TEXT;
+
+-- Siparişten "Depoya Al" (müşteri isteği 2026-11-25): araçtan çıkan lastiğin
+-- kaydı siparişe bağlanır. Sipariş başına tek kayıt; sipariş silinirse kayıt
+-- kalır, yalnızca bağlantı kopar.
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS order_id INT;
+DO $$ BEGIN
+  ALTER TABLE storage ADD CONSTRAINT storage_order_tenant_fk
+    FOREIGN KEY (order_id, tenant_id) REFERENCES orders(id, tenant_id) ON DELETE SET NULL (order_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS storage_order_unique ON storage(order_id, tenant_id) WHERE order_id IS NOT NULL;

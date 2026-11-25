@@ -299,6 +299,8 @@ export default function HelpPage() {
             <List>
               <li>Yeni kayıt açılırken Depo No boş bırakılırsa boştaki en küçük numara otomatik atanır.</li>
               <li>&quot;Teslim Et&quot; ile kayıt kapatılır, depo numarası tekrar kullanılabilir hale gelir. İsterseniz açıklama yazabilirsiniz (ör. &quot;Mehmet Bey&apos;e teslim edildi&quot;); &quot;Teslim Edilenler&quot; listesinde, araç geçmişinde ve bu listenin Excel&apos;inde görünür, sonradan &quot;Düzenle&quot; ile değiştirilebilir.</li>
+              <li><b>Siparişten depoya alma</b> — lastik satılan araçtan çıkan lastikler için sipariş kaydedilince çıkan &quot;Çıkan lastikleri depoya al&quot; ya da sipariş detayındaki &quot;Depoya Al&quot; kullanılır. Plaka, müşteri, telefon, adet, ebat ve mevsim (satılan lastiğin tersi) dolu gelir; marka ve diş derinliğini yazıp kaydedin, etiket yazdırılır. Aracın depoda lastiği varsa müşterinin geri alıp almadığı sorulur; alıyorsa Değişim Yap işler. Depolama ücreti alıyorsanız siparişe hizmet satırı olarak ekleyin.</li>
+              <li><b>Teslimi Geri Al</b> — yanlışlıkla teslim edilen kayıt &quot;Teslim Edilenler&quot; listesinden yeniden depoya alınır, teslim tarihi ve açıklaması silinir. Depo numarası bu arada dolduysa kayda boştaki en küçük numara verilir; etiketi yeniden yazdırın. Aracın aynı mevsimde aktif kaydı varsa geri alınamaz.</li>
               <li>Ayarlanabilir bir süreden (varsayılan 6 ay) uzun süredir teslim edilmemiş kayıtlar &quot;gecikmiş&quot; filtresiyle ayrıca listelenebilir.</li>
               <li>İkiye bölünmüş A5 etiket yazdırılabilir (biri lastik çantasına, biri müşteriye).</li>
               <li>Excel ile toplu kayıt girişi/dışa aktarma desteklenir.</li>

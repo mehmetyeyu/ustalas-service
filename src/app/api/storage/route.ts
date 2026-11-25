@@ -6,6 +6,9 @@ import { hasPermission } from "@/lib/permissions";
 import { getAppSettings } from "@/lib/settings";
 import { parseStorageFilters, buildStorageQuery } from "@/lib/storageFilters";
 import { normalizeYear } from "@/lib/productsExcel";
+import { isOrderAlreadyStoredError, ORDER_ALREADY_STORED, resolveStorageOrderId, StorageOrderLinkError } from "@/lib/storageOrderLink";
+import { resolveStorageTextFields } from "@/lib/storageInput";
+import { nextFreeDepoNo } from "@/lib/storageDepoNo";
 import { resolveStorageTireColumns, StorageTiresValidationError } from "@/lib/storageTires";
 
 export async function GET(request: NextRequest) {
@@ -14,8 +17,8 @@ export async function GET(request: NextRequest) {
   if (!hasPermission(user, "storage.view")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
-  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
-  const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20") || 20));
   const offset = (page - 1) * limit;
 
   const filters = parseStorageFilters(searchParams);
@@ -50,7 +53,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { depo_no, plate, customer_name, phone, adet, mevsim, aciklama, islem_tarihi } = body;
+    const { adet } = body;
+    const { depo_no, plate, customer_name, phone, mevsim, aciklama, islem_tarihi } = resolveStorageTextFields(body);
 
     if (!plate) {
       return NextResponse.json({ error: "Plaka zorunludur." }, { status: 400 });
@@ -60,6 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const t = resolveStorageTireColumns(body, normalizeYear);
+    const orderId = await resolveStorageOrderId(pool, user.tenantId!, body.order_id);
 
     if (plate && mevsim) {
       const exists = await pool.query(
@@ -74,29 +79,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Boşta kalan en küçük depo nosunu bul, yoksa max+1
-    const nextDepoNo = depo_no ?? (await pool.query(`
-      WITH active_nos AS (
-        SELECT depo_no FROM storage WHERE tenant_id = $1 AND teslim_edildi = false AND depo_no IS NOT NULL
-      ),
-      max_no AS (SELECT COALESCE(MAX(depo_no), 0) AS m FROM storage WHERE tenant_id = $1)
-      SELECT MIN(n)::int AS next
-      FROM generate_series(1, (SELECT m + 1 FROM max_no)) n
-      WHERE n NOT IN (SELECT depo_no FROM active_nos)
-    `, [user.tenantId])).rows[0].next;
+    const nextDepoNo = depo_no ?? (await nextFreeDepoNo(pool, user.tenantId!));
 
     const vehicleId = await linkVehicle(pool, user.tenantId!, plate);
     const result = await pool.query(
-      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id, lastikler, rft, jantli)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
-      [user.tenantId, nextDepoNo, plate || null, customer_name || null, phone || null, t.ebat, t.marka,
-       t.dis_derinligi, t.adet, mevsim || null, aciklama || null, islem_tarihi || null,
-       t.model_name, t.production_week, t.production_year, t.load_speed_index, vehicleId, t.lastikler, t.rft, t.jantli]
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id, lastikler, rft, jantli, order_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+      [user.tenantId, nextDepoNo, plate, customer_name, phone, t.ebat, t.marka,
+       t.dis_derinligi, t.adet, mevsim, aciklama, islem_tarihi,
+       t.model_name, t.production_week, t.production_year, t.load_speed_index, vehicleId, t.lastikler, t.rft, t.jantli, orderId]
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });
   } catch (error: unknown) {
     if (error instanceof StorageTiresValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error instanceof StorageOrderLinkError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (isOrderAlreadyStoredError(error)) return NextResponse.json({ error: ORDER_ALREADY_STORED }, { status: 409 });
     // Eşzamanlı iki POST aynı boş depo nosunu hesaplayabilir — bu durumda
     // storage_active_depo_no_unique kısıtı ikincisini engeller, kullanıcı
     // sessizce üzerine yazma yerine tekrar denemeye yönlendirilir.

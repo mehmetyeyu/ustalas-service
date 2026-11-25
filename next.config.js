@@ -2,6 +2,7 @@ const { withSentryConfig } = require("@sentry/nextjs/config");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   async headers() {
     // /randevu/* kasıtlı olarak müşteri firmaların KENDİ web sitelerine
     // iframe/script ile gömülebilecek tek sayfa — bu yüzden X-Frame-Options

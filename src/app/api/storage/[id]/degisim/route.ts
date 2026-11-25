@@ -4,6 +4,9 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { normalizeYear } from "@/lib/productsExcel";
+import { parseStorageId, resolveStorageTextFields } from "@/lib/storageInput";
+import { todayIstanbul } from "@/lib/quotes";
+import { isOrderAlreadyStoredError, ORDER_ALREADY_STORED, resolveStorageOrderId, StorageOrderLinkError } from "@/lib/storageOrderLink";
 import { resolveStorageTireColumns, StorageTiresValidationError } from "@/lib/storageTires";
 
 // Mevsim değişimi — bkz. sunum "Depoda Mevsim Değişimi Akışı": müşteri geldi,
@@ -22,11 +25,14 @@ export async function POST(
   if (!user) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   if (!hasPermission(user, "storage.edit")) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 });
 
+  const id = parseStorageId((await params).id);
+  if (id === null) return NextResponse.json({ error: "Kayıt bulunamadı." }, { status: 404 });
+
   const client = await pool.connect();
   try {
-    const { id } = await params;
     const body = await request.json();
-    const { adet, mevsim, aciklama, islem_tarihi } = body;
+    const { adet } = body;
+    const { mevsim, aciklama, islem_tarihi } = resolveStorageTextFields(body);
 
     if (adet != null && adet !== "" && (!Number.isFinite(Number(adet)) || Number(adet) < 0)) {
       return NextResponse.json({ error: "Geçersiz adet." }, { status: 400 });
@@ -50,23 +56,24 @@ export async function POST(
       return NextResponse.json({ error: "Bu kayıt zaten teslim edilmiş." }, { status: 409 });
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const orderId = await resolveStorageOrderId(client, user.tenantId!, body.order_id);
+    const today = todayIstanbul();
     await client.query(
       "UPDATE storage SET teslim_edildi = true, teslim_tarihi = $1 WHERE id = $2",
       [today, old.id]
     );
 
     const inserted = await client.query(
-      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id, lastikler, rft, jantli)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+      `INSERT INTO storage (tenant_id, depo_no, plate, customer_name, phone, ebat, marka, dis_derinligi, adet, mevsim, aciklama, islem_tarihi, model_name, production_week, production_year, load_speed_index, vehicle_id, lastikler, rft, jantli, order_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING *`,
       [
         user.tenantId, old.depo_no, old.plate, old.customer_name, old.phone,
         t.ebat, t.marka, t.dis_derinligi, t.adet,
-        mevsim || null, aciklama || null, islem_tarihi || today,
+        mevsim, aciklama, islem_tarihi || today,
         t.model_name, t.production_week, t.production_year, t.load_speed_index,
         await linkVehicle(client, user.tenantId!, old.plate),
-        t.lastikler, t.rft, t.jantli,
+        t.lastikler, t.rft, t.jantli, orderId,
       ]
     );
 
@@ -75,6 +82,8 @@ export async function POST(
   } catch (error: unknown) {
     await client.query("ROLLBACK");
     if (error instanceof StorageTiresValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error instanceof StorageOrderLinkError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (isOrderAlreadyStoredError(error)) return NextResponse.json({ error: ORDER_ALREADY_STORED }, { status: 409 });
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
       return NextResponse.json({ error: "Bu depo no az önce kullanıldı, tekrar deneyin." }, { status: 409 });
     }

@@ -40,34 +40,38 @@ export async function GET(
   try {
     const { id } = await params;
     const orderResult = await pool.query(
-      "SELECT * FROM orders WHERE id = $1 AND tenant_id = $2",
-      [id, user.tenantId]
+      // storage_record: bu siparişten "Depoya Al" ile açılmış depo kaydı.
+      `SELECT o.*, CASE WHEN $3::boolean THEN (
+                SELECT json_build_object('depo_no', s.depo_no, 'adet', s.adet, 'mevsim', s.mevsim, 'teslim_edildi', s.teslim_edildi)
+                FROM storage s WHERE s.order_id = o.id AND s.tenant_id = o.tenant_id) END AS storage_record
+       FROM orders o WHERE o.id = $1 AND o.tenant_id = $2`,
+      [id, user.tenantId, hasPermission(user, "storage.view")]
     );
     if (!orderResult.rows[0]) {
       return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
     }
 
-    const servicesResult = await pool.query(
-      `SELECT s.id, os.id AS line_id, s.name, os.unit_price, os.quantity, os.cost_price,
-              os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.payment_type, os.product_id, os.kasa_id
-       FROM order_services os
-       JOIN services s ON os.service_id = s.id
-       WHERE os.order_id = $1 AND os.tenant_id = $2
-       ORDER BY os.id`,
-      [id, user.tenantId]
-    );
-
-    // Parçalı ödeme girişleri (bkz. PATCH) — Excel'den içe aktarılmış eski
-    // siparişlerde boş olabilir, o durumda ödeme kırılımı satır bazlı
-    // payment_type üzerinden (yukarıdaki services[].payment_type) okunur.
-    const paymentsResult = await pool.query(
-      "SELECT id, payment_type, amount, kasa_id FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY id",
-      [id, user.tenantId]
-    );
-
-    // Düzelt ekranının Sipariş No alanını göstermesi/zorunlu kılması için —
-    // ayrı bir /api/settings çağrısına gerek kalmadan aynı yanıtta gider.
-    const customOrderNoEnabled = await getCustomOrderNoEnabled(user.tenantId!);
+    const [servicesResult, paymentsResult, customOrderNoEnabled] = await Promise.all([
+      pool.query(
+        `SELECT s.id, os.id AS line_id, s.name, os.unit_price, os.quantity, os.cost_price,
+                os.supplier, os.stock_code, os.size_desc, os.brand, os.model_name, os.payment_type, os.product_id, os.kasa_id
+         FROM order_services os
+         JOIN services s ON os.service_id = s.id
+         WHERE os.order_id = $1 AND os.tenant_id = $2
+         ORDER BY os.id`,
+        [id, user.tenantId]
+      ),
+      // Parçalı ödeme girişleri (bkz. PATCH) — Excel'den içe aktarılmış eski
+      // siparişlerde boş olabilir, o durumda ödeme kırılımı satır bazlı
+      // payment_type üzerinden (yukarıdaki services[].payment_type) okunur.
+      pool.query(
+        "SELECT id, payment_type, amount, kasa_id FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY id",
+        [id, user.tenantId]
+      ),
+      // Düzelt ekranının Sipariş No alanını göstermesi/zorunlu kılması için —
+      // ayrı bir /api/settings çağrısına gerek kalmadan aynı yanıtta gider.
+      getCustomOrderNoEnabled(user.tenantId!),
+    ]);
 
     // Cari kısmının durumu (bkz. cariStatusNote) — ekranda satış anındaki
     // "Cari" korunur, yanına "Nazım Hesap ile kapandı" / "₺X kaldı" eklenir.
