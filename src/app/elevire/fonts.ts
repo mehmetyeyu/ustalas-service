@@ -1,7 +1,6 @@
-import { Inter } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 
-export const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "900"],
-  variable: "--font-inter",
-});
+// Landing, yasal sayfalar ve /kayit. latin-ext: ş, ğ, ı, İ ve ₺. Ağırlık
+// verilmez — değişken font tek dosya iner.
+export const geist = Geist({ subsets: ["latin", "latin-ext"], variable: "--font-geist" });
+export const geistMono = Geist_Mono({ subsets: ["latin", "latin-ext"], variable: "--font-geist-mono" });

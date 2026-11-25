@@ -1,39 +1,24 @@
-import type { Metadata } from "next";
-import Image from "next/image";
-import {
-  PackageCheck,
-  LayoutGrid,
-  CalendarDays,
-  ShieldCheck,
-  CircleX,
-  BadgeCheck,
-  ReceiptText,
-  Coins,
-  TrendingDown,
-  ClipboardList,
-  Boxes,
-  Warehouse,
-  CarFront,
-  CalendarCheck,
-  ChartColumn,
-  Plus,
-} from "lucide-react";
+import type { Metadata, Viewport } from "next";
 import { formatTry } from "@/lib/exchangeRate";
 import { ELEVIRE_ORIGIN, SOCIAL_LINKS } from "@/lib/site";
 import { getPlatformPricing } from "@/lib/platformPricing";
 import { COMPANY } from "./legal/company";
-import WaveHand from "./WaveHand";
-import Logomark from "./Logomark";
+import { Arrow, Dual, SiteFooter, SiteNav, TryButton, WHATSAPP_URL } from "./SiteChrome";
 import MetaPixel from "./MetaPixel";
-import { buildWhatsAppUrl } from "@/lib/quoteDocument";
-import { inter } from "./fonts";
+import { Check } from "./Check";
+import Logo from "./Logo";
+import DemoVideo from "./DemoVideo";
+import FeatureTabs, { type FeatureTab } from "./FeatureTabs";
+import PricingCard from "./PricingCard";
+import { geist, geistMono } from "./fonts";
+import { CSS } from "./styles";
 
-// Bu sayfa Figma'daki gerçek "elevire" tasarımının (dosya 863Xtv4xA3PrwD5cSKaE7i,
-// çerçeve 2:5711) birebir uygulanmasıdır — yapı, metin, renkler ve
-// görseller Figma'dan alındı (bkz. plan). Fiyat artık platform_pricing'teki
-// SABİT TL değeri (bkz. src/lib/platformPricing.ts) — Figma'daki 1.500/ay
-// ve yıllık 12.000 TL (aylık karşılığı 1.000 TL) rakamlarıyla tutarlı,
-// süper admin panelden değiştirilebilir.
+// Figma "Elevire — Web Sitesi Tasarımı" (A5dbF6UlUizKEsSlT2yNO8), siyah tema:
+// masaüstü 15:505, mobil 21:673; metin ve düzen birebir (kullanıcı kararı
+// 2026-11-25). Mobil çerçevenin metni/içeriği farklı olan yerlerde iki sürüm
+// birlikte basılır, CSS birini gizler (.only-wide / .only-narrow). Ürün
+// görselleri HTML/CSS ile çizilir. Fiyat platform_pricing'ten gelir. Mobildeki
+// "Kullananlar" bölümü tasarımda yer tutucudur; gerçek yorum gelince eklenir.
 
 // Başlık/açıklama arama niyetine göre: "lastik servis programı",
 // "lastik oteli takip", "lastikçi stok programı" — marka başta.
@@ -64,82 +49,65 @@ export const metadata: Metadata = {
   },
 };
 
-const AYLIK_FEATURES = [
-  { Icon: PackageCheck, text: "Stok, müşteri ve iş takibi" },
-  { Icon: LayoutGrid, text: "Tüm temel modüllere erişim" },
-  { Icon: WhatsappIcon, text: "WhatsApp destek" },
-  { Icon: CalendarDays, text: "7 gün ücretsiz deneme" },
-  { Icon: ShieldCheck, text: "Taahhüt yok" },
-  { Icon: CircleX, text: "İstediğin zaman iptal" },
+export const viewport: Viewport = { themeColor: "#07080a" };
+
+const SERVICES = [
+  "Lastik değişimi", "Rot balans", "Jant düzeltme", "Mevsim değişimi", "Lastik oteli", "Nitrojen hava",
+  "Lastik tamiri", "Jant satışı", "Klima gazı", "Far ayarı", "Balans", "Lastik satışı",
 ];
 
-const YILLIK_FEATURES = [
-  { Icon: BadgeCheck, text: "Aylık plandaki tüm özellikler" },
-  { Icon: ReceiptText, text: "Yıllık 12.000 TL faturalandırma" },
-  { Icon: Coins, text: "Aylık karşılığı 1.000 TL" },
-  { Icon: TrendingDown, text: "Toplam 6.000 TL avantaj" },
-  { Icon: WhatsappIcon, text: "WhatsApp destek" },
-  { Icon: ShieldCheck, text: "Taahhüt yok" },
+const COMPARE = [
+  { old: "Kimin lastiği hangi rafta? Defter karıştırılır.", oldM: "Defter karıştırılır", now: "Plakayı yaz, 3 saniyede bul.", nowM: "Plakayı yaz, 3 saniyede bul" },
+  { old: "Stok sayımı depoda, elle yapılır.", oldM: "Stok elle sayılır", now: "Satış girildiği an stok düşer.", nowM: "Satışta stok kendiliğinden düşer" },
+  { old: "Cari borç üç ayrı Excel dosyasında.", oldM: "Cari üç ayrı Excel'de", now: "Ekstre tek dokunuşla WhatsApp'ta.", nowM: "Ekstre tek dokunuşla WhatsApp'ta" },
+  { old: "Ay sonu kâr hesap makinesiyle tahmin edilir.", now: "Kâr ve kasa her an güncel." },
 ];
 
-const FEATURES = [
-  {
-    Icon: ClipboardList,
-    title: "İş emri ve sipariş takibi",
-    text: "Plakayı yazın, yapılan işi ve tutarı girin. Ödemeyi nakit, kart, havale ya da cari olarak, gerekirse parçalı alın; her iş müşterinin geçmişine kendiliğinden eklenir.",
-  },
-  {
-    Icon: Boxes,
-    title: "Lastik stok takibi",
-    text: "Marka, ebat ve adede göre lastik stoğunuzu tutun. Satışta stok otomatik düşer, alış fiyatından her işin kârını görürsünüz.",
-  },
-  {
-    Icon: Warehouse,
-    title: "Lastik oteli (depo)",
-    text: "Müşterilerinizin mevsimlik lastiklerini depoda takip edin: kimin lastiği, ne zamandan beri ve hangi araca ait, hepsi tek listede.",
-  },
-  {
-    Icon: CarFront,
-    title: "Müşteri, araç ve filo",
-    text: "Plakadan aracın tüm geçmişine ulaşın. Kurumsal müşteriler ve filolar için cari hesap, indirim ve aylık ekstre tutun.",
-  },
-  {
-    Icon: CalendarCheck,
-    title: "Online randevu ve WhatsApp",
-    text: "Randevu sayfanızı kendi sitenize ekleyin, müşteriniz boş saati seçsin. Teklif ve bilgilendirmeleri WhatsApp ile tek dokunuşla gönderin.",
-  },
-  {
-    Icon: ChartColumn,
-    title: "Kasa, masraf ve raporlar",
-    text: "Günlük kasa, masraflar, aylık ciro ve kâr raporları. Yıl sonunda ay ay gelir-gider özetini tek ekranda görün.",
-  },
+const STEPS = [
+  { title: "Hesabını aç", text: "E-posta ve telefonla 2 dakikada kaydol. Kredi kartı istemiyoruz.", textM: "2 dakikada kaydol. Kredi kartı istemiyoruz." },
+  { title: "Verini taşı", text: "Stok ve müşteri listeni Excel'den içe aktar. Takılırsan WhatsApp'tan yaz.", textM: "Stok ve müşteri listeni Excel'den aktar." },
+  { title: "İlk iş emrini aç", text: "Plakayı yaz ve başla. 7 gün boyunca tüm özellikler açık.", textM: "Plakayı yaz ve başla. 7 gün her şey açık." },
 ];
 
-function faqItems(monthlyPrice: number, yearlyPrice: number) {
+const INCLUDED = [
+  "İş emri, sipariş ve parçalı tahsilat",
+  "Lastik stoğu, DOT ve parti takibi",
+  "Lastik oteli ve etiket yazdırma",
+  "Cari, ekstre ve WhatsApp gönderimi",
+  "Kasa, masraf ve raporlar",
+  "Online randevu sayfası",
+  "Çoklu kullanıcı ve yetki",
+  "WhatsApp destek hattı",
+];
+const INCLUDED_MOBILE = ["Tüm modüller dahil", "Çoklu kullanıcı ve yetki", "WhatsApp destek", "Taahhüt yok, istediğin an iptal"];
+const SERVICES_MOBILE = ["Lastik değişimi", "Rot balans", "Mevsim değişimi", "Lastik oteli", "Jant düzeltme", "Nitrojen"];
+
+function faqItems(monthlyPrice: string, yearlyPrice: string) {
   return [
     {
-      q: "Elevire nedir?",
-      a: "Elevire, lastikçiler ve oto servisler için geliştirilmiş bir servis yönetim programıdır. İş emri, lastik stoğu, lastik oteli, müşteri ve araç geçmişi, cari hesap ve raporları tek ekranda toplar.",
+      q: "Kurulum gerekiyor mu?",
+      a: "Hayır. Elevire tarayıcıda çalışır; bilgisayar, tablet ve telefondan aynı hesapla girersin.",
     },
     {
-      q: "Kurulum gerekiyor mu, hangi cihazlarda çalışır?",
-      a: "Kurulum yoktur. Elevire internet tarayıcısında çalışır; bilgisayardan, tabletten ve telefondan aynı hesapla kullanabilirsiniz.",
+      q: "Deneme bitince ne olur?",
+      a: `Kart istemediğimiz için senden kendiliğinden ücret alınmaz. Devam etmek istersen aylık ${monthlyPrice} TL ya da yıllık ${yearlyPrice} TL planı seçersin; kayıtların kaldığı yerden devam eder. Taahhüt yoktur.`,
     },
     {
-      q: "Fiyatı ne kadar?",
-      a: `Aylık plan ${formatTry(monthlyPrice)} TL, yıllık plan ${formatTry(yearlyPrice)} TL'dir. Tek paket vardır, tüm temel modüller dahildir. Taahhüt yoktur, istediğiniz zaman iptal edebilirsiniz.`,
+      q: "Birden fazla çalışan kullanabilir mi?",
+      a: "Evet. Her çalışana ayrı kullanıcı açar, hangi ekranları göreceğini ve neleri değiştirebileceğini tek tek belirlersin.",
     },
     {
-      q: "Ücretsiz deneyebilir miyim?",
-      a: "Evet. 7 gün boyunca ücretsiz kullanabilirsiniz, deneme için kredi kartı gerekmez.",
+      q: "Excel'deki verilerimi taşıyabilir miyim?",
+      a: "Evet. Lastik stoğunu, müşteri listeni, depodaki lastikleri ve geçmiş siparişlerini hazır şablonlarla Excel'den içe aktarabilirsin.",
     },
     {
-      q: "Birden fazla personel kullanabilir mi?",
-      a: "Evet. Personellerinize ayrı kullanıcı açıp her birinin hangi ekranları görebileceğini ve neleri değiştirebileceğini ayrı ayrı belirleyebilirsiniz.",
+      wideOnly: true,
+      q: "Lastik oteli nasıl çalışıyor?",
+      a: "Müşterinin lastiklerini depoya alırken plaka, ebat, DOT ve diş derinliğiyle kaydedersin; depo numarası verilir, etiketi yazdırılır. Hangi lastiğin ne zamandır beklediğini ve kime teslim edildiğini listeden görürsün.",
     },
     {
-      q: "Lastik oteli takibi nasıl yapılır?",
-      a: "Müşterinin lastiklerini depoya aldığınızda plaka ve lastik bilgisiyle kaydedersiniz. Hangi lastiğin ne zamandan beri depoda olduğunu ve teslim edilenleri listeden takip edersiniz.",
+      q: "Verilerim güvende mi?",
+      a: "Her firmanın verisi ayrıdır ve yalnızca kendi kullanıcıları görebilir. Bağlantı şifrelidir, parolalar geri çevrilemeyecek biçimde saklanır. Kart bilgin bize hiç gelmez; ödemeyi iyzico alır.",
     },
   ];
 }
@@ -200,20 +168,9 @@ function jsonLd(monthlyPrice: number, yearlyPrice: number): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 
-// lucide-react marka ikonlarını kaldırdı — aynı ince çizgi stilinde elle.
-function InstagramIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="18" height="18" rx="5" />
-      <circle cx="12" cy="12" r="4" />
-      <circle cx="17.5" cy="6.5" r="0.75" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-// Sabit WhatsApp butonu için: konuşma balonu + içinde dolu ahize — tek
+// Konuşma balonu + içinde dolu ahize — tek
 // başına balon (WhatsappIcon) küçük boyutta WhatsApp olarak tanınmıyordu.
-function WhatsappFloatIcon({ className }: { className?: string }) {
+function WhatsappIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path
@@ -233,823 +190,488 @@ function WhatsappFloatIcon({ className }: { className?: string }) {
   );
 }
 
-function WhatsappIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M19.2 11.28C19.1985 12.4971 18.8885 13.694 18.299 14.7588C17.7094 15.8236 16.8595 16.7215 15.8288 17.3687C14.798 18.016 13.62 18.3913 12.4048 18.4597C11.1896 18.5282 9.97695 18.2874 8.88005 17.76L4.80005 19.2L6.12005 15.36C5.4649 14.4327 5.03834 13.3637 4.87517 12.2401C4.71201 11.1165 4.81687 9.97027 5.1812 8.89495C5.54553 7.81963 6.159 6.84571 6.97152 6.0527C7.78404 5.25969 8.77259 4.67008 9.85645 4.33199C10.9403 3.99391 12.0888 3.91694 13.208 4.10737C14.3273 4.29779 15.3857 4.75022 16.2968 5.42771C17.2079 6.10519 17.9458 6.98854 18.4504 8.00563C18.9549 9.02271 19.2118 10.1447 19.2 11.28Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function SectionTag({ children }: { children: React.ReactNode }) {
+  return <p className="tag mono">{children}</p>;
 }
 
-export default async function ElevirePage() {
-  const { monthlyPrice, yearlyPrice } = await getPlatformPricing();
-  const yearlyMonthlyEquivalent = yearlyPrice / 12;
-  const savings = monthlyPrice * 12 - yearlyPrice;
+function Plate({ children, size }: { children: string; size?: "sm" | "lg" }) {
+  return <span className={`plate mono${size ? ` plate-${size}` : ""}`}>{children}</span>;
+}
 
+// Hero'daki panel görünümü — örnek veriyle çizilmiş süs (ekran okuyucuya
+// tek bir görsel olarak okunur).
+const HERO_JOBS = [
+  { plate: "34 KLM 482", name: "Murat P.", job: "Lastik değişimi · 4 adet", jobM: "Lastik değişimi", amount: "₺3.240", status: "Tamamlandı", tone: "green" },
+  { plate: "06 ANK 77", name: "Elif D.", job: "Rot balans", amount: "₺1.500", status: "Devam ediyor", tone: "orange" },
+  { plate: "35 IZM 303", name: "Hasan Ç.", job: "Pirelli P Zero · 2 adet", jobM: "Pirelli P Zero · 2", amount: "₺9.600", status: "Ödeme bekliyor", tone: "blue" },
+  { plate: "34 ELV 216", name: "Can A.", job: "Mevsim değişimi + depo", amount: "₺2.200", status: "Tamamlandı", tone: "green" },
+  { plate: "16 BRS 410", name: "Ayşe K.", job: "Jant düzeltme", amount: "₺1.800", status: "Devam ediyor", tone: "orange" },
+];
+const HERO_STATS = [
+  { label: "Bugünkü ciro", value: "₺18.450", note: "+12%", tone: "green" },
+  { label: "Açık iş emri", value: "7", note: "3 ödeme bekliyor", tone: "" },
+  { label: "Stoktaki lastik", value: "523", note: "5 kod tükendi", tone: "orange" },
+  { label: "Depodaki set", value: "128", note: "2 set 6+ ay", tone: "orange" },
+];
+const HERO_STORAGE = [
+  { plate: "34 KLM 482", text: "Kışlık · Raf B-12" },
+  { plate: "35 IZM 303", text: "Kışlık · 7 aydır depoda", hot: true },
+  { plate: "06 ANK 77", text: "Yazlık · Jantlı · Raf A-03" },
+  { plate: "34 ELV 216", text: "4 mevsim · Raf C-07" },
+];
+
+function HeroVisual() {
   return (
-    <div className={`elevire ${inter.variable}`}>
-      <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <MetaPixel />
-
-      {/* ---------- Hero ---------- */}
-      {/* Yapılandırılmış veri: Google'a marka (Organization), site (WebSite)
-          ve ürün (SoftwareApplication, fiyatlarıyla) — bkz. jsonLd(). */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(monthlyPrice, yearlyPrice) }} />
-
-      <div id="top" className="hero">
-        {/* Hero'daki başlık görselin İÇİNDE (okunmaz) — aynı metin gerçek H1
-            olarak, görsel olarak gizli verilir (sayfanın tek H1'i). */}
-        <h1 className="sr-only">Elevire: lastik servisleri için akıllı iş yönetimi. Daha düzenli, daha hızlı, daha fazla müşteri.</h1>
-        <Image src="/elevire/hero.jpg" alt="Elevire kullanan bir lastik servisinde lift üzerindeki araçta lastik değişimi" fill priority className="hero-img" sizes="100vw" />
-        <div className="hero-scrim" />
-        <nav className="nav wrap">
-          <a className="logo" href="#top" aria-label="Elevire">
-            <Logomark className="logo-mark" />
-          </a>
-          {/* Mevcut müşteriler için giriş — önceden landing'deki tüm butonlar
-              yalnızca /kayit'a gidiyordu, panele dönmenin yolu yoktu. */}
-          <div className="nav-actions">
-            <a className="nav-login" href="/admin/login">Giriş Yap</a>
-            <a className="nav-cta" href="/kayit" data-cta="nav">7 Gün Ücretsiz Dene</a>
-          </div>
-        </nav>
-      </div>
-
-      {/* ---------- Bento ---------- */}
-      <div className="bento">
-        <div className="wrap">
-          <div className="bento-row bento-row-1">
-            <a className="bento-card" href="/kayit" data-cta="bento-stok-musteri-is">
-              <div className="bento-media">
-                <Image src="/elevire/bento-1.jpg" alt="Elevire paneli: stok, aktif iş ve bekleyen iş özeti ile son işler listesi" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
-              </div>
-              <h2>Stok, müşteri ve iş takibi.{" "}Tek ekranda.</h2>
-              <p>
-                Defter, dağınık Excel ve &ldquo;kimde ne vardı?&rdquo; karmaşasını geride bırakın. Elevire; lastikçiler
-                ve oto servisler için stok, müşteri ve iş geçmişini tek yerde toplar.
-              </p>
-            </a>
-            <a className="bento-card" href="/kayit" data-cta="bento-panel">
-              <div className="bento-media">
-                <Image src="/elevire/bento-main.jpg" alt="Elevire paneli: markaya göre stok durumu, hızlı işlemler ve aylık stok seviyesi grafiği" fill sizes="(max-width: 800px) 100vw, 50vw" className="bento-img" />
-              </div>
-              <h2>Elevire&apos;ın içinden.</h2>
-              <p>Tek bir panelde stok, müşteri ve iş takibinin tamamı.</p>
-            </a>
-          </div>
-          <div className="bento-row bento-row-2">
-            <a className="bento-card" href="/kayit" data-cta="bento-stok-ekle">
-              <div className="bento-media bento-media-sm">
-                <Image src="/elevire/bento-stok.jpg" alt="Raflarda düzenli dizilmiş lastik stoğu" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
-              </div>
-              <h3>Stok Ekle</h3>
-              <p>Lastik markası, ebadı ve adedini birkaç saniyede sisteme kaydedin.</p>
-            </a>
-            <a className="bento-card" href="/kayit" data-cta="bento-musteri">
-              <div className="bento-media bento-media-sm">
-                <Image src="/elevire/bento-musteri.jpg" alt="Servis çalışanı tabletten müşteri ve araç bilgisini kaydediyor" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
-              </div>
-              <h3>Müşteriyi Kaydet</h3>
-              <p>Müşteri bilgilerini ve araç plakasını tek seferde kaydedin, bir daha aramayın.</p>
-            </a>
-            <a className="bento-card" href="/kayit" data-cta="bento-is-gecmisi">
-              <div className="bento-media bento-media-sm">
-                <Image src="/elevire/bento-gecmis.jpg" alt="Usta araçta lastik değişimi yapıyor" fill sizes="(max-width: 800px) 100vw, 33vw" className="bento-img" />
-              </div>
-              <h3>İş Geçmişini Takip Et</h3>
-              <p>Yapılan her işlem otomatik olarak müşterinin geçmişine eklenir.</p>
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* ---------- Pricing ---------- */}
-      <div className="pricing">
-        <div className="pricing-photo">
-          <Image src="/elevire/pricing-bg.jpg" alt="" fill sizes="100vw" className="pricing-photo-img" />
-          <div className="pricing-photo-scrim" />
-          <div className="wrap pricing-photo-inner">
-            <span className="pricing-eyebrow">LASTİKÇİLER VE OTO SERVİSLER İÇİN</span>
-            <p className="pricing-statement">
-              Stok takibi, müşteri yönetimi, iş geçmişi ve temel modüller tek sistemde. Karmaşık paketler yok, net
-              fiyat var.
-            </p>
-          </div>
-        </div>
-
-        <div className="pricing-panel">
-          <div className="wrap">
-            <h2 className="pricing-heading">Tek paket. Net fiyat.</h2>
-            <div className="pricing-grid">
-              <div className="price-card">
-                <div className="price-media">
-                  <Image src="/elevire/price-aylik.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 50vw" className="price-media-img" />
-                </div>
-                <div className="price-card-head">
-                  <h3>Aylık</h3>
-                  <p className="price-amount">₺{formatTry(monthlyPrice)} TL/ay</p>
-                </div>
-                <p className="price-note">Her ay, dilediğiniz zaman iptal edebileceğiniz şekilde faturalanır.</p>
-                <ul className="price-features">
-                  {AYLIK_FEATURES.map(({ Icon, text }) => (
-                    <li key={text}>
-                      <Icon className="price-feature-icon" strokeWidth={1.5} aria-hidden="true" />
-                      {text}
-                    </li>
-                  ))}
-                </ul>
-                <a className="price-cta price-cta-orange" href="/kayit" data-cta="fiyat-aylik">7 Gün Ücretsiz Dene</a>
-              </div>
-
-              <div className="price-card">
-                <div className="price-media">
-                  <Image src="/elevire/price-yillik.jpg" alt="" fill sizes="(max-width: 800px) 100vw, 50vw" className="price-media-img" />
-                </div>
-                <div className="price-card-head">
-                  <h3>Yıllık</h3>
-                  <p className="price-amount price-amount-accent">₺{formatTry(yearlyMonthlyEquivalent)} TL/ay</p>
-                </div>
-                <p className="price-note">
-                  yıllık {formatTry(yearlyPrice)} TL faturalanır
-                  <br />
-                  {formatTry(savings)} TL avantaj
-                </p>
-                <ul className="price-features">
-                  {YILLIK_FEATURES.map(({ Icon, text }) => (
-                    <li key={text}>
-                      <Icon className="price-feature-icon" strokeWidth={1.5} aria-hidden="true" />
-                      {text}
-                    </li>
-                  ))}
-                </ul>
-                <a className="price-cta price-cta-dark" href="/kayit" data-cta="fiyat-yillik">7 Gün Ücretsiz Dene</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ---------- Özellikler ----------
-          Sayfanın asıl metin içeriği (SEO: önceden ~230 kelimeydi; aranan
-          terimler — lastik servis programı, lastik oteli, stok, cari — hiç
-          geçmiyordu). Yalnızca üründe GERÇEKTEN olan özellikler yazılır.
-          Görsel dil bento/fiyat kartlarıyla aynı: krem kart, 24px köşe,
-          logodaki siyah daire + sarı ikon. */}
-      <section className="features" aria-labelledby="ozellikler">
-        <div className="wrap">
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">TEK PROGRAM</span>
-              <h2 id="ozellikler" className="section-title">Lastik servisinizin her işi, tek yerde.</h2>
-            </div>
-            <p className="section-lead">
-              İş emrinden lastik oteline, cariden aylık kâra kadar; defter ve Excel&apos;e gerek kalmadan.
-            </p>
-          </div>
-          <div className="features-grid">
-            {FEATURES.map(({ Icon, title, text }) => (
-              <div key={title} className="feature-card">
-                <span className="feature-icon">
-                  <Icon strokeWidth={1.5} aria-hidden="true" />
-                </span>
-                <div className="feature-body">
-                  <h3>{title}</h3>
-                  <p>{text}</p>
-                </div>
-              </div>
+    <div className="visual" role="img" aria-label="Elevire genel bakış ekranı: bugünkü ciro, açık iş emirleri, lastik stoğu ve lastik oteli">
+      <div className="frame">
+        <div className="ui">
+          <div className="ui-side">
+            <Logo className="ui-logo" />
+            {["Genel bakış", "İş emirleri", "Lastik stoğu", "Lastik oteli", "Müşteriler & cari", "Kasa", "Raporlar", "Randevular"].map((t, i) => (
+              <span key={t} className={`ui-link${i === 0 ? " on" : ""}`}>{t}</span>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ---------- Closing + Footer ---------- */}
-      <div id="demo" className="closing">
-        {/* SSS — kapanışın koyu zemininde, iki sütun: solda başlık ve
-            iletişim, sağda akordeon (<details> içeriği de dizinlenir). */}
-        <section className="wrap faq" aria-labelledby="sss">
-          <div className="faq-side">
-            <span className="eyebrow eyebrow-light">SSS</span>
-            <h2 id="sss" className="section-title section-title-light">Sık sorulan sorular</h2>
-            <p className="faq-contact">
-              Aradığınız cevap yok mu? <a href={`mailto:${COMPANY.email}`}>Bize yazın</a>, yardımcı olalım.
-            </p>
-          </div>
-          <div className="faq-list">
-            {faqItems(monthlyPrice, yearlyPrice).map((q) => (
-              <details key={q.q} className="faq-item">
-                <summary>
-                  {q.q}
-                  <span className="faq-toggle" aria-hidden="true"><Plus strokeWidth={1.75} /></span>
-                </summary>
-                <p>{q.a}</p>
-              </details>
-            ))}
-          </div>
-        </section>
-        <div className="wrap closing-inner">
-          <WaveHand />
-          <h2>İşini tek ekrandan yönetmeye hazır mısın?</h2>
-          <a className="closing-cta" href="/kayit" data-cta="kapanis">7 Gün Ücretsiz Dene</a>
-        </div>
-
-        <footer className="wrap footer">
-          <nav className="legal-nav">
-            <a href="/elevire/legal/hakkimizda">Hakkımızda</a>
-            <a href="/elevire/legal/gizlilik">Gizlilik Sözleşmesi</a>
-            <a href="/elevire/legal/mesafeli-satis-sozlesmesi">Mesafeli Satış Sözleşmesi</a>
-            <a href="/elevire/legal/iptal-ve-iade">İptal ve İade Koşulları</a>
-          </nav>
-          <div className="footer-contact">
-            <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
-            <a href={`tel:${COMPANY.telefon.replace(/\s/g, "")}`}>{COMPANY.telefon}</a>
-            <span>{COMPANY.adres}, {COMPANY.postaKodu}</span>
-          </div>
-          <div className="footer-bottom">
-            <div className="footer-brand">
-              <span className="footer-copyright">© 2026 Elevire. Tüm hakları saklıdır.</span>
-              {SOCIAL_LINKS.map((s) => (
-                <a key={s.href} className="social-link" href={s.href} rel="me noopener" target="_blank" aria-label={s.label}>
-                  <InstagramIcon />
-                </a>
+          <div className="ui-main">
+            <div className="ui-top">
+              <div>
+                <span className="ui-title">Genel bakış</span>
+                <span className="ui-sub"><Dual wide="Salı, 24 Kasım · Aksoy Lastik" narrow="Aksoy Lastik · 7 açık iş" /></span>
+              </div>
+              <div className="ui-tools">
+                <span className="ui-search">Plaka, müşteri ara…<span className="mono">⌘K</span></span>
+                <span className="ui-new"><Dual wide="Yeni iş emri" narrow="+ İş emri" /></span>
+              </div>
+            </div>
+            <div className="ui-stats">
+              {HERO_STATS.map((s) => (
+                <div key={s.label} className="ui-stat">
+                  <span>{s.label}</span>
+                  <span><b>{s.value}</b> <i className={s.tone}>{s.note}</i></span>
+                </div>
               ))}
             </div>
-            <div className="payment-badges">
-              <img src="/payment-logos/logo-band-white.svg" alt="iyzico ile Öde, Mastercard, Visa, American Express, Troy" height={20} />
+            <div className="ui-cols">
+              <div className="ui-jobs">
+                <div className="ui-row ui-head mono"><span>PLAKA</span><span>MÜŞTERİ / İŞLEM</span><span>TUTAR</span><span>DURUM</span></div>
+                {HERO_JOBS.map((j) => (
+                  <div key={j.plate} className="ui-row">
+                    <span><Plate>{j.plate}</Plate></span>
+                    <span className="ui-job"><b>{j.name}</b><span>{j.jobM ? <Dual wide={j.job} narrow={j.jobM} /> : j.job}</span></span>
+                    <b>{j.amount}</b>
+                    <span className={`ui-status ${j.tone}`}><span>{j.status}</span></span>
+                  </div>
+                ))}
+              </div>
+              <div className="ui-store">
+                <div className="ui-store-head"><b>Lastik oteli</b><span className="mono">128 set</span></div>
+                {HERO_STORAGE.map((s) => (
+                  <div key={s.plate} className={`ui-store-row${s.hot ? " hot" : ""}`}><Plate size="sm">{s.plate}</Plate>{s.text}</div>
+                ))}
+              </div>
             </div>
           </div>
-        </footer>
+        </div>
       </div>
-
-      {/* Hızlı iletişim: her ekranda sağ altta sabit WhatsApp butonu —
-          firma hattıyla (COMPANY.telefon) hazır mesajlı sohbet açar. Meta
-          Pixel izinliyse tıklama "Contact" olarak ölçülür (bkz. MetaPixel). */}
-      <a
-        className="wa-float"
-        href={buildWhatsAppUrl(COMPANY.telefon, "Merhaba, Elevire hakkında bilgi almak istiyorum.")}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="WhatsApp ile bize yazın"
-        title="WhatsApp ile bize yazın"
-        data-contact="whatsapp"
-      >
-        <WhatsappFloatIcon className="wa-float-icon" />
-      </a>
+      <div className="float float-stock">
+        <span className="float-icon green">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.73" strokeLinecap="round" strokeLinejoin="round"><path d="m3.4 8.4 3 3 6.2-6.4" /></svg>
+        </span>
+        <span><b>Stoktan otomatik düştü</b><span>Pirelli 235/40R18 · −4 adet</span></span>
+      </div>
+      <div className="float float-wa">
+        <span className="float-icon green"><WhatsappIcon className="float-wa-icon" /></span>
+        <span><b>Ekstre WhatsApp&apos;ta</b><span>Can Aydın · Kasım ekstresi</span></span>
+      </div>
     </div>
   );
 }
 
-const CSS = `
-  .elevire {
-    --ink: #0a0d12;
-    --heading: #080a0c;
-    --body: #717470;
-    --surface: #ffffff;
-    --line: #e5e4de;
-    --yellow: #ffcf3d;
-    --orange: #f8672d;
-    --muted-2: #535862;
-    --footer-muted: #91948f;
-    --dark: #1c1d1a;
-    --darker: #0b0b0c;
-    --paper: #f3f2ea;
+function ShowText({ no, label, title, text, checks }: { no: string; label: string; title: React.ReactNode; text: string; checks: string[] }) {
+  return (
+    <div className="show-text">
+      <p className="mono yellow">{no} — {label}</p>
+      <h3>{title}</h3>
+      <p className="lead">{text}</p>
+      <ul>{checks.map((c) => <Check key={c}>{c}</Check>)}</ul>
+    </div>
+  );
+}
 
-    --font-body: var(--font-inter), "Segoe UI", sans-serif;
-  }
+function Line({ title, sub, qty, amount, tone, hot }: { title: string; sub?: string; qty?: string; amount: string; tone?: string; hot?: boolean }) {
+  return (
+    <div className={`line${hot ? " hot" : ""}`}>
+      <span className="line-text"><b>{title}</b>{sub && <span>{sub}</span>}</span>
+      {qty && <span className="mono line-qty">{qty}</span>}
+      <b className={tone}>{amount}</b>
+    </div>
+  );
+}
 
-  .elevire, .elevire * { box-sizing: border-box; }
+const TABS: FeatureTab[] = [
+  {
+    id: "is-emri",
+    label: "İş emri",
+    panel: (
+      <>
+        <ShowText
+          no="01" label="İŞ EMRİ"
+          title={<>Plakayı yaz.<br />Gerisi kendiliğinden.</>}
+          text="Müşteri, araç geçmişi ve fiyat otomatik gelir. Ödemeyi nakit, kart, havale ya da cariye bölerek al; stok ve kasa anında güncellenir."
+          checks={["Araç geçmişi plakadan gelir", "Parçalı ödeme ve cari", "Her işin kârı anında görünür"]}
+        />
+        <div className="mock" aria-hidden="true">
+          <div className="mock-head"><b>Yeni iş emri</b><span className="mono">#2416</span></div>
+          <div className="line plate-line"><Plate size="lg">34 ELV 216</Plate><span className="line-text"><b>Can Aydın · Ford Focus</b><span>Son ziyaret 12 Eki · 3 iş emri · cari ₺7.200</span></span></div>
+          <Line title="Lastik satışı" sub="Goodyear Vector 4Seasons · 215/60 R16" qty="× 4" amount="₺21.440" />
+          <Line title="Balans + montaj" sub="Servis işçiliği" qty="× 1" amount="₺800" />
+          <div className="pays">
+            {[["NAKİT", "₺10.000"], ["KART", "₺9.240"], ["HAVALE", "—"], ["CARİ", "₺3.000"]].map(([k, v]) => (
+              <div key={k} className={`pay${v === "—" ? "" : " on"}`}><span className="mono">{k}</span><b>{v}</b></div>
+            ))}
+          </div>
+          <div className="mock-total">
+            <div><span className="mono">TOPLAM</span><b>₺22.240</b></div>
+            <div className="right"><span className="mono">KÂR</span><b className="green">+₺12.040</b></div>
+          </div>
+        </div>
+      </>
+    ),
+  },
+  {
+    id: "stok",
+    label: "Lastik stoğu",
+    panel: (
+      <>
+        <ShowText
+          no="02" label="LASTİK STOĞU"
+          title={<>Sattığın an<br />stoktan düşer.</>}
+          text="Marka, ebat, DOT ve tedarikçi bazında parti takibi. Barkodla ya da Excel'den stok gir, eşiğin altına düşen ürünü gör."
+          checks={["Parti ve DOT takibi", "Alış maliyeti ve kâr yüzdesi", "Minimum stok uyarısı"]}
+        />
+        <div className="mock" aria-hidden="true">
+          <div className="mock-head"><b>Ürün kataloğu</b><span className="mono">523 ADET</span></div>
+          <Line title="Kumho WinterCraft" sub="205/60 R15 · Kış · DOT 32/26" qty="Depo" amount="45" />
+          <Line title="Goodyear Vector 4Seasons" sub="215/60 R16 · 4 mevsim · DOT 18/26" qty="−4" amount="10" hot />
+          <Line title="Pirelli P Zero" sub="235/40 R18 · Yaz · DOT 09/26" qty="Mağaza" amount="13" />
+          <Line title="Michelin Alpin 6" sub="205/55 R16 · Kış" qty="Düşük stok" amount="2" tone="orange" />
+        </div>
+      </>
+    ),
+  },
+  {
+    id: "otel",
+    label: "Lastik oteli",
+    panel: (
+      <>
+        <ShowText
+          no="03" label="LASTİK OTELİ"
+          title={<>Sezonluk lastikler<br />kaybolmaz.</>}
+          text="Çıkan lastiği tek dokunuşla depoya al, etiketini yazdır. Kimin lastiği ne zamandır bekliyor, plakadan bul."
+          checks={["Depo no ve etiket", "DOT, diş derinliği, jantlı/jantsız", "Uzun süre bekleyen uyarısı"]}
+        />
+        <div className="mock" aria-hidden="true">
+          <div className="mock-head"><b>Lastik oteli</b><span className="mono">128 SET</span></div>
+          <div className="line"><Plate>34 KLM 482</Plate><span className="line-text"><b>Murat P.</b><span>Kışlık · 205/55 R16 · DOT 40/24</span></span><b>No 12</b></div>
+          <div className="line hot"><Plate>35 IZM 303</Plate><span className="line-text"><b>Hasan Ç.</b><span>Kışlık · 7 aydır depoda</span></span><b>No 31</b></div>
+          <div className="line"><Plate>06 ANK 77</Plate><span className="line-text"><b>Elif D.</b><span>Yazlık · Jantlı · 225/45 R17</span></span><b>No 3</b></div>
+          <div className="line"><Plate>34 ELV 216</Plate><span className="line-text"><b>Can Aydın</b><span>4 mevsim · 215/60 R16</span></span><b>No 7</b></div>
+        </div>
+      </>
+    ),
+  },
+  {
+    id: "cari",
+    label: "Cari & WhatsApp",
+    panel: (
+      <>
+        <ShowText
+          no="04" label="CARİ & WHATSAPP"
+          title={<>Kim ne kadar borçlu,<br />her an belli.</>}
+          text="Veresiye, tahsilat ve filo hesabı tek yerde. Aylık ekstreyi WhatsApp'tan gönder, yazdır ya da Excel'e aktar."
+          checks={["Aylık cari ekstre", "Filo ve kurumsal müşteri", "WhatsApp'tan ekstre ve teklif"]}
+        />
+        <div className="mock" aria-hidden="true">
+          <div className="mock-head"><b>Can Aydın · Kasım</b><span className="mono">EKSTRE</span></div>
+          <Line title="Devreden bakiye" amount="₺4.200" />
+          <Line title="Lastik satışı" sub="34 ELV 216 · 12 Kas" amount="+₺6.000" tone="orange" />
+          <Line title="Tahsilat" sub="Havale · 20 Kas" amount="−₺3.000" tone="green" />
+          <div className="mock-total">
+            <div><span className="mono">KALAN</span><b>₺7.200</b></div>
+            <span className="wa-pill"><WhatsappIcon />WhatsApp&apos;tan gönder</span>
+          </div>
+        </div>
+      </>
+    ),
+  },
+  {
+    id: "kasa",
+    label: "Kasa & raporlar",
+    panel: (
+      <>
+        <ShowText
+          no="05" label="KASA & RAPORLAR"
+          title={<>Ay sonu kârın<br />tek bakışta.</>}
+          text="Günlük kasa, masraf ve tahsilat kendiliğinden toplanır. Ciro, maliyet ve kârı gün gün, ay ay görürsün."
+          checks={["Günlük kasa", "Masraf ve sabit giderler", "Yıllık gelir-gider özeti"]}
+        />
+        <div className="mock" aria-hidden="true">
+          <div className="mock-head"><b>Kasım özeti</b><span className="mono">RAPOR</span></div>
+          <Line title="Ciro" amount="₺486.200" />
+          <Line title="Maliyet" amount="−₺312.400" />
+          <Line title="Masraf" sub="Kira, elektrik, personel" amount="−₺74.300" />
+          <div className="mock-total">
+            <div><span className="mono">KÂR</span><b className="green">₺99.500</b></div>
+          </div>
+        </div>
+      </>
+    ),
+  },
+];
 
-  .elevire {
-    margin: 0;
-    background: var(--surface);
-    color: var(--ink);
-    font-family: var(--font-body);
-    font-size: 16px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-  }
+interface CellProps {
+  label: string;
+  title: React.ReactNode;
+  text?: string;
+  textW?: string; // yalnızca masaüstü
+  textM?: string; // yalnızca mobil
+  id?: string;
+  className?: string;
+  children?: React.ReactNode;
+}
 
-  .elevire a { color: inherit; text-decoration: none; }
+function Cell({ label, title, text, textW, textM, id, className = "", children }: CellProps) {
+  return (
+    <div id={id} className={`cell card-surface ${className}`}>
+      <p className="mono faint">{label}</p>
+      <h3>{title}</h3>
+      {text && <p className="cell-text">{text}</p>}
+      {textW && <p className="cell-text only-wide">{textW}</p>}
+      {textM && <p className="cell-text only-narrow">{textM}</p>}
+      {children}
+    </div>
+  );
+}
 
-  .elevire .wrap {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
+const BARS = [30, 44, 36, 52, 48, 62, 56, 72, 66, 86, 104, 40];
+const SLOTS: [string, "" | "full" | "on"][] = [["09:00", "full"], ["10:30", ""], ["11:00", "on"], ["13:30", ""], ["14:00", "full"], ["15:30", ""]];
 
-  .elevire h1, .elevire h2, .elevire h3 { margin: 0; text-wrap: balance; }
-  .elevire p { margin: 0; }
+export default async function ElevirePage() {
+  const { monthlyPrice, yearlyPrice } = await getPlatformPricing();
+  const monthly = formatTry(monthlyPrice);
+  const yearly = formatTry(yearlyPrice);
+  const discountPct = monthlyPrice > 0 ? Math.round((1 - yearlyPrice / (monthlyPrice * 12)) * 100) : 0;
 
-  /* ---------- hero ---------- */
-  .elevire .hero {
-    position: relative;
-    height: min(88vh, 780px);
-    min-height: 460px;
-    overflow: hidden;
-  }
-  .elevire .hero-img { object-fit: cover; z-index: 0; }
-  .elevire .hero-scrim {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    background: linear-gradient(180deg, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0) 100%);
-  }
-  .elevire .nav {
-    position: absolute;
-    top: 28px;
-    left: 0;
-    right: 0;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .elevire .logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: #000000;
-    flex: none;
-  }
-  .elevire .logo-mark { width: 30px; height: 29px; }
-  .elevire .nav-cta {
-    display: inline-flex;
-    align-items: center;
-    font-weight: 700;
-    font-size: 0.9rem;
-    background: var(--yellow);
-    color: #000000;
-    padding: 12px 22px;
-    border-radius: 999px;
-    white-space: nowrap;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
-  .elevire .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 8px 18px -8px rgba(0,0,0,0.45); }
-  .elevire .nav-actions { display: flex; align-items: center; gap: 10px; }
-  .elevire .nav-login {
-    display: inline-flex; align-items: center; font-weight: 600; font-size: 0.9rem;
-    color: #ffffff; padding: 11px 20px; border-radius: 999px; white-space: nowrap; text-decoration: none;
-    border: 1px solid rgba(255,255,255,0.6); background: rgba(0,0,0,0.22);
-    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-  .elevire .nav-login:hover { background: rgba(255,255,255,0.16); border-color: #ffffff; }
-  @media (max-width: 400px) {
-    .elevire .nav-actions { gap: 6px; }
-    .elevire .nav-login, .elevire .nav-cta { padding: 9px 13px; font-size: 0.8rem; }
-  }
+  return (
+    <div className={`ev ${geist.variable} ${geistMono.variable}`} id="top">
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <MetaPixel />
+      {/* Yapılandırılmış veri: Organization, WebSite, SoftwareApplication. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(monthlyPrice, yearlyPrice) }} />
 
-  /* ---------- bento ---------- */
-  .elevire .bento { padding: 72px 0 88px; }
-  .elevire .bento-row {
-    display: grid;
-    gap: 40px;
-    margin-bottom: 40px;
-  }
-  .elevire .bento-row-1 { grid-template-columns: 1fr 1fr; }
-  .elevire .bento-row-2 { grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 0; }
+      <div className="bg-grid" aria-hidden="true" />
+      <div className="bg-glow" aria-hidden="true" />
 
-  .elevire .bento-card {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .elevire .bento-media {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 735 / 900;
-    border-radius: 20px;
-    overflow: hidden;
-    background: var(--paper);
-  }
-  .elevire .bento-media-sm { aspect-ratio: 600 / 750; }
-  .elevire .bento-img { object-fit: cover; transition: transform 0.4s ease; }
-  .elevire .bento-card:hover .bento-img { transform: scale(1.03); }
+      <SiteNav />
 
-  .elevire .bento-card h2 {
-    font-size: 1.4rem;
-    font-weight: 500;
-    color: var(--heading);
-    line-height: 1.25;
-  }
-  .elevire .bento-card h3 {
-    font-size: 1.4rem;
-    font-weight: 400;
-    color: var(--heading);
-    line-height: 1.25;
-  }
-  .elevire .bento-card p {
-    color: var(--body);
-    font-size: 1rem;
-    line-height: 1.5;
-    max-width: 46ch;
-  }
+      <main>
+        {/* ---------- Hero ---------- */}
+        <section className="hero wrap">
+          <a className="announce" href="#lastik-oteli">
+            <span className="announce-tag mono">YENİ</span>
+            <Dual wide="Lastik oteli artık raf ve DOT takibiyle" narrow="Lastik oteli artık DOT takibiyle" />
+            <Arrow />
+          </a>
+          <h1>Defteri kapat.<br />İşini <em>tek ekrandan</em> yönet.</h1>
+          <p className="hero-lead">
+            <Dual
+              wide="İş emri, lastik stoğu, lastik oteli, cari ve kasa tek bir yerde. Kurulum yok; bilgisayardan, tabletten ve telefondan çalışır."
+              narrow="İş emri, lastik stoğu, lastik oteli, cari ve kasa tek yerde. Kurulum yok."
+            />
+          </p>
+          <div className="actions">
+            <TryButton cta="hero" />
+            <DemoVideo />
+          </div>
+          <ul className="checks">
+            <Check>Kurulum yok</Check>
+            <Check><Dual wide="Kredi kartı gerekmez" narrow="Kart gerekmez" /></Check>
+            <Check>İstediğin an iptal</Check>
+          </ul>
+          <HeroVisual />
+        </section>
 
-  @media (max-width: 860px) {
-    .elevire .bento-row-1, .elevire .bento-row-2 { grid-template-columns: 1fr; }
-  }
+        {/* ---------- Hizmetler ---------- */}
+        <section className="services" aria-label="Lastikçinin günlük işleri">
+          <p className="mono faint"><Dual wide="LASTİKÇİNİN GÜNLÜK İŞİ İÇİN TASARLANDI" narrow="LASTİKÇİNİN GÜNLÜK İŞİ İÇİN" /></p>
+          <ul className="chips">{SERVICES_MOBILE.map((x) => <li key={x}>{x}</li>)}</ul>
+          <div className="marquee">
+            <div className="marquee-track">
+              {[0, 1].map((k) => (
+                <ul key={k} aria-hidden={k === 1}>
+                  {SERVICES.map((s) => <li key={s}>{s}</li>)}
+                </ul>
+              ))}
+            </div>
+          </div>
+        </section>
 
-  /* ---------- pricing ---------- */
-  .elevire .pricing { background: var(--dark); }
-  .elevire .pricing-photo {
-    position: relative;
-    height: clamp(360px, 42vw, 480px);
-    overflow: hidden;
-  }
-  .elevire .pricing-photo-img { object-fit: cover; }
-  .elevire .pricing-photo-scrim {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(10,13,18,0.55) 0%, rgba(10,13,18,0.75) 100%);
-  }
-  .elevire .pricing-photo-inner {
-    position: relative;
-    z-index: 1;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 20px;
-    max-width: 720px;
-  }
-  .elevire .pricing-eyebrow {
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: #fafafa;
-  }
-  .elevire .pricing-statement {
-    font-size: clamp(1.6rem, 3.2vw, 2.5rem);
-    font-weight: 900;
-    line-height: 1.1;
-    color: #fafafa;
-  }
+        {/* ---------- Özellikler ---------- */}
+        <section id="ozellikler" className="features wrap" aria-labelledby="ozellikler-baslik">
+          <div className="head">
+            <div>
+              <SectionTag>ÖZELLİKLER</SectionTag>
+              <h2 id="ozellikler-baslik">Lastikçinin bütün günü.<br className="only-wide" /> <Dual wide="Tek bir ekranda." narrow="Tek ekranda." /></h2>
+            </div>
+            <p className="head-lead only-wide">
+              İş emrinden lastik oteline, cariden kasaya kadar her şey birbirine bağlı. Bir yere girdiğin bilgi, her yerde
+              güncellenir.
+            </p>
+          </div>
+          <FeatureTabs tabs={TABS} />
 
-  .elevire .pricing-panel {
-    position: relative;
-    background: var(--paper);
-    border-radius: 48px 48px 0 0;
-    margin-top: -48px;
-    padding: 56px 0 88px;
-  }
-  .elevire .pricing-heading {
-    text-align: center;
-    font-size: clamp(1.8rem, 3.4vw, 2.4rem);
-    font-weight: 400;
-    color: #000000;
-    margin-bottom: 40px;
-  }
-  .elevire .pricing-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 24px;
-    max-width: 760px;
-    margin: 0 auto;
-  }
-  .elevire .price-card {
-    background: var(--surface);
-    border-radius: 24px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 40px -28px rgba(10,13,18,0.35);
-  }
-  .elevire .price-media {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 522 / 300;
-    background: var(--yellow);
-  }
-  .elevire .price-media-img { object-fit: cover; }
-  .elevire .price-card-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 24px 28px 0;
-  }
-  .elevire .price-card-head h3 {
-    font-size: 1.3rem;
-    font-weight: 400;
-    color: var(--ink);
-  }
-  .elevire .price-amount {
-    font-size: 1.1rem;
-    color: var(--ink);
-    white-space: nowrap;
-  }
-  .elevire .price-amount-accent { color: var(--orange); }
-  .elevire .price-note {
-    font-size: 0.85rem;
-    color: var(--muted-2);
-    line-height: 1.5;
-    margin: 14px 28px 20px;
-  }
-  .elevire .price-features {
-    list-style: none;
-    margin: 0 0 24px;
-    padding: 0 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .elevire .price-features li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.88rem;
-    color: var(--ink);
-  }
-  .elevire .price-feature-icon { width: 18px; height: 18px; flex: none; color: var(--ink); }
-  .elevire .price-cta {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 47px;
-    margin: auto 28px 28px;
-    border-radius: 12px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: #ffffff;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
-  .elevire .price-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -12px rgba(0,0,0,0.5); }
-  .elevire .price-cta-orange { background: var(--orange); }
-  .elevire .price-cta-dark { background: var(--ink); }
+          <div className="bento">
+            <Cell label="İŞ EMRİ" title="Plakayı yaz. Gerisi kendiliğinden." text="Araç geçmişi gelir, ödemeyi bölerek al, kâr anında görünür." className="only-narrow">
+              <div className="plate-total" aria-hidden="true"><Plate size="lg">34 ELV 216</Plate><b>₺22.240</b></div>
+            </Cell>
+            <Cell label="LASTİK STOĞU" title="Sattığın an stoktan düşer." textW="Marka, ebat, DOT ve parti bazında takip. Biten ürün için uyarı." className="c-stock">
+              <div className="rows" aria-hidden="true">
+                <div className="row only-wide"><span className="mono">KUMHO205</span><span>Kumho · 205/60R15 · Kış</span><b>45</b></div>
+                <div className="row hot"><span className="mono">GOODY215</span><span>Goodyear · 215/60R16 · 4 mevsim</span><i className="mono">−4</i><b>10</b></div>
+                <div className="row"><span className="mono">PIRELLI235</span><span>Pirelli · 235/40R18 · Yaz</span><b>13</b></div>
+              </div>
+            </Cell>
+            <Cell id="lastik-oteli" label="LASTİK OTELİ" title="Sezonluk lastikler kaybolmaz." className="c-hotel">
+              <p className="big" aria-hidden="true"><b>128</b> <Dual wide="set depoda" narrow="set depoda · 2 set 6+ ay" /></p>
+              <div className="pills only-wide" aria-hidden="true">
+                {["Raf B-12", "DOT 40/24", "Kışlık", "Jantlı", "6+ ay uyarısı"].map((p) => <span key={p}>{p}</span>)}
+              </div>
+            </Cell>
+            <Cell label="CARİ & WHATSAPP" title={<Dual wide="Ekstre tek dokunuşla." narrow="Ekstre tek dokunuşla WhatsApp'ta." />} textM="Filolara ve kurumsal müşterilere aylık ekstre." className="c-cari">
+              <div className="chat only-wide" aria-hidden="true">
+                <div className="bubble out"><b><span className="pdf mono">PDF</span>Kasım ekstresi · ₺7.200</b><span className="mono">✓✓ 14:32</span></div>
+                <div className="bubble in">Teşekkürler, yarın uğrarım 👍</div>
+              </div>
+            </Cell>
+            <Cell label="KASA & RAPORLAR" title="Ay sonu kârın tek bakışta." textM="Günlük kasa, masraf, aylık ciro ve kâr." className="c-third">
+              <div className="bars only-wide" aria-hidden="true">
+                {BARS.map((h, i) => <span key={i} className={h === 104 ? "on" : ""} style={{ height: h }} />)}
+              </div>
+            </Cell>
+            <Cell label="ONLINE RANDEVU" title="Müşteri saati kendisi seçer." className="c-third only-wide">
+              <div className="slots" aria-hidden="true">
+                {SLOTS.map(([t, s]) => <span key={t} className={`mono ${s}`}>{t}</span>)}
+              </div>
+            </Cell>
+            <Cell label="VE DAHA FAZLASI" title="Büyüdükçe seninle büyür." className="c-third only-wide">
+              <ul className="more">
+                <li>Çoklu kullanıcı ve yetki</li>
+                <li>Excel&apos;den içe aktarma</li>
+                <li>Teklif → iş emri</li>
+                <li>e-Fatura <span className="soon mono">YAKINDA</span></li>
+              </ul>
+            </Cell>
+          </div>
+        </section>
 
-  .elevire .sr-only {
-    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-  }
+        {/* ---------- Neden Elevire ---------- */}
+        <section className="why wrap" aria-labelledby="neden-baslik">
+          <SectionTag>NEDEN ELEVIRE</SectionTag>
+          <h2 id="neden-baslik"><Dual wide={<>Defter, Excel ve telefon notu<br />yerine tek bir ekran.</>} narrow="Defter yerine tek ekran." /></h2>
+          <div className="compare">
+            <p className="mono faint cmp-head">ESKİDEN</p>
+            <p className="mono yellow cmp-head now">ELEVIRE İLE</p>
+            {COMPARE.map((c) => (
+              <div key={c.now} className={`cmp-row${c.oldM ? "" : " only-wide"}`}>
+                <p className="old"><span className="cmp-mark" aria-hidden="true">×</span><s><Dual wide={c.old} narrow={c.oldM} /></s></p>
+                <p className="now"><span className="cmp-mark" aria-hidden="true">✓</span><span><Dual wide={c.now} narrow={c.nowM} /></span></p>
+              </div>
+            ))}
+          </div>
+        </section>
 
-  /* ---------- section heads (features + faq) ---------- */
-  .elevire .eyebrow {
-    display: inline-block;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--orange);
-    margin-bottom: 14px;
-  }
-  .elevire .eyebrow-light { color: var(--yellow); }
-  .elevire .section-title {
-    font-size: clamp(2rem, 4vw, 3rem);
-    font-weight: 400;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    color: #000000;
-  }
-  .elevire .section-title-light { color: #ffffff; }
-  .elevire .section-head {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 24px 64px;
-    margin-bottom: 48px;
-  }
-  .elevire .section-head > div { max-width: 620px; }
-  .elevire .section-lead { color: var(--body); font-size: 1.05rem; line-height: 1.55; max-width: 380px; }
+        {/* ---------- 3 adım ---------- */}
+        <section className="steps wrap" aria-labelledby="adim-baslik">
+          <div className="head">
+            <div>
+              <SectionTag>3 ADIMDA BAŞLA</SectionTag>
+              <h2 id="adim-baslik">Bugün kaydol.<br className="only-wide" /> Yarın defteri bırak.</h2>
+            </div>
+            <p className="head-lead only-wide">Kurulum yok, kart yok, eğitim gerektirmez. Üç adımda hazırsın.</p>
+          </div>
+          <ol className="step-row">
+            {STEPS.map((s, i) => (
+              <li key={s.title}>
+                <span className="mono yellow" aria-hidden="true">0{i + 1}</span>
+                <div>
+                  <h3>{s.title}</h3>
+                  <p><Dual wide={s.text} narrow={s.textM} /></p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
 
-  /* ---------- features ---------- */
-  .elevire .features { padding: 112px 0; }
-  .elevire .features-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 18px;
-  }
-  .elevire .feature-card {
-    display: flex;
-    flex-direction: column;
-    gap: 48px;
-    padding: 28px;
-    border-radius: 24px;
-    background: var(--paper);
-    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-  }
-  .elevire .feature-card:hover {
-    transform: translateY(-3px);
-    background: #ffffff;
-    box-shadow: 0 24px 48px -30px rgba(10,13,18,0.45), 0 0 0 1px var(--line);
-  }
-  .elevire .feature-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: #000000;
-    color: var(--yellow);
-    flex: none;
-  }
-  .elevire .feature-icon svg { width: 24px; height: 24px; }
-  .elevire .feature-body { display: flex; flex-direction: column; gap: 10px; }
-  .elevire .feature-body h3 { font-size: 1.4rem; font-weight: 400; line-height: 1.25; color: var(--heading); }
-  .elevire .feature-body p { color: var(--body); line-height: 1.55; }
-  @media (max-width: 960px) {
-    .elevire .features-grid { grid-template-columns: repeat(2, 1fr); }
-  }
-  @media (max-width: 640px) {
-    .elevire .section-head { flex-direction: column; align-items: flex-start; margin-bottom: 32px; }
-    .elevire .features { padding: 80px 0; }
-    .elevire .features-grid { grid-template-columns: 1fr; }
-    .elevire .feature-card { flex-direction: row; align-items: flex-start; gap: 18px; padding: 22px; border-radius: 20px; }
-    .elevire .feature-icon { width: 44px; height: 44px; }
-    .elevire .feature-icon svg { width: 20px; height: 20px; }
-    .elevire .feature-body h3 { font-size: 1.15rem; }
-    .elevire .feature-body p { font-size: 0.95rem; }
-  }
+        {/* ---------- Fiyat ---------- */}
+        <section id="fiyatlar" className="pricing wrap" aria-labelledby="fiyat-baslik">
+          <SectionTag>FİYAT</SectionTag>
+          <h2 id="fiyat-baslik">Tek paket. Net fiyat.</h2>
+          <p className="head-lead"><Dual wide="Tüm modüller her planda açık. 7 gün ücretsiz dene, beğenmezsen hiçbir şey ödeme." narrow="Tüm modüller açık. 7 gün ücretsiz." /></p>
+          <PricingCard
+            monthly={monthly}
+            yearly={yearly}
+            yearlyPerMonth={formatTry(yearlyPrice / 12)}
+            discountPct={discountPct}
+            cta={<TryButton cta="fiyat" className="btn-block" />}
+            payment={<p className="pay-note"><span aria-hidden="true">🔒</span> iyzico ile güvenli ödeme<span className="only-wide"> · Visa · Mastercard · Troy</span></p>}
+            features={
+              <>
+                <p className="mono faint only-wide">HER ŞEY DAHİL</p>
+                <ul className="only-wide">{INCLUDED.map((t) => <Check key={t}>{t}</Check>)}</ul>
+                <ul className="only-narrow">{INCLUDED_MOBILE.map((t) => <Check key={t}>{t}</Check>)}</ul>
+              </>
+            }
+          />
+        </section>
 
-  /* ---------- faq (kapanışın koyu zemininde) ---------- */
-  .elevire .faq {
-    display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    gap: 40px 72px;
-    padding-bottom: 112px;
-  }
-  .elevire .faq-side { align-self: start; position: sticky; top: 32px; }
-  .elevire .faq-contact { margin-top: 20px; color: var(--footer-muted); line-height: 1.6; max-width: 34ch; }
-  .elevire .faq-contact a { color: #ffffff; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255,255,255,0.35); }
-  .elevire .faq-contact a:hover { text-decoration-color: var(--yellow); }
-  .elevire .faq-list { border-top: 1px solid rgba(255,255,255,0.12); }
-  .elevire .faq-item { border-bottom: 1px solid rgba(255,255,255,0.12); }
-  .elevire .faq-item summary {
-    cursor: pointer;
-    list-style: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    padding: 26px 0;
-    font-size: 1.15rem;
-    font-weight: 400;
-    color: #ffffff;
-  }
-  .elevire .faq-item summary::-webkit-details-marker { display: none; }
-  .elevire .faq-item summary:focus-visible { outline: 2px solid var(--yellow); outline-offset: 4px; border-radius: 4px; }
-  .elevire .faq-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    flex: none;
-    border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.22);
-    color: #ffffff;
-    transition: transform 0.25s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  }
-  .elevire .faq-toggle svg { width: 18px; height: 18px; }
-  .elevire .faq-item summary:hover .faq-toggle { border-color: var(--yellow); }
-  .elevire .faq-item[open] .faq-toggle { transform: rotate(45deg); background: var(--yellow); border-color: var(--yellow); color: #000000; }
-  .elevire .faq-item p { color: var(--footer-muted); font-size: 1rem; line-height: 1.65; padding: 0 60px 28px 0; }
-  @media (max-width: 860px) {
-    .elevire .faq { grid-template-columns: 1fr; padding-bottom: 88px; }
-    .elevire .faq-side { position: static; }
-    .elevire .faq-item summary { font-size: 1.05rem; padding: 22px 0; }
-    .elevire .faq-item p { padding-right: 0; }
-  }
+        {/* ---------- SSS ---------- */}
+        <section id="sss" className="faq wrap" aria-labelledby="sss-baslik">
+          <div className="faq-side">
+            <SectionTag>SSS</SectionTag>
+            <h2 id="sss-baslik">Aklındaki <br className="only-wide" />sorular.</h2>
+            <p className="lead only-wide">Cevabı bulamazsan WhatsApp&apos;tan yaz; mesai saatlerinde dakikalar içinde dönüyoruz.</p>
+            <a className="btn btn-ghost btn-sm only-wide" href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" data-contact="whatsapp">
+              WhatsApp&apos;tan sor
+              <Arrow />
+            </a>
+          </div>
+          <div className="faq-list">
+            {faqItems(monthly, yearly).map((f, i) => (
+              <details key={f.q} open={i === 0} className={f.wideOnly ? "only-wide" : undefined}>
+                <summary>{f.q}<span className="faq-sign" aria-hidden="true" /></summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
 
-  /* ---------- closing + footer ---------- */
-  .elevire .closing { background: var(--darker); padding-top: 96px; }
-  .elevire .closing-inner {
-    text-align: center;
-    max-width: 720px;
-    margin: 0 auto;
-    padding-bottom: 88px;
-  }
-  .elevire .closing-inner h2 {
-    font-size: clamp(2rem, 4.2vw, 3.2rem);
-    font-weight: 400;
-    color: #ffffff;
-    line-height: 1.15;
-  }
-  .elevire .wave-hand {
-    width: 96px;
-    margin: 0 auto 20px;
-  }
-  .elevire .wave-hand-inner {
-    transform: rotate(var(--mouse-tilt, 0deg));
-    transform-origin: 72% 88%;
-    transition: transform 0.25s ease-out;
-  }
-  .elevire .wave-hand-inner img { display: block; width: 100%; height: auto; }
-  .elevire .wave-hand-inner.is-waving { animation: elevire-wave 1.6s ease-in-out; }
-  @keyframes elevire-wave {
-    0%, 100% { transform: rotate(0deg); }
-    15% { transform: rotate(16deg); }
-    30% { transform: rotate(-10deg); }
-    45% { transform: rotate(16deg); }
-    60% { transform: rotate(-6deg); }
-    75% { transform: rotate(9deg); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .elevire .wave-hand-inner.is-waving { animation: none; }
-  }
-  .elevire .closing-cta {
-    display: inline-flex;
-    align-items: center;
-    margin-top: 36px;
-    padding: 18px 40px;
-    border-radius: 999px;
-    background: var(--yellow);
-    color: #000000;
-    font-weight: 500;
-    font-size: 1.1rem;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
-  .elevire .closing-cta:hover { transform: translateY(-2px); box-shadow: 0 14px 28px -14px rgba(255,207,61,0.55); }
+        {/* ---------- Kapanış ---------- */}
+        <section className="final">
+          <h2>Defteri bugün kapat.</h2>
+          <p className="head-lead">7 gün ücretsiz. Kurulum yok, <Dual wide="kredi kartı" narrow="kart" /> gerekmez.</p>
+          <div className="actions">
+            <TryButton cta="kapanis" label="Ücretsiz hesabını aç" />
+            <a className="btn btn-ghost only-wide" href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" data-contact="whatsapp">WhatsApp&apos;tan yaz</a>
+          </div>
+        </section>
+      </main>
 
-  .elevire .footer {
-    border-top: 1px solid rgba(255,255,255,0.1);
-    padding-top: 24px;
-    padding-bottom: 32px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .elevire .legal-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 18px;
-  }
-  .elevire .legal-nav a {
-    font-size: 0.85rem;
-    color: var(--footer-muted);
-  }
-  .elevire .legal-nav a:hover { color: #ffffff; }
-  .elevire .footer-contact {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 18px;
-    font-size: 0.85rem;
-    color: var(--footer-muted);
-  }
-  .elevire .footer-contact a { color: var(--footer-muted); }
-  .elevire .footer-contact a:hover { color: #ffffff; }
-  .elevire .footer-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .elevire .footer-copyright { font-size: 0.85rem; color: #ffffff; }
-  .elevire .footer-brand { display: flex; align-items: center; gap: 16px; }
-  .elevire .social-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.22);
-    color: #ffffff;
-    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
-  }
-  .elevire .social-link svg { width: 18px; height: 18px; }
-  .elevire .social-link:hover { border-color: var(--yellow); background: var(--yellow); color: #000000; }
-  .elevire .payment-badges { display: flex; align-items: center; }
+      <SiteFooter />
 
-  /* ---------- sabit WhatsApp butonu ---------- */
-  .elevire .wa-float {
-    position: fixed;
-    right: max(20px, env(safe-area-inset-right));
-    bottom: max(20px, env(safe-area-inset-bottom));
-    z-index: 900; /* çerez bandının (1000) altında */
-    width: 58px;
-    height: 58px;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: #25d366;
-    color: #ffffff;
-    box-shadow: 0 10px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
-  .elevire .wa-float:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 14px 32px rgba(0,0,0,0.26), 0 3px 8px rgba(0,0,0,0.14); }
-  .elevire .wa-float:focus-visible { outline: 3px solid #ffffff; outline-offset: 3px; }
-  .elevire .wa-float-icon { width: 32px; height: 32px; }
-  @media (prefers-reduced-motion: reduce) {
-    .elevire .wa-float { transition: none; }
-    .elevire .wa-float:hover { transform: none; }
-  }
-
-  @media (max-width: 640px) {
-    .elevire .wa-float { width: 54px; height: 54px; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
-    .elevire .wa-float-icon { width: 30px; height: 30px; }
-    .elevire .hero { height: 430px; min-height: 0; }
-    .elevire .nav { top: 18px; }
-    .elevire .pricing-panel { border-radius: 32px 32px 0 0; margin-top: -32px; }
-  }
-`;
+      {/* Mobilde ekrana sabit kayıt çubuğu. */}
+      <div className="sticky-cta">
+        <span><b>7 gün ücretsiz</b><span>Kurulum yok · kart gerekmez</span></span>
+        <a className="btn btn-primary btn-sm" href="/kayit" data-cta="sabit-cubuk">Hemen dene<Arrow /></a>
+      </div>
+    </div>
+  );
+}

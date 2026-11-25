@@ -279,6 +279,8 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 `/admin/customers`, `/admin/suppliers` — Sipariş Oluşturma ekranındaki Müşteri/Tedarikçi alanları için öneri/yönetim listeleri. Yeni bir sipariş yeni bir isimle kaydedildiğinde ilgili dizine otomatik eklenir (`src/lib/directories.ts`); `orders.customer_name` ve `order_services.supplier` serbest metin kalır (FK değildir).
 
+**Müşteri listesini Excel'den aktarma (2026-11-25):** Müşteriler sayfasında Şablon İndir / İçeri Aktar (`customers.create`; `src/lib/customersExcel.ts`, `POST /api/customers/import`). Sütunlar başlık adından tanınır (yaygın yazımlar da: GSM, Cari Adı, VKN…). Ad eşleşmesi harf (İ/I/ı/i) ve boşluk duyarsız; var olan müşteride yalnızca boş alanlar dolar, kurumsal işaret kaldırılmaz (POST /api/customers ile aynı kural). Benzer adlı birden çok müşteri varsa satır atlanıp bildirilir. Hatalı satırda hiçbiri yazılmaz; şablonun örnek satırı yok sayılır; en fazla 2.000 müşteri. **Cari bakiye ve plaka bilerek aktarılmaz** (kullanıcı kararı): bakiye iki kez yüklenirse çift yazılırdı, araç bireyselde siparişten gelir.
+
 ---
 
 ### 11. Masraflar
@@ -446,12 +448,13 @@ Stok durumundan bağımsız, geriye dönük tam hareket kaydı — iki tür sat�
 
 **Amaç:** E-posta/telefon bilgisi bırakmadan siteden ayrılan ziyaretçilere ulaşmak için, Elevire landing'e (`src/app/elevire/page.tsx`) doğrulama gerektirmeyen, kayıt sonrası doğrudan ürüne düşüren bir kendi kendine kayıt akışı eklendi (rakip araştırması: MYNDOS, GarajPlan, Paraşüt, RepairShopr).
 
-- **Sayfa:** `/kayit` (`src/app/kayit/page.tsx`) — `/admin/login` ile aynı görsel dil (ortalanmış kart). Ad Soyad, İşletme Adı, E-posta, Telefon, Şifre (+ tekrar) toplar.
+- **Sayfa:** `/kayit` (`src/app/kayit/page.tsx`) — landing'in siyah teması. Ad Soyad, İşletme Adı, E-posta, Telefon, Şifre (+ tekrar) toplar.
 - **Uç:** `POST /api/public/register` — kimlik doğrulaması gerektirmeyen public bir uç, `/api/public/randevu` (Bölüm 12) ile aynı konvansiyon. `src/lib/provisionTenant.ts`'i (Süper Admin Paneli'ndeki "+ Yeni Firma Ekle" ile **birebir aynı** fonksiyon) `adminUsername` olarak girilen e-posta ile çağırır — yeni tenant'ta başka kullanıcı olmadığından kullanıcı adı çakışması imkânsızdır. Başarılı kayıt sonrası, `/api/auth/login`'dekiyle **aynı** `signToken`/httpOnly-cookie deseniyle otomatik giriş yapılır (yeni tenant'ın tek kullanıcısı her zaman `role: "admin"`).
 - **Şema:** `tenants` üç yeni nullable kolon kazandı — `contact_name`, `contact_email`, `contact_phone` (`provisionTenant` artık opsiyonel bu alanları da kabul ediyor). Süper Admin Paneli listesi bu bilgiyi gösterir (Bölüm 17); Paylaşılan Stok'ta bir eşleşme bulunduğunda karşı firmaya gösterilen bilgi de aynı üç kolondur (bkz. Bölüm 19).
 - **Elevire landing:** tüm CTA'lar `/kayit`'a giden "Ücretsiz Hesap Oluştur"/"7 Gün Ücretsiz Dene" ile birleştirildi. Paylaşımlı Elevire demo hesabı (otomatik doldurulan sabit Firma Kodu/Kullanıcı Adı/Şifre, gecelik sıfırlama mekanizmasıyla) TAMAMEN kaldırıldı — hem landing'deki "Demoyu Ücretsiz Dene" CTA'ları ve üst menüdeki "Demoyu Dene" linki, hem giriş formunun `NEXT_PUBLIC_DEMO_MODE` ile koşullu ön-doldurması (giriş formu artık her zaman boş başlar); `/kayit` üzerinden gerçek, kartsız 7 günlük deneme (bkz. Bölüm 20) artık aynı ihtiyacı karşılıyor.
 - **Bilinçli olarak kapsam dışı bırakılanlar:** telefon/e-posta doğrulaması ve captcha yok. **Hız sınırı var** (IP başına saatte 5 kayıt, `src/middleware.ts` + `src/lib/rateLimit.ts`; giriş, randevu talebi ve herkese açık fatura PDF'i de aynı katmanda sınırlı).
-- **Reklam ölçümü (2026-11-17/18):** landing ve `/kayit`'ta Meta Pixel (`src/app/elevire/MetaPixel.tsx`). KVKK gereği yalnızca ziyaretçi çerez bandında "Kabul Et" derse yüklenir; `NEXT_PUBLIC_META_PIXEL_ID` boşsa pixel ve bant hiç görünmez. Olaylar: `PageView`, `KayitButonuTiklandi` (`{ konum }`), `CompleteRegistration`, `Contact` (landing'deki sabit WhatsApp butonu).
+- **Landing tasarımı (2026-11-25, siyah tema):** `src/app/elevire/page.tsx` + `styles.ts`, Figma A5dbF6UlUizKEsSlT2yNO8 (masaüstü 15:505, mobil 21:673); metin ve düzen kullanıcı kararıyla birebir. Geist + Geist Mono; ürün görselleri resim değil HTML/CSS. İstemci bileşenleri: `FeatureTabs` (tasarımda yalnızca ilk sekme çizili, diğer dördü aynı dille yazıldı), `PricingCard` (Aylık/Yıllık; fiyat `platform_pricing`'ten), `MobileMenu`. Mobil çerçevenin farklı metinleri `Dual` (`.only-wide`/`.only-narrow`) ile. Tasarımdan bilinçli farklar: "e-Fatura" listenin sonunda "Yakında" rozetiyle (modül satışa açılınca kaldırılacak); alt bilgide iyzico logo bandı ve Hakkımızda bağlantısı; mobildeki "Kullananlar" yer tutucusu (gerçek yorum yok) konmadı. Sabit WhatsApp butonu ve Instagram simgesi tasarımda yok, kaldırıldı (Instagram yapılandırılmış veride `sameAs` olarak duruyor). "1 dakikalık demoyu izle" YouTube videosunu sayfa içi pencerede açar (`DemoVideo.tsx`; oynatıcı yalnızca tıklanınca, `youtube-nocookie.com`'dan yüklenir, CSP `frame-src`'ye eklendi). Yasal sayfalar (`legal/layout.tsx`) ve giriş/kayıt ekranları (`/admin/login`, `/kayit`; ortak çerçeve `AuthShell.tsx` — landing'in menüsü, zemini, alt bilgisi ve kart üstünde Giriş yap/Kayıt ol sekmesi) aynı temada; sayfalar arası yumuşak geçiş (`@view-transition`): ortak menü/alt bilgi `SiteChrome.tsx`, ek stil `INNER_CSS`; bu sayfaların tasarımı Figma'da yok, aynı dille çizildi.
+- **Reklam ölçümü (2026-11-17/18):** landing ve `/kayit`'ta Meta Pixel (`src/app/elevire/MetaPixel.tsx`). KVKK gereği yalnızca ziyaretçi çerez bandında "Kabul Et" derse yüklenir; `NEXT_PUBLIC_META_PIXEL_ID` boşsa pixel ve bant hiç görünmez. Olaylar: `PageView`, `KayitButonuTiklandi` (`{ konum }`), `CompleteRegistration`, `Contact` (landing'deki WhatsApp düğmeleri).
 - **SEO:** Elevire'in asıl adresi `elevire.yeyu.co` (`src/lib/site.ts` — canonical, `sitemap.ts`, `robots.ts` buradan üretilir); `lastik.yeyu.co` panel giriş adresidir.
 
 ---
@@ -837,6 +840,8 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | POST/GET | `/api/products/import`, `/api/products/export` | Excel içe/dışa aktarma |
 | GET | `/api/products/import/template` | Ürün içe aktarma şablonu (`products.edit`) |
 | GET/POST | `/api/customers`, `/api/customers/:id` (PATCH/DELETE) | Müşteri dizini |
+| POST | `/api/customers/import` | Müşteri listesini Excel'den aktarır (`customers.create`, Bölüm 10) |
+| GET | `/api/customers/import/template` | Müşteri içe aktarma şablonu (`customers.create`) |
 | GET | `/api/customers/export` | Bakiyesi olan müşterilerin Borç/Alacak listesini Excel'e aktarır (bkz. Bölüm 13) |
 | GET | `/api/customers/:id` | Firma sayfası — müşteri bilgisi, cari bakiye, bu ay, filo araçları (`customers.view`; tutarlar `orders.view`, depo `storage.view`) — Bölüm 26 |
 | GET/POST | `/api/customers/:id/vehicles` | Araç Ekle önerileri / plakaları firmaya bağla (`customers.edit`; `move` olmadan başka firmadaki araç taşınmaz) |
@@ -894,7 +899,7 @@ Tam ve güncel şema `database/schema.sql` dosyasındadır (idempotent — tekra
 | GET | `/api/super-admin/tenants/:id/payments` | Süper Admin: tenant'ın iyzico Raporlama Servisi'nden tam ödeme geçmişi (komisyon, blokaj/hesaba geçiş durumu, fraudStatus dahil, bkz. Bölüm 17) |
 | GET | `/api/super-admin/revenue` | Süper Admin: seçili aya ait GERÇEK platform geliri (`?month=YYYY-MM`, iyzico Raporlama Servisi'nden gün gün toplanır, bkz. Bölüm 17) |
 | GET | `/api/super-admin/billing-events` | Süper Admin: son 100 faturalandırma olayı (`billing_events`, bkz. Bölüm 17) |
-| GET/PUT | `/api/super-admin/pricing` | Süper Admin: sabit TL abonelik fiyatı oku / değiştir (yeni iyzico planlarını hemen oluşturur, bkz. Bölüm 20) |
+| GET/PUT | `/api/super-admin/pricing` | Süper Admin: sabit TL abonelik fiyatı oku / değiştir (yeni iyzico planlarını hemen oluşturur ve landing'i tazeler, bkz. Bölüm 20) |
 | GET/POST | `/api/super-admin/consistency-check` | Süper Admin: DB↔iyzico abonelik tutarlılık denetimi ve tek-tık düzeltme (bkz. Bölüm 17/20) |
 | GET | `/api/super-admin/support-tickets` | Süper Admin: TÜM firmaların destek taleplerini listeler (durum filtresi, firma adı dahil, bkz. Bölüm 21) |
 | GET/POST/PATCH | `/api/super-admin/support-tickets/:id` | Süper Admin: detay (firma iletişim bilgisi dahil) / firma tarafına yanıt yaz / durum değiştir |

@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 //   KayitButonuTiklandi   — landing'de data-cta taşıyan bir /kayit linkine
 //                           tıklama, { konum: "nav" | "fiyat-aylik" | ... }
 //   CompleteRegistration  — /kayit formu başarıyla tamamlandı
-//   Contact               — landing'deki sabit WhatsApp butonu (data-contact),
+//   Contact               — landing'deki WhatsApp düğmeleri (data-contact),
 //                           { kanal: "whatsapp" }; yeni sekmede açıldığı için
 //                           beklemeden gönderilir
 

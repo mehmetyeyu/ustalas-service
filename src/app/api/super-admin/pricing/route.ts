@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getPlatformPricing, updatePlatformPricing } from "@/lib/platformPricing";
@@ -35,6 +36,9 @@ export async function PUT(request: NextRequest) {
     }
 
     await updatePlatformPricing(monthly, yearly);
+    // Landing statik üretilir (fiyat derlemede okunur) — yeni fiyat bir sonraki
+    // yayını beklemeden görünsün.
+    revalidatePath("/elevire");
     const pricing = await getPlatformPricing();
     return NextResponse.json(pricing);
   } catch (error) {

@@ -6,7 +6,7 @@ export const contentType = "image/png";
 // Tarayıcı sekmesi/yer imi ikonu — sadece /elevire altında (bu dosyanın
 // route segmentine özgü olması sayesinde Ustalas'ın kendi sayfalarını
 // etkilemiyor, ayrı bir env var/koşul gerekmiyor). Sitenin gerçek nav
-// logosuyla (bkz. page.tsx Logomark) aynı siyah daire + sarı "e" işareti.
+// logosunun siyah daire + sarı "e" hali.
 export default async function Icon() {
   return new ImageResponse(
     (

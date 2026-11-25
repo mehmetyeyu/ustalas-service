@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import Link from "next/link";
 import { formatDate, formatCurrency } from "@/lib/format";
 import { useViewGuard, usePermission, useAuth } from "../AuthContext";
@@ -118,6 +118,8 @@ export default function CustomersPage() {
   const [creditLimit, setCreditLimit] = useState("");
   const [discountRate, setDiscountRate] = useState("");
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   // Cari (en az bir cari hareketi olan) ile perakende (hiç olmayan) müşteriler
   // aynı listede karışıyordu (bkz. görüşme notları) — has_cari_activity
@@ -371,6 +373,34 @@ export default function CustomersPage() {
     }
   }
 
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/customers/import", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "İçe aktarılamadı.");
+      const parts = [`${data.created} yeni müşteri eklendi`];
+      if (data.updated) parts.push(`${data.updated} müşterinin boş alanları dolduruldu`);
+      if (data.unchanged) parts.push(`${data.unchanged} müşteri zaten kayıtlı`);
+      if (data.skipped) parts.push(`${data.skipped} satır adı olmadığı için atlandı`);
+      if (data.ambiguous) parts.push(`${data.ambiguous} satır benzer adlı birden çok müşteri olduğu için atlandı`);
+      const message = `${parts.join(", ")}.`;
+      if (data.ambiguous) toast.warning(message);
+      else toast.success(message);
+      invalidateAfter(queryClient, "customer");
+      await fetchCustomers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Hata oluştu.");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function handleDelete(id: number) {
     if (!(await confirm({ message: "Bu müşteriyi silmek istediğinize emin misiniz?", confirmText: "Sil", variant: "danger" }))) return;
     const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
@@ -420,7 +450,26 @@ export default function CustomersPage() {
     <div onClick={() => setShowColPicker(false)}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Müşteriler</h1>
-        <div className="flex gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto sm:justify-end">
+          {canCreate && (
+            <>
+              <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImport} className="hidden" aria-label="Müşteri listesi Excel dosyası" />
+              <button
+                onClick={() => { window.location.href = "/api/customers/import/template"; }}
+                title="Yalnızca Müşteri Adı zorunludur. Aynı adla kayıtlı müşteride yalnızca boş alanlar dolar. Cari bakiye aktarılmaz."
+                className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-500 font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                Şablon İndir
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg text-sm transition-colors disabled:opacity-50"
+              >
+                {importing ? "İçe Aktarılıyor..." : "İçeri Aktar"}
+              </button>
+            </>
+          )}
           <button
             onClick={() => { window.location.href = "/api/customers/export"; }}
             className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg text-sm transition-colors"

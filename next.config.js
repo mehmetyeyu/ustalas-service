@@ -64,7 +64,9 @@ const nextConfig = {
         // takılıp hiç event göndermez (Vercel Blob img-src'de yaşanan
         // sorunla aynı sınıf hata, önceden düzeltildi).
         "connect-src 'self' https://*.iyzipay.com https://*.ingest.us.sentry.io https://www.facebook.com https://connect.facebook.net",
-        "frame-src 'self' https://*.iyzipay.com",
+        // www.youtube-nocookie.com: landing'deki demo videosu (bkz.
+        // src/app/elevire/DemoVideo.tsx) — yalnızca düğmeye basılınca yüklenir.
+        "frame-src 'self' https://*.iyzipay.com https://www.youtube-nocookie.com",
         "base-uri 'self'",
         "form-action 'self'",
       ];

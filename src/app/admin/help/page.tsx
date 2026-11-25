@@ -325,6 +325,12 @@ export default function HelpPage() {
               <li>Tahsilatlar en eski borçtan başlayarak otomatik düşülür — bir siparişin &quot;ödendi&quot; sayılması için o siparişe özel bir tahsilat girmeniz gerekmez.</li>
               <li>Üstte <b>Toplam Borç/Alacak</b> özeti; &quot;Borç/Alacak Listesini İndir&quot; ile en yüksek borçtan başlayarak Excel&apos;e aktarılabilir.</li>
             </List>
+            <SubHeading>Müşteri listesini Excel&apos;den aktarmak</SubHeading>
+            <List>
+              <li><b>Şablon İndir</b> ile gelen dosyayı doldurup <b>İçeri Aktar</b>&apos;a yükleyin. Yalnızca Müşteri Adı zorunludur; telefon, kurumsal, vergi no, vergi dairesi, yetkili, e-posta, adres, il ve ilçe isteğe bağlıdır. Kendi dosyanız da olur, sütunlar başlık adından tanınır (bir seferde en fazla 2.000 müşteri).</li>
+              <li>Aynı adla kayıtlı müşteri varsa (büyük/küçük harf ve boşluk farkı önemsiz) ikinci kayıt açılmaz, yalnızca boş alanları dolar; dolu bilgiler değişmez. Hatalı bir satır varsa hiçbir müşteri aktarılmaz, hangi satırda ne olduğu gösterilir.</li>
+              <li>Yeni gelen müşterilerin cari hareketi olmadığı için bireyseller <b>Perakende</b>, kurumsal olanlar <b>Kurumsal</b> sekmesinde görünür. Borç/alacak aktarılmaz; eski borcu &quot;Borç Ekle&quot; ile girin.</li>
+            </List>
             <SubHeading>Müşteri adını değiştirmek</SubHeading>
             <List>
               <li>Müşterinin adı düzenlendiğinde o isimle girilmiş geçmiş siparişler, randevular ve depo kayıtları da yeni isme taşınır, cari geçmişi aynı müşteride kalır. Aynı isimde başka bir müşteri zaten varsa değişiklik engellenir.</li>
