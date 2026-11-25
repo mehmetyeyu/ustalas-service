@@ -24,7 +24,8 @@ export async function GET(request: NextRequest) {
 
     // Sütunlar Şablon ile aynı (bkz. src/lib/storageExcel.ts) — dışa aktarılan
     // dosya düzenlenip aynen geri yüklenebilir. Lastik Detayı içe aktarmada
-    // yok sayılır (konum ayrıntısı Excel'den değiştirilemez).
+    // yok sayılır (konum ayrıntısı Excel'den değiştirilemez); Teslim Edilenler
+    // dışa aktarımına eklenen teslim sütunları da öyle.
     const rows = result.rows.map((r) => {
       const values: Record<string, unknown> = {
         ...r,
@@ -40,12 +41,15 @@ export async function GET(request: NextRequest) {
         "Lastik Detayı": Array.isArray(r.lastikler)
           ? (r.lastikler as StorageTire[]).map((t) => `${t.konum}: ${describeStorageTire(t)}`).join(" | ")
           : "",
+        ...(filters.delivered
+          ? { "Teslim Tarihi": formatIslemTarihi(r.teslim_tarihi), "Teslim Açıklaması": r.teslim_aciklama ?? "" }
+          : {}),
       });
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [...STORAGE_EXCEL_COLUMNS.map((c) => ({ wch: c.width })), { wch: 60 }];
+    ws["!cols"] = [...STORAGE_EXCEL_COLUMNS.map((c) => ({ wch: c.width })), { wch: 60 }, { wch: 14 }, { wch: 40 }];
 
     XLSX.utils.book_append_sheet(wb, ws, "Depolama Listesi");
 

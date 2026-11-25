@@ -4,6 +4,7 @@ import pool from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { normalizeYear } from "@/lib/productsExcel";
+import { normalizeTeslimAciklama } from "@/lib/storageDelivery";
 import { resolveStorageTireColumns, StorageTiresValidationError } from "@/lib/storageTires";
 
 export async function PATCH(
@@ -24,19 +25,23 @@ export async function PATCH(
     }
 
     const t = resolveStorageTireColumns(body, normalizeYear);
+    // Teslim alanları gönderilmediyse olduğu gibi kalır — önceden teslim
+    // edilmiş kayıt Düzenle ile kaydedilince yeniden aktif oluyordu.
+    const setsNote = body.teslim_aciklama !== undefined;
     const vehicleId = await linkVehicle(pool, user.tenantId!, plate);
     const result = await pool.query(
       `UPDATE storage SET
         depo_no=$1, plate=$2, vehicle_id=$20, customer_name=$3, phone=$4, ebat=$5,
         marka=$6, dis_derinligi=$7, adet=$8, mevsim=$9, aciklama=$10, islem_tarihi=$11,
-        teslim_edildi=$12, teslim_tarihi=$13, model_name=$16, production_week=$17,
-        production_year=$18, load_speed_index=$19, lastikler=$21, rft=$22, jantli=$23
+        teslim_edildi=COALESCE($12, teslim_edildi), teslim_tarihi=COALESCE($13, teslim_tarihi), model_name=$16, production_week=$17,
+        production_year=$18, load_speed_index=$19, lastikler=$21, rft=$22, jantli=$23,
+        teslim_aciklama=CASE WHEN $24::boolean THEN $25 ELSE teslim_aciklama END
        WHERE id=$14 AND tenant_id=$15 RETURNING *`,
       [depo_no || null, plate || null, customer_name || null, phone || null, t.ebat,
        t.marka, t.dis_derinligi, t.adet, mevsim || null, aciklama || null,
-       islem_tarihi || null, teslim_edildi ?? false, teslim_tarihi || null, id, user.tenantId,
+       islem_tarihi || null, teslim_edildi ?? null, teslim_tarihi || null, id, user.tenantId,
        t.model_name, t.production_week, t.production_year, t.load_speed_index, vehicleId,
-       t.lastikler, t.rft, t.jantli]
+       t.lastikler, t.rft, t.jantli, setsNote, normalizeTeslimAciklama(body.teslim_aciklama)]
     );
 
     if (result.rowCount === 0) {

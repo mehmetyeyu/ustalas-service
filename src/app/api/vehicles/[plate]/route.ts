@@ -55,7 +55,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         ? pool.query(
             `SELECT id, depo_no, customer_name, ebat, marka, model_name, adet, mevsim, dis_derinligi,
                     production_week, production_year, lastikler, rft, jantli, to_char(islem_tarihi, 'YYYY-MM-DD') AS islem_tarihi,
-                    teslim_edildi, to_char(teslim_tarihi, 'YYYY-MM-DD') AS teslim_tarihi
+                    teslim_edildi, to_char(teslim_tarihi, 'YYYY-MM-DD') AS teslim_tarihi, teslim_aciklama
              FROM storage WHERE tenant_id = $1 AND vehicle_id = $2
              ORDER BY teslim_edildi, created_at DESC`,
             [user.tenantId, vehicle.id]

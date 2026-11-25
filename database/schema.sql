@@ -2101,3 +2101,7 @@ ALTER TABLE storage ADD COLUMN IF NOT EXISTS jantli BOOLEAN NOT NULL DEFAULT fal
 -- sırayla görüneceği (firma tercihi, 2026-11-17) — bkz.
 -- src/lib/orderLineDisplay.ts. Varsayılan eski görünüm: Ebat + Adet.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS order_line_display TEXT[] NOT NULL DEFAULT ARRAY['size','qty'];
+
+-- Depolama "Teslim Et" açıklaması (müşteri isteği 2026-11-25), ör. "Ahmet
+-- Yılmaz'a teslim edildi". Kaydın kendi açıklamasından (aciklama) ayrıdır.
+ALTER TABLE storage ADD COLUMN IF NOT EXISTS teslim_aciklama TEXT;

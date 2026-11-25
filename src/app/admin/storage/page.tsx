@@ -14,6 +14,7 @@ import { useColumnPrefs } from "@/hooks/useColumnPrefs";
 import { ColumnPickerMenu } from "@/components/ColumnPickerMenu";
 import { trIncludes } from "@/lib/trSearch";
 import { useDialog } from "@/lib/useDialog";
+import { TESLIM_ACIKLAMA_MAX } from "@/lib/storageDelivery";
 import { StickyScrollX } from "@/components/StickyScrollX";
 import {
   STORAGE_TIRE_LAYOUTS, STORAGE_TIRE_POSITIONS, layoutOf, describeStorageTire, rftLabel,
@@ -35,6 +36,7 @@ interface StorageItem {
   islem_tarihi: string | null;
   teslim_edildi: boolean;
   teslim_tarihi: string | null;
+  teslim_aciklama: string | null;
   model_name: string | null;
   production_week: number | null;
   production_year: number | null;
@@ -613,7 +615,12 @@ export default function StoragePage() {
   const { user: authUser } = useAuth();
   const overdueMonths = authUser?.storageOverdueMonths || 6;
   const [showDelivered, setShowDelivered] = useState(false);
-  const [teslimId, setTeslimId] = useState<number | null>(null);
+  const [teslimItem, setTeslimItem] = useState<StorageItem | null>(null);
+  const [teslimAciklama, setTeslimAciklama] = useState("");
+  const [teslimSaving, setTeslimSaving] = useState(false);
+  const teslimItemDialog = useDialog(() => setTeslimItem(null));
+  // Düzenle'de yalnızca teslim edilmiş kayıtta görünür ve gönderilir.
+  const [editTeslimAciklama, setEditTeslimAciklama] = useState("");
   const [degisimItem, setDegisimItem] = useState<StorageItem | null>(null);
   const degisimItemDialog = useDialog(() => setDegisimItem(null));
   const [degisimForm, setDegisimForm] = useState({ ...EMPTY_TIRE_FIELDS, mevsim: "", aciklama: "", islem_tarihi: new Date().toISOString().split("T")[0] });
@@ -716,6 +723,7 @@ export default function StoragePage() {
 
   function openEdit(item: StorageItem) {
     setEditItem(item);
+    setEditTeslimAciklama(item.teslim_aciklama ?? "");
     setEditForm({
       depo_no: item.depo_no != null ? String(item.depo_no) : "",
       plate: item.plate ?? "",
@@ -741,6 +749,7 @@ export default function StoragePage() {
           ...editForm,
           depo_no: editForm.depo_no ? Number(editForm.depo_no) : null,
           ...tirePayload(editForm),
+          ...(editItem.teslim_edildi ? { teslim_aciklama: editTeslimAciklama } : {}),
         }),
       });
       const updated = await res.json();
@@ -770,25 +779,33 @@ export default function StoragePage() {
     }
   }
 
-  async function handleTeslim(item: StorageItem) {
-    if (!(await confirm({ message: `Depo No ${item.depo_no} — ${item.plate} lastiği teslim edildi olarak işaretlensin mi?\nBu depo numarası serbest kalacak.`, confirmText: "Teslim Et" }))) return;
-    setTeslimId(item.id);
+  function openTeslim(item: StorageItem) {
+    setTeslimItem(item);
+    setTeslimAciklama("");
+  }
+
+  async function handleTeslimSubmit() {
+    if (!teslimItem || teslimSaving) return;
+    setTeslimSaving(true);
     try {
-      await fetch(`/api/storage/${item.id}`, {
-        method: "PATCH",
+      const res = await fetch(`/api/storage/${teslimItem.id}/teslim`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        // PATCH tüm kolonları yazar — kaydın tamamı gönderilir (önceden
-        // Model/Üretim/Yük-Hız gönderilmediği için teslimde siliniyordu).
-        body: JSON.stringify({
-          ...item,
-          teslim_edildi: true,
-          teslim_tarihi: new Date().toISOString().split("T")[0],
-        }),
+        body: JSON.stringify({ teslim_aciklama: teslimAciklama }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Teslim işaretlenemedi.");
+        return;
+      }
+      setTeslimItem(null);
+      toast.success("Teslim edildi olarak işaretlendi.");
       await fetchItems(page);
       await fetchOverdueCount();
+    } catch {
+      toast.error("Bağlantı hatası, tekrar deneyin.");
     } finally {
-      setTeslimId(null);
+      setTeslimSaving(false);
     }
   }
 
@@ -879,8 +896,8 @@ export default function StoragePage() {
   const exportFiltered = activeFilterCount > 0 || !!debouncedSearch || showDelivered;
   const exportHref = `/api/storage/export?${buildFilterParams()}`;
 
-  // + 1: her zaman görünen işlemler sütunu.
-  const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 1;
+  // + 1: her zaman görünen işlemler sütunu; Teslim Edilenler'de ayrıca Teslim.
+  const visibleColCount = COLUMNS.filter((c) => visibleCols[c.key]).length + 1 + (showDelivered ? 1 : 0);
 
   if (!allowed) return null;
 
@@ -1102,6 +1119,7 @@ export default function StoragePage() {
                 {visibleCols.mevsim && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Mevsim</th>}
                 {visibleCols.aciklama && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Açıklama</th>}
                 {visibleCols.islem_tarihi && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Tarih</th>}
+                {showDelivered && <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Teslim</th>}
                 <th className="sticky right-0 bg-gray-50 px-4 py-3 border-l border-gray-200"></th>
               </tr>
             </thead>
@@ -1114,6 +1132,11 @@ export default function StoragePage() {
                         <div className={`h-4 ${SKELETON_COL_WIDTH[c.key]} bg-gray-100 rounded animate-pulse`} />
                       </td>
                     ))}
+                    {showDelivered && (
+                      <td className="px-4 py-3">
+                        <div className="h-4 w-24 bg-gray-100 rounded animate-pulse" />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="h-4 w-20 bg-gray-100 rounded animate-pulse" />
                     </td>
@@ -1177,6 +1200,12 @@ export default function StoragePage() {
                         {item.islem_tarihi ? new Date(item.islem_tarihi).toLocaleDateString("tr-TR") : "—"}
                       </td>
                     )}
+                    {showDelivered && (
+                      <td className="px-4 py-3 text-xs">
+                        <span className="text-gray-500 whitespace-nowrap">{item.teslim_tarihi ? new Date(item.teslim_tarihi).toLocaleDateString("tr-TR") : "—"}</span>
+                        {item.teslim_aciklama && <span className="mt-0.5 block min-w-[10rem] max-w-xs break-words text-gray-700">{item.teslim_aciklama}</span>}
+                      </td>
+                    )}
                     <td className={`sticky right-0 bg-white border-l border-gray-100 px-3 py-3 ${openMenuId === item.id ? "z-50" : "z-10"}`}>
                       {/* Desktop */}
                       <div className="hidden sm:flex items-center gap-3 whitespace-nowrap">
@@ -1188,9 +1217,9 @@ export default function StoragePage() {
                           </button>
                         )}
                         {canEdit && !item.teslim_edildi && (
-                          <button onClick={() => handleTeslim(item)} disabled={teslimId === item.id}
-                            className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-40">
-                            {teslimId === item.id ? "..." : "Teslim Et"}
+                          <button onClick={() => openTeslim(item)}
+                            className="text-green-600 hover:text-green-800 text-xs font-medium">
+                            Teslim Et
                           </button>
                         )}
                         {canDelete && (
@@ -1253,9 +1282,8 @@ export default function StoragePage() {
                             )}
                             {canEdit && !item.teslim_edildi && (
                               <button
-                                onClick={() => { setOpenMenuId(null); handleTeslim(item); }}
-                                disabled={teslimId === item.id}
-                                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-green-600 hover:bg-gray-50 disabled:opacity-40"
+                                onClick={() => { setOpenMenuId(null); openTeslim(item); }}
+                                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-green-600 hover:bg-gray-50"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -1633,6 +1661,13 @@ export default function StoragePage() {
                   <input type="text" value={editForm.aciklama} onChange={(e) => setEditForm({ ...editForm, aciklama: e.target.value })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
+                {editItem.teslim_edildi && (
+                  <div>
+                    <label htmlFor="edit-teslim-aciklama" className="block text-xs font-medium text-gray-600 mb-1">Teslim Açıklaması</label>
+                    <input id="edit-teslim-aciklama" type="text" value={editTeslimAciklama} maxLength={TESLIM_ACIKLAMA_MAX}
+                      onChange={(e) => setEditTeslimAciklama(e.target.value)} className={INPUT_CLS} />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1647,6 +1682,42 @@ export default function StoragePage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Teslim Et Modal — açıklama isteğe bağlı (ör. teslim alan kişi) */}
+      {teslimItem && (
+        <div ref={teslimItemDialog} role="dialog" aria-modal="true" aria-label="Teslim Et" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleTeslimSubmit(); }}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6"
+          >
+            <h2 className="text-xl font-bold text-gray-800 mb-1">Teslim Et — Depo No {teslimItem.depo_no ?? "—"}</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              {[teslimItem.plate, teslimItem.customer_name].filter(Boolean).join(" · ") || "—"}
+              <br />Kayıt teslim edildi olarak işaretlenecek, depo numarası serbest kalacak.
+            </p>
+            <label htmlFor="teslim-aciklama" className="block text-xs font-medium text-gray-600 mb-1">Açıklama (isteğe bağlı)</label>
+            <textarea
+              id="teslim-aciklama"
+              value={teslimAciklama}
+              onChange={(e) => setTeslimAciklama(e.target.value)}
+              maxLength={TESLIM_ACIKLAMA_MAX}
+              rows={3}
+              placeholder="Ör. Ahmet Yılmaz'a teslim edildi"
+              className={INPUT_CLS}
+            />
+            <div className="mt-5 flex gap-3">
+              <button type="button" onClick={() => setTeslimItem(null)}
+                className="flex-1 border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50">
+                İptal
+              </button>
+              <button type="submit" disabled={teslimSaving}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-2.5 rounded-lg">
+                {teslimSaving ? "Kaydediliyor..." : "Teslim Et"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

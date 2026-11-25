@@ -298,7 +298,7 @@ export default function HelpPage() {
           <Section id="depolama" title="Depolama" role="staff" lede="Mevsimlik lastik depolama takibi — hangi müşterinin lastiği hangi depo numarasında, ne zamandan beri duruyor.">
             <List>
               <li>Yeni kayıt açılırken Depo No boş bırakılırsa boştaki en küçük numara otomatik atanır.</li>
-              <li>&quot;Teslim Et&quot; ile kayıt kapatılır, depo numarası tekrar kullanılabilir hale gelir.</li>
+              <li>&quot;Teslim Et&quot; ile kayıt kapatılır, depo numarası tekrar kullanılabilir hale gelir. İsterseniz açıklama yazabilirsiniz (ör. &quot;Mehmet Bey&apos;e teslim edildi&quot;); &quot;Teslim Edilenler&quot; listesinde, araç geçmişinde ve bu listenin Excel&apos;inde görünür, sonradan &quot;Düzenle&quot; ile değiştirilebilir.</li>
               <li>Ayarlanabilir bir süreden (varsayılan 6 ay) uzun süredir teslim edilmemiş kayıtlar &quot;gecikmiş&quot; filtresiyle ayrıca listelenebilir.</li>
               <li>İkiye bölünmüş A5 etiket yazdırılabilir (biri lastik çantasına, biri müşteriye).</li>
               <li>Excel ile toplu kayıt girişi/dışa aktarma desteklenir.</li>

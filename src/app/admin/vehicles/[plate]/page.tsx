@@ -25,7 +25,7 @@ interface VehicleOrder {
 interface VehicleStorage {
   id: number; depo_no: number | null; customer_name: string | null; ebat: string | null; marka: string | null; model_name: string | null;
   adet: number | null; mevsim: string | null; dis_derinligi: string | null; production_week: number | null; production_year: number | null;
-  islem_tarihi: string | null; teslim_edildi: boolean; teslim_tarihi: string | null;
+  islem_tarihi: string | null; teslim_edildi: boolean; teslim_tarihi: string | null; teslim_aciklama: string | null;
   lastikler: StorageTire[] | null; rft: boolean; jantli: boolean;
 }
 interface VehicleAppointment { id: number; requested_at: string; status: string; customer_name: string | null; service_name: string | null; order_id: number | null }
@@ -71,7 +71,7 @@ function buildTimeline(card: VehicleCard): TimelineItem[] {
       items.push({ key: `s${s.id}`, at: s.islem_tarihi, kind: "DEPO", title: `Depoya alındı${s.depo_no != null ? ` · Depo No ${s.depo_no}` : ""}`, detail: tire, amount: null, href: null });
     }
     if (s.teslim_edildi && s.teslim_tarihi) {
-      items.push({ key: `t${s.id}`, at: s.teslim_tarihi, kind: "DEPO", title: "Depodan teslim edildi", detail: tire, amount: null, href: null });
+      items.push({ key: `t${s.id}`, at: s.teslim_tarihi, kind: "DEPO", title: "Depodan teslim edildi", detail: [tire, s.teslim_aciklama].filter(Boolean).join(" · "), amount: null, href: null });
     }
   }
   for (const a of card.appointments) {
