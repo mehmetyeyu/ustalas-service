@@ -1,6 +1,6 @@
 # e-Fatura / e-Arşiv Modülü — Tasarım (Paraşüt entegrasyonu)
 
-Durum (2026-11-24): **yazıldı, gerçek Paraşüt'te tamamı doğrulanmadı.** Bağlantı, fatura adımları, günlük bakım, WhatsApp PDF linki ve filo aylık faturası kodda; staging'de bağlanma ve kişi/ürün/fatura oluşturma doğrulandı. Resmileştirme staging'de hata veriyor, Paraşüt'ün yanıtı bekleniyor; PDF, iptal ve tahsilat bu yüzden gerçek Paraşüt'te denenmedi. Aşağısı 2026-10-30 tasarımıdır; güncel davranış: lastik-servis-projesi.md Bölüm 27. Ücretli ek özellik (§13); ilk açılacak firma Ustalas.
+Durum (2026-11-24): **yazıldı, gerçek Paraşüt'te tamamı doğrulanmadı.** Bağlantı, fatura adımları, günlük bakım, WhatsApp PDF linki ve filo aylık faturası kodda; staging'de bağlanma ve kişi/ürün/fatura oluşturma doğrulandı. Resmileştirme, PDF ve e-Arşiv iptali staging'de 2026-11-27 doğrulandı (Paraşüt: staging'deki genel hata ortak test VKN'sinden, tekrar denenince geçiyor); tahsilat ilk fazda Paraşüt'e işlenmez (kullanıcı kararı 2026-11-27). Aşağısı 2026-10-30 tasarımıdır; güncel davranış: lastik-servis-projesi.md Bölüm 27. Ücretli ek özellik (§13); ilk açılacak firma Ustalas.
 Teknik kaynak: [parasut-api-referans.md](parasut-api-referans.md) (resmi swagger'dan çıkarıldı; her bilgi kaynağıyla işaretli).
 
 ---

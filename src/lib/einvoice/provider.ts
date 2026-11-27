@@ -99,3 +99,8 @@ export class ProviderAuthError extends ProviderError {
     this.name = "ProviderAuthError";
   }
 }
+
+// İstek sınırı (429) geçici: fatura HATA'ya düşmez, kaldığı adımdan sürer.
+export function staysInProgress(err: unknown): boolean {
+  return err instanceof ProviderError && !(err instanceof ProviderAuthError) && err.status === 429;
+}

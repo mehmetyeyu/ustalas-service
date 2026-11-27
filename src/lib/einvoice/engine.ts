@@ -11,7 +11,7 @@ import { buildInvoiceAmounts, withinProviderTolerance, type InvoiceAmounts, type
 import { validateBuyer, type BuyerInput } from "./buyer";
 import { getConnection, getProvider, invoiceSeries, providerContext, type EInvoiceConnection } from "./connection";
 import { effectiveVatRate } from "./vat";
-import { ProviderAuthError, ProviderError, type BuyerInfo, type EInvoiceProvider, type ProviderContext } from "./provider";
+import { ProviderAuthError, ProviderError, staysInProgress, type BuyerInfo, type EInvoiceProvider, type ProviderContext } from "./provider";
 import { ANONYMOUS_TCKN } from "../taxId";
 
 export type InvoiceStatus = "HAZIRLANIYOR" | "ISLENIYOR" | "RESMILESTI" | "HATA" | "IPTAL" | "REDDEDILDI";
@@ -531,6 +531,12 @@ export async function advanceInvoice(tenantId: number, invoiceId: number, maxSte
     const message = err instanceof InvoiceError || err instanceof ProviderError ? err.message : "Beklenmeyen bir hata oluştu.";
     if (!(err instanceof InvoiceError || err instanceof ProviderError)) console.error("Fatura ilerletme hatası:", { invoiceId, err });
     if (err instanceof ProviderAuthError) await pool.query("UPDATE einvoice_connections SET status = 'reauth', last_error = $2 WHERE tenant_id = $1", [tenantId, message]);
+    // İstek sınırı (429) geçicidir: fatura HATA'ya düşmez, durumu korunur ve
+    // ekran yoklaması (birkaç sn sonra) ya da günlük bakım kaldığı adımdan
+    // sürdürür. Deneme sayılmaz — süpürmenin deneme sınırını tüketmesin.
+    // Staging 2026-11-27: resmileşmiş fatura PDF adımında 8 sn'lik 429 alıp
+    // HATA görünüyordu.
+    if (staysInProgress(err)) return getInvoice(tenantId, invoiceId);
     await pool.query("UPDATE invoices SET status = 'HATA', error_message = $2, attempts = attempts + 1, updated_at = NOW() WHERE id = $1", [invoiceId, message]);
   } finally {
     await release(invoiceId);
